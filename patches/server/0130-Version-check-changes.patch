@@ -1,0 +1,61 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: FandMC <winme2002@outlook.com>
+Date: Mon, 23 Dec 2024 00:09:58 +0800
+Subject: [PATCH] Version-check-changes
+
+
+diff --git a/src/main/java/com/fandmc/fand/FandConfig.java b/src/main/java/com/fandmc/fand/FandConfig.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..b775e635a109662eca01b2edb3e93120e3d53515
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/FandConfig.java
+@@ -0,0 +1,6 @@
++package com.fandmc.fand;
++
++public final class FandConfig {
++
++    public static String serverModName = "Leaves";
++}
+diff --git a/src/main/java/com/fandmc/fand/FandLogger.java b/src/main/java/com/fandmc/fand/FandLogger.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c432ba11470e1762960404c7dc43a3ce2e076c7e
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/FandLogger.java
+@@ -0,0 +1,24 @@
++package com.fandmc.fand;
++
++import org.bukkit.Bukkit;
++
++import java.util.logging.Level;
++import java.util.logging.Logger;
++
++public class FandLogger extends Logger {
++    public static final FandLogger LOGGER = new FandLogger();
++
++    private FandLogger() {
++        super("Fand", null);
++        setParent(Bukkit.getLogger());
++        setLevel(Level.ALL);
++    }
++
++    public void severe(String msg, Exception exception) {
++        this.log(Level.SEVERE, msg, exception);
++    }
++
++    public void warning(String msg, Exception exception) {
++        this.log(Level.WARNING, msg, exception);
++    }
++}
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 1ca8771eb18c04d14c69b08554f0e697b29a0347..eb751a6c9723f1820da3ae95e1c729fd714f69b0 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -2026,7 +2026,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+ 
+     @DontObfuscate
+     public String getServerModName() {
+-        return org.leavesmc.leaves.LeavesConfig.mics.serverModName; // Leaves - Custom // Paper
++        return com.fandmc.fand.FandConfig.serverModName; // Leaves -> Fand - Custom // Paper
+     }
+ 
+     public SystemReport fillSystemReport(SystemReport details) {
