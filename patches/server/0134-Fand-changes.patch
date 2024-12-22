@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: FandMC <winme2002@outlook.com>
+Date: Mon, 23 Dec 2024 01:39:54 +0800
+Subject: [PATCH] Fand-changes
+
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/Main.java b/src/main/java/org/bukkit/craftbukkit/Main.java
+index 8f1230fcfa4fc27b513a4eb1023f107c8c7dd818..225119e0aac8777fa435ef67d71ef251bc9de9f1 100644
+--- a/src/main/java/org/bukkit/craftbukkit/Main.java
++++ b/src/main/java/org/bukkit/craftbukkit/Main.java
+@@ -275,13 +275,15 @@ public class Main {
+                     if (buildDate.before(deadline.getTime())) {
+                         // Paper start - This is some stupid bullshit
+                         System.err.println("*** Warning, you've not updated in a while! ***");
+-                        System.err.println("*** Please download a new build as per instructions from https://leavesmc.org/downloads/leaves ***"); //Paper // Leaves
++                        System.err.println("*** Please download a new build as per instructions from https://fandmc.cn/downloads/fand ***"); //Paper // Leaves
+                         //System.err.println("*** Server will start in 20 seconds ***");
+                         //Thread.sleep(TimeUnit.SECONDS.toMillis(20));
+                         // Paper end
+                     }
+                 }
+-
++                if (org.jline.utils.OSUtils.IS_WINDOWS) {
++                    System.setProperty("net.kyori.ansi.colorLevel", "truecolor");
++                }
+                 System.setProperty("library.jansi.version", "Paper"); // Paper - set meaningless jansi version to prevent git builds from crashing on Windows
+                 System.setProperty("jdk.console", "java.base"); // Paper - revert default console provider back to java.base so we can have our own jline
+                 //System.out.println("Loading libraries, please wait...");
