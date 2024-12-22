@@ -1,0 +1,163 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: FandMC <winme2002@outlook.com>
+Date: Sun, 22 Dec 2024 23:10:21 +0800
+Subject: [PATCH] Version-check-changes
+
+
+diff --git a/src/main/java/com/fandmc/fand/util/FandVersionFetcher.java b/src/main/java/com/fandmc/fand/util/FandVersionFetcher.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..e6ab6a9a00aab3174f51a500b8ea0123078b7d01
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/util/FandVersionFetcher.java
+@@ -0,0 +1,125 @@
++package com.fandmc.fand.util;
++
++import org.leavesmc.leaves.util.LeavesVersionFetcher;
++import com.google.common.base.Charsets;
++import com.google.common.io.Resources;
++import com.google.gson.*;
++import com.mojang.logging.LogUtils;
++import io.papermc.paper.ServerBuildInfo;
++import net.kyori.adventure.text.Component;
++import net.kyori.adventure.text.event.ClickEvent;
++import net.kyori.adventure.text.format.NamedTextColor;
++import org.checkerframework.checker.nullness.qual.Nullable;
++import org.jetbrains.annotations.NotNull;
++import org.slf4j.Logger;
++
++import java.io.BufferedReader;
++import java.io.IOException;
++import java.net.URI;
++import java.util.Optional;
++import java.util.OptionalInt;
++import java.util.stream.StreamSupport;
++
++import static net.kyori.adventure.text.Component.text;
++import static net.kyori.adventure.text.format.TextColor.color;
++
++public class FandVersionFetcher extends LeavesVersionFetcher {
++
++    private static final Logger LOGGER = LogUtils.getClassLogger();
++
++    private static final int DISTANCE_ERROR = -1;
++    private static final int DISTANCE_UNKNOWN = -2;
++    private static final String DOWNLOAD_PAGE = "https://fandmc.cn/downloads/fand";
++    private static final String API_URL = "https://api.fandmc.cn/v2/projects/fand/versions/";
++
++    @NotNull
++    @Override
++    public Component getVersionMessage(@NotNull String serverVersion) {
++        final Component updateMessage;
++        final ServerBuildInfo build = ServerBuildInfo.buildInfo();
++        if (build.buildNumber().isEmpty() && build.gitCommit().isEmpty()) {
++            updateMessage = text("You are running a development version without access to version information", color(0xFF5300));
++        } else if (build.buildNumber().isEmpty()) {
++            updateMessage = text("You are running a development version form CI", color(0xFF5300));
++        } else {
++            updateMessage = getUpdateStatusMessage("FandMC/Fand", build);
++        }
++        final @Nullable Component history = this.getHistory();
++
++        return history != null ? Component.textOfChildren(updateMessage, Component.newline(), history) : updateMessage;
++    }
++
++    private static Component getUpdateStatusMessage(@NotNull final String repo, @NotNull final ServerBuildInfo build) {
++        int distance = fetchDistanceFromFandApiV2Build(build);
++
++        if (distance == DISTANCE_ERROR) {
++            distance = fetchDistanceFromFandApiV2Hash(build);
++        }
++
++        if (distance == DISTANCE_ERROR) {
++            final Optional<String> gitBranch = build.gitBranch();
++            final Optional<String> gitCommit = build.gitCommit();
++            if (gitBranch.isPresent() && gitCommit.isPresent()) {
++                distance = fetchDistanceFromGitHub(repo, gitBranch.get(), gitCommit.get());
++            }
++        }
++
++        return switch (distance) {
++            case DISTANCE_ERROR -> Component.text("Error obtaining version information", NamedTextColor.YELLOW);
++            case 0 -> Component.text("You are running the latest version", NamedTextColor.GREEN);
++            case DISTANCE_UNKNOWN -> Component.text("Unknown version", NamedTextColor.YELLOW);
++            default -> Component.text("You are " + distance + " version(s) behind", NamedTextColor.YELLOW)
++                .append(Component.newline())
++                .append(Component.text("Download the new version at: ")
++                    .append(Component.text(DOWNLOAD_PAGE, NamedTextColor.GOLD)
++                        .hoverEvent(Component.text("Click to open", NamedTextColor.WHITE))
++                        .clickEvent(ClickEvent.openUrl(DOWNLOAD_PAGE))));
++        };
++    }
++
++    private static int fetchDistanceFromFandApiV2Build(final ServerBuildInfo build) {
++        OptionalInt buildNumber = build.buildNumber();
++        if (buildNumber.isEmpty()) {
++            return DISTANCE_ERROR;
++        }
++
++        try {
++            try (final BufferedReader reader = Resources.asCharSource(
++                URI.create(API_URL + build.minecraftVersionId()).toURL(),
++                Charsets.UTF_8
++            ).openBufferedStream()) {
++                final JsonObject json = new Gson().fromJson(reader, JsonObject.class);
++                final JsonArray builds = json.getAsJsonArray("builds");
++                final int latest = StreamSupport.stream(builds.spliterator(), false)
++                    .mapToInt(JsonElement::getAsInt)
++                    .max()
++                    .orElseThrow();
++                return latest - buildNumber.getAsInt();
++            } catch (final JsonSyntaxException ex) {
++                LOGGER.error("Error parsing json from fand's downloads API", ex);
++                return DISTANCE_ERROR;
++            }
++        } catch (final IOException e) {
++            LOGGER.error("Error while parsing version", e);
++            return DISTANCE_ERROR;
++        }
++    }
++
++    private static int fetchDistanceFromFandApiV2Hash(final ServerBuildInfo build) {
++        if (build.gitCommit().isEmpty()) {
++            return DISTANCE_ERROR;
++        }
++
++        try {
++            try (BufferedReader reader = Resources.asCharSource(
++                URI.create(API_URL + build.minecraftVersionId() + "/differ/" + build.gitCommit().get()).toURL(),
++                Charsets.UTF_8
++            ).openBufferedStream()) {
++                return Integer.parseInt(reader.readLine());
++            }
++        } catch (IOException e) {
++            LOGGER.error("Error while parsing version", e);
++            return DISTANCE_ERROR;
++        }
++    }
++}
+diff --git a/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java b/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java
+index c060857cb0551fff8f5033553b887f3a6b8f935a..40ad1624562d0204db90ede32bc283f4fd41eaa6 100644
+--- a/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java
++++ b/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java
+@@ -30,7 +30,7 @@ public record ServerBuildInfoImpl(
+     private static final String ATTRIBUTE_GIT_BRANCH = "Git-Branch";
+     private static final String ATTRIBUTE_GIT_COMMIT = "Git-Commit";
+ 
+-    private static final String BRAND_PAPER_NAME = "Leaves"; // Leaves - Paper -> Leaves
++    private static final String BRAND_PAPER_NAME = "Fand"; // Fand - Paper -> Leaves -> Fand
+ 
+     private static final String BUILD_DEV = "DEV";
+ 
+diff --git a/src/main/java/org/bukkit/craftbukkit/util/CraftMagicNumbers.java b/src/main/java/org/bukkit/craftbukkit/util/CraftMagicNumbers.java
+index d911b904b654557e6b75c1d458bf54cabcf133b3..e4e2c5110d566d45e5678054c50b9157c425e6f7 100644
+--- a/src/main/java/org/bukkit/craftbukkit/util/CraftMagicNumbers.java
++++ b/src/main/java/org/bukkit/craftbukkit/util/CraftMagicNumbers.java
+@@ -505,7 +505,7 @@ public final class CraftMagicNumbers implements UnsafeValues {
+     // Paper start
+     @Override
+     public com.destroystokyo.paper.util.VersionFetcher getVersionFetcher() {
+-        return new org.leavesmc.leaves.util.LeavesVersionFetcher(); // Leaves - Leaves version fetcher
++        return new com.fandmc.fand.util.FandVersionFetcher(); // Fand - Fand version fetcher
+     }
+ 
+     @Override
