@@ -33,7 +33,7 @@ jobs:
       - name: Apply Patches
         run: ./gradlew applyPatches
       - name: Create Fandclip Jar
-        run: ./gradlew createMojmapFandclipJar
+        run: ./gradlew createMojmapLeavesclipJar
         env:
           BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
       - name: Publish to Maven repo
