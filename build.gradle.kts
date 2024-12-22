@@ -88,7 +88,7 @@ paperweight {
 allprojects {
     publishing {
         repositories {
-            maven("https://repo.fandmc.org/snapshots") {
+            maven("https://repo.leavesmc.org/snapshots") {
                 name = "Fand"
                 credentials(PasswordCredentials::class) {
                     username = System.getenv("FAND_USERNAME")

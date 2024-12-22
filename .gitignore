@@ -44,8 +44,8 @@ out/
 *~
 
 # other stuff
-leaves-server
-leaves-api
+fand-server
+fand-api
 paper-api-generator
 mc-dev
 .idea
