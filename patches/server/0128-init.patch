@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: FandMC <winme2002@outlook.com>
+Date: Sun, 22 Dec 2024 22:52:45 +0800
+Subject: [PATCH] init
+
+
+diff --git a/build.gradle.kts b/build.gradle.kts
+index f2eb3b2eb2ad6a3c41f6ad84497fc65f22823f32..51aa510def642d74840205559a6504c636cf80e0 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -25,7 +25,7 @@ abstract class MockitoAgentProvider : CommandLineArgumentProvider {
+ // Paper end - configure mockito agent that is needed in newer java versions
+ 
+ dependencies {
+-    implementation(project(":leaves-api")) // Leaves - build change
++    implementation(project(":fand-api")) // Fand - build change
+     // Paper start
+     implementation("org.jline:jline-terminal-ffm:3.27.1") // use ffm on java 22+
+     implementation("org.jline:jline-terminal-jni:3.27.1") // fall back to jni on java 21
+@@ -266,13 +266,13 @@ tasks.registerRunTask("runReobfBundler") {
+     classpath(rootProject.tasks.named<io.papermc.paperweight.tasks.CreateBundlerJar>("createReobfBundlerJar").flatMap { it.outputZip })
+     mainClass.set(null as String?)
+ }
+-tasks.registerRunTask("runLeavesclip") {
+-    description = "Spin up a test server from the Mojang mapped Leavesclip jar"
+-    classpath(rootProject.tasks.named<io.papermc.paperweight.tasks.CreatePaperclipJar>("createMojmapLeavesclipJar").flatMap { it.outputZip })
++tasks.registerRunTask("runFandclip") {
++    description = "Spin up a test server from the Mojang mapped Fandclip jar"
++    classpath(rootProject.tasks.named<io.papermc.paperweight.tasks.CreatePaperclipJar>("createMojmapFandclipJar").flatMap { it.outputZip })
+     mainClass.set(null as String?)
+ }
+-tasks.registerRunTask("runReobfLeavesclip") {
+-    description = "Spin up a test server from the reobf Leavesclip jar"
+-    classpath(rootProject.tasks.named<io.papermc.paperweight.tasks.CreatePaperclipJar>("createReobfLeavesclipJar").flatMap { it.outputZip })
++tasks.registerRunTask("runReobfFandclip") {
++    description = "Spin up a test server from the reobf Fandclip jar"
++    classpath(rootProject.tasks.named<io.papermc.paperweight.tasks.CreatePaperclipJar>("createReobfFandclipJar").flatMap { it.outputZip })
+     mainClass.set(null as String?)
+ }
