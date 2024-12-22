@@ -1,7 +1,7 @@
-Contributing to Leaves
+Contributing to Fand
 ===========
 
-**English** | [中文](https://github.com/LeavesMC/Leaves/blob/master/docs/CONTRIBUTING_cn.md)
+**English** | [中文](https://github.com/FandMC/Fand/blob/master/docs/CONTRIBUTING_cn.md)
 
 We're glad that you want to contribute to our project!  
 In general, our review of pull requests is very lenient.  
@@ -24,17 +24,17 @@ Before coding, you need these softwares / tools as Dev Environment.
 
 - `git`
 - `JDK 21 or higher`
-  - We used Gradle's toolchains, so you can build Leaves using JRE 8. (When Gradle can't find JDK 21, it will download it automatically.)
+  - We used Gradle's toolchains, so you can build Fand using JRE 8. (When Gradle can't find JDK 21, it will download it automatically.)
 
 If you're using Windows Operating System, you can use `WSL` to speed up building.
 
 ## Understanding "Patches"
 
-Leaves uses as the same patching system as Paper,  
+Fand uses as the same patching system as Leaves,  
 and has been divided into two directories for the purpose of modifying different parts of it:
 
-- `leaves-api` - Modifications to `Paper-API` / `Spigot-API` / `Bukkit`.
-- `leaves-server` - Modifications to `Paper` / `Spigot` / `CraftBukkit`.
+- `fand-api` - Modifications to `Leaves-API` / `Paper-API` / `Spigot-API` / `Bukkit`.
+- `fand-server` - Modifications to `Leaves-API` / `Paper` / `Spigot` / `CraftBukkit`.
 
 The patching system is based on git, and you can learn about it at here: <https://git-scm.com/docs/gittutorial>
 
@@ -42,19 +42,19 @@ If you have forked the main repository, then you should follow the steps below:
 
 1. Clone your repository to local
 2. Run Gradle's `applyPatches` task in your IDE or terminal (You can run `./gradlew applyPatches` directly in terminal.)
-3. Enter `leaves-api` or `leaves-server` directory to carry out modifications.
+3. Enter `fand-api` or `fand-server` directory to carry out modifications.
 
-BTW, `leaves-api` and `leaves-server` are not normal git repositories.
+BTW, `fand-api` and `fand-server` are not normal git repositories.
 
 - Before applying patches, the base will point to unmodified source code.
 - Every commit after the base is a patch.
-- Only commits after the last commit of Paper will be considered Leaves' patches.
+- Only commits after the last commit of Paper will be considered Fand' patches.
 
 ## Adding new patches
 
 It's very easy to to add patches by following the steps below:
 
-1. Modify the code of `leaves-api` and / or `leaves-server`
+1. Modify the code of `fand-api` and / or `fand-server`
 2. Add these changes to the local git repository (For example, `git add .`)
 3. Commit these changes using `git commit -m <Commit Message>`
 4. Run Gradle's task `rebuildPatches` to convert your commits to a new patch

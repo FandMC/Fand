@@ -50,8 +50,8 @@ subprojects {
 
 repositories {
     mavenCentral()
-    maven("https://repo.leavesmc.org/releases") {
-        content { onlyForConfigurations("leavesclip") }
+    maven("https://repo.fandmc.org/releases") {
+        content { onlyForConfigurations("fandclip") }
     }
 }
 
@@ -62,7 +62,7 @@ dependencies {
 }
 
 paperweight {
-    serverProject.set(project(":leaves-server"))
+    serverProject.set(project(":fand-server"))
 
     remapRepo.set("https://maven.fabricmc.net/")
     decompileRepo.set("https://files.minecraftforge.net/maven/")
@@ -70,10 +70,10 @@ paperweight {
     usePaperUpstream(providers.gradleProperty("paperRef")) {
         withPaperPatcher {
             apiPatchDir.set(layout.projectDirectory.dir("patches/api"))
-            apiOutputDir.set(layout.projectDirectory.dir("leaves-api"))
+            apiOutputDir.set(layout.projectDirectory.dir("fand-api"))
 
             serverPatchDir.set(layout.projectDirectory.dir("patches/server"))
-            serverOutputDir.set(layout.projectDirectory.dir("leaves-server"))
+            serverOutputDir.set(layout.projectDirectory.dir("fand-server"))
         }
 
         patchTasks.register("generatedApi") {
@@ -88,11 +88,11 @@ paperweight {
 allprojects {
     publishing {
         repositories {
-            maven("https://repo.leavesmc.org/snapshots") {
-                name = "leaves"
+            maven("https://repo.fandmc.org/snapshots") {
+                name = "Fand"
                 credentials(PasswordCredentials::class) {
-                    username = System.getenv("LEAVES_USERNAME")
-                    password = System.getenv("LEAVES_PASSWORD")
+                    username = System.getenv("FAND_USERNAME")
+                    password = System.getenv("FAND_PASSWORD")
                 }
             }
         }

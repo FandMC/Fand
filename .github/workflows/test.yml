@@ -1,5 +1,5 @@
-name: Leaves Test CI
-
+name: Fand Test CI
+  fand
 on:
   push:
     branches-ignore: [ master ]
@@ -25,20 +25,20 @@ jobs:
           cache-read-only: false
       - name: Setup Git Config
         run: |
-          git config --global user.email "ci@leavesmc.org"
-          git config --global user.name "LeavesMC CI"
+          git config --global user.email "ci@fandmc.org"
+          git config --global user.name "FandMC CI"
       - name: Apply Patches
         run: ./gradlew applyPatches
-      - name: Create Leavesclip Jar
-        run: ./gradlew createMojmapLeavesclipJar
+      - name: Create Fandclip Jar
+        run: ./gradlew createMojmapFandclipJar
       - name: Move Jar
         run: |
           prop() {
             grep "${1}" gradle.properties | cut -d'=' -f2 | sed 's/\r//'
           }
           
-          jarName="leaves-$(prop mcVersion).jar"
-          mv build/libs/Leaves-leavesclip-"$(prop version)"-mojmap.jar "$jarName"
+          jarName="Fand-$(prop mcVersion).jar"
+          mv build/libs/Fand-fandclip-"$(prop version)"-mojmap.jar "$jarName"
           echo "jar=$jarName" >> "$GITHUB_ENV"
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
