@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: FandMC <winme2002@outlook.com>
+Date: Mon, 23 Dec 2024 00:43:24 +0800
+Subject: [PATCH] Fand-changes
+
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index eb751a6c9723f1820da3ae95e1c729fd714f69b0..c721bb8d44086cda36261f31446c269872a58b26 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -1268,7 +1268,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+                 LOGGER.info("*************************************************************************************");
+                 LOGGER.info("This is the first time you're starting this server.");
+                 LOGGER.info("It's recommended you read our 'Getting Started' documentation for guidance.");
+-                LOGGER.info("View this and more helpful information here: https://docs.leavesmc.org/leaves/guides/next-steps"); // Leaves - change
++                LOGGER.info("View this and more helpful information here: https://docs.fandmc.cn/fand/guides/next-steps"); // Leaves - change
+                 LOGGER.info("*************************************************************************************");
+             }
+             // Paper end - Add onboarding message for initial server start
+diff --git a/src/main/java/org/spigotmc/WatchdogThread.java b/src/main/java/org/spigotmc/WatchdogThread.java
+index f2087df445acca525aac789a5234bdd851890f35..00ade5d66f8faff7d4f836e2e27759762e5d7691 100644
+--- a/src/main/java/org/spigotmc/WatchdogThread.java
++++ b/src/main/java/org/spigotmc/WatchdogThread.java
+@@ -184,7 +184,7 @@ public class WatchdogThread extends ca.spottedleaf.moonrise.common.util.TickThre
+                 // Paper end
+                 } else
+                 {
+-                    log.log(Level.SEVERE, "--- DO NOT REPORT THIS TO LEAVES - THIS IS NOT A BUG OR A CRASH  - " + Bukkit.getServer().getVersion() + " ---"); // Leaves
++                    log.log(Level.SEVERE, "--- DO NOT REPORT THIS TO FAND - THIS IS NOT A BUG OR A CRASH  - " + Bukkit.getServer().getVersion() + " ---"); // Leaves
+                     log.log(Level.SEVERE, "The server has not responded for " + (currentTime - lastTick) / 1000 + " seconds! Creating thread dump");
+                 }
+                 // Paper end - Different message for short timeout
+@@ -205,7 +205,7 @@ public class WatchdogThread extends ca.spottedleaf.moonrise.common.util.TickThre
+                     WatchdogThread.dumpThread( thread, log );
+                 }
+                 } else {
+-                    log.log(Level.SEVERE, "--- DO NOT REPORT THIS TO LEAVES - THIS IS NOT A BUG OR A CRASH ---"); // Leaves
++                    log.log(Level.SEVERE, "--- DO NOT REPORT THIS TO FAND - THIS IS NOT A BUG OR A CRASH ---"); // Leaves
+                 }
+ 
+                 log.log( Level.SEVERE, "------------------------------" );
