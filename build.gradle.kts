@@ -50,8 +50,8 @@ subprojects {
 
 repositories {
     mavenCentral()
-    maven("https://repo.fandmc.org/releases") {
-        content { onlyForConfigurations("fandclip") }
+    maven("https://repo.leavesmc.org/releases") {
+        content { onlyForConfigurations("leavesclip") }
     }
 }
 
