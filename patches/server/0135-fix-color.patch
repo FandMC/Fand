@@ -1,0 +1,21 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: FandMC <winme2002@outlook.com>
+Date: Mon, 23 Dec 2024 18:48:09 +0800
+Subject: [PATCH] fix color
+
+
+diff --git a/src/main/java/org/bukkit/craftbukkit/Main.java b/src/main/java/org/bukkit/craftbukkit/Main.java
+index 225119e0aac8777fa435ef67d71ef251bc9de9f1..6fbd344a4582908c80fb0f3b7ae58b923e8f8cc6 100644
+--- a/src/main/java/org/bukkit/craftbukkit/Main.java
++++ b/src/main/java/org/bukkit/craftbukkit/Main.java
+@@ -281,9 +281,7 @@ public class Main {
+                         // Paper end
+                     }
+                 }
+-                if (org.jline.utils.OSUtils.IS_WINDOWS) {
+-                    System.setProperty("net.kyori.ansi.colorLevel", "truecolor");
+-                }
++                System.setProperty("net.kyori.ansi.colorLevel", "truecolor");// Fand - fix no color
+                 System.setProperty("library.jansi.version", "Paper"); // Paper - set meaningless jansi version to prevent git builds from crashing on Windows
+                 System.setProperty("jdk.console", "java.base"); // Paper - revert default console provider back to java.base so we can have our own jline
+                 //System.out.println("Loading libraries, please wait...");
