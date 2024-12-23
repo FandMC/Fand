@@ -1,0 +1,216 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: FandMC <winme2002@outlook.com>
+Date: Mon, 23 Dec 2024 23:52:26 +0800
+Subject: [PATCH] Fand Change
+
+
+diff --git a/src/main/java/com/destroystokyo/paper/Metrics.java b/src/main/java/com/destroystokyo/paper/Metrics.java
+index 3ee37c1cd8c4f430c8e4ff666d351f7e1a29e15d..8d213849b6477a7c33befbde6991be63a1a44ae3 100644
+--- a/src/main/java/com/destroystokyo/paper/Metrics.java
++++ b/src/main/java/com/destroystokyo/paper/Metrics.java
+@@ -594,7 +594,7 @@ public class Metrics {
+             // Only start Metrics, if it's enabled in the config
+             if (config.getBoolean("enabled", true)) {
+                 // Leaves start - we have our own bstats page
+-                Metrics metrics = new Metrics("Fand", serverUUID, logFailedRequests, Bukkit.getLogger());
++                Metrics metrics = new Metrics(com.fandmc.fand.FandConfig.serverModName, serverUUID, logFailedRequests, Bukkit.getLogger());
+ 
+                 metrics.addCustomChart(new Metrics.SimplePie("minecraft_version", () -> {
+                     String minecraftVersion = Bukkit.getVersion();
+diff --git a/src/main/java/com/fandmc/fand/FandConfig.java b/src/main/java/com/fandmc/fand/FandConfig.java
+index 025d3c149ce1b418b8d015741bc6547c6819853e..93d5a4a6ddc15948f84f5110bcc9cc8eb25872b3 100644
+--- a/src/main/java/com/fandmc/fand/FandConfig.java
++++ b/src/main/java/com/fandmc/fand/FandConfig.java
+@@ -1,6 +1,10 @@
+ package com.fandmc.fand;
+-
++import com.fandmc.fand.commands.CommandBase;
++import com.fandmc.fand.commands.TicksPerSecondCommand;
+ public final class FandConfig {
+-
+-    public static String serverModName = "Fand";
++    public static final String serverModName = "Fand";
++    public static void registerCommands() {
++        CommandBase.unregisterCommand("tps");
++        CommandBase.registerCommand("tps", new TicksPerSecondCommand("tps"));
++    }
+ }
+diff --git a/src/main/java/com/fandmc/fand/FandLogger.java b/src/main/java/com/fandmc/fand/FandLogger.java
+index c432ba11470e1762960404c7dc43a3ce2e076c7e..dbc5795be1d48468b59ac0788ab0eb59da3df461 100644
+--- a/src/main/java/com/fandmc/fand/FandLogger.java
++++ b/src/main/java/com/fandmc/fand/FandLogger.java
+@@ -9,7 +9,7 @@ public class FandLogger extends Logger {
+     public static final FandLogger LOGGER = new FandLogger();
+ 
+     private FandLogger() {
+-        super("Fand", null);
++        super(com.fandmc.fand.FandConfig.serverModName, null);
+         setParent(Bukkit.getLogger());
+         setLevel(Level.ALL);
+     }
+diff --git a/src/main/java/com/fandmc/fand/commands/CommandBase.java b/src/main/java/com/fandmc/fand/commands/CommandBase.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..78d8485ffdc83672aac5ae53db852fd22e93ebb6
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/commands/CommandBase.java
+@@ -0,0 +1,19 @@
++package com.fandmc.fand.commands;
++
++import net.minecraft.server.MinecraftServer;
++
++public class CommandBase {
++
++    public static void registerCommand(String name, org.bukkit.command.Command command) {
++        // 注册自定义的 tps 命令
++        MinecraftServer.getServer().server.getCommandMap().register(name, "fand", command);
++        MinecraftServer.getServer().server.syncCommands();
++    }
++
++    public static void unregisterCommand(String name) {
++        name = name.toLowerCase(java.util.Locale.ENGLISH).trim();
++        MinecraftServer.getServer().server.getCommandMap().getKnownCommands().remove(name);
++        MinecraftServer.getServer().server.getCommandMap().getKnownCommands().remove("fand:" + name);
++        MinecraftServer.getServer().server.syncCommands();
++    }
++}
+diff --git a/src/main/java/com/fandmc/fand/commands/TicksPerSecondCommand.java b/src/main/java/com/fandmc/fand/commands/TicksPerSecondCommand.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..f8e68c36673560499c98e6abfb7ac97c3562da85
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/commands/TicksPerSecondCommand.java
+@@ -0,0 +1,84 @@
++package com.fandmc.fand.commands;
++
++import org.bukkit.command.Command;
++import org.bukkit.command.CommandSender;
++import net.kyori.adventure.text.Component;
++import net.kyori.adventure.text.TextComponent;
++import net.kyori.adventure.text.format.NamedTextColor;
++import net.kyori.adventure.text.format.TextColor;
++
++public class TicksPerSecondCommand extends Command {
++
++    private boolean hasShownMemoryWarning = false;
++    private static final String BlueColor = "#0084D0";  // Fand - Custom blue color
++
++    public TicksPerSecondCommand(String name) {
++        super(name);
++        this.description = "Gets the current ticks per second for the server";
++        this.usageMessage = "/tps";
++        this.setPermission("bukkit.fand.command.tps");
++    }
++
++    // Paper start - Memory warning message
++    private static final Component WARN_MSG = Component.text()
++            .append(Component.text("Warning: ", NamedTextColor.GOLD)) // Fand - change color
++            .append(Component.text("Memory usage on modern garbage collectors is not a stable value and it is perfectly normal to see it reach max. Please do not pay it much attention.", TextColor.fromHexString(BlueColor)))// Fand - change color
++            .build();
++    // Paper end
++
++    @Override
++    public boolean execute(@org.jetbrains.annotations.NotNull CommandSender sender, @org.jetbrains.annotations.NotNull String currentAlias, String[] args) {
++        if (!this.testPermission(sender)) {
++            return true;
++        }
++
++        // Paper start - Further improve tick handling
++        double[] tps = org.bukkit.Bukkit.getTPS();
++        Component[] tpsAvg = new Component[tps.length];
++
++        // Fand start - Format the TPS numbers
++        for (int i = 0; i < tps.length; i++) {
++            tpsAvg[i] = format(tps[i]);
++        }
++        // Fand end - Format the TPS numbers
++
++        // Create message builder for TPS
++        TextComponent.Builder builder = Component.text();
++        builder.append(Component.text("TPS from last 1m, 5m, 15m: ", TextColor.fromHexString(BlueColor)));// Fand - change color
++        builder.append(Component.join(net.kyori.adventure.text.JoinConfiguration.commas(true), tpsAvg));
++        sender.sendMessage(builder.build());
++
++        // Memory usage info
++        if (args.length > 0 && args[0].equals("mem") && sender.hasPermission("bukkit.fand.command.tps.memory")) {
++            sender.sendMessage(Component.text()
++                    .append(Component.text("Current Memory Usage: ", TextColor.fromHexString(BlueColor)))// Fand - change color
++                    .append(Component.text(((Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / (1024 * 1024)) + "/" + (Runtime.getRuntime().totalMemory() / (1024 * 1024)) + " mb (Max: " + (Runtime.getRuntime().maxMemory() / (1024 * 1024)) + " mb)", NamedTextColor.GREEN))
++            );
++
++            if (!hasShownMemoryWarning) {
++                sender.sendMessage(WARN_MSG);
++                hasShownMemoryWarning = true;
++            }
++        }
++        // Paper end
++
++        return true;
++    }
++
++    private static Component format(double tps) {
++        TextColor color;
++        double roundedTps = Math.round(tps * 100.0) / 100.0;
++        double clampedTps = Math.min(roundedTps, 20.0);
++
++        if (clampedTps > 18.0) {
++            color = NamedTextColor.GREEN;
++        } else if (clampedTps > 16.0) {
++            color = NamedTextColor.GOLD;
++        } else {
++            color = NamedTextColor.RED;
++        }
++
++        String amount = clampedTps + (tps > 21.0 ? "*" : "");
++        return Component.text(amount, color);
++    }
++}
+diff --git a/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java b/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java
+index 01cf0a22f711ea9be00c5349ef0dc5c9ee661bc2..a1f5749bd304325c9caf0421ddd5f79f60469e77 100644
+--- a/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java
++++ b/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java
+@@ -30,7 +30,7 @@ public record ServerBuildInfoImpl(
+     private static final String ATTRIBUTE_GIT_BRANCH = "Git-Branch";
+     private static final String ATTRIBUTE_GIT_COMMIT = "Git-Commit";
+ 
+-    private static final String BRAND_PAPER_NAME = "Fand"; // Fand - Paper -> Leaves -> Fand
++    private static final String BRAND_PAPER_NAME = com.fandmc.fand.FandConfig.serverModName; // Fand - Paper -> Leaves -> Fand
+ 
+     private static final String BUILD_DEV = "DEV";
+ 
+diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+index 9c2c477d2d402675838520fe4c726fb8ea8a90af..e69ac911ffda7f3adeaae2ca7b7d7d22f1e86d91 100644
+--- a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -218,6 +218,7 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         this.setPlayerList(new DedicatedPlayerList(this, this.registries(), this.playerDataStorage));
+         org.spigotmc.SpigotConfig.init((java.io.File) this.options.valueOf("spigot-settings"));
+         org.spigotmc.SpigotConfig.registerCommands();
++        com.fandmc.fand.FandConfig.registerCommands();
+         // Spigot end
+         io.papermc.paper.util.ObfHelper.INSTANCE.getClass(); // Paper - load mappings for stacktrace deobf and etc.
+         // Paper start - initialize global and world-defaults configuration
+diff --git a/src/main/java/net/minecraft/server/gui/MinecraftServerGui.java b/src/main/java/net/minecraft/server/gui/MinecraftServerGui.java
+index 16c855759095406c806f4767c1cbdc09fea907ac..88a1b8e386785da427b45b38822e1e8eed864e84 100644
+--- a/src/main/java/net/minecraft/server/gui/MinecraftServerGui.java
++++ b/src/main/java/net/minecraft/server/gui/MinecraftServerGui.java
+@@ -118,7 +118,7 @@ public class MinecraftServerGui extends JComponent {
+ 
+     // Paper start - Add onboarding message for initial server start
+     private JComponent buildOnboardingPanel() {
+-        String onboardingLink = "https://docs.fandmc.cn/fand/guides/next-steps"; // Leaves - change
++        String onboardingLink = "https://docs.fandmc.cn/fand/guides/next-steps"; // Fand - change
+         JPanel jPanel = new JPanel();
+ 
+         javax.swing.JLabel jLabel = new javax.swing.JLabel("If you need help setting up your server you can visit:");
+diff --git a/src/main/java/org/bukkit/craftbukkit/Main.java b/src/main/java/org/bukkit/craftbukkit/Main.java
+index 6fbd344a4582908c80fb0f3b7ae58b923e8f8cc6..6fe03c9e568c40b3c141f1c02a7cf9411dc9534b 100644
+--- a/src/main/java/org/bukkit/craftbukkit/Main.java
++++ b/src/main/java/org/bukkit/craftbukkit/Main.java
+@@ -275,7 +275,7 @@ public class Main {
+                     if (buildDate.before(deadline.getTime())) {
+                         // Paper start - This is some stupid bullshit
+                         System.err.println("*** Warning, you've not updated in a while! ***");
+-                        System.err.println("*** Please download a new build as per instructions from https://fandmc.cn/downloads/fand ***"); //Paper // Leaves
++                        System.err.println("*** Please download a new build as per instructions from https://fandmc.cn/downloads/fand ***"); //Paper // Leaves // Fand
+                         //System.err.println("*** Server will start in 20 seconds ***");
+                         //Thread.sleep(TimeUnit.SECONDS.toMillis(20));
+                         // Paper end
