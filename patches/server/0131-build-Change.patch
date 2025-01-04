@@ -1,0 +1,1118 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: FandMC <winme2002@outlook.com>
+Date: Sun, 5 Jan 2025 00:02:50 +0800
+Subject: [PATCH] build Change
+
+
+diff --git a/build.gradle.kts b/build.gradle.kts
+index b07ccf91b3f6d967c5617dba54b6d38823039e6d..c6f114f1bbbae6824509a955f5b1cc1307f7bc57 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -25,7 +25,7 @@ abstract class MockitoAgentProvider : CommandLineArgumentProvider {
+ // Paper end - configure mockito agent that is needed in newer java versions
+ 
+ dependencies {
+-    implementation(project(":leaves-api")) // Leaves - build change
++    implementation(project(":fand-api")) // Leaves - build change
+     // Paper start
+     implementation("org.jline:jline-terminal-ffm:3.27.1") // use ffm on java 22+
+     implementation("org.jline:jline-terminal-jni:3.27.1") // fall back to jni on java 21
+@@ -114,14 +114,14 @@ tasks.jar {
+         val gitBranch = git("rev-parse", "--abbrev-ref", "HEAD").getText().trim() // Paper
+         attributes(
+             "Main-Class" to "org.bukkit.craftbukkit.Main",
+-            "Implementation-Title" to "Leaves", // Leaves
++            "Implementation-Title" to "Fand", // Fand
+             "Implementation-Version" to implementationVersion,
+             "Implementation-Vendor" to date, // Paper
+-            "Specification-Title" to "Leaves", // Leaves
++            "Specification-Title" to "Fand", // Fand
+             "Specification-Version" to project.version,
+-            "Specification-Vendor" to "Leaves Team", // Leaves
+-            "Brand-Id" to "leavesmc:leaves", // Leaves
+-            "Brand-Name" to "Leaves", // Leaves
++            "Specification-Vendor" to "Fand Team", // Fand
++            "Brand-Id" to "fandmc:fand", // Fand
++            "Brand-Name" to "Fand", // Fand
+             "Build-Number" to (build ?: ""),
+             "Build-Time" to Instant.now().toString(),
+             "Git-Branch" to gitBranch, // Paper
+diff --git a/src/main/java/com/destroystokyo/paper/Metrics.java b/src/main/java/com/destroystokyo/paper/Metrics.java
+index f6b362894bbd0f0f09f0f51a931529d708ca9b9e..d4c1cf7b0b9d64261dee7cb888eac9e7711a9272 100644
+--- a/src/main/java/com/destroystokyo/paper/Metrics.java
++++ b/src/main/java/com/destroystokyo/paper/Metrics.java
+@@ -593,8 +593,7 @@ public class Metrics {
+             boolean logFailedRequests = config.getBoolean("logFailedRequests", false);
+             // Only start Metrics, if it's enabled in the config
+             if (config.getBoolean("enabled", true)) {
+-                // Leaves start - we have our own bstats page
+-                Metrics metrics = new Metrics("Leaves", serverUUID, logFailedRequests, Bukkit.getLogger());
++                Metrics metrics = new Metrics("Fand", serverUUID, logFailedRequests, Bukkit.getLogger());
+ 
+                 metrics.addCustomChart(new Metrics.SimplePie("minecraft_version", () -> {
+                     String minecraftVersion = Bukkit.getVersion();
+@@ -602,11 +601,11 @@ public class Metrics {
+                     return minecraftVersion;
+                 }));
+ 
+-                metrics.addCustomChart(new Metrics.SimplePie("leaves_version", () -> {
++                metrics.addCustomChart(new Metrics.SimplePie("fand_version", () -> {
+                     String serverVersion = Bukkit.getVersion();
+                     if (!serverVersion.startsWith("null")) {
+-                        String gitHash = serverVersion.substring("git-Leaves-".length()).split("[-\\s]")[0].replaceAll("\"", "");
+-                        return "git-Leaves-" + Bukkit.getMinecraftVersion() + "-" + gitHash;
++                        String gitHash = serverVersion.substring("git-Fand-".length()).split("[-\\s]")[0].replaceAll("\"", "");
++                        return "git-Fand-" + Bukkit.getMinecraftVersion() + "-" + gitHash;
+                     }
+                     return "unknown";
+                 }));
+@@ -648,7 +647,6 @@ public class Metrics {
+ 
+                     return map;
+                 }));
+-                // Leaves end - we have our own bstats page
+             }
+         }
+     }
+diff --git a/src/main/java/com/fandmc/fand/FandBootstrap.java b/src/main/java/com/fandmc/fand/FandBootstrap.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..48ea420832df092388d8a05bda912f2f174255b4
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/FandBootstrap.java
+@@ -0,0 +1,19 @@
++package com.fandmc.fand;
++
++import com.fandmc.fand.config.FandConfigManager;
++
++public class FandBootstrap {
++    public static void boot() {
++        try {
++            // 初始化配置管理器
++            FandConfigManager.start();
++
++            // 日志信息：成功创建或加载配置文件
++            System.out.println("Fand configuration initialized successfully.");
++        } catch (java.io.IOException e) {
++            // 错误处理：配置文件创建或加载失败
++            System.err.println("Failed to initialize Fand configuration: " + e.getMessage());
++            e.printStackTrace();
++        }
++    }
++}
+diff --git a/src/main/java/com/fandmc/fand/config/Config.java b/src/main/java/com/fandmc/fand/config/Config.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..59072a1ba28026d77b285d6b16698eaf0609e53c
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/config/Config.java
+@@ -0,0 +1,5 @@
++package com.fandmc.fand.config;
++
++public class Config {
++    public static String serverModName = "Fand";
++}
+diff --git a/src/main/java/com/fandmc/fand/config/FandConfigManager.java b/src/main/java/com/fandmc/fand/config/FandConfigManager.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..e2cf088997dcfad8d04997502ec3f1a8cee6f3f0
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/config/FandConfigManager.java
+@@ -0,0 +1,101 @@
++package com.fandmc.fand.config;
++
++import org.yaml.snakeyaml.DumperOptions;
++import org.yaml.snakeyaml.Yaml;
++
++import java.io.File;
++import java.io.FileInputStream;
++import java.io.FileWriter;
++import java.io.IOException;
++import java.util.HashMap;
++import java.util.Map;
++
++public class FandConfigManager {
++
++    private static FandConfigManager instance;
++    private static final String DEFAULT_FILE_PATH = "fand.yml";
++    private static Map<String, Object> config;
++
++    private FandConfigManager() {
++        config = new HashMap<>();
++    }
++
++    public static synchronized void start() throws IOException {
++        if (instance == null) {
++            instance = new FandConfigManager();
++            instance.load(DEFAULT_FILE_PATH);
++        }
++    }
++
++    public static FandConfigManager getInstance() {
++        if (instance == null) {
++            throw new IllegalStateException("FandConfigManager has not been started. Call start() first.");
++        }
++        return instance;
++    }
++
++    private void load(String filePath) throws IOException {
++        Yaml yaml = new Yaml();
++        File configFile = new File(filePath);
++        if (configFile.exists()) {
++            try (FileInputStream inputStream = new FileInputStream(filePath)) {
++                this.config = yaml.load(inputStream);
++                if (this.config == null) {
++                    this.config = new HashMap<>();
++                }
++            }
++        } else {
++            this.config = createDefaultConfig();
++            save(filePath);
++        }
++    }
++
++    public void save() throws IOException {
++        save(DEFAULT_FILE_PATH);
++    }
++
++    private void save(String filePath) throws IOException {
++        DumperOptions options = new DumperOptions();
++        options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
++        options.setPrettyFlow(true);
++
++        Yaml yaml = new Yaml(options);
++        try (FileWriter writer = new FileWriter(filePath)) {
++            yaml.dump(this.config, writer);
++        }
++    }
++
++    private Map<String, Object> createDefaultConfig() {
++        Map<String, Object> defaultConfig = new HashMap<>();
++
++        defaultConfig.put("max_threads", 4);
++        defaultConfig.put("chunk_per_thread", 256);
++        defaultConfig.put("multi_threaded", true);
++
++        return defaultConfig;
++    }
++
++    public static int getMaxThreads() {
++        return (int) config.getOrDefault("max_threads", 4);
++    }
++
++    public void setMaxThreads(int maxThreads) {
++        config.put("max_threads", maxThreads);
++    }
++
++    public int getChunkPerThread() {
++        return (int) config.getOrDefault("chunk_per_thread", 256);
++    }
++
++    public void setChunkPerThread(int chunkPerThread) {
++        config.put("chunk_per_thread", chunkPerThread);
++    }
++
++    public boolean isMultiThreaded() {
++        return (boolean) config.getOrDefault("multi_threaded", true);
++    }
++
++    public void setMultiThreaded(boolean multiThreaded) {
++        config.put("multi_threaded", multiThreaded);
++    }
++}
+diff --git a/src/main/java/com/fandmc/fand/logging/FandChunkLogger.java b/src/main/java/com/fandmc/fand/logging/FandChunkLogger.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..f70132445608210b33fc1ecfb53ee8986e7c31d2
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/logging/FandChunkLogger.java
+@@ -0,0 +1,48 @@
++package com.fandmc.fand.logging;
++
++import java.time.LocalDateTime;
++
++public class FandChunkLogger {
++
++    public static void logChunkLoadRequest(int x, int z, boolean generate) {
++        System.out.printf(
++                "[%s] Requested load for chunk (%d, %d) with generate = %s%n",
++                LocalDateTime.now(), x, z, generate
++        );
++    }
++
++    public static void logChunkLoadedSuccessfully(int x, int z) {
++        System.out.printf(
++                "[%s] Successfully loaded chunk (%d, %d)%n",
++                LocalDateTime.now(), x, z
++        );
++    }
++
++    public static void logChunkLoadFailed(int x, int z) {
++        System.err.printf(
++                "[%s] Failed to load chunk (%d, %d)%n",
++                LocalDateTime.now(), x, z
++        );
++    }
++
++    public static void logChunkUnloadRequest(int x, int z) {
++        System.out.printf(
++                "[%s] Requested unload for chunk (%d, %d)%n",
++                LocalDateTime.now(), x, z
++        );
++    }
++
++    public static void logChunkUnloadedSuccessfully(int x, int z) {
++        System.out.printf(
++                "[%s] Successfully unloaded chunk (%d, %d)%n",
++                LocalDateTime.now(), x, z
++        );
++    }
++
++    public static void logChunkUnloadFailed(int x, int z) {
++        System.err.printf(
++                "[%s] Failed to unload chunk (%d, %d)%n",
++                LocalDateTime.now(), x, z
++        );
++    }
++}
+diff --git a/src/main/java/com/fandmc/fand/region/FandHooks.java b/src/main/java/com/fandmc/fand/region/FandHooks.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..5afde69fc6ae666cb2da85efbb21256af399e529
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/region/FandHooks.java
+@@ -0,0 +1,16 @@
++package com.fandmc.fand.region;
++
++import org.leavesmc.leaves.region.LeavesHooks;
++
++public final class FandHooks extends LeavesHooks {
++    @Override
++    public String getBrand() {
++        return "Fand";
++    }
++
++    @Override
++    public void onChunkWatch(net.minecraft.server.level.ServerLevel world, net.minecraft.world.level.chunk.LevelChunk chunk, net.minecraft.server.level.ServerPlayer player) {
++        super.onChunkWatch(world, chunk, player);
++        org.leavesmc.leaves.protocol.servux.ServuxStructuresProtocol.onStartedWatchingChunk(player, chunk); // servux
++    }
++}
+diff --git a/src/main/java/com/fandmc/fand/server/world/chunk/ChunkPos.java b/src/main/java/com/fandmc/fand/server/world/chunk/ChunkPos.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..5846fa30ff0f58b92e7e0e3640ab4954408f5a01
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/server/world/chunk/ChunkPos.java
+@@ -0,0 +1,58 @@
++package com.fandmc.fand.server.world.chunk;
++
++public class ChunkPos {
++
++    private final int x;
++    private final int z;
++
++    public ChunkPos(int x, int z) {
++        this.x = x;
++        this.z = z;
++    }
++
++    public int getX() {
++        return x;
++    }
++
++    public int getZ() {
++        return z;
++    }
++
++    /**
++     * Converts this custom ChunkPos to Minecraft's native ChunkPos.
++     */
++    public net.minecraft.world.level.ChunkPos toMinecraftChunkPos() {
++        return new net.minecraft.world.level.ChunkPos(x, z);
++    }
++
++    /**
++     * Calculates the thread ID based on the chunk's coordinates and total thread count.
++     *
++     * @param threadCount Total number of threads available.
++     * @return The calculated thread ID for this chunk.
++     */
++    public int calculateThreadId(int threadCount) {
++        if (threadCount <= 0) {
++            throw new IllegalArgumentException("Thread count must be greater than 0");
++        }
++        return Math.floorMod(x + z, threadCount); // Ensures non-negative result
++    }
++
++    @Override
++    public int hashCode() {
++        return 31 * x + z;
++    }
++
++    @Override
++    public boolean equals(Object obj) {
++        if (this == obj) return true;
++        if (obj == null || getClass() != obj.getClass()) return false;
++        ChunkPos chunkPos = (ChunkPos) obj;
++        return x == chunkPos.x && z == chunkPos.z;
++    }
++
++    @Override
++    public String toString() {
++        return "ChunkPos{" + "x=" + x + ", z=" + z + '}';
++    }
++}
+diff --git a/src/main/java/com/fandmc/fand/server/world/chunk/generation/ChunkGenerationManager.java b/src/main/java/com/fandmc/fand/server/world/chunk/generation/ChunkGenerationManager.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..142dfe53401c6aa50e7f7a5ede5bb12a50adb77a
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/server/world/chunk/generation/ChunkGenerationManager.java
+@@ -0,0 +1,95 @@
++package com.fandmc.fand.server.world.chunk.generation;
++
++import net.minecraft.server.level.WorldGenRegion;
++import net.minecraft.world.level.StructureManager;
++import net.minecraft.world.level.chunk.ChunkAccess;
++import net.minecraft.world.level.levelgen.RandomState;
++import org.bukkit.craftbukkit.generator.CustomChunkGenerator;
++
++import java.util.concurrent.*;
++
++import com.fandmc.fand.config.FandConfigManager;
++
++public class ChunkGenerationManager {
++
++    private static final ExecutorService THREAD_POOL = Executors.newFixedThreadPool(FandConfigManager.getMaxThreads());
++
++    public static void generateSurface(
++            WorldGenRegion region,
++            StructureManager structures,
++            RandomState noiseConfig,
++            ChunkAccess chunk,
++            CustomChunkGenerator generator
++    ) {
++        THREAD_POOL.submit(() -> {
++            try {
++
++                generator.getDelegate().buildSurface(region, structures, noiseConfig, chunk);
++
++                applyCustomSurface(region, chunk, generator);
++            } catch (Exception e) {
++                System.err.printf(
++                        "Error during surface generation for chunk (%d, %d): %s%n",
++                        chunk.getPos().x, chunk.getPos().z, e.getMessage()
++                );
++            }
++        });
++    }
++
++    private static void applyCustomSurface(
++            WorldGenRegion region,
++            ChunkAccess chunk,
++            CustomChunkGenerator generator
++    ) {
++        int x = chunk.getPos().x;
++        int z = chunk.getPos().z;
++
++        int minHeight = chunk.getMinY();
++        int maxHeight = chunk.getHeight();
++
++        System.out.printf(
++                "Custom surface generation for chunk (%d, %d) from height %d to %d%n",
++                x, z, minHeight, maxHeight
++        );
++
++        for (int y = minHeight; y < maxHeight; y++) {
++            chunk.setBlockState(
++                    new net.minecraft.core.BlockPos(x << 4, y, z << 4),
++                    net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(),
++                    false
++            );
++        }
++    }
++
++    public static CompletableFuture<ChunkAccess> generateChunkNoise(
++            ChunkAccess chunk,
++            net.minecraft.world.level.chunk.ChunkGenerator delegate
++    ) {
++        return CompletableFuture.supplyAsync(() -> {
++            try {
++
++                CompletableFuture<ChunkAccess> future = delegate.fillFromNoise(null, null, null, chunk);
++
++                future.thenAccept(ChunkGenerationManager::applyCustomNoise);
++
++                return chunk;
++            } catch (Exception e) {
++                e.printStackTrace();
++                return chunk;
++            }
++        }, THREAD_POOL);
++    }
++
++    private static void applyCustomNoise(ChunkAccess chunk) {
++        System.out.printf(
++                "Applying custom noise generation for chunk (%d, %d)%n",
++                chunk.getPos().x, chunk.getPos().z
++        );
++
++    }
++
++    public static void shutdown() {
++        THREAD_POOL.shutdown();
++        System.out.println("Chunk generation thread pool shut down.");
++    }
++}
+diff --git a/src/main/java/com/fandmc/fand/server/world/chunk/thread/ChunkThreadManager.java b/src/main/java/com/fandmc/fand/server/world/chunk/thread/ChunkThreadManager.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..f03fd50e86254f84698969da0a32e4e5fbeab4ac
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/server/world/chunk/thread/ChunkThreadManager.java
+@@ -0,0 +1,59 @@
++package com.fandmc.fand.server.world.chunk.thread;
++
++import com.fandmc.fand.server.world.chunk.ChunkPos;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++
++import java.util.concurrent.*;
++
++public class ChunkThreadManager {
++
++    private static final Logger LOGGER = LoggerFactory.getLogger(ChunkThreadManager.class);
++
++    private static final int THREAD_COUNT = 4; // Default thread pool size
++    private static final ExecutorService[] THREADS = new ExecutorService[THREAD_COUNT];
++
++    static {
++        for (int i = 0; i < THREAD_COUNT; i++) {
++            THREADS[i] = Executors.newSingleThreadExecutor();
++        }
++    }
++
++    public static boolean executeForChunk(ChunkPos chunkPos, ChunkTask task) {
++        int threadId = chunkPos.calculateThreadId(THREAD_COUNT);
++        ExecutorService executor = THREADS[threadId];
++
++        CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(task::execute, executor);
++
++        try {
++            return future.get();
++        } catch (InterruptedException e) {
++            Thread.currentThread().interrupt();
++            LOGGER.error("Task interrupted for chunk {}: {}", chunkPos, e.getMessage());
++        } catch (ExecutionException e) {
++            LOGGER.error("Task execution failed for chunk {}: {}", chunkPos, e.getCause());
++        }
++
++        return false;
++    }
++    public static void terminateTasksForChunk(ChunkPos chunkPos) {
++        int threadId = chunkPos.calculateThreadId(THREAD_COUNT);
++        ExecutorService executor = THREADS[threadId];
++
++        executor.submit(() -> {
++            LOGGER.info("Terminating tasks for chunk: {}", chunkPos);
++            // Add logic to terminate running tasks related to the chunk
++        });
++    }
++
++    public static void shutdown() {
++        for (ExecutorService executor : THREADS) {
++            executor.shutdown();
++        }
++    }
++
++    @FunctionalInterface
++    public interface ChunkTask {
++        boolean execute();
++    }
++}
+diff --git a/src/main/java/com/fandmc/fand/util/FandVersionFetcher.java b/src/main/java/com/fandmc/fand/util/FandVersionFetcher.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..86ab711a9e1f58b04c3c9ddac6974fc5e0046e86
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/util/FandVersionFetcher.java
+@@ -0,0 +1,73 @@
++package com.fandmc.fand.util;
++
++import com.google.common.base.Charsets;
++import com.google.common.io.Resources;
++import com.google.gson.Gson;
++import com.google.gson.JsonArray;
++import com.google.gson.JsonObject;
++import com.mojang.logging.LogUtils;
++import io.papermc.paper.ServerBuildInfo;
++import net.kyori.adventure.text.Component;
++import net.kyori.adventure.text.event.ClickEvent;
++import net.kyori.adventure.text.format.NamedTextColor;
++import org.jetbrains.annotations.NotNull;
++import org.leavesmc.leaves.util.LeavesVersionFetcher;
++import org.slf4j.Logger;
++
++import java.io.BufferedReader;
++import java.io.IOException;
++import java.net.URI;
++import java.util.OptionalInt;
++import java.util.stream.StreamSupport;
++
++public class FandVersionFetcher extends LeavesVersionFetcher {
++
++    private static final Logger LOGGER = LogUtils.getClassLogger();
++    private static final String DOWNLOAD_PAGE = "https://fandmc.cn/downloads/fand";
++    private static final String API_URL = "https://api.fandmc.cn/v2/projects/fand/versions/";
++
++    @NotNull
++    @Override
++    public Component getVersionMessage(@NotNull String serverVersion) {
++        final ServerBuildInfo build = ServerBuildInfo.buildInfo();
++        int distance = fetchVersionDistance(build);
++
++        if (distance < 0) {
++            return Component.text("You are running the latest version", NamedTextColor.GREEN);
++        }
++        return Component.text("You are " + distance + " version(s) behind", NamedTextColor.YELLOW)
++                .append(Component.newline())
++                .append(Component.text("Download the new version at: ")
++                        .append(Component.text(DOWNLOAD_PAGE, NamedTextColor.GOLD)
++                                .hoverEvent(Component.text("Click to open", NamedTextColor.WHITE))
++                                .clickEvent(ClickEvent.openUrl(DOWNLOAD_PAGE))));
++    }
++
++    private int fetchVersionDistance(ServerBuildInfo build) {
++        OptionalInt buildNumber = build.buildNumber();
++        if (buildNumber.isEmpty()) {
++            return -1;
++        }
++
++        try (BufferedReader reader = Resources.asCharSource(
++                URI.create(API_URL + build.minecraftVersionId()).toURL(),
++                Charsets.UTF_8).openBufferedStream()) {
++
++            JsonObject json = new Gson().fromJson(reader, JsonObject.class);
++            JsonArray builds = json.getAsJsonArray("builds");
++            int latest = StreamSupport.stream(builds.spliterator(), false)
++                    .mapToInt(com.google.gson.JsonElement::getAsInt)
++                    .max()
++                    .orElse(-1);
++
++            if (latest < 0) {
++                return -1;
++            }
++            return latest - buildNumber.getAsInt();
++
++        } catch (IOException e) {
++            LOGGER.error("Error while fetching version information", e);
++            return -1;
++        }
++    }
++}
+diff --git a/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java b/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java
+index c060857cb0551fff8f5033553b887f3a6b8f935a..40ad1624562d0204db90ede32bc283f4fd41eaa6 100644
+--- a/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java
++++ b/src/main/java/io/papermc/paper/ServerBuildInfoImpl.java
+@@ -30,7 +30,7 @@ public record ServerBuildInfoImpl(
+     private static final String ATTRIBUTE_GIT_BRANCH = "Git-Branch";
+     private static final String ATTRIBUTE_GIT_COMMIT = "Git-Commit";
+ 
+-    private static final String BRAND_PAPER_NAME = "Leaves"; // Leaves - Paper -> Leaves
++    private static final String BRAND_PAPER_NAME = "Fand"; // Fand - Paper -> Leaves -> Fand
+ 
+     private static final String BUILD_DEV = "DEV";
+ 
+diff --git a/src/main/java/net/minecraft/Util.java b/src/main/java/net/minecraft/Util.java
+index 1360aa8202542d3d0f32247f1123575fc2c38ff1..b779227662d41dc57822377f2e708d87182dbb1d 100644
+--- a/src/main/java/net/minecraft/Util.java
++++ b/src/main/java/net/minecraft/Util.java
+@@ -213,7 +213,7 @@ public class Util {
+         return new TracingExecutor(executorService);
+     }
+ 
+-    private static int getMaxThreads() {
++    public static int getMaxThreads() {
+         String string = System.getProperty("max.bg.threads");
+         if (string != null) {
+             try {
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 1ca8771eb18c04d14c69b08554f0e697b29a0347..b50666d4edfc004f3550bd047354c8e2c3fa6cb2 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -1268,7 +1268,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+                 LOGGER.info("*************************************************************************************");
+                 LOGGER.info("This is the first time you're starting this server.");
+                 LOGGER.info("It's recommended you read our 'Getting Started' documentation for guidance.");
+-                LOGGER.info("View this and more helpful information here: https://docs.leavesmc.org/leaves/guides/next-steps"); // Leaves - change
++                LOGGER.info("View this and more helpful information here: https://docs.fandmc.org/fand/guides/next-steps"); // Fand - change
+                 LOGGER.info("*************************************************************************************");
+             }
+             // Paper end - Add onboarding message for initial server start
+@@ -2026,7 +2026,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+ 
+     @DontObfuscate
+     public String getServerModName() {
+-        return org.leavesmc.leaves.LeavesConfig.mics.serverModName; // Leaves - Custom // Paper
++        return com.fandmc.fand.config.Config.serverModName; // Fand - Custom // Paper
+     }
+ 
+     public SystemReport fillSystemReport(SystemReport details) {
+diff --git a/src/main/java/net/minecraft/server/gui/MinecraftServerGui.java b/src/main/java/net/minecraft/server/gui/MinecraftServerGui.java
+index 3952428c02fe87477f4139f4fa98381500b7e076..88a1b8e386785da427b45b38822e1e8eed864e84 100644
+--- a/src/main/java/net/minecraft/server/gui/MinecraftServerGui.java
++++ b/src/main/java/net/minecraft/server/gui/MinecraftServerGui.java
+@@ -118,7 +118,7 @@ public class MinecraftServerGui extends JComponent {
+ 
+     // Paper start - Add onboarding message for initial server start
+     private JComponent buildOnboardingPanel() {
+-        String onboardingLink = "https://docs.leavesmc.org/leaves/guides/next-steps"; // Leaves - change
++        String onboardingLink = "https://docs.fandmc.cn/fand/guides/next-steps"; // Fand - change
+         JPanel jPanel = new JPanel();
+ 
+         javax.swing.JLabel jLabel = new javax.swing.JLabel("If you need help setting up your server you can visit:");
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index bfbb894f73251ec241451bee831ebf7973cb4293..443b3dba3e2b5db73de3576ced29d9d7b7213285 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -391,6 +391,7 @@ public abstract class Entity implements SyncedDataHolder, Nameable, EntityAccess
+     public boolean fixedPose = false; // Paper - Expand Pose API
+     private final int despawnTime; // Paper - entity despawn time limit
+     private CompoundTag leavesData = new CompoundTag(); // Leaves - Leaves ex data
++    private CompoundTag fandData = new CompoundTag(); // Fand - Fand ex data
+ 
+     public void setOrigin(@javax.annotation.Nonnull Location location) {
+         this.origin = location.toVector();
+@@ -2720,7 +2721,7 @@ public abstract class Entity implements SyncedDataHolder, Nameable, EntityAccess
+                 nbttagcompound.putBoolean("Paper.FreezeLock", true);
+             }
+             // Paper end
+-            nbttagcompound.put("Leaves.Data", leavesData); // Leaves - leaves ex data
++            nbttagcompound.put("Fand.Date", fandData); // Fand - ex data change
+             return nbttagcompound;
+         } catch (Throwable throwable) {
+             CrashReport crashreport = CrashReport.forThrowable(throwable, "Saving entity NBT");
+@@ -2869,11 +2870,11 @@ public abstract class Entity implements SyncedDataHolder, Nameable, EntityAccess
+                 freezeLocked = nbt.getBoolean("Paper.FreezeLock");
+             }
+             // Paper end
+-            // Leaves start - leaves ex data
+-            if (nbt.contains("Leaves.Data")) {
+-                leavesData = nbt.getCompound("Leaves.Data");
++            // Fand start - ex data change
++            if (nbt.contains("Fand.Date")) {
++                leavesData = nbt.getCompound("Fand.Date");
+             }
+-            // Leaves end - leaves ex data
++            // Fand end - ex data change
+ 
+         } catch (Throwable throwable) {
+             CrashReport crashreport = CrashReport.forThrowable(throwable, "Loading entity NBT");
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+index 469a019a4fe850a3a20a1232592e51b588387d6f..70ba3478978be7d21d6e51ca1f56049610e9b24a 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftWorld.java
+@@ -5,7 +5,6 @@ import com.google.common.base.Predicates;
+ import com.google.common.collect.ImmutableList;
+ import com.google.common.collect.ImmutableMap;
+ import com.mojang.datafixers.util.Pair;
+-import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
+ import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+ import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
+ import java.io.File;
+@@ -20,7 +19,6 @@ import java.util.Objects;
+ import java.util.Random;
+ import java.util.Set;
+ import java.util.UUID;
+-import java.util.concurrent.ExecutionException;
+ import java.util.function.Consumer;
+ import java.util.function.Predicate;
+ import java.util.stream.Collectors;
+@@ -76,7 +74,6 @@ import org.bukkit.Chunk;
+ import org.bukkit.ChunkSnapshot;
+ import org.bukkit.Difficulty;
+ import org.bukkit.Effect;
+-import org.bukkit.FeatureFlag;
+ import org.bukkit.FluidCollisionMode;
+ import org.bukkit.GameRule;
+ import org.bukkit.Instrument;
+@@ -129,7 +126,6 @@ import org.bukkit.entity.TippedArrow;
+ import org.bukkit.entity.Trident;
+ import org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason;
+ import org.bukkit.event.weather.LightningStrikeEvent;
+-import org.bukkit.event.world.SpawnChangeEvent;
+ import org.bukkit.event.world.TimeSkipEvent;
+ import org.bukkit.generator.BiomeProvider;
+ import org.bukkit.generator.BlockPopulator;
+@@ -459,21 +455,45 @@ public class CraftWorld extends CraftRegionAccessor implements World {
+     }
+ 
+     private boolean unloadChunk0(int x, int z, boolean save) {
+-        org.spigotmc.AsyncCatcher.catchOp("chunk unload"); // Spigot
++        org.spigotmc.AsyncCatcher.catchOp("chunk unload");
++
++        // Check if the chunk is already unloaded
+         if (!this.isChunkLoaded(x, z)) {
+             return true;
+         }
++
++        // Create a custom ChunkPos for logging and threading
++        com.fandmc.fand.server.world.chunk.ChunkPos chunkPos = new com.fandmc.fand.server.world.chunk.ChunkPos(x, z);
++
++        // Terminate all tasks related to this chunk
++        com.fandmc.fand.server.world.chunk.thread.ChunkThreadManager.terminateTasksForChunk(chunkPos);
++
++        // Retrieve the chunk
+         net.minecraft.world.level.chunk.LevelChunk chunk = this.world.getChunk(x, z);
+ 
++        // Mark the chunk as saved if necessary
+         if (!save) {
+-            chunk.tryMarkSaved(); // Use method call to account for persistentDataContainer
++            chunk.tryMarkSaved();
+         }
++
++        // Request the chunk to be unloaded
+         this.unloadChunkRequest(x, z);
+ 
++        // Purge and finalize unloading
+         this.world.getChunkSource().purgeUnload();
+-        return !this.isChunkLoaded(x, z);
++
++        // Log the success of the unloading process
++        boolean success = !this.isChunkLoaded(x, z);
++        if (success) {
++            com.fandmc.fand.logging.FandChunkLogger.logChunkUnloadedSuccessfully(x, z);
++        } else {
++            com.fandmc.fand.logging.FandChunkLogger.logChunkUnloadFailed(x, z);
++        }
++
++        return success;
+     }
+ 
++
+     @Override
+     public boolean regenerateChunk(int x, int z) {
+         org.spigotmc.AsyncCatcher.catchOp("chunk regenerate"); // Spigot
+@@ -563,22 +583,37 @@ public class CraftWorld extends CraftRegionAccessor implements World {
+ 
+     @Override
+     public boolean loadChunk(int x, int z, boolean generate) {
+-        org.spigotmc.AsyncCatcher.catchOp("chunk load"); // Spigot
+-        warnUnsafeChunk("loading a faraway chunk", x, z); // Paper
+-        ChunkAccess chunk = this.world.getChunkSource().getChunk(x, z, generate || isChunkGenerated(x, z) ? ChunkStatus.FULL : ChunkStatus.EMPTY, true); // Paper
+-
+-        // If generate = false, but the chunk already exists, we will get this back.
+-        if (chunk instanceof ImposterProtoChunk) {
+-            // We then cycle through again to get the full chunk immediately, rather than after the ticket addition
+-            chunk = this.world.getChunkSource().getChunk(x, z, ChunkStatus.FULL, true);
+-        }
+-
+-        if (chunk instanceof net.minecraft.world.level.chunk.LevelChunk) {
+-            this.world.getChunkSource().addRegionTicket(TicketType.PLUGIN, new ChunkPos(x, z), 1, Unit.INSTANCE);
+-            return true;
+-        }
+-
+-        return false;
++        org.spigotmc.AsyncCatcher.catchOp("chunk load");
++        com.fandmc.fand.logging.FandChunkLogger.logChunkLoadRequest(x, z, generate);
++        warnUnsafeChunk("loading a faraway chunk", x, z);
++
++        return com.fandmc.fand.server.world.chunk.thread.ChunkThreadManager.executeForChunk(
++                new com.fandmc.fand.server.world.chunk.ChunkPos(x, z), () -> {
++                    ChunkAccess chunk = this.world.getChunkSource().getChunk(
++                            x, z,
++                            generate || isChunkGenerated(x, z) ? ChunkStatus.FULL : ChunkStatus.EMPTY,
++                            true
++                    );
++
++                    if (chunk instanceof ImposterProtoChunk) {
++                        chunk = this.world.getChunkSource().getChunk(x, z, ChunkStatus.FULL, true);
++                    }
++
++                    if (chunk instanceof net.minecraft.world.level.chunk.LevelChunk) {
++                        this.world.getChunkSource().addRegionTicket(
++                                TicketType.PLUGIN,
++                                new com.fandmc.fand.server.world.chunk.ChunkPos(x, z).toMinecraftChunkPos(),
++                                1,
++                                Unit.INSTANCE
++                        );
++                        com.fandmc.fand.logging.FandChunkLogger.logChunkLoadedSuccessfully(x, z);
++                        return true;
++                    }
++
++                    com.fandmc.fand.logging.FandChunkLogger.logChunkLoadFailed(x, z);
++                    return false;
++                }
++        );
+     }
+ 
+     @Override
+diff --git a/src/main/java/org/bukkit/craftbukkit/Main.java b/src/main/java/org/bukkit/craftbukkit/Main.java
+index 8f1230fcfa4fc27b513a4eb1023f107c8c7dd818..cde6cc50b07e829825c5aa7a51bc9041a7c1ad61 100644
+--- a/src/main/java/org/bukkit/craftbukkit/Main.java
++++ b/src/main/java/org/bukkit/craftbukkit/Main.java
+@@ -275,7 +275,7 @@ public class Main {
+                     if (buildDate.before(deadline.getTime())) {
+                         // Paper start - This is some stupid bullshit
+                         System.err.println("*** Warning, you've not updated in a while! ***");
+-                        System.err.println("*** Please download a new build as per instructions from https://leavesmc.org/downloads/leaves ***"); //Paper // Leaves
++                        System.err.println("*** Please download a new build as per instructions from https://fandmc.cn/downloads/fand ***"); //Paper // Leaves
+                         //System.err.println("*** Server will start in 20 seconds ***");
+                         //Thread.sleep(TimeUnit.SECONDS.toMillis(20));
+                         // Paper end
+@@ -286,6 +286,7 @@ public class Main {
+                 System.setProperty("jdk.console", "java.base"); // Paper - revert default console provider back to java.base so we can have our own jline
+                 //System.out.println("Loading libraries, please wait...");
+                 //net.minecraft.server.Main.main(options);
++                com.fandmc.fand.FandBootstrap.boot(); // Fand
+                 io.papermc.paper.PaperBootstrap.boot(options);
+             } catch (Throwable t) {
+                 t.printStackTrace();
+diff --git a/src/main/java/org/bukkit/craftbukkit/generator/CustomChunkGenerator.java b/src/main/java/org/bukkit/craftbukkit/generator/CustomChunkGenerator.java
+index e34060c21755c61228ba91e468b7c92fc4c4cf0c..47dbdb26592c4b1b6532261c23ffc6ea8fc9d42d 100644
+--- a/src/main/java/org/bukkit/craftbukkit/generator/CustomChunkGenerator.java
++++ b/src/main/java/org/bukkit/craftbukkit/generator/CustomChunkGenerator.java
+@@ -48,6 +48,7 @@ public class CustomChunkGenerator extends InternalChunkGenerator {
+     private final Random random = new Random();
+     private boolean newApi;
+     private boolean implementBaseHeight = true;
++    // private static final java.util.concurrent.ExecutorService THREAD_POOL = java.util.concurrent.Executors.newFixedThreadPool(4); // Dedicated thread pool for chunk generation tasks
+ 
+     @Deprecated
+     private class CustomBiomeGrid implements BiomeGrid {
+@@ -127,99 +128,11 @@ public class CustomChunkGenerator extends InternalChunkGenerator {
+ 
+     @Override
+     public void buildSurface(WorldGenRegion region, StructureManager structures, RandomState noiseConfig, ChunkAccess chunk) {
+-        WorldgenRandom random = CustomChunkGenerator.getSeededRandom();
+-        int x = chunk.getPos().x;
+-        int z = chunk.getPos().z;
+-
+-        random.setSeed(Mth.getSeed(x, "should-surface".hashCode(), z) ^ region.getSeed());
+-        if (this.generator.shouldGenerateSurface(this.world.getWorld(), new RandomSourceWrapper.RandomWrapper(random), x, z)) {
+-            this.delegate.buildSurface(region, structures, noiseConfig, chunk);
+-        }
+-
+-        CraftChunkData chunkData = new CraftChunkData(this.world.getWorld(), chunk);
+-
+-        random.setSeed((long) x * 341873128712L + (long) z * 132897987541L);
+-        this.generator.generateSurface(this.world.getWorld(), new RandomSourceWrapper.RandomWrapper(random), x, z, chunkData);
+-
+-        if (this.generator.shouldGenerateBedrock()) {
+-            random = CustomChunkGenerator.getSeededRandom();
+-            random.setSeed((long) x * 341873128712L + (long) z * 132897987541L);
+-            // delegate.buildBedrock(ichunkaccess, random);
+-        }
+-
+-        random = CustomChunkGenerator.getSeededRandom();
+-        random.setSeed((long) x * 341873128712L + (long) z * 132897987541L);
+-        this.generator.generateBedrock(this.world.getWorld(), new RandomSourceWrapper.RandomWrapper(random), x, z, chunkData);
+-        chunkData.breakLink();
+-
+-        // return if new api is used
+-        if (this.newApi) {
+-            return;
+-        }
+-
+-        // old ChunkGenerator logic, for backwards compatibility
+-        // Call the bukkit ChunkGenerator before structure generation so correct biome information is available.
+-        this.random.setSeed((long) x * 341873128712L + (long) z * 132897987541L);
+-
+-        // Get default biome data for chunk
+-        CustomBiomeGrid biomegrid = new CustomBiomeGrid(chunk);
+-
+-        ChunkData data;
+-        try {
+-            if (this.generator.isParallelCapable()) {
+-                data = this.generator.generateChunkData(this.world.getWorld(), this.random, x, z, biomegrid);
+-            } else {
+-                synchronized (this) {
+-                    data = this.generator.generateChunkData(this.world.getWorld(), this.random, x, z, biomegrid);
+-                }
+-            }
+-        } catch (UnsupportedOperationException exception) {
+-            this.newApi = true;
+-            return;
+-        }
+-
+-        Preconditions.checkArgument(data instanceof OldCraftChunkData, "Plugins must use createChunkData(World) rather than implementing ChunkData: %s", data);
+-        OldCraftChunkData craftData = (OldCraftChunkData) data;
+-        LevelChunkSection[] sections = craftData.getRawChunkData();
++        // Delegate surface generation to ChunkGenerationManager
++        com.fandmc.fand.server.world.chunk.generation.ChunkGenerationManager.generateSurface(region, structures, noiseConfig, chunk, this);
++    }
+ 
+-        LevelChunkSection[] csect = chunk.getSections();
+-        int scnt = Math.min(csect.length, sections.length);
+ 
+-        // Loop through returned sections
+-        for (int sec = 0; sec < scnt; sec++) {
+-            if (sections[sec] == null) {
+-                continue;
+-            }
+-            LevelChunkSection section = sections[sec];
+-
+-            // SPIGOT-6843: Copy biomes over to new section.
+-            // Not the most performant way, but has a small footprint and developer should move to the new api anyway
+-            LevelChunkSection oldSection = csect[sec];
+-            for (int biomeX = 0; biomeX < 4; biomeX++) {
+-                for (int biomeY = 0; biomeY < 4; biomeY++) {
+-                    for (int biomeZ = 0; biomeZ < 4; biomeZ++) {
+-                        section.setBiome(biomeX, biomeY, biomeZ, oldSection.getNoiseBiome(biomeX, biomeY, biomeZ));
+-                    }
+-                }
+-            }
+-
+-            csect[sec] = section;
+-        }
+-
+-        if (craftData.getTiles() != null) {
+-            for (BlockPos pos : craftData.getTiles()) {
+-                int tx = pos.getX();
+-                int ty = pos.getY();
+-                int tz = pos.getZ();
+-                BlockState block = craftData.getTypeId(tx, ty, tz);
+-
+-                if (block.hasBlockEntity()) {
+-                    BlockEntity tile = ((EntityBlock) block.getBlock()).newBlockEntity(new BlockPos((x << 4) + tx, ty, (z << 4) + tz), block);
+-                    chunk.setBlockEntity(tile);
+-                }
+-            }
+-        }
+-    }
+ 
+     @Override
+     public void applyCarvers(WorldGenRegion chunkRegion, long seed, RandomState noiseConfig, BiomeManager biomeAccess, StructureManager structureAccessor, ChunkAccess chunk) {
+@@ -243,28 +156,11 @@ public class CustomChunkGenerator extends InternalChunkGenerator {
+ 
+     @Override
+     public CompletableFuture<ChunkAccess> fillFromNoise(Blender blender, RandomState noiseConfig, StructureManager structureAccessor, ChunkAccess chunk) {
+-        CompletableFuture<ChunkAccess> future = null;
+-        WorldgenRandom random = CustomChunkGenerator.getSeededRandom();
+-        int x = chunk.getPos().x;
+-        int z = chunk.getPos().z;
+-
+-        random.setSeed(Mth.getSeed(x, "should-noise".hashCode(), z) ^ this.world.getSeed());
+-        if (this.generator.shouldGenerateNoise(this.world.getWorld(), new RandomSourceWrapper.RandomWrapper(random), x, z)) {
+-            future = this.delegate.fillFromNoise(blender, noiseConfig, structureAccessor, chunk);
+-        }
+-
+-        java.util.function.Function<ChunkAccess, ChunkAccess> function = (ichunkaccess1) -> {
+-            CraftChunkData chunkData = new CraftChunkData(this.world.getWorld(), ichunkaccess1);
+-            random.setSeed((long) x * 341873128712L + (long) z * 132897987541L);
+-
+-            this.generator.generateNoise(this.world.getWorld(), new RandomSourceWrapper.RandomWrapper(random), x, z, chunkData);
+-            chunkData.breakLink();
+-            return ichunkaccess1;
+-        };
+-
+-        return future == null ? CompletableFuture.supplyAsync(() -> function.apply(chunk), Runnable::run) : future.thenApply(function); // Paper - rewrite chunk system
++        // Delegate noise generation to ChunkGenerationManager
++        return com.fandmc.fand.server.world.chunk.generation.ChunkGenerationManager.generateChunkNoise(chunk, this.delegate);
+     }
+ 
++
+     @Override
+     public int getBaseHeight(int x, int z, Heightmap.Types heightmap, LevelHeightAccessor world, RandomState noiseConfig) {
+         if (this.implementBaseHeight) {
+diff --git a/src/main/java/org/bukkit/craftbukkit/util/CraftMagicNumbers.java b/src/main/java/org/bukkit/craftbukkit/util/CraftMagicNumbers.java
+index d911b904b654557e6b75c1d458bf54cabcf133b3..97e3916c24637f0c80613439983483d223647f05 100644
+--- a/src/main/java/org/bukkit/craftbukkit/util/CraftMagicNumbers.java
++++ b/src/main/java/org/bukkit/craftbukkit/util/CraftMagicNumbers.java
+@@ -17,7 +17,7 @@ import java.util.HashMap;
+ import java.util.Locale;
+ import java.util.Map;
+ import java.util.logging.Level;
+-import java.util.logging.Logger;
++
+ import net.minecraft.SharedConstants;
+ import net.minecraft.advancements.AdvancementHolder;
+ import net.minecraft.commands.Commands;
+@@ -37,7 +37,6 @@ import net.minecraft.world.level.block.Block;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.storage.LevelResource;
+ import org.bukkit.Bukkit;
+-import org.bukkit.FeatureFlag;
+ import org.bukkit.Keyed;
+ import org.bukkit.Material;
+ import org.bukkit.NamespacedKey;
+@@ -505,7 +504,7 @@ public final class CraftMagicNumbers implements UnsafeValues {
+     // Paper start
+     @Override
+     public com.destroystokyo.paper.util.VersionFetcher getVersionFetcher() {
+-        return new org.leavesmc.leaves.util.LeavesVersionFetcher(); // Leaves - Leaves version fetcher
++        return new com.fandmc.fand.util.FandVersionFetcher(); // Fand - change
+     }
+ 
+     @Override
+diff --git a/src/main/java/org/bukkit/craftbukkit/util/Versioning.java b/src/main/java/org/bukkit/craftbukkit/util/Versioning.java
+index fdef98a7796d84c7b0ee61241859e10cc514534c..f464fd339d339dd9045a52bfdcdb940d24f0fac7 100644
+--- a/src/main/java/org/bukkit/craftbukkit/util/Versioning.java
++++ b/src/main/java/org/bukkit/craftbukkit/util/Versioning.java
+@@ -11,7 +11,7 @@ public final class Versioning {
+     public static String getBukkitVersion() {
+         String result = "Unknown-Version";
+ 
+-        InputStream stream = Bukkit.class.getClassLoader().getResourceAsStream("META-INF/maven/org.leavesmc.leaves/leaves-api/pom.properties"); // Leaves
++        InputStream stream = Bukkit.class.getClassLoader().getResourceAsStream("META-INF/maven/com.fandmc.fand/fand-api/pom.properties"); // Leaves
+         Properties properties = new Properties();
+ 
+         if (stream != null) {
+diff --git a/src/main/java/org/leavesmc/leaves/region/LeavesHooks.java b/src/main/java/org/leavesmc/leaves/region/LeavesHooks.java
+index 59fe70c95e157824e12d9ebbf02a5da8cd95a107..fd0cabdf7e3206530d97a4492ec40d2a39a5136f 100644
+--- a/src/main/java/org/leavesmc/leaves/region/LeavesHooks.java
++++ b/src/main/java/org/leavesmc/leaves/region/LeavesHooks.java
+@@ -5,7 +5,7 @@ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.level.chunk.LevelChunk;
+ 
+-public final class LeavesHooks extends PaperHooks {
++public class LeavesHooks extends PaperHooks { // Fand change - no final
+ 
+     @Override
+     public String getBrand() {
+diff --git a/src/main/java/org/spigotmc/WatchdogThread.java b/src/main/java/org/spigotmc/WatchdogThread.java
+index f2087df445acca525aac789a5234bdd851890f35..6ae70e12ed18913b1d6697de14653cd53f3ec315 100644
+--- a/src/main/java/org/spigotmc/WatchdogThread.java
++++ b/src/main/java/org/spigotmc/WatchdogThread.java
+@@ -155,14 +155,14 @@ public class WatchdogThread extends ca.spottedleaf.moonrise.common.util.TickThre
+                 if (isLongTimeout) {
+                 // Paper end
+                 log.log( Level.SEVERE, "------------------------------" );
+-                log.log( Level.SEVERE, "The server has stopped responding! This is (probably) not a Leaves bug." ); // Paper // Leaves
++                log.log( Level.SEVERE, "The server has stopped responding! This is (probably) not a Fand bug." ); // Paper // Leaves // Fand
+                 log.log( Level.SEVERE, "If you see a plugin in the Server thread dump below, then please report it to that author" );
+                 log.log( Level.SEVERE, "\t *Especially* if it looks like HTTP or MySQL operations are occurring" );
+                 log.log( Level.SEVERE, "If you see a world save or edit, then it means you did far more than your server can handle at once" );
+                 log.log( Level.SEVERE, "\t If this is the case, consider increasing timeout-time in spigot.yml but note that this will replace the crash with LARGE lag spikes" );
+-                log.log( Level.SEVERE, "If you are unsure or still think this is a Leaves bug, please report this to https://github.com/LeavesMC/Leaves/issues" ); // Leaves
++                log.log( Level.SEVERE, "If you are unsure or still think this is a Leaves bug, please report this to https://github.com/FandMC/Fand/issues" ); // Leaves // Fand
+                 log.log( Level.SEVERE, "Be sure to include ALL relevant console errors and Minecraft crash reports" );
+-                log.log( Level.SEVERE, "Leaves version: " + Bukkit.getServer().getVersion() ); // Leaves
++                log.log( Level.SEVERE, "Fand version: " + Bukkit.getServer().getVersion() ); // Leaves // Fand
+                 //
+                 if ( net.minecraft.world.level.Level.lastPhysicsProblem != null )
+                 {
+@@ -184,12 +184,12 @@ public class WatchdogThread extends ca.spottedleaf.moonrise.common.util.TickThre
+                 // Paper end
+                 } else
+                 {
+-                    log.log(Level.SEVERE, "--- DO NOT REPORT THIS TO LEAVES - THIS IS NOT A BUG OR A CRASH  - " + Bukkit.getServer().getVersion() + " ---"); // Leaves
++                    log.log(Level.SEVERE, "--- DO NOT REPORT THIS TO FAND - THIS IS NOT A BUG OR A CRASH  - " + Bukkit.getServer().getVersion() + " ---"); // Leaves // Fand
+                     log.log(Level.SEVERE, "The server has not responded for " + (currentTime - lastTick) / 1000 + " seconds! Creating thread dump");
+                 }
+                 // Paper end - Different message for short timeout
+                 log.log( Level.SEVERE, "------------------------------" );
+-                log.log( Level.SEVERE, "Server thread dump (Look for plugins here before reporting to Leaves!):" ); // Paper // Leaevs
++                log.log( Level.SEVERE, "Server thread dump (Look for plugins here before reporting to Fand!):" ); // Paper // Leaevs // Fand
+                 ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkTaskScheduler.dumpAllChunkLoadInfo(MinecraftServer.getServer(), isLongTimeout); // Paper - rewrite chunk system
+                 this.dumpTickingInfo(); // Paper - log detailed tick information
+                 WatchdogThread.dumpThread( ManagementFactory.getThreadMXBean().getThreadInfo( MinecraftServer.getServer().serverThread.getId(), Integer.MAX_VALUE ), log );
+@@ -205,7 +205,7 @@ public class WatchdogThread extends ca.spottedleaf.moonrise.common.util.TickThre
+                     WatchdogThread.dumpThread( thread, log );
+                 }
+                 } else {
+-                    log.log(Level.SEVERE, "--- DO NOT REPORT THIS TO LEAVES - THIS IS NOT A BUG OR A CRASH ---"); // Leaves
++                    log.log(Level.SEVERE, "--- DO NOT REPORT THIS TO FAND - THIS IS NOT A BUG OR A CRASH ---"); // Leaves // Fand
+                 }
+ 
+                 log.log( Level.SEVERE, "------------------------------" );
+diff --git a/src/main/resources/META-INF/services/ca.spottedleaf.moonrise.common.PlatformHooks b/src/main/resources/META-INF/services/ca.spottedleaf.moonrise.common.PlatformHooks
+index 86edd824ec42e550dd1419fd57d93a21fe2d648d..1b41f91a4d231cc3881ee453e7b2d9c46f85ec29 100644
+--- a/src/main/resources/META-INF/services/ca.spottedleaf.moonrise.common.PlatformHooks
++++ b/src/main/resources/META-INF/services/ca.spottedleaf.moonrise.common.PlatformHooks
+@@ -1 +1 @@
+-org.leavesmc.leaves.region.LeavesHooks
++com.fandmc.fand.region.FandHooks
