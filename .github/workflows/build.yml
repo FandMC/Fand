@@ -1,4 +1,4 @@
-name: Leaves CI
+name: Fand CI
 
 on:
   push:
@@ -26,24 +26,24 @@ jobs:
           cache-read-only: false
       - name: Setup Git Config
         run: |
-          git config --global user.email "ci@leavesmc.org"
-          git config --global user.name "LeavesMC CI"
+          git config --global user.email "ci@fandmc.cn"
+          git config --global user.name "FandMC CI"
       - name: Get Build Number
         run: bash scripts/GetBuildNumber.sh
       - name: Apply Patches
         run: ./gradlew applyPatches
-      - name: Create Leavesclip Jar
+      - name: Create Fandclip Jar
         run: ./gradlew createMojmapLeavesclipJar
         env:
           BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
       - name: Publish to Maven repo
-        run: ./gradlew :leaves-api:publish
+        run: ./gradlew :Fand-api:publish
         env:
-          LEAVES_USERNAME: ${{ secrets.NEW_REPO_USERNAME }}
-          LEAVES_PASSWORD: ${{ secrets.NEW_REPO_PASSWORD }}
+          FAND_USERNAME: ${{ secrets.NEW_REPO_USERNAME }}
+          FAND_PASSWORD: ${{ secrets.NEW_REPO_PASSWORD }}
       - name: Create Configuration
         continue-on-error: true
-        run: ./gradlew createLeavesConfig
+        run: ./gradlew createFandConfig
       - name: Push Configuration
         continue-on-error: true
         run: |
@@ -52,13 +52,13 @@ jobs:
           echo "${{ secrets.CONFIG_DEPLOY_KEY }}" > "$HOME/.ssh/deploy.key"
           chmod 400 "$HOME/.ssh/deploy.key"
           export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/deploy.key"
-          git clone git@github.com:LeavesMC/Configuration.git configuration -b Leaves
-          cp run/leaves.yml configuration/leaves.yml -f
+          git clone git@github.com:FandMC/Configuration.git configuration -b Fand
+          cp run/fand.yml configuration/fand.yml -f
           cd configuration
-          git add leaves.yml
-          git commit leaves.yml -m "$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          https://github.com/LeavesMC/Leaves/commit/$(cd .. && git rev-parse HEAD)"
-          git push origin HEAD:Leaves
+          git add fand.yml
+          git commit fand.yml -m "$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          https://github.com/FandMC/Fand/commit/$(cd .. && git rev-parse HEAD)"
+          git push origin HEAD:Fand
       - name: Get Release Info
         run: bash scripts/GetReleaseInfo.sh
         env:

@@ -1,6 +1,6 @@
-Leaves inherits its licensing from upstream projects.
+Fand inherits its licensing from upstream projects.
 
-As such, Leaves is licensed under the
+As such, Fands is licensed under the
 [GNU General Public License version 3](licenses/GPL.md); as it inherits it from Paper,
 who in turn inherits it from the original Spigot, Bukkit and Craftbukkit projects.
 
@@ -15,5 +15,5 @@ The authors listed below have chosen to release their code under that more permi
 should submit a pull request to this project to add their name.
 
 ```text
-LittleChest <hiya@littlew.top>
+20018 <fand.20018@outlook.com>
 ```

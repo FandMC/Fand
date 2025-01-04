@@ -1,7 +1,7 @@
-Contributing to Leaves
+Contributing to Fand
 ===========
 
-[English](https://github.com/LeavesMC/Leaves/blob/master/docs/CONTRIBUTING.md) | **中文**
+[English](https://github.com/FandMC/Fand/blob/master/docs/CONTRIBUTING.md) | **中文**
 
 我们很开心您想为我们的项目做出贡献！一般来说，我们对PR的审核是十分宽松的；
 但是如果您可以遵守下列的规则，我们可以更快地完成审核。
@@ -28,10 +28,10 @@ Contributing to Leaves
 
 ## 了解补丁（Patches）
 
-Leaves 使用和 Paper 一样的补丁系统，并为了针对不同部分的修改分成了两个目录：
+Fand 使用和 Leaves 一样的补丁系统，并为了针对不同部分的修改分成了两个目录：
 
-- `leaves-api` - 对 `Paper-API` / `Spigot-API` / `Bukkit` 进行的修改。
-- `leaves-server` - 对 `Paper`/ `Spigot` / `CraftBukkit` 进行的修改。
+- `fand-api` - 对 `Leaves-API` / `Paper-API` / `Spigot-API` / `Bukkit` 进行的修改。
+- `fand-server` - 对 `Leaves`/ `Paper`/ `Spigot` / `CraftBukkit` 进行的修改。
 
 补丁系统是基于 git 的，你可以在这里了解 git 的基本内容: <https://git-scm.com/docs/gittutorial>
 
@@ -39,19 +39,19 @@ Leaves 使用和 Paper 一样的补丁系统，并为了针对不同部分的修
 
 1. 将你的仓库 clone 到本地；
 2. 在你的 IDE 或 终端 内执行 Gradle 的 `applyPatches` 任务，如果是在终端内，你可以执行 `./gradlew applyPatches`；
-3. 进入 `leaves-api` 或 `leaves-server` 文件夹进行修改。
+3. 进入 `fand-api` 或 `fand-server` 文件夹进行修改。
 
-By the way，`leaves-api` 和 `leaves-server` 并不是正常的 git 仓库。
+By the way，`fand-api` 和 `fand-server` 并不是正常的 git 仓库。
 
 - 在应用补丁前，基点将会指向未被更改的源码
 - 在基点后的每一个提交都是一个补丁
-- 只有在 Paper 最后一个提交后的提交才会被视为 leaves 补丁
+- 只有在 Paper 最后一个提交后的提交才会被视为 fand 补丁
 
 ## 增加补丁
 
 按照以下步骤增加一个补丁是非常简单的：
 
-1. 对 `leaves-api` 或者 / 和 `leaves-server` 进行修改；
+1. 对 `fand-api` 或者 / 和 `fand-server` 进行修改；
 2. 使用 git 添加你的修改，比如 `git add .`；
 3. 使用 `git commit -m <提交信息>` 进行提交；
 4. 运行 Gradle 任务 `rebuildPatches` 将你的提交转化为一个补丁；
