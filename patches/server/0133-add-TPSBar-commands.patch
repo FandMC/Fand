@@ -1,0 +1,216 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: FandMC <winme2002@outlook.com>
+Date: Mon, 6 Jan 2025 02:17:11 +0800
+Subject: [PATCH] add TPSBar commands
+
+
+diff --git a/src/main/java/com/fandmc/fand/FandBootstrap.java b/src/main/java/com/fandmc/fand/FandBootstrap.java
+index 45713b15facbb8448336f88b998950c2868cca89..22f523266559e34f059e524f8afad86bedc4bc3f 100644
+--- a/src/main/java/com/fandmc/fand/FandBootstrap.java
++++ b/src/main/java/com/fandmc/fand/FandBootstrap.java
+@@ -1,11 +1,13 @@
+ package com.fandmc.fand;
+ 
+ import com.fandmc.fand.config.FandConfigManager;
++//import com.fandmc.fand.command.commands;
+ 
+ public class FandBootstrap {
+     public static void boot() {
+         try {
+             FandConfigManager.start();
++            //commands.init();
+         } catch (java.io.IOException e) {
+             System.err.println("Failed to initialize Fand configuration: " + e.getMessage());
+             e.printStackTrace();
+diff --git a/src/main/java/com/fandmc/fand/command/TPSBarCommand.java b/src/main/java/com/fandmc/fand/command/TPSBarCommand.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..8153a9162f7b7554d7bf6c93453e4cd41c8b2dfd
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/command/TPSBarCommand.java
+@@ -0,0 +1,36 @@
++package com.fandmc.fand.command;
++
++import com.mojang.brigadier.CommandDispatcher;
++import net.minecraft.commands.CommandSourceStack;
++import net.minecraft.commands.Commands;
++import net.minecraft.commands.arguments.EntityArgument;
++import net.minecraft.server.level.ServerPlayer;
++import com.fandmc.fand.command.task.TPSBarTask;
++
++import java.util.Collection;
++import java.util.Collections;
++
++public class TPSBarCommand {
++
++    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
++        dispatcher.register(Commands.literal("tpsbar")
++                .requires(source -> source.hasPermission(2))
++                .executes(context -> execute(context.getSource(), Collections.singleton(context.getSource().getPlayerOrException())))
++                .then(Commands.argument("targets", EntityArgument.players())
++                        .requires(source -> source.hasPermission(2))
++                        .executes(context -> execute(context.getSource(), EntityArgument.getPlayers(context, "targets")))));
++    }
++
++    private static int execute(CommandSourceStack source, Collection<ServerPlayer> targets) {
++        for (ServerPlayer player : targets) {
++            boolean toggled = TPSBarTask.getInstance().togglePlayer(player);
++
++            String status = toggled ? "enabled" : "disabled";
++            source.sendSuccess(() -> net.minecraft.network.chat.Component.literal(
++                    "TPS Bar " + status + " for " + player.getName().getString()), false);
++        }
++
++        TPSBarTask.getInstance().start();
++        return targets.size();
++    }
++}
+diff --git a/src/main/java/com/fandmc/fand/command/task/TPSBarTask.java b/src/main/java/com/fandmc/fand/command/task/TPSBarTask.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..33f3f015fb880b97b0c3628b79a8957d596502cc
+--- /dev/null
++++ b/src/main/java/com/fandmc/fand/command/task/TPSBarTask.java
+@@ -0,0 +1,117 @@
++package com.fandmc.fand.command.task;
++
++import net.minecraft.server.level.ServerPlayer;
++import org.bukkit.Bukkit;
++import org.bukkit.boss.BossBar;
++import org.bukkit.boss.BarColor;
++import org.bukkit.boss.BarStyle;
++
++import java.util.HashMap;
++import java.util.Map;
++import java.util.UUID;
++
++public class TPSBarTask implements Runnable {
++    private static TPSBarTask instance;
++    private final Map<UUID, BossBar> activeBars = new HashMap<>();
++    private boolean running = false;
++    private Thread taskThread;
++    private int tick = 0;
++    private double tps = 20.0;
++    private double mspt = 0.0;
++
++    private TPSBarTask() {
++    }
++
++    public static TPSBarTask getInstance() {
++        if (instance == null) {
++            instance = new TPSBarTask();
++        }
++        return instance;
++    }
++
++    public void start() {
++        if (running) return;
++
++        running = true;
++        taskThread = new Thread(this, "TPSBarTask-Thread");
++        taskThread.start();
++    }
++
++    public void stop() {
++        running = false;
++        if (taskThread != null) {
++            taskThread.interrupt();
++            taskThread = null;
++        }
++    }
++
++    @Override
++    public void run() {
++        while (running) {
++            try {
++                Thread.sleep(50);
++                if (++tick % 20 == 0) {
++                    tick = 0;
++                    updateData();
++                    updateBossBars();
++                }
++            } catch (InterruptedException e) {
++                Thread.currentThread().interrupt();
++                break;
++            }
++        }
++    }
++
++    private void updateData() {
++        this.tps = Math.min(Bukkit.getTPS()[0], 20.0);
++        this.mspt = Bukkit.getAverageTickTime();
++    }
++
++    private void updateBossBars() {
++        for (Map.Entry<UUID, BossBar> entry : activeBars.entrySet()) {
++            UUID playerUUID = entry.getKey();
++            BossBar bossBar = entry.getValue();
++
++            org.bukkit.entity.Player bukkitPlayer = Bukkit.getPlayer(playerUUID);
++            if (bukkitPlayer != null && bukkitPlayer.isOnline()) {
++                ServerPlayer player = ((org.bukkit.craftbukkit.entity.CraftPlayer) bukkitPlayer).getHandle();
++                int ping = player.connection.latency;
++
++                String title = String.format("TPS: %.2f | MSPT: %.2f ms | Ping: %d ms", tps, mspt, ping);
++                bossBar.setTitle(title);
++                bossBar.setProgress(tps / 20.0);
++                bossBar.setColor(getBossBarColor());
++            }
++        }
++    }
++
++    private BarColor getBossBarColor() {
++        if (tps >= 18.0 && mspt < 40.0) {
++            return BarColor.GREEN;
++        } else if (tps >= 15.0 && mspt < 50.0) {
++            return BarColor.YELLOW;
++        } else {
++            return BarColor.RED;
++        }
++    }
++
++    public boolean togglePlayer(ServerPlayer player) {
++        UUID playerId = player.getUUID();
++
++        if (activeBars.containsKey(playerId)) {
++            activeBars.get(playerId).removeAll();
++            activeBars.remove(playerId);
++            return false;
++        } else {
++            BossBar bossBar = Bukkit.createBossBar(
++                    "TPS: " + String.format("%.2f", tps),
++                    BarColor.GREEN,
++                    BarStyle.SOLID);
++
++            bossBar.setProgress(tps / 20.0);
++            bossBar.addPlayer(player.getBukkitEntity());
++            activeBars.put(playerId, bossBar);
++            return true;
++        }
++    }
++}
+diff --git a/src/main/java/net/minecraft/commands/Commands.java b/src/main/java/net/minecraft/commands/Commands.java
+index 64bf4444ffba25cb40743a32267aa790ad1738f9..e66cd10c2f270ce6e3bc91aa357fbdf64827bdfc 100644
+--- a/src/main/java/net/minecraft/commands/Commands.java
++++ b/src/main/java/net/minecraft/commands/Commands.java
+@@ -222,6 +222,9 @@ public class Commands {
+         TriggerCommand.register(this.dispatcher);
+         WeatherCommand.register(this.dispatcher);
+         WorldBorderCommand.register(this.dispatcher);
++
++        com.fandmc.fand.command.TPSBarCommand.register(this.dispatcher); // Fand
++
+         if (JvmProfiler.INSTANCE.isAvailable()) {
+             JfrCommand.register(this.dispatcher);
+         }
+diff --git a/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+index 93404b7e1aaf74d6acc7031116dc8f63fc70f964..583d5b92d2bb20cce4059c0afc3bd09e20c48e36 100644
+--- a/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+@@ -80,7 +80,7 @@ public abstract class ServerCommonPacketListenerImpl implements ServerCommonPack
+     private long keepAliveChallenge;
+     private long closedListenerTime;
+     private boolean closed = false;
+-    private int latency;
++    public int latency; // Fand no private
+     private volatile boolean suspendFlushingOnServerThread = false;
+     public final java.util.Map<java.util.UUID, net.kyori.adventure.resource.ResourcePackCallback> packCallbacks = new java.util.concurrent.ConcurrentHashMap<>(); // Paper - adventure resource pack callbacks
+     private static final long KEEPALIVE_LIMIT = Long.getLong("paper.playerconnection.keepalive", 30) * 1000; // Paper - provide property to set keepalive limit
