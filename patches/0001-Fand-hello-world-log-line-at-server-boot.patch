@@ -1,0 +1,15 @@
+From 7369c074f68260c7e8d2f98ddfe81f6c82a276a7
+Author: Fand <fand@local>
+Subject: Fand: hello world log line at server boot
+
+diff --git a/net/minecraft/server/Main.java b/net/minecraft/server/Main.java
+index a82071f..e578f4d 100644
+--- a/net/minecraft/server/Main.java
++++ b/net/minecraft/server/Main.java
+@@ -64,6 +64,7 @@
+     @SuppressForbidden(reason = "System.out needed before bootstrap")
+     public static void main(final String[] args) {
++        LogUtils.getLogger().info("[Fand] Hello from a Fand patch! Booting on top of vanilla.");
+         SharedConstants.tryDetectVersion();
+         OptionParser parser = new OptionParser();
+         OptionSpec<Void> nogui = parser.accepts("nogui");
