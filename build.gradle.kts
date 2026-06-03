@@ -38,34 +38,3 @@ subprojects {
         useJUnitPlatform()
     }
 }
-
-subprojects {
-    apply(plugin = "java-library")
-
-    extensions.configure<JavaPluginExtension> {
-        toolchain {
-            languageVersion.set(JavaLanguageVersion.of(25))
-        }
-        withSourcesJar()
-        withJavadocJar()
-    }
-
-    repositories {
-        mavenCentral()
-        maven("https://repo.papermc.io/repository/maven-public/")
-    }
-
-    tasks.withType<JavaCompile>().configureEach {
-        options.encoding = "UTF-8"
-        options.release.set(25)
-    }
-
-    tasks.withType<Javadoc>().configureEach {
-        options.encoding = "UTF-8"
-        (options as StandardJavadocDocletOptions).addStringOption("Xdoclint:none", "-quiet")
-    }
-
-    tasks.withType<Test>().configureEach {
-        useJUnitPlatform()
-    }
-}

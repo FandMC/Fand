@@ -26,6 +26,20 @@ paperweight {
     gitFilePatches.set(false)
 }
 
+val generateBuildInfo by tasks.registering(WriteProperties::class) {
+    destinationFile.set(layout.buildDirectory.file("generated/resources/fand-build.properties"))
+    property("version", project.version.toString())
+    property("minecraftVersion", providers.gradleProperty("minecraftVersion").get())
+}
+
+sourceSets.named("main") {
+    resources.srcDir(generateBuildInfo.map { it.destinationFile.get().asFile.parentFile })
+}
+
+tasks.named("processResources") {
+    dependsOn(generateBuildInfo)
+}
+
 val fatJar by tasks.registering(Jar::class) {
     dependsOn(project(":fand-api").tasks.named("classes"))
 
