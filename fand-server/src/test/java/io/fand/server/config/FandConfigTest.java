@@ -21,6 +21,9 @@ final class FandConfigTest {
 
         assertThat(config.identity.brand).isEqualTo("Fand");
         assertThat(config.plugins.directory).isEqualTo("plugins");
+        assertThat(config.plugins.continueOnLoadFailure).isFalse();
+        assertThat(config.plugins.continueOnEnableFailure).isFalse();
+        assertThat(config.plugins.logSummary).isTrue();
         assertThat(config.scheduler.asyncThreads).isZero();
         assertThat(Files.readString(path))
                 .contains("# Public-facing identity settings.")
@@ -28,6 +31,9 @@ final class FandConfigTest {
                 .contains("brand: Fand")
                 .contains("plugins:")
                 .contains("directory: plugins")
+                .contains("continueOnLoadFailure: false")
+                .contains("continueOnEnableFailure: false")
+                .contains("logSummary: true")
                 .contains("scheduler:")
                 .contains("asyncThreads: 0");
     }
@@ -41,6 +47,9 @@ final class FandConfigTest {
 
                 plugins:
                   directory: 'mods/plugins'
+                  continueOnLoadFailure: true
+                  continueOnEnableFailure: true
+                  logSummary: false
 
                 scheduler:
                   asyncThreads: 6
@@ -50,6 +59,9 @@ final class FandConfigTest {
 
         assertThat(config.identity.brand).isEqualTo("My Fand");
         assertThat(config.plugins.directory).isEqualTo("mods/plugins");
+        assertThat(config.plugins.continueOnLoadFailure).isTrue();
+        assertThat(config.plugins.continueOnEnableFailure).isTrue();
+        assertThat(config.plugins.logSummary).isFalse();
         assertThat(config.scheduler.asyncThreads).isEqualTo(6);
     }
 

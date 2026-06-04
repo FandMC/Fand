@@ -39,7 +39,18 @@ public final class FandServer implements Server, AutoCloseable {
         this.events = new EventDispatcher();
         this.scheduler = new TaskScheduler(config.scheduler.asyncThreads);
         var pluginDirectory = Path.of(config.plugins.directory);
-        this.plugins = new PluginRuntime(pluginDirectory, pluginDirectory, parentClassLoader, events, scheduler);
+        this.plugins = new PluginRuntime(
+                pluginDirectory,
+                pluginDirectory,
+                parentClassLoader,
+                events,
+                scheduler,
+                new PluginRuntime.Options(
+                        config.plugins.continueOnLoadFailure,
+                        config.plugins.continueOnEnableFailure,
+                        config.plugins.logSummary
+                )
+        );
     }
 
     public void start() {

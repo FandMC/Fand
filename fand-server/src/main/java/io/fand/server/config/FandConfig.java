@@ -27,6 +27,15 @@ public final class FandConfig {
 
         @ConfigComment("Directory scanned for plugin jars and plugin data folders.")
         public String directory = "plugins";
+
+        @ConfigComment("Continue boot if a plugin fails during discovery, construction, or onLoad.")
+        public boolean continueOnLoadFailure = false;
+
+        @ConfigComment("Continue boot if a plugin fails during onEnable.")
+        public boolean continueOnEnableFailure = false;
+
+        @ConfigComment("Log a summary after plugin load and enable phases.")
+        public boolean logSummary = true;
     }
 
     public static final class Scheduler {

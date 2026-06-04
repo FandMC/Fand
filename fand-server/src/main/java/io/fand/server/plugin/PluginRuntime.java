@@ -39,6 +39,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final ClassLoader parentClassLoader;
     private final EventBus eventBus;
     private final Scheduler scheduler;
+    private final Options options;
     private final LinkedHashMap<String, LoadedPlugin> loadedPlugins = new LinkedHashMap<>();
     private boolean loaded;
     private boolean enabled;
@@ -51,11 +52,23 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             EventBus eventBus,
             Scheduler scheduler
     ) {
+        this(pluginsDirectory, dataDirectoryRoot, parentClassLoader, eventBus, scheduler, Options.defaults());
+    }
+
+    public PluginRuntime(
+            Path pluginsDirectory,
+            Path dataDirectoryRoot,
+            ClassLoader parentClassLoader,
+            EventBus eventBus,
+            Scheduler scheduler,
+            Options options
+    ) {
         this.pluginsDirectory = pluginsDirectory;
         this.dataDirectoryRoot = dataDirectoryRoot;
         this.parentClassLoader = parentClassLoader;
         this.eventBus = eventBus;
         this.scheduler = scheduler;
+        this.options = options;
     }
 
     public void loadPlugins() {
@@ -68,7 +81,19 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             Files.createDirectories(dataDirectoryRoot);
             var artifacts = discoverArtifacts();
             var ordered = sortArtifacts(artifacts);
+            var skipped = 0;
             for (var artifact : ordered) {
+                var unavailableDependency = firstUnavailableDependency(artifact.descriptor.depends());
+                if (unavailableDependency != null) {
+                    if (!options.continueOnLoadFailure()) {
+                        close();
+                        throw new PluginLoadException("Plugin '" + artifact.descriptor.id() + "' depends on unavailable plugin '" + unavailableDependency + "'");
+                    }
+                    skipped++;
+                    LOGGER.warn("Skipping plugin {} because dependency {} is unavailable", artifact.descriptor.id(), unavailableDependency);
+                    continue;
+                }
+
                 var dependencies = dependencyClassLoaders(artifact.descriptor.depends());
                 var classLoader = new PluginClassLoader(toJarUrl(artifact.jarPath), parentClassLoader, dependencies);
                 var resources = new PluginResourceTracker();
@@ -87,10 +112,18 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 } catch (Throwable failure) {
                     context.close();
                     closeQuietly(classLoader, artifact.descriptor.id());
-                    throw failure;
+                    if (!options.continueOnLoadFailure()) {
+                        close();
+                        throw new PluginLoadException("Failed to load plugin '" + artifact.descriptor.id() + "'", failure);
+                    }
+                    skipped++;
+                    LOGGER.warn("Skipping plugin {} after load failure", artifact.descriptor.id(), failure);
                 }
             }
             loaded = true;
+            if (options.logSummary()) {
+                LOGGER.info("Plugin load summary: discovered={}, loaded={}, skipped={}", artifacts.size(), loadedPlugins.size(), skipped);
+            }
         } catch (IOException failure) {
             close();
             throw new PluginLoadException("Failed to scan plugins directory", failure);
@@ -112,18 +145,41 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             throw new IllegalStateException("Plugins are already enabled");
         }
         var enabledThisRun = new ArrayDeque<LoadedPlugin>();
+        var skipped = 0;
         try {
             for (var loadedPlugin : loadedPlugins.values()) {
-                loadedPlugin.plugin.onEnable(loadedPlugin.context);
-                loadedPlugin.enabled = true;
-                enabledThisRun.push(loadedPlugin);
+                var unavailableDependency = firstDisabledDependency(loadedPlugin.descriptor.depends());
+                if (unavailableDependency != null) {
+                    if (!options.continueOnEnableFailure()) {
+                        throw new PluginLoadException("Plugin '" + loadedPlugin.descriptor.id() + "' depends on disabled plugin '" + unavailableDependency + "'");
+                    }
+                    skipped++;
+                    LOGGER.warn("Skipping plugin {} because dependency {} is disabled", loadedPlugin.descriptor.id(), unavailableDependency);
+                    loadedPlugin.context.close();
+                    continue;
+                }
+                try {
+                    loadedPlugin.plugin.onEnable(loadedPlugin.context);
+                    loadedPlugin.enabled = true;
+                    enabledThisRun.push(loadedPlugin);
+                } catch (Throwable failure) {
+                    loadedPlugin.context.close();
+                    if (!options.continueOnEnableFailure()) {
+                        throw new PluginLoadException("Failed to enable plugin '" + loadedPlugin.descriptor.id() + "'", failure);
+                    }
+                    skipped++;
+                    LOGGER.warn("Skipping plugin {} after enable failure", loadedPlugin.descriptor.id(), failure);
+                }
             }
             enabled = true;
+            if (options.logSummary()) {
+                LOGGER.info("Plugin enable summary: loaded={}, enabled={}, skipped={}", loadedPlugins.size(), enabledThisRun.size(), skipped);
+            }
         } catch (Throwable failure) {
             while (!enabledThisRun.isEmpty()) {
                 disablePlugin(enabledThisRun.pop());
             }
-            throw new PluginLoadException("Failed to enable plugins", failure);
+            throw failure;
         }
     }
 
@@ -290,6 +346,25 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         return dependencies;
     }
 
+    private String firstUnavailableDependency(List<String> dependencyIds) {
+        for (var dependencyId : dependencyIds) {
+            if (!loadedPlugins.containsKey(dependencyId)) {
+                return dependencyId;
+            }
+        }
+        return null;
+    }
+
+    private String firstDisabledDependency(List<String> dependencyIds) {
+        for (var dependencyId : dependencyIds) {
+            var loadedPlugin = loadedPlugins.get(dependencyId);
+            if (loadedPlugin == null || !loadedPlugin.enabled) {
+                return dependencyId;
+            }
+        }
+        return null;
+    }
+
     private Plugin instantiatePlugin(PluginDescriptor descriptor, PluginClassLoader classLoader) {
         try {
             var type = classLoader.loadClass(descriptor.mainClass());
@@ -387,6 +462,16 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 throw new PluginLoadException("Plugin descriptor is missing '" + name + "'");
             }
             return value.trim();
+        }
+    }
+
+    public record Options(
+            boolean continueOnLoadFailure,
+            boolean continueOnEnableFailure,
+            boolean logSummary
+    ) {
+        public static Options defaults() {
+            return new Options(false, false, true);
         }
     }
 }

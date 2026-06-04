@@ -125,6 +125,99 @@ final class PluginRuntimeTest {
                 .hasMessageContaining("Duplicate plugin id 'dup'");
     }
 
+    @Test
+    void continuesAfterLoadFailureWhenConfigured() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("broken.jar"),
+                PluginRuntimeTestSupport.descriptorJson("broken", "testplugins.broken.BrokenPlugin", List.of()),
+                Map.of("testplugins/broken/BrokenPlugin.java", "package testplugins.broken; import io.fand.api.plugin.Plugin; public final class BrokenPlugin implements Plugin { public BrokenPlugin() { throw new RuntimeException(\"boom\"); } @Override public void onEnable(io.fand.api.plugin.PluginContext context) {} }") ,
+                List.of()
+        );
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("dependent.jar"),
+                PluginRuntimeTestSupport.descriptorJson("dependent", "testplugins.dependent.DependentPlugin", List.of("broken")),
+                Map.of("testplugins/dependent/DependentPlugin.java", pluginSource("testplugins.dependent", "DependentPlugin", null, null, null)),
+                List.of()
+        );
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("healthy.jar"),
+                PluginRuntimeTestSupport.descriptorJson("healthy", "testplugins.healthy.HealthyPlugin", List.of()),
+                Map.of("testplugins/healthy/HealthyPlugin.java", pluginSource("testplugins.healthy", "HealthyPlugin", null, null, null)),
+                List.of()
+        );
+
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new EventDispatcher(),
+                new TaskScheduler(),
+                new PluginRuntime.Options(true, false, false)
+        );
+        try {
+            manager.loadPlugins();
+
+            assertThat(manager.byId("broken")).isEmpty();
+            assertThat(manager.byId("dependent")).isEmpty();
+            assertThat(manager.byId("healthy")).isPresent();
+        } finally {
+            manager.close();
+        }
+    }
+
+    @Test
+    void continuesAfterEnableFailureWhenConfigured() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("base.jar"),
+                PluginRuntimeTestSupport.descriptorJson("base", "testplugins.base.BasePlugin", List.of()),
+                Map.of("testplugins/base/BasePlugin.java", "package testplugins.base; import io.fand.api.plugin.Plugin; import io.fand.api.plugin.PluginContext; public final class BasePlugin implements Plugin { @Override public void onEnable(PluginContext context) { throw new RuntimeException(\"enable\"); } }") ,
+                List.of()
+        );
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("dependent.jar"),
+                PluginRuntimeTestSupport.descriptorJson("dependent", "testplugins.dependent.DependentPlugin", List.of("base")),
+                Map.of("testplugins/dependent/DependentPlugin.java", pluginSource("testplugins.dependent", "DependentPlugin", null, null, null)),
+                List.of()
+        );
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("healthy.jar"),
+                PluginRuntimeTestSupport.descriptorJson("healthy", "testplugins.healthy.HealthyPlugin", List.of()),
+                Map.of("testplugins/healthy/HealthyPlugin.java", pluginSource("testplugins.healthy", "HealthyPlugin", null, null, null)),
+                List.of()
+        );
+
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new EventDispatcher(),
+                new TaskScheduler(),
+                new PluginRuntime.Options(false, true, false)
+        );
+        try {
+            manager.loadPlugins();
+            manager.enablePlugins();
+
+            assertThat(manager.isEnabled("base")).isFalse();
+            assertThat(manager.isEnabled("dependent")).isFalse();
+            assertThat(manager.isEnabled("healthy")).isTrue();
+        } finally {
+            manager.close();
+        }
+    }
+
     private static String pluginSource(String packageName, String className, String loadLine, String enableLine, String disableLine) {
         var lines = new java.util.LinkedHashMap<String, String>();
         if (loadLine != null) {
