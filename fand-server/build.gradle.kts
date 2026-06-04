@@ -24,6 +24,12 @@ dependencies {
 paperweight {
     minecraftVersion.set(providers.gradleProperty("mcVersion"))
     gitFilePatches.set(false)
+
+    paper {
+        sourcePatchDir.set(layout.projectDirectory.dir("patches/sources"))
+        resourcePatchDir.set(layout.projectDirectory.dir("patches/resources"))
+        featurePatchDir.set(layout.projectDirectory.dir("patches/features"))
+    }
 }
 
 val generateBuildInfo by tasks.registering(WriteProperties::class) {

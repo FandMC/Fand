@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 4 Jun 2026 17:56:17 +0800
+Subject: [PATCH] Attach Fand runtime to vanilla server loop
+
+
+diff --git a/net/minecraft/server/Main.java b/net/minecraft/server/Main.java
+index be7ddd48c71592e21bd793e04a0668ab891a7c78..637b34f411ce5ca1ca9f022b2816e4b2e4006419 100644
+--- a/net/minecraft/server/Main.java
++++ b/net/minecraft/server/Main.java
+@@ -213,6 +213,7 @@ public class Main {
+                         server.showGui();
+                     }
+ 
++                    io.fand.server.Main.runtime().attach(server);
+                     return server;
+                 }
+             );
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index f1e402f1c9d2b2704c8664b36c8161e0ce75d6b1..cffc9034357cd87e9833dbad27f668b5f09c2a43 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -1025,6 +1025,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         profiler.push("scheduledPacketProcessing");
+         this.packetProcessor.processQueuedPackets();
+         profiler.pop();
++        io.fand.server.Main.runtime().tickScheduler();
+         this.tickServer(sprinting ? () -> false : this::haveTime);
+         this.tickFrame.end();
+         profiler.pop();

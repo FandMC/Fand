@@ -15,7 +15,7 @@ functional; runtime integration with patched vanilla code is underway.
 | `fand-api`    | Public plugin API. Stable surface, no implementation details.        |
 | `fand-server` | Server runtime. Hosts the patched vanilla code via paperweight.      |
 | `fandclip`    | End-user launcher. Downloads vanilla bundler on first run.           |
-| `patches/`    | Ordered set of unified-diff patches applied on top of vanilla.       |
+| `fand-server/patches/` | Canonical paperweight patch set applied on top of vanilla. |
 
 ## Build pipeline
 
@@ -26,8 +26,8 @@ no remap stage needed. We use **paperweight-core** to manage the workflow.
 piston-meta → paperweight → vanilla-bundler.jar
             → unbundleServer → vanilla-server.jar
             → decompileServer → decompiled/ (via Mache patches)
-            → applyPatches → fand-server/src/minecraft/ (git-applied patches/)
-edit sources → rebuildPatches → patches/ (updated)
+            → applyPatches → fand-server/src/minecraft/ (git-applied from fand-server/patches/)
+edit sources → rebuildPatches → fand-server/patches/ (updated)
 ```
 
 Paperweight tasks are automatically available in the `:fand-server` subproject.

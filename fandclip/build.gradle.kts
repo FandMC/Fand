@@ -29,8 +29,7 @@ val embedServerJar by tasks.registering(Copy::class) {
 }
 
 sourceSets.named("main") {
-    resources.srcDir(generateClipManifest.map { it.destinationFile.get().asFile.parentFile })
-    resources.srcDir(embedServerJar.map { it.destinationDir })
+    resources.srcDir(layout.buildDirectory.dir("generated/resources"))
 }
 
 tasks.named("processResources") {
