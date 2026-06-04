@@ -5,9 +5,10 @@ import io.fand.api.Server;
 import io.fand.api.event.EventBus;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.scheduler.Scheduler;
-import io.fand.server.event.StandardEventBus;
-import io.fand.server.plugin.EmptyPluginManager;
-import io.fand.server.scheduler.StandardScheduler;
+import io.fand.server.event.EventDispatcher;
+import io.fand.server.plugin.PluginRuntime;
+import io.fand.server.scheduler.TaskScheduler;
+import java.nio.file.Path;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -20,9 +21,15 @@ public final class FandServer implements Server, AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FandServer.class);
 
-    private final StandardEventBus events = new StandardEventBus();
-    private final StandardScheduler scheduler = new StandardScheduler();
-    private final PluginManager plugins = new EmptyPluginManager();
+    private final EventDispatcher events = new EventDispatcher();
+    private final TaskScheduler scheduler = new TaskScheduler();
+    private final PluginRuntime plugins = new PluginRuntime(
+            Path.of("plugins"),
+            Path.of("plugins"),
+            Main.class.getClassLoader(),
+            events,
+            scheduler
+    );
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicReference<MinecraftServer> minecraftServer = new AtomicReference<>();
@@ -32,6 +39,8 @@ public final class FandServer implements Server, AutoCloseable {
             throw new IllegalStateException("Fand server is already started");
         }
         Fand.bind(this);
+        plugins.loadPlugins();
+        plugins.enablePlugins();
         LOGGER.info("Starting Fand {} for Minecraft {}", version(), minecraftVersion());
     }
 
@@ -104,6 +113,8 @@ public final class FandServer implements Server, AutoCloseable {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
+        plugins.disablePlugins();
+        plugins.close();
         scheduler.close();
         LOGGER.info("Fand runtime stopped");
     }

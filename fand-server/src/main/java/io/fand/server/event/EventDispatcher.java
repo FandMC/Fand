@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
-public final class StandardEventBus implements EventBus {
+public final class EventDispatcher implements EventBus {
 
     private static final int INACTIVE_COMPACTION_THRESHOLD = 256;
     private static final Registration<?>[] EMPTY_REGISTRATIONS = new Registration<?>[0];
@@ -259,7 +259,7 @@ public final class StandardEventBus implements EventBus {
 
     private static final class Registration<E extends Event> implements EventSubscription {
 
-        private final StandardEventBus owner;
+        private final EventDispatcher owner;
         private final ListenerBucket bucket;
         private final EventPriority priority;
         private final EventListener<E> listener;
@@ -267,7 +267,7 @@ public final class StandardEventBus implements EventBus {
         private final AtomicBoolean active = new AtomicBoolean(true);
 
         private Registration(
-                StandardEventBus owner,
+                EventDispatcher owner,
                 ListenerBucket bucket,
                 EventPriority priority,
                 EventListener<E> listener,

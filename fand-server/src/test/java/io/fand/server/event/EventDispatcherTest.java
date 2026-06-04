@@ -11,9 +11,9 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-final class StandardEventBusTest {
+final class EventDispatcherTest {
 
-    private final StandardEventBus bus = new StandardEventBus();
+    private final EventDispatcher bus = new EventDispatcher();
 
     @Test
     void dispatchesMatchingListenersByPriorityThenRegistrationOrder() {

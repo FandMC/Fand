@@ -15,14 +15,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-final class StandardSchedulerTest {
+final class TaskSchedulerTest {
 
     private final AtomicLong now = new AtomicLong();
-    private StandardScheduler scheduler;
+    private TaskScheduler scheduler;
 
     @BeforeEach
     void setUp() {
-        scheduler = new StandardScheduler(now::get, Executors.newSingleThreadScheduledExecutor());
+        scheduler = new TaskScheduler(now::get, Executors.newSingleThreadScheduledExecutor());
     }
 
     @AfterEach

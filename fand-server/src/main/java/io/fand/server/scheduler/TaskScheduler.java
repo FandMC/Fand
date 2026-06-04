@@ -20,9 +20,9 @@ import java.util.function.LongSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public final class StandardScheduler implements Scheduler, AutoCloseable {
+public final class TaskScheduler implements Scheduler, AutoCloseable {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(StandardScheduler.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(TaskScheduler.class);
     private static final int CANCELLED_COMPACTION_THRESHOLD = 1024;
     private static final Comparator<MainTask> MAIN_TASK_ORDER = Comparator
             .comparingLong((MainTask task) -> task.dueNanos)
@@ -36,11 +36,11 @@ public final class StandardScheduler implements Scheduler, AutoCloseable {
     private final AtomicLong cancelledMainTasks = new AtomicLong();
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    public StandardScheduler() {
+    public TaskScheduler() {
         this(System::nanoTime, createAsyncExecutor());
     }
 
-    StandardScheduler(LongSupplier nanoTime, ScheduledExecutorService asyncExecutor) {
+    TaskScheduler(LongSupplier nanoTime, ScheduledExecutorService asyncExecutor) {
         this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
         this.asyncExecutor = Objects.requireNonNull(asyncExecutor, "asyncExecutor");
     }
@@ -230,7 +230,7 @@ public final class StandardScheduler implements Scheduler, AutoCloseable {
 
     private static final class MainTask implements Task {
 
-        private final StandardScheduler owner;
+        private final TaskScheduler owner;
         private final Runnable runnable;
         private final long periodNanos;
         private final long sequence;
@@ -239,7 +239,7 @@ public final class StandardScheduler implements Scheduler, AutoCloseable {
         private final AtomicBoolean finished = new AtomicBoolean(false);
         private long dueNanos;
 
-        private MainTask(StandardScheduler owner, Runnable runnable, long dueNanos, long periodNanos, long sequence) {
+        private MainTask(TaskScheduler owner, Runnable runnable, long dueNanos, long periodNanos, long sequence) {
             this.owner = owner;
             this.runnable = runnable;
             this.dueNanos = dueNanos;

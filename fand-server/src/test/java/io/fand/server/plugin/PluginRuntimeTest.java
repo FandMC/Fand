@@ -1,0 +1,227 @@
+package io.fand.server.plugin;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import io.fand.server.event.EventDispatcher;
+import io.fand.server.scheduler.TaskScheduler;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+final class PluginRuntimeTest {
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void loadsEnablesAndDisablesPluginsInDependencyOrder() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        var logFile = tempDir.resolve("plugin.log");
+        var previousLog = System.getProperty("fand.plugin.test.log");
+        System.setProperty("fand.plugin.test.log", logFile.toString());
+        try {
+            var baseJar = PluginRuntimeTestSupport.createPluginJar(
+                    tempDir,
+                    pluginsDir.resolve("base.jar"),
+                    PluginRuntimeTestSupport.descriptorJson("base", "testplugins.base.BasePlugin", List.of()),
+                    Map.of(
+                            "testplugins/base/BasePlugin.java",
+                            pluginSource(
+                                    "testplugins.base",
+                                    "BasePlugin",
+                                    "log(\"base-load\");",
+                                    "log(\"base-enable\");",
+                                    "log(\"base-disable\");"
+                            ),
+                            "testplugins/base/SharedGreeter.java",
+                            "package testplugins.base; public final class SharedGreeter { public static String message() { return \"shared\"; } }"
+                    ),
+                    List.of()
+            );
+            PluginRuntimeTestSupport.createPluginJar(
+                    tempDir,
+                    pluginsDir.resolve("dependent.jar"),
+                    PluginRuntimeTestSupport.descriptorJson("dependent", "testplugins.dependent.DependentPlugin", List.of("base")),
+                    Map.of("testplugins/dependent/DependentPlugin.java", dependentPluginSource()),
+                    List.of(baseJar)
+            );
+
+            var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new EventDispatcher(), new TaskScheduler());
+            try {
+                manager.loadPlugins();
+                assertThat(manager.loaded()).hasSize(2);
+                assertThat(manager.byId("base")).isPresent();
+                assertThat(manager.byId("dependent")).isPresent();
+                assertThat(manager.isEnabled("base")).isFalse();
+
+                manager.enablePlugins();
+                assertThat(manager.isEnabled("base")).isTrue();
+                assertThat(manager.isEnabled("dependent")).isTrue();
+            } finally {
+                manager.close();
+            }
+
+            assertThat(Files.readAllLines(logFile)).containsExactly(
+                    "base-load",
+                    "dependent-load",
+                    "base-enable",
+                    "dependent-enable:shared",
+                    "dependent-disable",
+                    "base-disable"
+            );
+            assertThat(pluginsDir.resolve("base")).isDirectory();
+            assertThat(pluginsDir.resolve("dependent")).isDirectory();
+        } finally {
+            PluginRuntimeTestSupport.restoreProperty("fand.plugin.test.log", previousLog);
+        }
+    }
+
+    @Test
+    void rejectsMissingDependency() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("broken.jar"),
+                PluginRuntimeTestSupport.descriptorJson("broken", "testplugins.broken.BrokenPlugin", List.of("missing")),
+                Map.of("testplugins/broken/BrokenPlugin.java", pluginSource("testplugins.broken", "BrokenPlugin", null, null, null)),
+                List.of()
+        );
+
+        var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new EventDispatcher(), new TaskScheduler());
+        assertThatThrownBy(manager::loadPlugins)
+                .isInstanceOf(PluginLoadException.class)
+                .hasMessageContaining("depends on missing plugin 'missing'");
+    }
+
+    @Test
+    void rejectsDuplicatePluginIds() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("first.jar"),
+                PluginRuntimeTestSupport.descriptorJson("dup", "testplugins.first.FirstPlugin", List.of()),
+                Map.of("testplugins/first/FirstPlugin.java", pluginSource("testplugins.first", "FirstPlugin", null, null, null)),
+                List.of()
+        );
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("second.jar"),
+                PluginRuntimeTestSupport.descriptorJson("dup", "testplugins.second.SecondPlugin", List.of()),
+                Map.of("testplugins/second/SecondPlugin.java", pluginSource("testplugins.second", "SecondPlugin", null, null, null)),
+                List.of()
+        );
+
+        var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new EventDispatcher(), new TaskScheduler());
+        assertThatThrownBy(manager::loadPlugins)
+                .isInstanceOf(PluginLoadException.class)
+                .hasMessageContaining("Duplicate plugin id 'dup'");
+    }
+
+    private static String pluginSource(String packageName, String className, String loadLine, String enableLine, String disableLine) {
+        var lines = new java.util.LinkedHashMap<String, String>();
+        if (loadLine != null) {
+            lines.put("onLoad", loadLine);
+        }
+        if (enableLine != null) {
+            lines.put("onEnable", enableLine + "\ncontext.dataDirectory();");
+        } else {
+            lines.put("onEnable", "context.dataDirectory();");
+        }
+        if (disableLine != null) {
+            lines.put("onDisable", disableLine);
+        }
+
+        var methods = new StringBuilder();
+        for (var entry : lines.entrySet()) {
+            var signature = switch (entry.getKey()) {
+                case "onLoad" -> "public void onLoad(PluginContext context)";
+                case "onEnable" -> "public void onEnable(PluginContext context)";
+                case "onDisable" -> "public void onDisable(PluginContext context)";
+                default -> throw new IllegalStateException(entry.getKey());
+            };
+            methods.append("    @Override\n")
+                    .append("    ").append(signature).append(" {\n")
+                    .append(entry.getValue().lines().map(line -> "        " + line).collect(java.util.stream.Collectors.joining("\n")))
+                    .append("\n    }\n\n");
+        }
+
+        return """
+                package %s;
+
+                import io.fand.api.plugin.Plugin;
+                import io.fand.api.plugin.PluginContext;
+                import java.io.IOException;
+                import java.nio.file.Files;
+                import java.nio.file.Path;
+                import java.nio.file.StandardOpenOption;
+
+                public final class %s implements Plugin {
+                %s    private static void log(String value) {
+                        try {
+                            Files.writeString(
+                                    Path.of(System.getProperty("fand.plugin.test.log")),
+                                    value + System.lineSeparator(),
+                                    StandardOpenOption.CREATE,
+                                    StandardOpenOption.APPEND
+                            );
+                        } catch (IOException ex) {
+                            throw new RuntimeException(ex);
+                        }
+                    }
+                }
+                """.formatted(packageName, className, methods);
+    }
+
+    private static String dependentPluginSource() {
+        return """
+                package testplugins.dependent;
+
+                import io.fand.api.plugin.Plugin;
+                import io.fand.api.plugin.PluginContext;
+                import java.io.IOException;
+                import java.nio.file.Files;
+                import java.nio.file.Path;
+                import java.nio.file.StandardOpenOption;
+                import testplugins.base.SharedGreeter;
+
+                public final class DependentPlugin implements Plugin {
+                    @Override
+                    public void onLoad(PluginContext context) {
+                        log("dependent-load");
+                    }
+
+                    @Override
+                    public void onEnable(PluginContext context) {
+                        log("dependent-enable:" + SharedGreeter.message());
+                        context.dataDirectory();
+                    }
+
+                    @Override
+                    public void onDisable(PluginContext context) {
+                        log("dependent-disable");
+                    }
+
+                    private static void log(String value) {
+                        try {
+                            Files.writeString(
+                                    Path.of(System.getProperty("fand.plugin.test.log")),
+                                    value + System.lineSeparator(),
+                                    StandardOpenOption.CREATE,
+                                    StandardOpenOption.APPEND
+                            );
+                        } catch (IOException ex) {
+                            throw new RuntimeException(ex);
+                        }
+                    }
+                }
+                """;
+    }
+}

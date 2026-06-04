@@ -14,8 +14,8 @@ public final class Main {
     }
 
     public static void main(String[] args) {
-        RUNTIME.start();
         try {
+            RUNTIME.start();
             net.minecraft.server.Main.main(args);
         } finally {
             RUNTIME.close();
