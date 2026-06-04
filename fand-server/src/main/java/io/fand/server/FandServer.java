@@ -5,6 +5,7 @@ import io.fand.api.Server;
 import io.fand.api.event.EventBus;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.scheduler.Scheduler;
+import io.fand.server.config.FandConfig;
 import io.fand.server.event.EventDispatcher;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.scheduler.TaskScheduler;
@@ -21,18 +22,25 @@ public final class FandServer implements Server, AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FandServer.class);
 
-    private final EventDispatcher events = new EventDispatcher();
-    private final TaskScheduler scheduler = new TaskScheduler();
-    private final PluginRuntime plugins = new PluginRuntime(
-            Path.of("plugins"),
-            Path.of("plugins"),
-            Main.class.getClassLoader(),
-            events,
-            scheduler
-    );
+    private final FandConfig config;
+    private final EventDispatcher events;
+    private final TaskScheduler scheduler;
+    private final PluginRuntime plugins;
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicReference<MinecraftServer> minecraftServer = new AtomicReference<>();
+
+    public FandServer() {
+        this(FandConfig.load(Path.of("fand.yml")), Main.class.getClassLoader());
+    }
+
+    FandServer(FandConfig config, ClassLoader parentClassLoader) {
+        this.config = config;
+        this.events = new EventDispatcher();
+        this.scheduler = new TaskScheduler(config.scheduler.asyncThreads);
+        var pluginDirectory = Path.of(config.plugins.directory);
+        this.plugins = new PluginRuntime(pluginDirectory, pluginDirectory, parentClassLoader, events, scheduler);
+    }
 
     public void start() {
         if (!started.compareAndSet(false, true)) {
@@ -57,7 +65,7 @@ public final class FandServer implements Server, AutoCloseable {
 
     @Override
     public String brand() {
-        return "Fand";
+        return config.identity.brand;
     }
 
     @Override

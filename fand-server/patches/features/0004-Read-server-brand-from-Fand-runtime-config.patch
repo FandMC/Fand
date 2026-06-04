@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 4 Jun 2026 20:33:05 +0800
+Subject: [PATCH] Read server brand from Fand runtime config
+
+
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index 89bea700f351e3bc5420d63bb612658abd03401b..4e865758562b455f88110c0c35c096da4a16c479 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -194,7 +194,6 @@ import org.slf4j.Logger;
+ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTask> implements CommandSource, ServerInfo, ChunkIOErrorReporter {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     public static final String VANILLA_BRAND = "vanilla";
+-    public static final String FAND_BRAND = "Fand";
+     private static final float AVERAGE_TICK_TIME_SMOOTHING = 0.8F;
+     private static final int TICK_STATS_SPAN = 100;
+     private static final long OVERLOADED_THRESHOLD_NANOS = 20L * TimeUtil.NANOSECONDS_PER_SECOND / 20L;
+@@ -1232,7 +1231,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     }
+ 
+     public String getServerModName() {
+-        return FAND_BRAND;
++        return io.fand.server.Main.runtime().brand();
+     }
+ 
+     public ServerClockManager clockManager() {

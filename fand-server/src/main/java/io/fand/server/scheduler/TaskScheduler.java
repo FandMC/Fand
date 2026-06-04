@@ -37,7 +37,11 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     public TaskScheduler() {
-        this(System::nanoTime, createAsyncExecutor());
+        this(0);
+    }
+
+    public TaskScheduler(int configuredAsyncThreads) {
+        this(System::nanoTime, createAsyncExecutor(configuredAsyncThreads));
     }
 
     TaskScheduler(LongSupplier nanoTime, ScheduledExecutorService asyncExecutor) {
@@ -207,12 +211,15 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
         return left + right;
     }
 
-    private static int asyncThreadCount() {
-        return Math.max(2, Runtime.getRuntime().availableProcessors() / 2);
+    private static int asyncThreadCount(int configuredAsyncThreads) {
+        if (configuredAsyncThreads < 0) {
+            throw new IllegalArgumentException("configuredAsyncThreads must not be negative");
+        }
+        return configuredAsyncThreads == 0 ? Math.max(2, Runtime.getRuntime().availableProcessors() / 2) : configuredAsyncThreads;
     }
 
-    private static ScheduledThreadPoolExecutor createAsyncExecutor() {
-        var executor = new ScheduledThreadPoolExecutor(asyncThreadCount(), asyncThreadFactory());
+    private static ScheduledThreadPoolExecutor createAsyncExecutor(int configuredAsyncThreads) {
+        var executor = new ScheduledThreadPoolExecutor(asyncThreadCount(configuredAsyncThreads), asyncThreadFactory());
         executor.setRemoveOnCancelPolicy(true);
         executor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
         executor.setContinueExistingPeriodicTasksAfterShutdownPolicy(false);

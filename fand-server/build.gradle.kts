@@ -13,6 +13,7 @@ dependencies {
 
     compileOnly("ch.qos.logback:logback-classic:1.5.6")
     implementation("com.google.code.gson:gson:2.11.0")
+    implementation("org.yaml:snakeyaml:2.4")
     implementation("it.unimi.dsi:fastutil:8.5.13")
     implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
 
