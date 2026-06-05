@@ -1,6 +1,8 @@
 package io.fand.server.plugin;
 
+import io.fand.api.command.CommandRegistry;
 import io.fand.api.event.EventBus;
+import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.PluginContext;
 import io.fand.api.plugin.PluginDescriptor;
 import io.fand.api.scheduler.Scheduler;
@@ -15,6 +17,8 @@ public final class RuntimePluginContext implements PluginContext {
     private final PluginDescriptor descriptor;
     private final Logger logger;
     private final EventBus events;
+    private final PermissionService permissions;
+    private final CommandRegistry commands;
     private final Scheduler scheduler;
     private final Path dataDirectory;
     private final PluginResourceTracker resources;
@@ -23,6 +27,8 @@ public final class RuntimePluginContext implements PluginContext {
             PluginDescriptor descriptor,
             Logger logger,
             EventBus events,
+            PermissionService permissions,
+            CommandRegistry commands,
             Scheduler scheduler,
             Path dataDirectory,
             PluginResourceTracker resources
@@ -30,6 +36,8 @@ public final class RuntimePluginContext implements PluginContext {
         this.descriptor = descriptor;
         this.logger = logger;
         this.events = events;
+        this.permissions = permissions;
+        this.commands = commands;
         this.scheduler = scheduler;
         this.dataDirectory = dataDirectory;
         this.resources = resources;
@@ -48,6 +56,16 @@ public final class RuntimePluginContext implements PluginContext {
     @Override
     public EventBus events() {
         return events;
+    }
+
+    @Override
+    public PermissionService permissions() {
+        return permissions;
+    }
+
+    @Override
+    public CommandRegistry commands() {
+        return commands;
     }
 
     @Override

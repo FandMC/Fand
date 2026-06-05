@@ -11,6 +11,7 @@ include(
     "fand-api",
     "fand-server",
     "fandclip",
+    "test-plugin",
 )
 
 dependencyResolutionManagement {

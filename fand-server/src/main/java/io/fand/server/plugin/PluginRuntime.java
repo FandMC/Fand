@@ -2,7 +2,9 @@ package io.fand.server.plugin;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
+import io.fand.api.command.CommandRegistry;
 import io.fand.api.event.EventBus;
+import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.Plugin;
 import io.fand.api.plugin.PluginDescriptor;
 import io.fand.api.plugin.PluginManager;
@@ -37,9 +39,11 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final Path pluginsDirectory;
     private final Path dataDirectoryRoot;
     private final ClassLoader parentClassLoader;
+    private final CommandRegistry commandRegistry;
     private final EventBus eventBus;
+    private final PermissionService permissions;
     private final Scheduler scheduler;
-    private final Options options;
+    private volatile Options options;
     private final LinkedHashMap<String, LoadedPlugin> loadedPlugins = new LinkedHashMap<>();
     private boolean loaded;
     private boolean enabled;
@@ -49,25 +53,35 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             Path pluginsDirectory,
             Path dataDirectoryRoot,
             ClassLoader parentClassLoader,
+            CommandRegistry commandRegistry,
             EventBus eventBus,
+            PermissionService permissions,
             Scheduler scheduler
     ) {
-        this(pluginsDirectory, dataDirectoryRoot, parentClassLoader, eventBus, scheduler, Options.defaults());
+        this(pluginsDirectory, dataDirectoryRoot, parentClassLoader, commandRegistry, eventBus, permissions, scheduler, Options.defaults());
     }
 
     public PluginRuntime(
             Path pluginsDirectory,
             Path dataDirectoryRoot,
             ClassLoader parentClassLoader,
+            CommandRegistry commandRegistry,
             EventBus eventBus,
+            PermissionService permissions,
             Scheduler scheduler,
             Options options
     ) {
         this.pluginsDirectory = pluginsDirectory;
         this.dataDirectoryRoot = dataDirectoryRoot;
         this.parentClassLoader = parentClassLoader;
+        this.commandRegistry = commandRegistry;
         this.eventBus = eventBus;
+        this.permissions = permissions;
         this.scheduler = scheduler;
+        this.options = options;
+    }
+
+    public void reconfigure(Options options) {
         this.options = options;
     }
 
@@ -101,6 +115,8 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                         artifact.descriptor,
                         LoggerFactory.getLogger(artifact.descriptor.id()),
                         new PluginEventBus(eventBus, resources),
+                        permissions,
+                        new PluginCommandRegistry(commandRegistry, resources, artifact.descriptor.id()),
                         new PluginScheduler(scheduler, resources),
                         dataDirectoryRoot.resolve(artifact.descriptor.id()),
                         resources

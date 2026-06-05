@@ -1,6 +1,9 @@
 package io.fand.api;
 
+import io.fand.api.command.CommandRegistry;
 import io.fand.api.event.EventBus;
+import io.fand.api.lifecycle.LifecyclePhase;
+import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.scheduler.Scheduler;
 import org.jspecify.annotations.Nullable;
@@ -28,6 +31,12 @@ public interface Server {
     /** Global event dispatcher. */
     EventBus events();
 
+    /** Global permission service. */
+    PermissionService permissions();
+
+    /** Global command registry. */
+    CommandRegistry commands();
+
     /** Main-thread and async task scheduler. */
     Scheduler scheduler();
 
@@ -36,6 +45,9 @@ public interface Server {
 
     /** Configured maximum simultaneous players, or {@code -1} for uncapped. */
     int maxPlayers();
+
+    /** Current lifecycle phase. */
+    LifecyclePhase phase();
 
     /** Initiates an orderly shutdown. */
     void shutdown(@Nullable String reason);

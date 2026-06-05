@@ -2,6 +2,8 @@ package io.fand.server.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.fand.server.command.CommandManager;
+import io.fand.server.permission.PermissionManager;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -34,7 +36,7 @@ final class PluginCleanupTest {
 
             var dispatcher = new io.fand.server.event.EventDispatcher();
             var scheduler = new io.fand.server.scheduler.TaskScheduler();
-            var runtime = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), dispatcher, scheduler);
+            var runtime = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new CommandManager(), dispatcher, new PermissionManager(), scheduler);
             try {
                 runtime.loadPlugins();
                 runtime.enablePlugins();

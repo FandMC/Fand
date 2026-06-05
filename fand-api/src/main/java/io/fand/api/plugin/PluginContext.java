@@ -1,6 +1,8 @@
 package io.fand.api.plugin;
 
+import io.fand.api.command.CommandRegistry;
 import io.fand.api.event.EventBus;
+import io.fand.api.permission.PermissionService;
 import io.fand.api.scheduler.Scheduler;
 import java.nio.file.Path;
 import org.slf4j.Logger;
@@ -17,6 +19,12 @@ public interface PluginContext {
 
     /** Event dispatcher scoped to this plugin's lifecycle. */
     EventBus events();
+
+    /** Permission service visible to this plugin. */
+    PermissionService permissions();
+
+    /** Command registry scoped to this plugin's lifecycle. */
+    CommandRegistry commands();
 
     /** Scheduler scoped to this plugin's lifecycle. */
     Scheduler scheduler();

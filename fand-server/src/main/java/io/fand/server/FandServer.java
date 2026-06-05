@@ -2,16 +2,26 @@ package io.fand.server;
 
 import io.fand.api.Fand;
 import io.fand.api.Server;
+import io.fand.api.command.CommandRegistry;
 import io.fand.api.event.EventBus;
+import io.fand.api.lifecycle.LifecyclePhase;
+import io.fand.api.lifecycle.ServerStartedEvent;
+import io.fand.api.lifecycle.ServerStartingEvent;
+import io.fand.api.lifecycle.ServerStoppingEvent;
+import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.scheduler.Scheduler;
+import io.fand.server.command.BuiltinCommands;
+import io.fand.server.command.CommandManager;
+import io.fand.server.config.ConfigReloadResult;
 import io.fand.server.config.FandConfig;
 import io.fand.server.event.EventDispatcher;
+import io.fand.server.permission.PermissionManager;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.scheduler.TaskScheduler;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import net.minecraft.server.MinecraftServer;
 import org.jspecify.annotations.Nullable;
@@ -22,45 +32,102 @@ public final class FandServer implements Server, AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FandServer.class);
 
-    private final FandConfig config;
+    private final Path configPath;
     private final EventDispatcher events;
+    private final PermissionManager permissions;
+    private final CommandManager commands;
     private final TaskScheduler scheduler;
     private final PluginRuntime plugins;
-    private final AtomicBoolean started = new AtomicBoolean(false);
-    private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final AtomicReference<FandConfig> config;
+    private final AtomicReference<LifecyclePhase> phase = new AtomicReference<>(LifecyclePhase.BOOTSTRAP);
     private final AtomicReference<MinecraftServer> minecraftServer = new AtomicReference<>();
 
     public FandServer() {
-        this(FandConfig.load(Path.of("fand.yml")), Main.class.getClassLoader());
+        this(Path.of("fand.yml"), FandConfig.load(Path.of("fand.yml")), Main.class.getClassLoader());
     }
 
     FandServer(FandConfig config, ClassLoader parentClassLoader) {
-        this.config = config;
+        this(Path.of("fand.yml"), config, parentClassLoader);
+    }
+
+    FandServer(Path configPath, FandConfig initialConfig, ClassLoader parentClassLoader) {
+        this.configPath = configPath;
+        this.config = new AtomicReference<>(initialConfig);
         this.events = new EventDispatcher();
-        this.scheduler = new TaskScheduler(config.scheduler.asyncThreads);
-        var pluginDirectory = Path.of(config.plugins.directory);
+        this.permissions = new PermissionManager();
+        this.commands = new CommandManager(permissions);
+        registerBuiltinCommands();
+        this.scheduler = new TaskScheduler(initialConfig.scheduler.asyncThreads);
+        var pluginDirectory = Path.of(initialConfig.plugins.directory);
         this.plugins = new PluginRuntime(
                 pluginDirectory,
                 pluginDirectory,
                 parentClassLoader,
+                commands,
                 events,
+                permissions,
                 scheduler,
-                new PluginRuntime.Options(
-                        config.plugins.continueOnLoadFailure,
-                        config.plugins.continueOnEnableFailure,
-                        config.plugins.logSummary
-                )
+                pluginOptions(initialConfig)
         );
     }
 
+    /**
+     * Binds the API singleton and runs plugin discovery + onLoad. Called before
+     * the vanilla server is constructed so plugins observe a coherent runtime
+     * before any world data exists.
+     */
     public void start() {
-        if (!started.compareAndSet(false, true)) {
-            throw new IllegalStateException("Fand server is already started");
+        if (!phase.compareAndSet(LifecyclePhase.BOOTSTRAP, LifecyclePhase.LOADED)) {
+            throw new IllegalStateException("Fand runtime already started, current phase: " + phase.get());
         }
         Fand.bind(this);
         plugins.loadPlugins();
+        LOGGER.info("Loaded Fand {} for Minecraft {}", version(), minecraftVersion());
+    }
+
+    /**
+     * Runs after the vanilla server is initialized but before it begins ticking.
+     * Fires {@link ServerStartingEvent}, enables plugins, then fires
+     * {@link ServerStartedEvent}.
+     */
+    public void enable() {
+        if (!phase.compareAndSet(LifecyclePhase.LOADED, LifecyclePhase.STARTING)) {
+            throw new IllegalStateException("enable() requires LOADED phase, was: " + phase.get());
+        }
+        events.fire(new ServerStartingEvent(this));
         plugins.enablePlugins();
-        LOGGER.info("Starting Fand {} for Minecraft {}", version(), minecraftVersion());
+        phase.set(LifecyclePhase.RUNNING);
+        events.fire(new ServerStartedEvent(this));
+    }
+
+    public ConfigReloadResult reloadConfig() {
+        var previous = config.get();
+        var reloaded = FandConfig.load(configPath);
+        var hotApplied = new ArrayList<String>();
+        var requiresRestart = new ArrayList<String>();
+
+        if (!previous.identity.brand.equals(reloaded.identity.brand)) {
+            hotApplied.add("identity.brand");
+        }
+        if (previous.plugins.continueOnLoadFailure != reloaded.plugins.continueOnLoadFailure) {
+            hotApplied.add("plugins.continueOnLoadFailure");
+        }
+        if (previous.plugins.continueOnEnableFailure != reloaded.plugins.continueOnEnableFailure) {
+            hotApplied.add("plugins.continueOnEnableFailure");
+        }
+        if (previous.plugins.logSummary != reloaded.plugins.logSummary) {
+            hotApplied.add("plugins.logSummary");
+        }
+        if (!previous.plugins.directory.equals(reloaded.plugins.directory)) {
+            requiresRestart.add("plugins.directory");
+        }
+        if (previous.scheduler.asyncThreads != reloaded.scheduler.asyncThreads) {
+            requiresRestart.add("scheduler.asyncThreads");
+        }
+
+        plugins.reconfigure(pluginOptions(reloaded));
+        config.set(reloaded);
+        return new ConfigReloadResult(hotApplied, requiresRestart);
     }
 
     public void attach(MinecraftServer server) {
@@ -76,7 +143,7 @@ public final class FandServer implements Server, AutoCloseable {
 
     @Override
     public String brand() {
-        return config.identity.brand;
+        return config.get().identity.brand;
     }
 
     @Override
@@ -100,6 +167,20 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
+    public PermissionService permissions() {
+        return permissions;
+    }
+
+    public CommandManager commandManager() {
+        return commands;
+    }
+
+    @Override
+    public CommandRegistry commands() {
+        return commands;
+    }
+
+    @Override
     public Scheduler scheduler() {
         return scheduler;
     }
@@ -117,6 +198,11 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
+    public LifecyclePhase phase() {
+        return phase.get();
+    }
+
+    @Override
     public void shutdown(@Nullable String reason) {
         LOGGER.info("Shutdown requested: {}", reason == null ? "<no reason>" : reason);
         var server = minecraftServer.get();
@@ -129,12 +215,37 @@ public final class FandServer implements Server, AutoCloseable {
 
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) {
+        var current = phase.getAndSet(LifecyclePhase.STOPPING);
+        if (current == LifecyclePhase.STOPPED) {
+            phase.set(LifecyclePhase.STOPPED);
             return;
+        }
+        if (current == LifecyclePhase.RUNNING || current == LifecyclePhase.STARTING) {
+            try {
+                events.fire(new ServerStoppingEvent(this, null));
+            } catch (RuntimeException failure) {
+                LOGGER.warn("ServerStoppingEvent listener failed", failure);
+            }
         }
         plugins.disablePlugins();
         plugins.close();
         scheduler.close();
+        if (current != LifecyclePhase.BOOTSTRAP) {
+            Fand.unbind(this);
+        }
+        phase.set(LifecyclePhase.STOPPED);
         LOGGER.info("Fand runtime stopped");
+    }
+
+    private static PluginRuntime.Options pluginOptions(FandConfig config) {
+        return new PluginRuntime.Options(
+                config.plugins.continueOnLoadFailure,
+                config.plugins.continueOnEnableFailure,
+                config.plugins.logSummary
+        );
+    }
+
+    private void registerBuiltinCommands() {
+        BuiltinCommands.registerAll(commands, this);
     }
 }

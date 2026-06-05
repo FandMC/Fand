@@ -1,5 +1,6 @@
 package io.fand.server.plugin;
 
+import io.fand.api.command.CommandRegistration;
 import io.fand.api.event.EventSubscription;
 import io.fand.api.scheduler.Task;
 import java.util.ArrayList;
@@ -11,6 +12,7 @@ final class PluginResourceTracker {
 
     private final Object lock = new Object();
     private final Set<TrackedSubscription> subscriptions = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedCommandRegistration> commandRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedTask> tasks = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private boolean closed;
 
@@ -22,6 +24,22 @@ final class PluginResourceTracker {
                 dispose = true;
             } else {
                 subscriptions.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.unregisterFromTracker();
+        }
+        return tracked;
+    }
+
+    TrackedCommandRegistration track(CommandRegistration delegate) {
+        var tracked = new TrackedCommandRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                commandRegistrations.add(tracked);
             }
         }
         if (dispose) {
@@ -52,6 +70,12 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedCommandRegistration registration) {
+        synchronized (lock) {
+            commandRegistrations.remove(registration);
+        }
+    }
+
     void release(TrackedTask task) {
         synchronized (lock) {
             tasks.remove(task);
@@ -60,6 +84,7 @@ final class PluginResourceTracker {
 
     void close() {
         List<TrackedSubscription> subscriptionsToClose;
+        List<TrackedCommandRegistration> commandRegistrationsToClose;
         List<TrackedTask> tasksToClose;
         synchronized (lock) {
             if (closed) {
@@ -67,12 +92,17 @@ final class PluginResourceTracker {
             }
             closed = true;
             subscriptionsToClose = new ArrayList<>(subscriptions);
+            commandRegistrationsToClose = new ArrayList<>(commandRegistrations);
             tasksToClose = new ArrayList<>(tasks);
             subscriptions.clear();
+            commandRegistrations.clear();
             tasks.clear();
         }
         for (var subscription : subscriptionsToClose) {
             subscription.unregisterFromTracker();
+        }
+        for (var registration : commandRegistrationsToClose) {
+            registration.unregisterFromTracker();
         }
         for (var task : tasksToClose) {
             task.cancelFromTracker();
@@ -86,6 +116,42 @@ final class PluginResourceTracker {
         private volatile boolean released;
 
         TrackedSubscription(PluginResourceTracker owner, EventSubscription delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void unregister() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.unregister();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void unregisterFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.unregister();
+            }
+        }
+    }
+
+    static final class TrackedCommandRegistration implements CommandRegistration {
+
+        private final PluginResourceTracker owner;
+        private final CommandRegistration delegate;
+        private volatile boolean released;
+
+        TrackedCommandRegistration(PluginResourceTracker owner, CommandRegistration delegate) {
             this.owner = owner;
             this.delegate = delegate;
         }

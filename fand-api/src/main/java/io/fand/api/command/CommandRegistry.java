@@ -10,15 +10,23 @@ import java.util.Optional;
  */
 public interface CommandRegistry {
 
-    /**
-     * Registers {@code handler} under {@code label} plus any aliases. The label
-     * is the canonical name; aliases route to the same handler.
-     *
-     * @throws IllegalStateException if any of the names are already registered
-     */
-    void register(String label, List<String> aliases, CommandHandler handler);
+    default CommandRegistration register(Object command) {
+        throw new UnsupportedOperationException("This command registry does not support annotated command registration");
+    }
 
-    Optional<CommandHandler> lookup(String label);
+    CommandRegistration register(CommandDescriptor descriptor, CommandExecutor executor, CommandCompleter completer);
 
-    void unregister(String label);
+    default CommandRegistration register(CommandDescriptor descriptor, CommandExecutor executor) {
+        return register(descriptor, executor, (sender, label, args) -> List.of());
+    }
+
+    Optional<RegisteredCommand> lookup(String name);
+
+    boolean claims(List<String> tokens);
+
+    Optional<ResolvedCommand> resolve(CommandSender sender, List<String> tokens);
+
+    List<String> suggestions(CommandSender sender, List<String> tokens);
+
+    List<RegisteredCommand> visibleCommands(CommandSender sender);
 }

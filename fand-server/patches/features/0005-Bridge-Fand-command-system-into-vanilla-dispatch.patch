@@ -1,0 +1,64 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: fand <fand@local>
+Date: Fri, 5 Jun 2026 11:03:52 +0800
+Subject: [PATCH] Bridge Fand command system into vanilla dispatch
+
+
+diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
+index 798054fc87e770746c90f59e35fe46e40bbe29d1..da77a0d4832804ee470cb5decdf64be60468e7c7 100644
+--- a/net/minecraft/commands/Commands.java
++++ b/net/minecraft/commands/Commands.java
+@@ -310,6 +310,9 @@ public class Commands {
+ 
+     public void performPrefixedCommand(final CommandSourceStack sender, String command) {
+         command = trimOptionalPrefix(command);
++        if (io.fand.server.command.CommandBridge.tryExecute(sender, command)) {
++            return;
++        }
+         this.performCommand(this.dispatcher.parse(command, sender), command);
+     }
+ 
+@@ -414,6 +417,11 @@ public class Commands {
+         RootCommandNode<CommandSourceStack> root = new RootCommandNode<>();
+         playerCommands.put(this.dispatcher.getRoot(), root);
+         fillUsableCommands(this.dispatcher.getRoot(), root, player.createCommandSourceStack(), playerCommands);
++        io.fand.server.command.CommandTreeBridge.appendToRoot(
++                io.fand.server.Main.runtime().commandManager(),
++                new io.fand.server.command.CommandSourceSender(player.createCommandSourceStack(), io.fand.server.Main.runtime().permissions()),
++                root
++        );
+         player.connection.send(new ClientboundCommandsPacket(root, COMMAND_NODE_INSPECTOR));
+     }
+ 
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index 4e865758562b455f88110c0c35c096da4a16c479..6868daa49a402d3b3e06005de1a3387832d15376 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -735,6 +735,8 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+                 throw new IllegalStateException("Failed to initialize server");
+             }
+ 
++            io.fand.server.Main.runtime().enable();
++
+             this.nextTickTimeNanos = Util.getNanos();
+             this.statusIcon = this.loadStatusIcon().orElse(null);
+             this.status = this.buildServerStatus();
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index b8c73480c324b4c3bf125da2a19ebe0c73580c86..7feac885940df91cd7abafacf964380459ee4531 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -590,6 +590,14 @@ public class ServerGamePacketListenerImpl
+     @Override
+     public void handleCustomCommandSuggestions(final ServerboundCommandSuggestionPacket packet) {
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
++        var fandSuggestions = io.fand.server.command.CommandBridge.suggestions(this.player.createCommandSourceStack(), packet.getCommand());
++        if (fandSuggestions.isPresent()) {
++            var suggestionList = fandSuggestions.get().stream()
++                    .map(value -> new com.mojang.brigadier.suggestion.Suggestion(new com.mojang.brigadier.context.StringRange(0, packet.getCommand().length()), value))
++                    .toList();
++            this.send(new ClientboundCommandSuggestionsPacket(packet.getId(), new Suggestions(new com.mojang.brigadier.context.StringRange(0, packet.getCommand().length()), suggestionList)));
++            return;
++        }
+         StringReader command = new StringReader(packet.getCommand());
+         if (command.canRead() && command.peek() == '/') {
+             command.skip();

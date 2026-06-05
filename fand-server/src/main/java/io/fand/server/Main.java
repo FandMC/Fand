@@ -1,24 +1,53 @@
 package io.fand.server;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Process entry point for the Fand runtime.
  */
 public final class Main {
 
-    private static final FandServer RUNTIME = new FandServer();
+    private static volatile @Nullable FandServer runtime;
 
     private Main() {}
 
     public static FandServer runtime() {
-        return RUNTIME;
+        var local = runtime;
+        if (local == null) {
+            throw new IllegalStateException("Fand runtime has not been bootstrapped yet");
+        }
+        return local;
+    }
+
+    static void bind(FandServer server) {
+        synchronized (Main.class) {
+            if (runtime != null) {
+                throw new IllegalStateException("Fand runtime is already bootstrapped");
+            }
+            runtime = server;
+        }
+    }
+
+    static void unbind(FandServer server) {
+        synchronized (Main.class) {
+            if (runtime == server) {
+                runtime = null;
+            }
+        }
     }
 
     public static void main(String[] args) {
+        var server = new FandServer();
+        bind(server);
         try {
-            RUNTIME.start();
+            server.start();
             net.minecraft.server.Main.main(args);
         } finally {
-            RUNTIME.close();
+            try {
+                server.close();
+            } finally {
+                unbind(server);
+            }
         }
     }
 }

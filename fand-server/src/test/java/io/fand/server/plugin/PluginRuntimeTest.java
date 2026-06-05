@@ -3,7 +3,9 @@ package io.fand.server.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.fand.server.command.CommandManager;
 import io.fand.server.event.EventDispatcher;
+import io.fand.server.permission.PermissionManager;
 import io.fand.server.scheduler.TaskScheduler;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -52,7 +54,7 @@ final class PluginRuntimeTest {
                     List.of(baseJar)
             );
 
-            var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new EventDispatcher(), new TaskScheduler());
+            var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new CommandManager(), new EventDispatcher(), new PermissionManager(), new TaskScheduler());
             try {
                 manager.loadPlugins();
                 assertThat(manager.loaded()).hasSize(2);
@@ -94,7 +96,7 @@ final class PluginRuntimeTest {
                 List.of()
         );
 
-        var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new EventDispatcher(), new TaskScheduler());
+        var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new CommandManager(), new EventDispatcher(), new PermissionManager(), new TaskScheduler());
         assertThatThrownBy(manager::loadPlugins)
                 .isInstanceOf(PluginLoadException.class)
                 .hasMessageContaining("depends on missing plugin 'missing'");
@@ -119,7 +121,7 @@ final class PluginRuntimeTest {
                 List.of()
         );
 
-        var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new EventDispatcher(), new TaskScheduler());
+        var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new CommandManager(), new EventDispatcher(), new PermissionManager(), new TaskScheduler());
         assertThatThrownBy(manager::loadPlugins)
                 .isInstanceOf(PluginLoadException.class)
                 .hasMessageContaining("Duplicate plugin id 'dup'");
@@ -156,7 +158,9 @@ final class PluginRuntimeTest {
                 pluginsDir,
                 pluginsDir,
                 getClass().getClassLoader(),
+                new CommandManager(),
                 new EventDispatcher(),
+                new PermissionManager(),
                 new TaskScheduler(),
                 new PluginRuntime.Options(true, false, false)
         );
@@ -202,7 +206,9 @@ final class PluginRuntimeTest {
                 pluginsDir,
                 pluginsDir,
                 getClass().getClassLoader(),
+                new CommandManager(),
                 new EventDispatcher(),
+                new PermissionManager(),
                 new TaskScheduler(),
                 new PluginRuntime.Options(false, true, false)
         );

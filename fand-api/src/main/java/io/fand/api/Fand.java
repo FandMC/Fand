@@ -37,4 +37,18 @@ public final class Fand {
             instance = server;
         }
     }
+
+    /**
+     * Releases the binding established by {@link #bind(Server)}. Intended to be
+     * invoked exactly once by the runtime during shutdown. Subsequent
+     * {@link #server()} calls throw until {@link #bind(Server)} runs again.
+     */
+    public static void unbind(Server server) {
+        Objects.requireNonNull(server, "server");
+        synchronized (Fand.class) {
+            if (instance == server) {
+                instance = null;
+            }
+        }
+    }
 }
