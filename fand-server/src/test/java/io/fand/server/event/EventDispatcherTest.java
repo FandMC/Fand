@@ -214,4 +214,16 @@ final class EventDispatcherTest {
             executor.shutdownNow();
         }
     }
+
+    @Test
+    void hasListenersReportsConcreteAndSupertypeSubscriptions() {
+        assertThat(bus.hasListeners(ChildEvent.class)).isFalse();
+
+        var subscription = bus.subscribe(BaseEvent.class, event -> {});
+        assertThat(bus.hasListeners(ChildEvent.class)).isTrue();
+        assertThat(bus.hasListeners(BaseEvent.class)).isTrue();
+
+        subscription.unregister();
+        assertThat(bus.hasListeners(ChildEvent.class)).isFalse();
+    }
 }

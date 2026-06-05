@@ -77,6 +77,20 @@ public final class EventDispatcher implements EventBus {
         }, executor);
     }
 
+    @Override
+    public boolean hasListeners(Class<? extends Event> type) {
+        Objects.requireNonNull(type, "type");
+        for (var bucket : buckets.values()) {
+            if (!bucket.type.isAssignableFrom(type)) {
+                continue;
+            }
+            if (bucket.snapshot().registrations.length > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private DispatchPlan resolveDispatchPlan(Class<? extends Event> eventType) {
         var generation = planGeneration(eventType).get();
         var plan = dispatchPlans.get(eventType);

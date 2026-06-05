@@ -29,6 +29,11 @@ public final class PluginEventBus implements EventBus {
     }
 
     @Override
+    public boolean hasListeners(Class<? extends Event> type) {
+        return delegate.hasListeners(type);
+    }
+
+    @Override
     public <E extends Event> CompletableFuture<E> fireAsync(E event, Executor executor) {
         return delegate.fireAsync(event, executor);
     }

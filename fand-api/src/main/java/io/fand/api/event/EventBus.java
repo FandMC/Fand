@@ -29,6 +29,16 @@ public interface EventBus {
     <E extends Event> E fire(E event);
 
     /**
+     * Reports whether any subscriber would currently receive an event of
+     * {@code type} (or any subtype). Hot dispatch sites use this to skip
+     * building event payloads when no plugin is listening.
+     *
+     * <p>The result is a snapshot: a subscription registered concurrently
+     * with the call may be missed and will be picked up by a later check.
+     */
+    boolean hasListeners(Class<? extends Event> type);
+
+    /**
      * Fires {@code event} asynchronously on {@code executor}. Listeners are
      * invoked sequentially in dispatch order on a thread the executor supplies;
      * the returned future completes with the (possibly mutated) event once

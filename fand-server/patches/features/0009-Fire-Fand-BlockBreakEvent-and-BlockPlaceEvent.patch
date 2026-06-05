@@ -1,0 +1,89 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Fri, 5 Jun 2026 19:48:42 +0800
+Subject: [PATCH] Fire Fand BlockBreakEvent and BlockPlaceEvent
+
+
+diff --git a/net/minecraft/server/level/ServerPlayerGameMode.java b/net/minecraft/server/level/ServerPlayerGameMode.java
+index c770612524a09bdd624679bbec1d72d7016cc556..4f38ac40b1e702a3e77be1fbc6f3055a95c0cc74 100644
+--- a/net/minecraft/server/level/ServerPlayerGameMode.java
++++ b/net/minecraft/server/level/ServerPlayerGameMode.java
+@@ -272,6 +272,26 @@ public class ServerPlayerGameMode {
+             } else if (this.player.blockActionRestricted(this.level, pos, this.gameModeForPlayer)) {
+                 return false;
+             } else {
++                if (io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.block.BlockBreakEvent.class)) {
++                    var fandPlayer = io.fand.server.Main.runtime().playerRegistry().find(this.player.getUUID()).orElse(null);
++                    if (fandPlayer != null) {
++                        var fandWorld = io.fand.server.Main.runtime().worldRegistry().map(r -> r.wrap(this.level)).orElse(null);
++                        if (fandWorld != null) {
++                            var fandBlock = new io.fand.server.block.FandBlock(fandWorld, pos.getX(), pos.getY(), pos.getZ());
++                            var fandBlockType = io.fand.server.block.FandBlockType.of(block);
++                            var fandBreakEvent = new io.fand.api.event.block.BlockBreakEvent(fandPlayer, fandBlock, fandBlockType);
++                            try {
++                                io.fand.server.Main.runtime().events().fire(fandBreakEvent);
++                            } catch (RuntimeException fandFailure) {
++                                LOGGER.warn("BlockBreakEvent listener failed", fandFailure);
++                            }
++                            if (fandBreakEvent.cancelled()) {
++                                this.level.sendBlockUpdated(pos, state, state, Block.UPDATE_ALL);
++                                return false;
++                            }
++                        }
++                    }
++                }
+                 BlockState adjustedState = block.playerWillDestroy(this.level, pos, state, this.player);
+                 boolean changed = this.level.removeBlock(pos, false);
+                 if (SharedConstants.DEBUG_BLOCK_BREAK) {
+diff --git a/net/minecraft/world/item/BlockItem.java b/net/minecraft/world/item/BlockItem.java
+index acaf4d183b3a358d906ce87918cfdd2df19efaab..1b4dcc56709e4708cc2f4aefb2092fb4cddb719e 100644
+--- a/net/minecraft/world/item/BlockItem.java
++++ b/net/minecraft/world/item/BlockItem.java
+@@ -58,12 +58,42 @@ public class BlockItem extends Item {
+                 BlockState placementState = this.getPlacementState(updatedPlaceContext);
+                 if (placementState == null) {
+                     return InteractionResult.FAIL;
+-                } else if (!this.placeBlock(updatedPlaceContext, placementState)) {
+-                    return InteractionResult.FAIL;
+                 } else {
+-                    BlockPos pos = updatedPlaceContext.getClickedPos();
+-                    Level level = updatedPlaceContext.getLevel();
+-                    Player player = updatedPlaceContext.getPlayer();
++                    BlockPos fandPos = updatedPlaceContext.getClickedPos();
++                    Level fandLevel = updatedPlaceContext.getLevel();
++                    Player fandContextPlayer = updatedPlaceContext.getPlayer();
++                    BlockState fandReplacedState = fandLevel.getBlockState(fandPos);
++                    if (!this.placeBlock(updatedPlaceContext, placementState)) {
++                        return InteractionResult.FAIL;
++                    }
++                    if (fandLevel instanceof net.minecraft.server.level.ServerLevel fandServerLevel
++                            && fandContextPlayer instanceof ServerPlayer fandServerPlayer
++                            && io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.block.BlockPlaceEvent.class)) {
++                        var fandPlayer = io.fand.server.Main.runtime().playerRegistry().find(fandServerPlayer.getUUID()).orElse(null);
++                        if (fandPlayer != null) {
++                            var fandWorld = io.fand.server.Main.runtime().worldRegistry().map(r -> r.wrap(fandServerLevel)).orElse(null);
++                            if (fandWorld != null) {
++                                BlockState fandPlacedState = fandLevel.getBlockState(fandPos);
++                                var fandBlock = new io.fand.server.block.FandBlock(fandWorld, fandPos.getX(), fandPos.getY(), fandPos.getZ());
++                                var fandPlacedType = io.fand.server.block.FandBlockType.of(fandPlacedState.getBlock());
++                                var fandReplacedType = io.fand.server.block.FandBlockType.of(fandReplacedState.getBlock());
++                                var fandPlaceEvent = new io.fand.api.event.block.BlockPlaceEvent(fandPlayer, fandBlock, fandPlacedType, fandReplacedType);
++                                try {
++                                    io.fand.server.Main.runtime().events().fire(fandPlaceEvent);
++                                } catch (RuntimeException fandFailure) {
++                                    org.slf4j.LoggerFactory.getLogger(BlockItem.class).warn("BlockPlaceEvent listener failed", fandFailure);
++                                }
++                                if (fandPlaceEvent.cancelled()) {
++                                    fandLevel.setBlock(fandPos, fandReplacedState, Block.UPDATE_ALL);
++                                    fandServerPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket(fandLevel, fandPos));
++                                    return InteractionResult.FAIL;
++                                }
++                            }
++                        }
++                    }
++                    BlockPos pos = fandPos;
++                    Level level = fandLevel;
++                    Player player = fandContextPlayer;
+                     ItemStack itemStack = updatedPlaceContext.getItemInHand();
+                     BlockState placedState = level.getBlockState(pos);
+                     if (placedState.is(placementState.getBlock())) {
