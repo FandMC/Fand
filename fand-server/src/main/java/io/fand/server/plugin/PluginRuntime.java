@@ -119,7 +119,8 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                         new PluginCommandRegistry(commandRegistry, resources, artifact.descriptor.id()),
                         new PluginScheduler(scheduler, resources),
                         dataDirectoryRoot.resolve(artifact.descriptor.id()),
-                        resources
+                        resources,
+                        classLoader
                 );
                 try {
                     var plugin = instantiatePlugin(artifact.descriptor, classLoader);

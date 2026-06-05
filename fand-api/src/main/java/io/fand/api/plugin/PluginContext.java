@@ -1,6 +1,7 @@
 package io.fand.api.plugin;
 
 import io.fand.api.command.CommandRegistry;
+import io.fand.api.config.Configuration;
 import io.fand.api.event.EventBus;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.scheduler.Scheduler;
@@ -31,4 +32,19 @@ public interface PluginContext {
 
     /** Writable data directory unique to this plugin. Created on first access. */
     Path dataDirectory();
+
+    /**
+     * Plugin configuration backed by {@code dataDirectory()/config.yml}.
+     *
+     * <p>On first access, if no file exists yet, the bundled
+     * {@code config.yml} from the plugin jar root is copied into place. If the
+     * jar has no bundled config either, an empty document is created.
+     */
+    Configuration config();
+
+    /**
+     * Reloads {@link #config()} from disk, discarding any unsaved in-memory
+     * changes. The returned instance is the same handle as {@link #config()}.
+     */
+    Configuration reloadConfig();
 }
