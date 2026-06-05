@@ -31,13 +31,13 @@ index 798054fc87e770746c90f59e35fe46e40bbe29d1..da77a0d4832804ee470cb5decdf64be6
      }
  
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index 4e865758562b455f88110c0c35c096da4a16c479..6868daa49a402d3b3e06005de1a3387832d15376 100644
+index 4e865758562b455f88110c0c35c096da4a16c479..3c3e8dc90d58a62a5304bec86d4c2bedaec529fa 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
 @@ -735,6 +735,12 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
                  throw new IllegalStateException("Failed to initialize server");
              }
-
+ 
 +            try {
 +                io.fand.server.Main.runtime().enable();
 +            } catch (Throwable fandFailure) {
@@ -48,7 +48,7 @@ index 4e865758562b455f88110c0c35c096da4a16c479..6868daa49a402d3b3e06005de1a33878
              this.statusIcon = this.loadStatusIcon().orElse(null);
              this.status = this.buildServerStatus();
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index b8c73480c324b4c3bf125da2a19ebe0c73580c86..7feac885940df91cd7abafacf964380459ee4531 100644
+index b8c73480c324b4c3bf125da2a19ebe0c73580c86..9e6958b1776a5aac67eca1060c486fcc1fd84ba6 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 @@ -590,6 +590,14 @@ public class ServerGamePacketListenerImpl
@@ -66,3 +66,23 @@ index b8c73480c324b4c3bf125da2a19ebe0c73580c86..7feac885940df91cd7abafacf9643804
          StringReader command = new StringReader(packet.getCommand());
          if (command.canRead() && command.peek() == '/') {
              command.skip();
+@@ -1524,6 +1532,9 @@ public class ServerGamePacketListenerImpl
+     }
+ 
+     private void performUnsignedChatCommand(final String command) {
++        if (io.fand.server.command.CommandBridge.tryExecute(this.player.createCommandSourceStack(), command)) {
++            return;
++        }
+         ParseResults<CommandSourceStack> parsed = this.parseCommand(command);
+         if (this.server.enforceSecureProfile() && SignableCommand.hasSignableArguments(parsed)) {
+             LOGGER.error(
+@@ -1547,6 +1558,9 @@ public class ServerGamePacketListenerImpl
+     }
+ 
+     private void performSignedChatCommand(final ServerboundChatCommandSignedPacket packet, final LastSeenMessages lastSeenMessages) {
++        if (io.fand.server.command.CommandBridge.tryExecute(this.player.createCommandSourceStack(), packet.command())) {
++            return;
++        }
+         ParseResults<CommandSourceStack> command = this.parseCommand(packet.command());
+ 
+         Map<String, PlayerChatMessage> signedArguments;
