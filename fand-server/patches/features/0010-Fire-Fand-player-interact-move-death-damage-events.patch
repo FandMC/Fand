@@ -175,23 +175,30 @@ index 79be2e3e7a0d91e8338b8663083c8245f0d97078..04032aa11038dd738fe9c682132385c9
                      && success.swingSource() == InteractionResult.SwingSource.SERVER) {
                      this.player.swing(hand, true);
 diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
-index 0c10a086b7edb97718825553db1da3f14a6f87f6..d02fada406531ad4d69cfb44afe3d0a2ab386d4f 100644
+index 0c10a086b7edb97718825553db1da3f14a6f87f6..2e1374a72f8582c1668ed9b2c629704d2a9afd4c 100644
 --- a/net/minecraft/world/entity/LivingEntity.java
 +++ b/net/minecraft/world/entity/LivingEntity.java
-@@ -1157,6 +1157,27 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+@@ -1157,6 +1157,34 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
          } else if (source.is(DamageTypeTags.IS_FIRE) && this.hasEffect(MobEffects.FIRE_RESISTANCE)) {
              return false;
          } else {
-+            if (this instanceof net.minecraft.server.level.ServerPlayer fandServerPlayer
-+                    && io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.player.PlayerDamageEvent.class)) {
-+                var fandPlayer = io.fand.server.Main.runtime().playerRegistry().find(fandServerPlayer.getUUID()).orElse(null);
-+                if (fandPlayer != null) {
++            if (io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.entity.EntityDamageEvent.class)) {
++                io.fand.api.entity.LivingEntity fandVictim = null;
++                if (this instanceof net.minecraft.server.level.ServerPlayer fandServerPlayer) {
++                    fandVictim = io.fand.server.Main.runtime().playerRegistry().find(fandServerPlayer.getUUID()).orElse(null);
++                } else {
++                    var fandWorldRegistry = io.fand.server.Main.runtime().worldRegistry().orElse(null);
++                    if (fandWorldRegistry != null) {
++                        fandVictim = new io.fand.server.entity.FandLivingEntity(this, fandWorldRegistry);
++                    }
++                }
++                if (fandVictim != null) {
 +                    var fandDamageType = source.typeHolder().unwrapKey().map(k -> k.identifier().toString()).orElse("minecraft:generic");
-+                    var fandDamageEvent = new io.fand.api.event.player.PlayerDamageEvent(fandPlayer, fandDamageType, damage);
++                    var fandDamageEvent = new io.fand.api.event.entity.EntityDamageEvent(fandVictim, fandDamageType, damage);
 +                    try {
 +                        io.fand.server.Main.runtime().events().fire(fandDamageEvent);
 +                    } catch (RuntimeException fandFailure) {
-+                        org.slf4j.LoggerFactory.getLogger(LivingEntity.class).warn("PlayerDamageEvent listener failed", fandFailure);
++                        org.slf4j.LoggerFactory.getLogger(LivingEntity.class).warn("EntityDamageEvent listener failed", fandFailure);
 +                    }
 +                    if (fandDamageEvent.cancelled()) {
 +                        return false;

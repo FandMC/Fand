@@ -11,9 +11,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.EntityType;
 
 public final class FandPlayer implements Player {
 
@@ -41,6 +43,49 @@ public final class FandPlayer implements Player {
     @Override
     public UUID uniqueId() {
         return handle.getUUID();
+    }
+
+    @Override
+    public int entityId() {
+        return handle.getId();
+    }
+
+    @Override
+    public Key type() {
+        var identifier = EntityType.getKey(handle.getType());
+        return Key.key(identifier.getNamespace(), identifier.getPath());
+    }
+
+    @Override
+    public boolean alive() {
+        return online() && handle.isAlive();
+    }
+
+    @Override
+    public double health() {
+        return handle.getHealth();
+    }
+
+    @Override
+    public double maxHealth() {
+        return handle.getMaxHealth();
+    }
+
+    @Override
+    public void setHealth(double health) {
+        var server = handle.level().getServer();
+        if (server == null) {
+            return;
+        }
+        Runnable run = () -> {
+            float clamped = (float) Math.max(0.0, Math.min(health, handle.getMaxHealth()));
+            handle.setHealth(clamped);
+        };
+        if (server.isSameThread()) {
+            run.run();
+        } else {
+            server.executeIfPossible(run);
+        }
     }
 
     @Override

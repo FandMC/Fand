@@ -1,38 +1,35 @@
-package io.fand.api.event.player;
+package io.fand.api.event.entity;
 
-import io.fand.api.entity.Player;
+import io.fand.api.entity.LivingEntity;
 import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
 import java.util.Objects;
 
 /**
- * Fired on the server thread before vanilla applies damage to a player.
- * Cancelling the event aborts the damage application; the player keeps their
- * current health, no knockback is dealt, and damage immunity timers are not
- * advanced.
+ * Fired on the server thread before vanilla applies damage to a
+ * {@link LivingEntity}. Cancelling the event aborts the damage application:
+ * the victim keeps their current health, no knockback is dealt, and damage
+ * immunity timers are not advanced.
  *
  * <p>The damage amount is mutable and reflects the post-armor, post-effect
  * value vanilla intends to apply. Setting it to zero is equivalent to
  * cancelling. Negative values are clamped to zero by the runtime.
- *
- * <p>Until a full Entity API exists, this event covers player victims only.
- * Mob-on-mob damage is not currently surfaced.
  */
-public final class PlayerDamageEvent implements Event, Cancellable {
+public final class EntityDamageEvent implements Event, Cancellable {
 
-    private final Player player;
+    private final LivingEntity entity;
     private final String cause;
     private double amount;
     private boolean cancelled;
 
-    public PlayerDamageEvent(Player player, String cause, double amount) {
-        this.player = Objects.requireNonNull(player, "player");
+    public EntityDamageEvent(LivingEntity entity, String cause, double amount) {
+        this.entity = Objects.requireNonNull(entity, "entity");
         this.cause = Objects.requireNonNull(cause, "cause");
         this.amount = amount;
     }
 
-    public Player player() {
-        return player;
+    public LivingEntity entity() {
+        return entity;
     }
 
     /** Vanilla damage-type identifier (e.g. {@code minecraft:fall}, {@code minecraft:player_attack}). */
