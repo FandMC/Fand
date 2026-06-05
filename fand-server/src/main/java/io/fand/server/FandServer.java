@@ -150,7 +150,7 @@ public final class FandServer implements Server, AutoCloseable {
         if (!minecraftServer.compareAndSet(null, server)) {
             throw new IllegalStateException("Minecraft server is already attached");
         }
-        var registry = new WorldRegistry(server);
+        var registry = new WorldRegistry(server, players);
         worlds.set(registry);
         players.bindWorldResolver(registry::wrap);
     }
@@ -235,6 +235,11 @@ public final class FandServer implements Server, AutoCloseable {
 
     @Override
     public Collection<? extends io.fand.api.entity.Player> players() {
+        return players.snapshot();
+    }
+
+    @Override
+    public Iterable<? extends net.kyori.adventure.audience.Audience> audiences() {
         return players.snapshot();
     }
 

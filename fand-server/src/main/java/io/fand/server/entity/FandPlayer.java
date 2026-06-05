@@ -4,6 +4,8 @@ import io.fand.api.entity.Player;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
+import io.fand.server.audience.BossBarTracker;
+import io.fand.server.audience.PacketAudience;
 import io.fand.server.command.AdventureBridge;
 import io.fand.server.inventory.FandPlayerInventory;
 import io.fand.server.world.FandWorld;
@@ -11,8 +13,13 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.key.Key;
+import net.kyori.adventure.sound.Sound;
+import net.kyori.adventure.sound.SoundStop;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.title.Title;
+import net.kyori.adventure.title.TitlePart;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityType;
@@ -23,12 +30,14 @@ public final class FandPlayer implements Player {
     private final PermissionService permissions;
     private final PlayerRegistry registry;
     private volatile FandPlayerInventory inventory;
+    private final BossBarTracker bossBars;
 
     public FandPlayer(ServerPlayer handle, PermissionService permissions, PlayerRegistry registry) {
         this.handle = handle;
         this.permissions = permissions;
         this.registry = registry;
         this.inventory = new FandPlayerInventory(handle.getInventory());
+        this.bossBars = new BossBarTracker(handle);
     }
 
     public ServerPlayer handle() {
@@ -38,6 +47,11 @@ public final class FandPlayer implements Player {
     void refreshHandle(ServerPlayer newHandle) {
         this.handle = newHandle;
         this.inventory = new FandPlayerInventory(newHandle.getInventory());
+        bossBars.rebind(newHandle);
+    }
+
+    public void clearTransientState() {
+        bossBars.clear();
     }
 
     @Override
@@ -175,6 +189,77 @@ public final class FandPlayer implements Player {
     @Override
     public void sendMessage(Component message) {
         handle.sendSystemMessage(AdventureBridge.toVanilla(message, handle.registryAccess()));
+    }
+
+    @Override
+    public void sendActionBar(Component message) {
+        PacketAudience.sendActionBar(handle, message);
+    }
+
+    @Override
+    public void showTitle(Title title) {
+        PacketAudience.showTitle(handle, title);
+    }
+
+    @Override
+    public <T> void sendTitlePart(TitlePart<T> part, T value) {
+        PacketAudience.sendTitlePart(handle, part, value);
+    }
+
+    @Override
+    public void clearTitle() {
+        PacketAudience.clearTitle(handle);
+    }
+
+    @Override
+    public void resetTitle() {
+        PacketAudience.resetTitle(handle);
+    }
+
+    @Override
+    public void playSound(Sound sound) {
+        PacketAudience.playSound(handle, sound);
+    }
+
+    @Override
+    public void playSound(Sound sound, double x, double y, double z) {
+        PacketAudience.playSoundAt(handle, sound, x, y, z);
+    }
+
+    @Override
+    public void playSound(Sound sound, Sound.Emitter emitter) {
+        if (emitter == Sound.Emitter.self()) {
+            PacketAudience.playSoundAt(handle, sound, handle.getX(), handle.getY(), handle.getZ());
+        } else {
+            PacketAudience.playSound(handle, sound);
+        }
+    }
+
+    @Override
+    public void stopSound(SoundStop stop) {
+        PacketAudience.stopSound(handle, stop);
+    }
+
+    @Override
+    public void showBossBar(BossBar bar) {
+        runOnMain(() -> bossBars.show(bar));
+    }
+
+    @Override
+    public void hideBossBar(BossBar bar) {
+        runOnMain(() -> bossBars.hide(bar));
+    }
+
+    private void runOnMain(Runnable task) {
+        var server = handle.level().getServer();
+        if (server == null) {
+            return;
+        }
+        if (server.isSameThread()) {
+            task.run();
+        } else {
+            server.executeIfPossible(task);
+        }
     }
 
     @Override

@@ -1,6 +1,7 @@
 package io.fand.server.world;
 
 import io.fand.api.world.World;
+import io.fand.server.entity.PlayerRegistry;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -18,10 +19,12 @@ import net.minecraft.server.level.ServerLevel;
 public final class WorldRegistry {
 
     private final MinecraftServer server;
+    private final PlayerRegistry players;
     private final ConcurrentHashMap<Key, FandWorld> byKey = new ConcurrentHashMap<>();
 
-    public WorldRegistry(MinecraftServer server) {
+    public WorldRegistry(MinecraftServer server, PlayerRegistry players) {
         this.server = server;
+        this.players = players;
     }
 
     public Collection<World> snapshot() {
@@ -67,7 +70,7 @@ public final class WorldRegistry {
             if (current != null && current.handle() == level) {
                 return current;
             }
-            return new FandWorld(level);
+            return new FandWorld(level, players);
         });
     }
 }

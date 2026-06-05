@@ -11,6 +11,7 @@ import io.fand.api.world.World;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
+import net.kyori.adventure.audience.ForwardingAudience;
 import net.kyori.adventure.key.Key;
 import org.jspecify.annotations.Nullable;
 
@@ -19,8 +20,12 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Obtain the singleton via {@link Fand#server()}. The instance is bound during
  * server bootstrap and remains valid for the lifetime of the JVM.
+ *
+ * <p>{@code Server} is an Adventure {@link ForwardingAudience} that forwards to
+ * every online player. {@code server().sendMessage(component)} broadcasts to
+ * everyone; {@code server().showTitle(title)} shows a title to everyone; etc.
  */
-public interface Server {
+public interface Server extends ForwardingAudience {
 
     /** Server brand identifier reported to clients. */
     String brand();

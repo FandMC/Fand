@@ -1,5 +1,8 @@
 package io.fand.api.world;
 
+import io.fand.api.entity.Player;
+import java.util.Collection;
+import net.kyori.adventure.audience.ForwardingAudience;
 import net.kyori.adventure.key.Key;
 
 /**
@@ -9,8 +12,11 @@ import net.kyori.adventure.key.Key;
  * <p>World handles are stable for as long as the dimension stays loaded; equality
  * is by {@link #key()}. Methods that touch world state must be called on the main
  * thread unless explicitly documented as thread-safe.
+ *
+ * <p>{@code World} is an Adventure {@link ForwardingAudience} that forwards to
+ * the players currently in this world.
  */
-public interface World {
+public interface World extends ForwardingAudience {
 
     /** Dimension key, e.g. {@code minecraft:overworld}. */
     Key key();
@@ -22,6 +28,9 @@ public interface World {
 
     /** World seed. */
     long seed();
+
+    /** Snapshot of all players currently in this world. */
+    Collection<? extends Player> players();
 
     /** Builds a {@link Location} in this world. */
     default Location at(double x, double y, double z) {

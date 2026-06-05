@@ -56,6 +56,7 @@ public final class PlayerRegistry {
         var removed = byId.remove(uniqueId);
         if (removed != null) {
             byName.remove(removed.name(), removed);
+            removed.clearTransientState();
         }
         return Optional.ofNullable(removed);
     }
