@@ -27,4 +27,13 @@ public interface EventBus {
 
     /** Fires {@code event} synchronously to all matching listeners. */
     <E extends Event> E fire(E event);
+
+    /**
+     * Fires {@code event} asynchronously on {@code executor}. Listeners are
+     * invoked sequentially in dispatch order on a thread the executor supplies;
+     * the returned future completes with the (possibly mutated) event once
+     * every listener has run, or completes exceptionally with an
+     * {@link EventDispatchException} if any listener threw.
+     */
+    <E extends Event> java.util.concurrent.CompletableFuture<E> fireAsync(E event, java.util.concurrent.Executor executor);
 }

@@ -5,6 +5,8 @@ import io.fand.api.event.EventBus;
 import io.fand.api.event.EventListener;
 import io.fand.api.event.EventPriority;
 import io.fand.api.event.EventSubscription;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 public final class PluginEventBus implements EventBus {
 
@@ -24,5 +26,10 @@ public final class PluginEventBus implements EventBus {
     @Override
     public <E extends Event> E fire(E event) {
         return delegate.fire(event);
+    }
+
+    @Override
+    public <E extends Event> CompletableFuture<E> fireAsync(E event, Executor executor) {
+        return delegate.fireAsync(event, executor);
     }
 }

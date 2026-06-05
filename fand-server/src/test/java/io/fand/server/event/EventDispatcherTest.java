@@ -173,4 +173,45 @@ final class EventDispatcherTest {
         public void notAnEvent(String wrong) {
         }
     }
+
+    @Test
+    void fireAsyncRunsListenersOnSuppliedExecutor() throws Exception {
+        var executorThread = new java.util.concurrent.atomic.AtomicReference<Thread>();
+        var caller = Thread.currentThread();
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+            var t = new Thread(r, "async-dispatch-test");
+            executorThread.set(t);
+            return t;
+        });
+        try {
+            List<Thread> seenThreads = java.util.Collections.synchronizedList(new ArrayList<>());
+            bus.subscribe(ChildEvent.class, event -> seenThreads.add(Thread.currentThread()));
+            bus.subscribe(ChildEvent.class, EventPriority.HIGH, event -> seenThreads.add(Thread.currentThread()));
+
+            var event = new ChildEvent();
+            var future = bus.fireAsync(event, executor);
+            assertThat(future.get(5, java.util.concurrent.TimeUnit.SECONDS)).isSameAs(event);
+            assertThat(seenThreads).hasSize(2);
+            assertThat(seenThreads).allSatisfy(t -> assertThat(t).isNotEqualTo(caller));
+            assertThat(seenThreads).allSatisfy(t -> assertThat(t.getName()).isEqualTo("async-dispatch-test"));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void fireAsyncCompletesExceptionallyOnListenerFailure() {
+        bus.subscribe(ChildEvent.class, event -> {
+            throw new IllegalStateException("boom");
+        });
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            var future = bus.fireAsync(new ChildEvent(), executor);
+            assertThatThrownBy(() -> future.get(5, java.util.concurrent.TimeUnit.SECONDS))
+                    .isInstanceOf(java.util.concurrent.ExecutionException.class)
+                    .hasCauseInstanceOf(EventDispatchException.class);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
 }

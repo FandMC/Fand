@@ -51,13 +51,42 @@ public final class EventDispatcher implements EventBus {
     public <E extends Event> E fire(E event) {
         Objects.requireNonNull(event, "event");
 
-        var eventType = event.getClass();
+        var plan = resolveDispatchPlan(event.getClass());
+        var failures = invokeAll(plan, event);
+        if (failures != null) {
+            throw new EventDispatchException(event, failures);
+        }
+        return event;
+    }
+
+    @Override
+    public <E extends Event> java.util.concurrent.CompletableFuture<E> fireAsync(
+            E event,
+            java.util.concurrent.Executor executor
+    ) {
+        Objects.requireNonNull(event, "event");
+        Objects.requireNonNull(executor, "executor");
+
+        var plan = resolveDispatchPlan(event.getClass());
+        return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            var failures = invokeAll(plan, event);
+            if (failures != null) {
+                throw new EventDispatchException(event, failures);
+            }
+            return event;
+        }, executor);
+    }
+
+    private DispatchPlan resolveDispatchPlan(Class<? extends Event> eventType) {
         var generation = planGeneration(eventType).get();
         var plan = dispatchPlans.get(eventType);
         if (plan == null || plan.generation != generation) {
             plan = rebuildDispatchPlan(eventType);
         }
+        return plan;
+    }
 
+    private static List<Throwable> invokeAll(DispatchPlan plan, Event event) {
         List<Throwable> failures = null;
         for (var registration : plan.registrations) {
             var failure = registration.invoke(event);
@@ -68,10 +97,7 @@ public final class EventDispatcher implements EventBus {
                 failures.add(failure);
             }
         }
-        if (failures != null) {
-            throw new EventDispatchException(event, failures);
-        }
-        return event;
+        return failures;
     }
 
     private ListenerBucket bucket(Class<? extends Event> type) {
