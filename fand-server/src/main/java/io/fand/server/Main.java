@@ -39,15 +39,15 @@ public final class Main {
     public static void main(String[] args) {
         var server = new FandServer();
         bind(server);
-        try {
-            server.start();
-            net.minecraft.server.Main.main(args);
-        } finally {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
                 server.close();
             } finally {
                 unbind(server);
             }
-        }
+        }, "Fand-Shutdown"));
+        server.start();
+        net.minecraft.server.Main.main(args);
+        server.awaitMinecraftServerStop();
     }
 }

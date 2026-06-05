@@ -34,11 +34,15 @@ diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/Mi
 index 4e865758562b455f88110c0c35c096da4a16c479..6868daa49a402d3b3e06005de1a3387832d15376 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
-@@ -735,6 +735,8 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -735,6 +735,12 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
                  throw new IllegalStateException("Failed to initialize server");
              }
- 
-+            io.fand.server.Main.runtime().enable();
+
++            try {
++                io.fand.server.Main.runtime().enable();
++            } catch (Throwable fandFailure) {
++                LOGGER.error("Fand enable() failed", fandFailure);
++            }
 +
              this.nextTickTimeNanos = Util.getNanos();
              this.statusIcon = this.loadStatusIcon().orElse(null);

@@ -94,10 +94,15 @@ public final class FandServer implements Server, AutoCloseable {
         if (!phase.compareAndSet(LifecyclePhase.LOADED, LifecyclePhase.STARTING)) {
             throw new IllegalStateException("enable() requires LOADED phase, was: " + phase.get());
         }
-        events.fire(new ServerStartingEvent(this));
-        plugins.enablePlugins();
-        phase.set(LifecyclePhase.RUNNING);
-        events.fire(new ServerStartedEvent(this));
+        try {
+            events.fire(new ServerStartingEvent(this));
+            plugins.enablePlugins();
+            phase.set(LifecyclePhase.RUNNING);
+            events.fire(new ServerStartedEvent(this));
+        } catch (Throwable failure) {
+            LOGGER.error("Fand enable() failed", failure);
+            throw failure;
+        }
     }
 
     public ConfigReloadResult reloadConfig() {
@@ -134,6 +139,24 @@ public final class FandServer implements Server, AutoCloseable {
         Objects.requireNonNull(server, "server");
         if (!minecraftServer.compareAndSet(null, server)) {
             throw new IllegalStateException("Minecraft server is already attached");
+        }
+    }
+
+    /**
+     * Blocks until the attached vanilla server thread terminates. Called by
+     * Main after net.minecraft.server.Main.main returns so the launcher
+     * (Fandclip) does not close the plugin classloader while the server is
+     * still running.
+     */
+    public void awaitMinecraftServerStop() {
+        var server = minecraftServer.get();
+        if (server == null) {
+            return;
+        }
+        try {
+            server.getRunningThread().join();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 

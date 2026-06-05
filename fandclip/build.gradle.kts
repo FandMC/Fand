@@ -16,7 +16,7 @@ application {
 }
 
 val generateClipManifest by tasks.registering(WriteProperties::class) {
-    destinationFile.set(layout.buildDirectory.file("generated/resources/clip-manifest.properties"))
+    destinationFile.set(layout.buildDirectory.file("generated/manifest/clip-manifest.properties"))
     property("fandVersion", project.version.toString())
     property("minecraftVersion", providers.gradleProperty("minecraftVersion").get())
 }
@@ -25,19 +25,13 @@ val embedServerJar by tasks.registering(Copy::class) {
     dependsOn(":fand-server:fatJar")
     from(project(":fand-server").tasks.named<Jar>("fatJar").map { it.archiveFile })
     rename { "fand-server.jar" }
-    into(layout.buildDirectory.dir("generated/resources"))
-}
-
-sourceSets.named("main") {
-    resources.srcDir(layout.buildDirectory.dir("generated/resources"))
-}
-
-tasks.named("processResources") {
-    dependsOn(generateClipManifest, embedServerJar)
+    into(layout.buildDirectory.dir("generated/embedded"))
 }
 
 tasks.named<ProcessResources>("processResources") {
     duplicatesStrategy = DuplicatesStrategy.WARN
+    from(generateClipManifest)
+    from(embedServerJar)
 }
 
 tasks.named<Jar>("jar") {
