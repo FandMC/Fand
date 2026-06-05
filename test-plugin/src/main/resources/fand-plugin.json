@@ -1,0 +1,7 @@
+{
+  "id": "fand-test-plugin",
+  "version": "0.1.0",
+  "mainClass": "io.fand.testplugin.TestPlugin",
+  "authors": ["Fand"],
+  "depends": []
+}
