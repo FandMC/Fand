@@ -7,9 +7,11 @@ import io.fand.api.lifecycle.LifecyclePhase;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.scheduler.Scheduler;
+import io.fand.api.world.World;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
+import net.kyori.adventure.key.Key;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -58,6 +60,15 @@ public interface Server {
 
     /** Looks up an online player by exact (case-sensitive) name. */
     Optional<? extends Player> player(String name);
+
+    /** Snapshot of all loaded worlds. The returned collection is a copy. */
+    Collection<? extends World> worlds();
+
+    /** Looks up a loaded world by dimension key (e.g. {@code minecraft:overworld}). */
+    Optional<? extends World> world(Key key);
+
+    /** The default (overworld) world. Present once the server has finished loading. */
+    Optional<? extends World> defaultWorld();
 
     /** Current lifecycle phase. */
     LifecyclePhase phase();

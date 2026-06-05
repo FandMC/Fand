@@ -3,6 +3,7 @@ package io.fand.testplugin;
 import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
 import io.fand.api.command.CommandSpec;
+import io.fand.api.entity.Player;
 import io.fand.api.event.Listener;
 import io.fand.api.event.Subscribe;
 import io.fand.api.event.player.PlayerJoinEvent;
@@ -26,6 +27,7 @@ public final class TestPlugin implements Plugin {
     @Override
     public void onEnable(PluginContext context) {
         context.commands().register(new HelloCommand(context));
+        context.commands().register(new TeleportCommand(context));
         context.events().subscribe(ServerStartedEvent.class, event ->
                 context.logger().info("Server started; Fand brand={} version={}",
                         event.server().brand(), event.server().version()));
@@ -75,6 +77,51 @@ public final class TestPlugin implements Plugin {
         @Subscribe
         public void onQuit(PlayerQuitEvent event) {
             logger.info("{} left", event.player().name());
+        }
+    }
+
+    @CommandSpec(label = "fandtp", permission = "fand.testplugin.tp")
+    static final class TeleportCommand implements CommandExecutor {
+
+        private final PluginContext context;
+
+        TeleportCommand(PluginContext context) {
+            this.context = context;
+        }
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage(Component.text("/fandtp must be run by a player", NamedTextColor.RED));
+                return;
+            }
+            if (args.size() != 3) {
+                sender.sendMessage(Component.text("Usage: /fandtp <x> <y> <z>", NamedTextColor.RED));
+                return;
+            }
+            double x;
+            double y;
+            double z;
+            try {
+                x = Double.parseDouble(args.get(0));
+                y = Double.parseDouble(args.get(1));
+                z = Double.parseDouble(args.get(2));
+            } catch (NumberFormatException ex) {
+                sender.sendMessage(Component.text("Coordinates must be numbers", NamedTextColor.RED));
+                return;
+            }
+            var destination = player.world().at(x, y, z);
+            player.teleport(destination).whenComplete((ok, failure) -> {
+                if (failure != null) {
+                    context.logger().warn("Teleport failed for {}", player.name(), failure);
+                    return;
+                }
+                if (Boolean.TRUE.equals(ok)) {
+                    player.sendMessage(Component.text("Teleported.", NamedTextColor.GREEN));
+                } else {
+                    player.sendMessage(Component.text("Teleport rejected.", NamedTextColor.YELLOW));
+                }
+            });
         }
     }
 }

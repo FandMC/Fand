@@ -2,10 +2,16 @@ package io.fand.server.entity;
 
 import io.fand.api.entity.Player;
 import io.fand.api.permission.PermissionService;
+import io.fand.api.world.Location;
+import io.fand.api.world.World;
 import io.fand.server.command.AdventureBridge;
+import io.fand.server.world.FandWorld;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.text.Component;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
 public final class FandPlayer implements Player {
@@ -37,6 +43,73 @@ public final class FandPlayer implements Player {
         if (handle.connection != null) {
             handle.connection.disconnect(AdventureBridge.toVanilla(reason, handle.registryAccess()));
         }
+    }
+
+    @Override
+    public Location location() {
+        var world = new FandWorld(handle.level());
+        return new Location(world, handle.getX(), handle.getY(), handle.getZ(), handle.getYRot(), handle.getXRot());
+    }
+
+    @Override
+    public World world() {
+        return new FandWorld(handle.level());
+    }
+
+    @Override
+    public CompletableFuture<Boolean> teleport(Location destination) {
+        var server = handle.level().getServer();
+        if (server == null) {
+            return CompletableFuture.completedFuture(false);
+        }
+        ServerLevel target;
+        try {
+            target = resolveLevel(destination.world(), server);
+        } catch (IllegalArgumentException failure) {
+            return CompletableFuture.failedFuture(failure);
+        }
+        var future = new CompletableFuture<Boolean>();
+        Runnable run = () -> {
+            if (!online()) {
+                future.complete(false);
+                return;
+            }
+            try {
+                var ok = handle.teleportTo(
+                        target,
+                        destination.x(),
+                        destination.y(),
+                        destination.z(),
+                        Set.of(),
+                        destination.yaw(),
+                        destination.pitch(),
+                        true
+                );
+                future.complete(ok);
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        };
+        if (server.isSameThread()) {
+            run.run();
+        } else {
+            server.executeIfPossible(run);
+        }
+        return future;
+    }
+
+    private static ServerLevel resolveLevel(World world, net.minecraft.server.MinecraftServer server) {
+        if (world instanceof FandWorld fand) {
+            return fand.handle();
+        }
+        var key = world.key();
+        for (var level : server.getAllLevels()) {
+            var identifier = level.dimension().identifier();
+            if (identifier.getNamespace().equals(key.namespace()) && identifier.getPath().equals(key.value())) {
+                return level;
+            }
+        }
+        throw new IllegalArgumentException("World not loaded: " + key.asString());
     }
 
     @Override

@@ -20,13 +20,16 @@ import io.fand.server.event.EventDispatcher;
 import io.fand.server.permission.PermissionManager;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.scheduler.TaskScheduler;
+import io.fand.server.world.WorldRegistry;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import net.kyori.adventure.key.Key;
 import net.minecraft.server.MinecraftServer;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -43,6 +46,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final TaskScheduler scheduler;
     private final PluginRuntime plugins;
     private final PlayerRegistry players;
+    private final AtomicReference<WorldRegistry> worlds = new AtomicReference<>();
     private final AtomicReference<FandConfig> config;
     private final AtomicReference<LifecyclePhase> phase = new AtomicReference<>(LifecyclePhase.BOOTSTRAP);
     private final AtomicReference<MinecraftServer> minecraftServer = new AtomicReference<>();
@@ -146,6 +150,7 @@ public final class FandServer implements Server, AutoCloseable {
         if (!minecraftServer.compareAndSet(null, server)) {
             throw new IllegalStateException("Minecraft server is already attached");
         }
+        worlds.set(new WorldRegistry(server));
     }
 
     /**
@@ -243,6 +248,28 @@ public final class FandServer implements Server, AutoCloseable {
 
     public PlayerRegistry playerRegistry() {
         return players;
+    }
+
+    @Override
+    public Collection<? extends io.fand.api.world.World> worlds() {
+        var registry = worlds.get();
+        return registry == null ? List.of() : registry.snapshot();
+    }
+
+    @Override
+    public Optional<? extends io.fand.api.world.World> world(Key key) {
+        var registry = worlds.get();
+        return registry == null ? Optional.empty() : registry.find(key);
+    }
+
+    @Override
+    public Optional<? extends io.fand.api.world.World> defaultWorld() {
+        var registry = worlds.get();
+        return registry == null ? Optional.empty() : registry.defaultWorld();
+    }
+
+    public Optional<WorldRegistry> worldRegistry() {
+        return Optional.ofNullable(worlds.get());
     }
 
     @Override
