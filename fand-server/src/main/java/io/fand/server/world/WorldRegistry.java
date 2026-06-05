@@ -63,8 +63,11 @@ public final class WorldRegistry {
         if (existing != null && existing.handle() == level) {
             return existing;
         }
-        var fresh = new FandWorld(level);
-        byKey.put(key, fresh);
-        return fresh;
+        return byKey.compute(key, (ignored, current) -> {
+            if (current != null && current.handle() == level) {
+                return current;
+            }
+            return new FandWorld(level);
+        });
     }
 }

@@ -5,16 +5,17 @@ Subject: [PATCH] Fire Fand player join and quit events
 
 
 diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
-index f43c77ec4f1227877fadaacce744ec895b7a4352..8e936cd4e9587488fdcbd583991106b7518eb1e1 100644
+index f43c77ec4f1227877fadaacce744ec895b7a4352..80e2e3d079dde6b4626b29403e17d09319fc18b6 100644
 --- a/net/minecraft/server/players/PlayerList.java
 +++ b/net/minecraft/server/players/PlayerList.java
-@@ -205,7 +205,20 @@ public abstract class PlayerList {
+@@ -205,7 +205,21 @@ public abstract class PlayerList {
              component = Component.translatable("multiplayer.player.joined.renamed", player.getDisplayName(), oldName);
          }
  
 -        this.broadcastSystemMessage(component.withStyle(ChatFormatting.YELLOW), false);
++        net.minecraft.network.chat.Component fandJoinFallback = component.copy().withStyle(ChatFormatting.YELLOW);
 +        net.kyori.adventure.text.Component fandJoinMessage = io.fand.server.command.AdventureBridge.fromVanilla(
-+                component.copy().withStyle(ChatFormatting.YELLOW), this.server.registryAccess()
++                fandJoinFallback, this.server.registryAccess()
 +        );
 +        io.fand.server.entity.FandPlayer fandPlayer = io.fand.server.Main.runtime().playerRegistry().attach(player);
 +        var fandJoinEvent = new io.fand.api.event.player.PlayerJoinEvent(fandPlayer, fandJoinMessage);
@@ -25,12 +26,12 @@ index f43c77ec4f1227877fadaacce744ec895b7a4352..8e936cd4e9587488fdcbd583991106b7
 +        }
 +        var fandFinalJoinMessage = fandJoinEvent.message();
 +        if (fandFinalJoinMessage != null) {
-+            this.broadcastSystemMessage(io.fand.server.command.AdventureBridge.toVanilla(fandFinalJoinMessage, this.server.registryAccess()), false);
++            this.broadcastSystemMessage(io.fand.server.command.AdventureBridge.toVanillaOrFallback(fandFinalJoinMessage, fandJoinFallback, this.server.registryAccess()), false);
 +        }
          playerConnection.teleport(player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
          ServerStatus status = this.server.getStatus();
          if (status != null && !cookie.transferred()) {
-@@ -310,6 +323,19 @@ public abstract class PlayerList {
+@@ -310,6 +324,23 @@ public abstract class PlayerList {
  
      public void remove(final ServerPlayer player) {
          ServerLevel level = player.level();
@@ -44,7 +45,11 @@ index f43c77ec4f1227877fadaacce744ec895b7a4352..8e936cd4e9587488fdcbd583991106b7
 +            }
 +            var fandFinalQuitMessage = fandQuitEvent.message();
 +            if (fandFinalQuitMessage != null) {
-+                this.broadcastSystemMessage(io.fand.server.command.AdventureBridge.toVanilla(fandFinalQuitMessage, this.server.registryAccess()), false);
++                try {
++                    this.broadcastSystemMessage(io.fand.server.command.AdventureBridge.toVanilla(fandFinalQuitMessage, this.server.registryAccess()), false);
++                } catch (RuntimeException fandFailure) {
++                    LOGGER.warn("Skipping quit message after conversion failure", fandFailure);
++                }
 +            }
 +        }
          player.awardStat(Stats.LEAVE_GAME);

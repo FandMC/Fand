@@ -5,6 +5,7 @@ import io.fand.api.permission.PermissionService;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
 import io.fand.server.command.AdventureBridge;
+import io.fand.server.inventory.FandPlayerInventory;
 import io.fand.server.world.FandWorld;
 import java.util.Optional;
 import java.util.Set;
@@ -16,16 +17,25 @@ import net.minecraft.server.level.ServerPlayer;
 
 public final class FandPlayer implements Player {
 
-    private final ServerPlayer handle;
+    private volatile ServerPlayer handle;
     private final PermissionService permissions;
+    private final PlayerRegistry registry;
+    private volatile FandPlayerInventory inventory;
 
-    public FandPlayer(ServerPlayer handle, PermissionService permissions) {
+    public FandPlayer(ServerPlayer handle, PermissionService permissions, PlayerRegistry registry) {
         this.handle = handle;
         this.permissions = permissions;
+        this.registry = registry;
+        this.inventory = new FandPlayerInventory(handle.getInventory());
     }
 
     public ServerPlayer handle() {
         return handle;
+    }
+
+    void refreshHandle(ServerPlayer newHandle) {
+        this.handle = newHandle;
+        this.inventory = new FandPlayerInventory(newHandle.getInventory());
     }
 
     @Override
@@ -47,13 +57,13 @@ public final class FandPlayer implements Player {
 
     @Override
     public Location location() {
-        var world = new FandWorld(handle.level());
+        var world = registry.wrapLevel(handle.level());
         return new Location(world, handle.getX(), handle.getY(), handle.getZ(), handle.getYRot(), handle.getXRot());
     }
 
     @Override
     public World world() {
-        return new FandWorld(handle.level());
+        return registry.wrapLevel(handle.level());
     }
 
     @Override
@@ -140,7 +150,7 @@ public final class FandPlayer implements Player {
 
     @Override
     public io.fand.api.inventory.PlayerInventory inventory() {
-        return new io.fand.server.inventory.FandPlayerInventory(handle.getInventory());
+        return inventory;
     }
 
     @Override

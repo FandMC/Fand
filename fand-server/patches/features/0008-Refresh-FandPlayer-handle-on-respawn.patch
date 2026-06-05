@@ -1,0 +1,18 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Fri, 5 Jun 2026 19:18:01 +0800
+Subject: [PATCH] Refresh FandPlayer handle on respawn
+
+
+diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
+index 80e2e3d079dde6b4626b29403e17d09319fc18b6..8cc4e0e82df5fd229fa2c310b921f7996d7da0b9 100644
+--- a/net/minecraft/server/players/PlayerList.java
++++ b/net/minecraft/server/players/PlayerList.java
+@@ -459,6 +459,7 @@ public abstract class PlayerList {
+         level.addRespawnedPlayer(player);
+         this.players.add(player);
+         this.playersByUUID.put(player.getUUID(), player);
++        io.fand.server.Main.runtime().playerRegistry().onRespawn(player);
+         player.initInventoryMenu();
+         player.setHealth(player.getHealth());
+         ServerPlayer.RespawnConfig respawnConfig = player.getRespawnConfig();

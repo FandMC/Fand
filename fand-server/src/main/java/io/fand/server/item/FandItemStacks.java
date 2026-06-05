@@ -22,13 +22,13 @@ public final class FandItemStacks {
         if (stack == null || stack.isEmpty()) {
             return ItemStack.EMPTY;
         }
-        return new ItemStack(new FandItemType(stack.getItem()), stack.getCount());
+        return new ItemStack(FandItemType.of(stack.getItem()), stack.getCount());
     }
 
     public static FandItemType resolve(net.kyori.adventure.key.Key key) {
         var id = Identifier.fromNamespaceAndPath(key.namespace(), key.value());
         return BuiltInRegistries.ITEM.getOptional(id)
-                .map(FandItemType::new)
+                .map(FandItemType::of)
                 .orElse(null);
     }
 

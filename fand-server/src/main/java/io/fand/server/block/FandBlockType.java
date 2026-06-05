@@ -1,18 +1,26 @@
 package io.fand.server.block;
 
 import io.fand.api.block.BlockType;
+import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.key.Key;
 import net.minecraft.world.level.block.Block;
 
 public final class FandBlockType implements BlockType {
 
+    private static final ConcurrentHashMap<Block, FandBlockType> CACHE = new ConcurrentHashMap<>();
+
     private final Block handle;
     private final Key key;
 
-    public FandBlockType(Block handle) {
+    private FandBlockType(Block handle) {
         this.handle = handle;
         var id = handle.builtInRegistryHolder().key().identifier();
         this.key = Key.key(id.getNamespace(), id.getPath());
+    }
+
+    public static FandBlockType of(Block handle) {
+        var existing = CACHE.get(handle);
+        return existing != null ? existing : CACHE.computeIfAbsent(handle, FandBlockType::new);
     }
 
     public Block handle() {

@@ -5,10 +5,10 @@ Subject: [PATCH] Fire Fand PlayerChatEvent before chat broadcast
 
 
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 9e6958b1776a5aac67eca1060c486fcc1fd84ba6..0269cd8ecfab143555b931ee055e623bfa3b8519 100644
+index 9e6958b1776a5aac67eca1060c486fcc1fd84ba6..79be2e3e7a0d91e8338b8663083c8245f0d97078 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -1516,7 +1516,22 @@ public class ServerGamePacketListenerImpl
+@@ -1516,7 +1516,30 @@ public class ServerGamePacketListenerImpl
                  CompletableFuture<FilteredText> filteredFuture = this.filterTextPacket(signedMessage.signedContent());
                  Component decorated = this.server.getChatDecorator().decorate(this.player, signedMessage.decoratedContent());
                  this.chatMessageChain.append(filteredFuture, filtered -> {
@@ -16,17 +16,25 @@ index 9e6958b1776a5aac67eca1060c486fcc1fd84ba6..0269cd8ecfab143555b931ee055e623b
 +                    var fandPlayer = io.fand.server.Main.runtime().playerRegistry().find(this.player.getUUID()).orElse(null);
 +                    Component fandDecorated = decorated;
 +                    if (fandPlayer != null) {
-+                        net.kyori.adventure.text.Component fandMessage = io.fand.server.command.AdventureBridge.fromVanilla(decorated, this.player.registryAccess());
-+                        var fandChatEvent = new io.fand.api.event.player.PlayerChatEvent(fandPlayer, packet.message(), fandMessage);
++                        net.kyori.adventure.text.Component fandMessage;
 +                        try {
-+                            io.fand.server.Main.runtime().events().fire(fandChatEvent);
++                            fandMessage = io.fand.server.command.AdventureBridge.fromVanilla(decorated, this.player.registryAccess());
 +                        } catch (RuntimeException fandFailure) {
-+                            LOGGER.warn("PlayerChatEvent listener failed", fandFailure);
++                            LOGGER.warn("Skipping PlayerChatEvent after fromVanilla failure", fandFailure);
++                            fandMessage = null;
 +                        }
-+                        if (fandChatEvent.cancelled()) {
-+                            return;
++                        if (fandMessage != null) {
++                            var fandChatEvent = new io.fand.api.event.player.PlayerChatEvent(fandPlayer, packet.message(), fandMessage);
++                            try {
++                                io.fand.server.Main.runtime().events().fire(fandChatEvent);
++                            } catch (RuntimeException fandFailure) {
++                                LOGGER.warn("PlayerChatEvent listener failed", fandFailure);
++                            }
++                            if (fandChatEvent.cancelled()) {
++                                return;
++                            }
++                            fandDecorated = io.fand.server.command.AdventureBridge.toVanillaOrFallback(fandChatEvent.message(), decorated, this.player.registryAccess());
 +                        }
-+                        fandDecorated = io.fand.server.command.AdventureBridge.toVanilla(fandChatEvent.message(), this.player.registryAccess());
 +                    }
 +                    PlayerChatMessage filteredMessage = signedMessage.withUnsignedContent(fandDecorated).filter(filtered.mask());
                      this.broadcastChatMessage(filteredMessage);

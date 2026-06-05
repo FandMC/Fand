@@ -150,7 +150,9 @@ public final class FandServer implements Server, AutoCloseable {
         if (!minecraftServer.compareAndSet(null, server)) {
             throw new IllegalStateException("Minecraft server is already attached");
         }
-        worlds.set(new WorldRegistry(server));
+        var registry = new WorldRegistry(server);
+        worlds.set(registry);
+        players.bindWorldResolver(registry::wrap);
     }
 
     /**
@@ -277,7 +279,7 @@ public final class FandServer implements Server, AutoCloseable {
         Objects.requireNonNull(key, "key");
         var id = net.minecraft.resources.Identifier.fromNamespaceAndPath(key.namespace(), key.value());
         return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getOptional(id)
-                .map(io.fand.server.block.FandBlockType::new);
+                .map(io.fand.server.block.FandBlockType::of);
     }
 
     @Override
@@ -285,7 +287,7 @@ public final class FandServer implements Server, AutoCloseable {
         Objects.requireNonNull(key, "key");
         var id = net.minecraft.resources.Identifier.fromNamespaceAndPath(key.namespace(), key.value());
         return net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(id)
-                .map(io.fand.server.item.FandItemType::new);
+                .map(io.fand.server.item.FandItemType::of);
     }
 
     @Override

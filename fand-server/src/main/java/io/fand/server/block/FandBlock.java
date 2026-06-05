@@ -43,7 +43,7 @@ public final class FandBlock implements Block {
         ServerLevel level = world.handle();
         requireMainThread(level, "Block.type() must be read on the server thread");
         var state = level.getBlockState(pos);
-        return new FandBlockType(state.getBlock());
+        return FandBlockType.of(state.getBlock());
     }
 
     @Override
