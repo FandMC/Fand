@@ -281,6 +281,14 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
+    public Optional<? extends io.fand.api.item.ItemType> itemType(Key key) {
+        Objects.requireNonNull(key, "key");
+        var id = net.minecraft.resources.Identifier.fromNamespaceAndPath(key.namespace(), key.value());
+        return net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(id)
+                .map(io.fand.server.item.FandItemType::new);
+    }
+
+    @Override
     public LifecyclePhase phase() {
         return phase.get();
     }

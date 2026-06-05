@@ -139,6 +139,11 @@ public final class FandPlayer implements Player {
     }
 
     @Override
+    public io.fand.api.inventory.PlayerInventory inventory() {
+        return new io.fand.server.inventory.FandPlayerInventory(handle.getInventory());
+    }
+
+    @Override
     public boolean equals(Object other) {
         return other instanceof FandPlayer that && this.uniqueId().equals(that.uniqueId());
     }

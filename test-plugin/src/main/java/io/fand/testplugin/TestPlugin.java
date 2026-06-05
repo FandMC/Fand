@@ -29,6 +29,7 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new HelloCommand(context));
         context.commands().register(new TeleportCommand(context));
         context.commands().register(new SetBlockCommand(context));
+        context.commands().register(new GiveCommand(context));
         context.events().subscribe(ServerStartedEvent.class, event ->
                 context.logger().info("Server started; Fand brand={} version={}",
                         event.server().brand(), event.server().version()));
@@ -160,6 +161,60 @@ public final class TestPlugin implements Plugin {
             block.setType(type);
             player.sendMessage(Component.text("Set " + type.key().asString() + " at " + block.x() + "," + block.y() + "," + block.z(), NamedTextColor.GREEN));
             context.logger().info("/fandsetblock by {} set {} at {},{},{}", player.name(), type.key(), block.x(), block.y(), block.z());
+        }
+    }
+
+    @CommandSpec(label = "fandgive", permission = "fand.testplugin.give")
+    static final class GiveCommand implements CommandExecutor {
+
+        private final PluginContext context;
+
+        GiveCommand(PluginContext context) {
+            this.context = context;
+        }
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage(Component.text("/fandgive must be run by a player", NamedTextColor.RED));
+                return;
+            }
+            if (args.isEmpty() || args.size() > 2) {
+                sender.sendMessage(Component.text("Usage: /fandgive <type> [amount]", NamedTextColor.RED));
+                return;
+            }
+            io.fand.api.item.ItemType type;
+            try {
+                type = io.fand.api.item.ItemTypes.of(args.get(0));
+            } catch (java.util.NoSuchElementException ex) {
+                sender.sendMessage(Component.text("Unknown item: " + args.get(0), NamedTextColor.RED));
+                return;
+            } catch (net.kyori.adventure.key.InvalidKeyException ex) {
+                sender.sendMessage(Component.text("Invalid item key: " + args.get(0), NamedTextColor.RED));
+                return;
+            }
+            int amount = 1;
+            if (args.size() == 2) {
+                try {
+                    amount = Integer.parseInt(args.get(1));
+                } catch (NumberFormatException ex) {
+                    sender.sendMessage(Component.text("Amount must be a number", NamedTextColor.RED));
+                    return;
+                }
+                if (amount < 1 || amount > type.maxStackSize()) {
+                    sender.sendMessage(Component.text(
+                            "Amount must be in 1.." + type.maxStackSize() + " for " + type.key().asString(),
+                            NamedTextColor.RED));
+                    return;
+                }
+            }
+            var leftover = player.inventory().add(type.stack(amount));
+            int given = amount - leftover.amount();
+            player.sendMessage(Component.text(
+                    "Gave " + given + " x " + type.key().asString()
+                            + (leftover.isEmpty() ? "" : " (" + leftover.amount() + " did not fit)"),
+                    NamedTextColor.GREEN));
+            context.logger().info("/fandgive by {} -> {} x {}", player.name(), given, type.key());
         }
     }
 }

@@ -35,4 +35,7 @@ public interface Player extends CommandSender, PermissionSubject {
      * or {@code false} if the player went offline before the teleport ran.
      */
     CompletableFuture<Boolean> teleport(Location destination);
+
+    /** The player's main inventory + hotbar. */
+    io.fand.api.inventory.PlayerInventory inventory();
 }

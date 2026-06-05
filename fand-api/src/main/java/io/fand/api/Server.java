@@ -73,6 +73,9 @@ public interface Server {
     /** Looks up a block type by its registry key. */
     Optional<? extends io.fand.api.block.BlockType> blockType(Key key);
 
+    /** Looks up an item type by its registry key. */
+    Optional<? extends io.fand.api.item.ItemType> itemType(Key key);
+
     /** Current lifecycle phase. */
     LifecyclePhase phase();
 
