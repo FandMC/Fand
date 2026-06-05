@@ -28,6 +28,7 @@ public final class TestPlugin implements Plugin {
     public void onEnable(PluginContext context) {
         context.commands().register(new HelloCommand(context));
         context.commands().register(new TeleportCommand(context));
+        context.commands().register(new SetBlockCommand(context));
         context.events().subscribe(ServerStartedEvent.class, event ->
                 context.logger().info("Server started; Fand brand={} version={}",
                         event.server().brand(), event.server().version()));
@@ -122,6 +123,43 @@ public final class TestPlugin implements Plugin {
                     player.sendMessage(Component.text("Teleport rejected.", NamedTextColor.YELLOW));
                 }
             });
+        }
+    }
+
+    @CommandSpec(label = "fandsetblock", permission = "fand.testplugin.setblock")
+    static final class SetBlockCommand implements CommandExecutor {
+
+        private final PluginContext context;
+
+        SetBlockCommand(PluginContext context) {
+            this.context = context;
+        }
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage(Component.text("/fandsetblock must be run by a player", NamedTextColor.RED));
+                return;
+            }
+            if (args.size() != 1) {
+                sender.sendMessage(Component.text("Usage: /fandsetblock <type>", NamedTextColor.RED));
+                return;
+            }
+            io.fand.api.block.BlockType type;
+            try {
+                type = io.fand.api.block.BlockTypes.of(args.get(0));
+            } catch (java.util.NoSuchElementException ex) {
+                sender.sendMessage(Component.text("Unknown block: " + args.get(0), NamedTextColor.RED));
+                return;
+            } catch (net.kyori.adventure.key.InvalidKeyException ex) {
+                sender.sendMessage(Component.text("Invalid block key: " + args.get(0), NamedTextColor.RED));
+                return;
+            }
+            var loc = player.location();
+            var block = player.world().blockAt((int) Math.floor(loc.x()), (int) Math.floor(loc.y()) - 1, (int) Math.floor(loc.z()));
+            block.setType(type);
+            player.sendMessage(Component.text("Set " + type.key().asString() + " at " + block.x() + "," + block.y() + "," + block.z(), NamedTextColor.GREEN));
+            context.logger().info("/fandsetblock by {} set {} at {},{},{}", player.name(), type.key(), block.x(), block.y(), block.z());
         }
     }
 }

@@ -70,6 +70,9 @@ public interface Server {
     /** The default (overworld) world. Present once the server has finished loading. */
     Optional<? extends World> defaultWorld();
 
+    /** Looks up a block type by its registry key. */
+    Optional<? extends io.fand.api.block.BlockType> blockType(Key key);
+
     /** Current lifecycle phase. */
     LifecyclePhase phase();
 

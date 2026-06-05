@@ -1,6 +1,8 @@
 package io.fand.server.world;
 
+import io.fand.api.block.Block;
 import io.fand.api.world.World;
+import io.fand.server.block.FandBlock;
 import net.kyori.adventure.key.Key;
 import net.minecraft.server.level.ServerLevel;
 
@@ -27,6 +29,11 @@ public final class FandWorld implements World {
     @Override
     public long seed() {
         return handle.getSeed();
+    }
+
+    @Override
+    public Block blockAt(int x, int y, int z) {
+        return new FandBlock(this, x, y, z);
     }
 
     @Override

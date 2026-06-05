@@ -32,4 +32,11 @@ public interface World {
     default Location at(double x, double y, double z, float yaw, float pitch) {
         return new Location(this, x, y, z, yaw, pitch);
     }
+
+    /**
+     * Returns a positional block handle. The handle is lazy — it does not read
+     * the world until {@link io.fand.api.block.Block#type()} or
+     * {@link io.fand.api.block.Block#setType} is invoked.
+     */
+    io.fand.api.block.Block blockAt(int x, int y, int z);
 }
