@@ -1,0 +1,208 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Fri, 5 Jun 2026 20:11:02 +0800
+Subject: [PATCH] Fire Fand player interact/move/death/damage events
+
+
+diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
+index a2df6fe6da976cdfb6ac18fb88f6fb6aacf88b00..a5fb9188b3da4a562955b473decfc190753ba117 100644
+--- a/net/minecraft/server/level/ServerPlayer.java
++++ b/net/minecraft/server/level/ServerPlayer.java
+@@ -894,15 +894,41 @@ public class ServerPlayer extends Player {
+     public void die(final DamageSource source) {
+         this.gameEvent(GameEvent.ENTITY_DIE);
+         boolean showDeathMessage = this.level().getGameRules().get(GameRules.SHOW_DEATH_MESSAGES);
+-        if (showDeathMessage) {
+-            Component deathMessage = this.getCombatTracker().getDeathMessage();
++        Component deathMessage = showDeathMessage ? this.getCombatTracker().getDeathMessage() : null;
++        if (io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.player.PlayerDeathEvent.class)) {
++            var fandPlayer = io.fand.server.Main.runtime().playerRegistry().find(this.getUUID()).orElse(null);
++            if (fandPlayer != null) {
++                net.kyori.adventure.text.Component fandDeathMessage = null;
++                if (deathMessage != null) {
++                    try {
++                        fandDeathMessage = io.fand.server.command.AdventureBridge.fromVanilla(deathMessage, this.registryAccess());
++                    } catch (RuntimeException fandFailure) {
++                        LOGGER.warn("Skipping PlayerDeathEvent after fromVanilla failure", fandFailure);
++                    }
++                }
++                var fandDeathEvent = new io.fand.api.event.player.PlayerDeathEvent(fandPlayer, fandDeathMessage);
++                try {
++                    io.fand.server.Main.runtime().events().fire(fandDeathEvent);
++                } catch (RuntimeException fandFailure) {
++                    LOGGER.warn("PlayerDeathEvent listener failed", fandFailure);
++                }
++                if (fandDeathEvent.deathMessage() == null) {
++                    showDeathMessage = false;
++                    deathMessage = null;
++                } else if (deathMessage != null) {
++                    deathMessage = io.fand.server.command.AdventureBridge.toVanillaOrFallback(fandDeathEvent.deathMessage(), deathMessage, this.registryAccess());
++                }
++            }
++        }
++        if (showDeathMessage && deathMessage != null) {
++            final Component finalDeathMessage = deathMessage;
+             this.connection
+                 .send(
+-                    new ClientboundPlayerCombatKillPacket(this.getId(), deathMessage),
++                    new ClientboundPlayerCombatKillPacket(this.getId(), finalDeathMessage),
+                     PacketSendListener.exceptionallySend(
+                         () -> {
+                             int truncatedMessageSize = 256;
+-                            String truncatedDeathMessage = deathMessage.getString(256);
++                            String truncatedDeathMessage = finalDeathMessage.getString(256);
+                             Component explanation = Component.translatable(
+                                 "death.attack.message_too_long", Component.literal(truncatedDeathMessage).withStyle(ChatFormatting.YELLOW)
+                             );
+@@ -914,11 +940,11 @@ public class ServerPlayer extends Player {
+                 );
+             Team team = this.getTeam();
+             if (team == null || team.getDeathMessageVisibility() == Team.Visibility.ALWAYS) {
+-                this.server.getPlayerList().broadcastSystemMessage(deathMessage, false);
++                this.server.getPlayerList().broadcastSystemMessage(finalDeathMessage, false);
+             } else if (team.getDeathMessageVisibility() == Team.Visibility.HIDE_FOR_OTHER_TEAMS) {
+-                this.server.getPlayerList().broadcastSystemToTeam(this, deathMessage);
++                this.server.getPlayerList().broadcastSystemToTeam(this, finalDeathMessage);
+             } else if (team.getDeathMessageVisibility() == Team.Visibility.HIDE_FOR_OWN_TEAM) {
+-                this.server.getPlayerList().broadcastSystemToAllExceptTeam(this, deathMessage);
++                this.server.getPlayerList().broadcastSystemToAllExceptTeam(this, finalDeathMessage);
+             }
+         } else {
+             this.connection.send(new ClientboundPlayerCombatKillPacket(this.getId(), CommonComponents.EMPTY));
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 79be2e3e7a0d91e8338b8663083c8245f0d97078..04032aa11038dd738fe9c682132385c9774cfc61 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -1159,6 +1159,30 @@ public class ServerGamePacketListenerImpl
+                                     || this.player.isSleeping()
+                                     || (!fail || !level.noCollision(this.player, oldAABB))
+                                         && !this.isEntityCollidingWithAnythingNew(level, this.player, oldAABB, targetX, targetY, targetZ)) {
++                                    boolean fandMoveCancelled = false;
++                                    if (io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.player.PlayerMoveEvent.class)
++                                            && (startX != targetX || startY != targetY || startZ != targetZ
++                                                    || this.player.getYRot() != targetYRot || this.player.getXRot() != targetXRot)) {
++                                        var fandPlayer = io.fand.server.Main.runtime().playerRegistry().find(this.player.getUUID()).orElse(null);
++                                        if (fandPlayer != null) {
++                                            var fandWorld = io.fand.server.Main.runtime().worldRegistry().map(r -> r.wrap(level)).orElse(null);
++                                            if (fandWorld != null) {
++                                                var fandFrom = new io.fand.api.world.Location(fandWorld, startX, startY, startZ, this.player.getYRot(), this.player.getXRot());
++                                                var fandTo = new io.fand.api.world.Location(fandWorld, targetX, targetY, targetZ, targetYRot, targetXRot);
++                                                var fandMoveEvent = new io.fand.api.event.player.PlayerMoveEvent(fandPlayer, fandFrom, fandTo);
++                                                try {
++                                                    io.fand.server.Main.runtime().events().fire(fandMoveEvent);
++                                                } catch (RuntimeException fandFailure) {
++                                                    LOGGER.warn("PlayerMoveEvent listener failed", fandFailure);
++                                                }
++                                                fandMoveCancelled = fandMoveEvent.cancelled();
++                                            }
++                                        }
++                                    }
++                                    if (fandMoveCancelled) {
++                                        this.teleport(startX, startY, startZ, this.player.getYRot(), this.player.getXRot());
++                                        this.player.removeLatestMovementRecording();
++                                    } else {
+                                     this.player.absSnapTo(targetX, targetY, targetZ, targetYRot, targetXRot);
+                                     boolean isAutoSpinAttack = this.player.isAutoSpinAttack();
+                                     this.clientIsFloating = oyDist >= -0.03125
+@@ -1192,6 +1216,7 @@ public class ServerGamePacketListenerImpl
+                                     this.lastGoodX = this.player.getX();
+                                     this.lastGoodY = this.player.getY();
+                                     this.lastGoodZ = this.player.getZ();
++                                    }
+                                 } else {
+                                     this.teleport(startX, startY, startZ, targetYRot, targetXRot);
+                                     this.player
+@@ -1368,6 +1393,32 @@ public class ServerGamePacketListenerImpl
+                             if (this.server.isUnderSpawnProtection(level, pos, this.player)) {
+                                 this.player.sendSpawnProtectionMessage(pos);
+                             } else if (this.awaitingPositionFromClient == null && level.mayInteract(this.player, pos)) {
++                                if (io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.player.PlayerInteractEvent.class)) {
++                                    var fandPlayer = io.fand.server.Main.runtime().playerRegistry().find(this.player.getUUID()).orElse(null);
++                                    if (fandPlayer != null) {
++                                        var fandWorld = io.fand.server.Main.runtime().worldRegistry().map(r -> r.wrap(level)).orElse(null);
++                                        var fandBlock = fandWorld == null ? java.util.Optional.<io.fand.api.block.Block>empty()
++                                                : java.util.Optional.<io.fand.api.block.Block>of(new io.fand.server.block.FandBlock(fandWorld, pos.getX(), pos.getY(), pos.getZ()));
++                                        var fandHand = hand == net.minecraft.world.InteractionHand.OFF_HAND
++                                                ? io.fand.api.event.player.PlayerInteractEvent.Hand.OFF_HAND
++                                                : io.fand.api.event.player.PlayerInteractEvent.Hand.MAIN_HAND;
++                                        var fandInteractEvent = new io.fand.api.event.player.PlayerInteractEvent(
++                                                fandPlayer,
++                                                io.fand.api.event.player.PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK,
++                                                fandHand,
++                                                fandBlock);
++                                        try {
++                                            io.fand.server.Main.runtime().events().fire(fandInteractEvent);
++                                        } catch (RuntimeException fandFailure) {
++                                            LOGGER.warn("PlayerInteractEvent listener failed", fandFailure);
++                                        }
++                                        if (fandInteractEvent.cancelled()) {
++                                            this.send(new ClientboundBlockUpdatePacket(level, pos));
++                                            this.send(new ClientboundBlockUpdatePacket(level, pos.relative(direction)));
++                                            return;
++                                        }
++                                    }
++                                }
+                                 InteractionResult interactionResult = this.player.gameMode.useItemOn(this.player, level, itemStack, hand, blockHit);
+                                 if (interactionResult.consumesAction()) {
+                                     CriteriaTriggers.ANY_BLOCK_USE.trigger(this.player, blockHit.getBlockPos(), itemStack);
+@@ -1429,6 +1480,28 @@ public class ServerGamePacketListenerImpl
+                     this.player.absSnapRotationTo(targetYRot, targetXRot);
+                 }
+ 
++                if (io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.player.PlayerInteractEvent.class)) {
++                    var fandPlayer = io.fand.server.Main.runtime().playerRegistry().find(this.player.getUUID()).orElse(null);
++                    if (fandPlayer != null) {
++                        var fandHand = hand == net.minecraft.world.InteractionHand.OFF_HAND
++                                ? io.fand.api.event.player.PlayerInteractEvent.Hand.OFF_HAND
++                                : io.fand.api.event.player.PlayerInteractEvent.Hand.MAIN_HAND;
++                        var fandInteractEvent = new io.fand.api.event.player.PlayerInteractEvent(
++                                fandPlayer,
++                                io.fand.api.event.player.PlayerInteractEvent.Action.RIGHT_CLICK_AIR,
++                                fandHand,
++                                java.util.Optional.empty());
++                        try {
++                            io.fand.server.Main.runtime().events().fire(fandInteractEvent);
++                        } catch (RuntimeException fandFailure) {
++                            LOGGER.warn("PlayerInteractEvent listener failed", fandFailure);
++                        }
++                        if (fandInteractEvent.cancelled()) {
++                            return;
++                        }
++                    }
++                }
++
+                 if (this.player.gameMode.useItem(this.player, level, itemStack, hand) instanceof InteractionResult.Success success
+                     && success.swingSource() == InteractionResult.SwingSource.SERVER) {
+                     this.player.swing(hand, true);
+diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
+index 0c10a086b7edb97718825553db1da3f14a6f87f6..d02fada406531ad4d69cfb44afe3d0a2ab386d4f 100644
+--- a/net/minecraft/world/entity/LivingEntity.java
++++ b/net/minecraft/world/entity/LivingEntity.java
+@@ -1157,6 +1157,27 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+         } else if (source.is(DamageTypeTags.IS_FIRE) && this.hasEffect(MobEffects.FIRE_RESISTANCE)) {
+             return false;
+         } else {
++            if (this instanceof net.minecraft.server.level.ServerPlayer fandServerPlayer
++                    && io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.player.PlayerDamageEvent.class)) {
++                var fandPlayer = io.fand.server.Main.runtime().playerRegistry().find(fandServerPlayer.getUUID()).orElse(null);
++                if (fandPlayer != null) {
++                    var fandDamageType = source.typeHolder().unwrapKey().map(k -> k.identifier().toString()).orElse("minecraft:generic");
++                    var fandDamageEvent = new io.fand.api.event.player.PlayerDamageEvent(fandPlayer, fandDamageType, damage);
++                    try {
++                        io.fand.server.Main.runtime().events().fire(fandDamageEvent);
++                    } catch (RuntimeException fandFailure) {
++                        org.slf4j.LoggerFactory.getLogger(LivingEntity.class).warn("PlayerDamageEvent listener failed", fandFailure);
++                    }
++                    if (fandDamageEvent.cancelled()) {
++                        return false;
++                    }
++                    double fandAdjusted = fandDamageEvent.amount();
++                    if (fandAdjusted < 0.0) {
++                        fandAdjusted = 0.0;
++                    }
++                    damage = (float) fandAdjusted;
++                }
++            }
+             if (this.isSleeping()) {
+                 this.stopSleeping();
+             }
