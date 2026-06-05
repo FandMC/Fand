@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.fand.api.event.Event;
 import io.fand.api.event.EventDispatchException;
 import io.fand.api.event.EventPriority;
+import io.fand.api.event.Listener;
+import io.fand.api.event.Subscribe;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -114,5 +116,61 @@ final class EventDispatcherTest {
     }
 
     private record ChildEvent() implements BaseEvent {
+    }
+
+    @Test
+    void registerListenerSubscribesAllAnnotatedMethods() {
+        List<String> calls = new ArrayList<>();
+        var listener = new MultiHandler(calls);
+
+        var subscription = bus.registerListener(listener);
+
+        bus.fire(new ChildEvent());
+        assertThat(calls).containsExactly("base", "child-high");
+
+        subscription.unregister();
+        calls.clear();
+        bus.fire(new ChildEvent());
+        assertThat(calls).isEmpty();
+    }
+
+    @Test
+    void registerListenerRejectsListenerWithoutAnnotatedMethods() {
+        assertThatThrownBy(() -> bus.registerListener(new EmptyListener()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("No @Subscribe methods");
+    }
+
+    @Test
+    void registerListenerRejectsBadSignature() {
+        assertThatThrownBy(() -> bus.registerListener(new BadSignatureListener()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static final class MultiHandler implements Listener {
+        private final List<String> calls;
+
+        MultiHandler(List<String> calls) {
+            this.calls = calls;
+        }
+
+        @Subscribe
+        public void onBase(BaseEvent event) {
+            calls.add("base");
+        }
+
+        @Subscribe(priority = EventPriority.HIGH)
+        public void onChild(ChildEvent event) {
+            calls.add("child-high");
+        }
+    }
+
+    private static final class EmptyListener implements Listener {
+    }
+
+    private static final class BadSignatureListener implements Listener {
+        @Subscribe
+        public void notAnEvent(String wrong) {
+        }
     }
 }

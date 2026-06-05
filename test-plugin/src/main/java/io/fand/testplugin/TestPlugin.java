@@ -3,6 +3,8 @@ package io.fand.testplugin;
 import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
 import io.fand.api.command.CommandSpec;
+import io.fand.api.event.Listener;
+import io.fand.api.event.Subscribe;
 import io.fand.api.event.player.PlayerJoinEvent;
 import io.fand.api.event.player.PlayerQuitEvent;
 import io.fand.api.lifecycle.ServerStartedEvent;
@@ -12,6 +14,7 @@ import java.time.Duration;
 import java.util.List;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import org.slf4j.Logger;
 
 public final class TestPlugin implements Plugin {
 
@@ -31,8 +34,7 @@ public final class TestPlugin implements Plugin {
                     event.player().online() ? "still" : "now offline");
             event.player().sendMessage(Component.text("Welcome from test-plugin!", NamedTextColor.AQUA));
         });
-        context.events().subscribe(PlayerQuitEvent.class, event ->
-                context.logger().info("{} left", event.player().name()));
+        context.events().registerListener(new PlayerEvents(context.logger()));
         context.scheduler().runMainRepeating(
                 () -> context.logger().debug("test-plugin heartbeat"),
                 Duration.ofSeconds(30),
@@ -59,6 +61,20 @@ public final class TestPlugin implements Plugin {
             var greeting = args.isEmpty() ? sender.name() : String.join(" ", args);
             sender.sendMessage(Component.text("Hello, " + greeting + "!", NamedTextColor.GREEN));
             context.logger().info("/fandtest invoked by {} with args {}", sender.name(), args);
+        }
+    }
+
+    static final class PlayerEvents implements Listener {
+
+        private final Logger logger;
+
+        PlayerEvents(Logger logger) {
+            this.logger = logger;
+        }
+
+        @Subscribe
+        public void onQuit(PlayerQuitEvent event) {
+            logger.info("{} left", event.player().name());
         }
     }
 }

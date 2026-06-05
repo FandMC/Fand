@@ -16,6 +16,15 @@ public interface EventBus {
 
     <E extends Event> EventSubscription subscribe(Class<E> type, EventPriority priority, EventListener<E> listener);
 
+    /**
+     * Registers every {@link Subscribe @Subscribe}-annotated method on
+     * {@code listener}. The returned subscription unregisters all of them
+     * atomically; individual methods cannot be cancelled separately.
+     */
+    default EventSubscription registerListener(Listener listener) {
+        return ListenerBinder.bind(this, listener);
+    }
+
     /** Fires {@code event} synchronously to all matching listeners. */
     <E extends Event> E fire(E event);
 }
