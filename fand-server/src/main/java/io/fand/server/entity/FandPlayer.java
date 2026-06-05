@@ -1,5 +1,6 @@
 package io.fand.server.entity;
 
+import io.fand.api.entity.GameMode;
 import io.fand.api.entity.Player;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.world.Location;
@@ -20,6 +21,7 @@ import net.kyori.adventure.sound.SoundStop;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.title.Title;
 import net.kyori.adventure.title.TitlePart;
+import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityType;
@@ -281,6 +283,116 @@ public final class FandPlayer implements Player {
     @Override
     public io.fand.api.inventory.PlayerInventory inventory() {
         return inventory;
+    }
+
+    @Override
+    public GameMode gameMode() {
+        return GameModes.toApi(handle.gameMode.getGameModeForPlayer());
+    }
+
+    @Override
+    public void setGameMode(GameMode mode) {
+        var vanilla = GameModes.toVanilla(mode);
+        runOnMain(() -> handle.setGameMode(vanilla));
+    }
+
+    @Override
+    public int foodLevel() {
+        return handle.getFoodData().getFoodLevel();
+    }
+
+    @Override
+    public void setFoodLevel(int level) {
+        int clamped = Math.max(0, Math.min(20, level));
+        runOnMain(() -> handle.getFoodData().setFoodLevel(clamped));
+    }
+
+    @Override
+    public float saturation() {
+        return handle.getFoodData().getSaturationLevel();
+    }
+
+    @Override
+    public void setSaturation(float saturation) {
+        runOnMain(() -> handle.getFoodData().setSaturation(saturation));
+    }
+
+    @Override
+    public int experienceLevel() {
+        return handle.experienceLevel;
+    }
+
+    @Override
+    public void setExperienceLevel(int level) {
+        runOnMain(() -> handle.setExperienceLevels(level));
+    }
+
+    @Override
+    public float experienceProgress() {
+        return handle.experienceProgress;
+    }
+
+    @Override
+    public void setExperienceProgress(float progress) {
+        float clamped = Math.max(0.0F, Math.min(0.9999F, progress));
+        runOnMain(() -> {
+            handle.experienceProgress = clamped;
+            handle.resetSentInfo();
+        });
+    }
+
+    @Override
+    public void giveExperience(int points) {
+        if (points == 0) {
+            return;
+        }
+        runOnMain(() -> handle.giveExperiencePoints(points));
+    }
+
+    @Override
+    public boolean flying() {
+        return handle.getAbilities().flying;
+    }
+
+    @Override
+    public void setFlying(boolean flying) {
+        runOnMain(() -> {
+            var abilities = handle.getAbilities();
+            if (flying && !abilities.mayfly) {
+                pushAbilities();
+                return;
+            }
+            if (abilities.flying != flying) {
+                abilities.flying = flying;
+                pushAbilities();
+            }
+        });
+    }
+
+    @Override
+    public boolean allowFlight() {
+        return handle.getAbilities().mayfly;
+    }
+
+    @Override
+    public void setAllowFlight(boolean allow) {
+        runOnMain(() -> {
+            var abilities = handle.getAbilities();
+            if (abilities.mayfly == allow) {
+                return;
+            }
+            abilities.mayfly = allow;
+            if (!allow) {
+                abilities.flying = false;
+            }
+            pushAbilities();
+        });
+    }
+
+    private void pushAbilities() {
+        if (handle.connection != null) {
+            handle.connection.send(new ClientboundPlayerAbilitiesPacket(handle.getAbilities()));
+        }
     }
 
     @Override
