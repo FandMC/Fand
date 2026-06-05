@@ -3,6 +3,8 @@ package io.fand.testplugin;
 import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
 import io.fand.api.command.CommandSpec;
+import io.fand.api.event.player.PlayerJoinEvent;
+import io.fand.api.event.player.PlayerQuitEvent;
 import io.fand.api.lifecycle.ServerStartedEvent;
 import io.fand.api.plugin.Plugin;
 import io.fand.api.plugin.PluginContext;
@@ -24,6 +26,13 @@ public final class TestPlugin implements Plugin {
         context.events().subscribe(ServerStartedEvent.class, event ->
                 context.logger().info("Server started; Fand brand={} version={}",
                         event.server().brand(), event.server().version()));
+        context.events().subscribe(PlayerJoinEvent.class, event -> {
+            context.logger().info("{} joined ({} online)", event.player().name(),
+                    event.player().online() ? "still" : "now offline");
+            event.player().sendMessage(Component.text("Welcome from test-plugin!", NamedTextColor.AQUA));
+        });
+        context.events().subscribe(PlayerQuitEvent.class, event ->
+                context.logger().info("{} left", event.player().name()));
         context.scheduler().runMainRepeating(
                 () -> context.logger().debug("test-plugin heartbeat"),
                 Duration.ofSeconds(30),

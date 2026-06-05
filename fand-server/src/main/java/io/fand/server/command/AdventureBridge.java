@@ -20,4 +20,12 @@ public final class AdventureBridge {
                 .resultOrPartial(error -> {})
                 .orElseThrow(() -> new IllegalStateException("Failed to convert Adventure component to vanilla: " + message));
     }
+
+    public static net.kyori.adventure.text.Component fromVanilla(Component message, @Nullable RegistryAccess registries) {
+        var ops = registries == null ? JsonOps.INSTANCE : registries.createSerializationContext(JsonOps.INSTANCE);
+        var element = ComponentSerialization.CODEC.encodeStart(ops, message)
+                .resultOrPartial(error -> {})
+                .orElseThrow(() -> new IllegalStateException("Failed to convert vanilla component to Adventure: " + message));
+        return GsonComponentSerializer.gson().deserialize(element.toString());
+    }
 }

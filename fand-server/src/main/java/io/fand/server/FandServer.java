@@ -15,13 +15,17 @@ import io.fand.server.command.BuiltinCommands;
 import io.fand.server.command.CommandManager;
 import io.fand.server.config.ConfigReloadResult;
 import io.fand.server.config.FandConfig;
+import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.event.EventDispatcher;
 import io.fand.server.permission.PermissionManager;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.scheduler.TaskScheduler;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import net.minecraft.server.MinecraftServer;
 import org.jspecify.annotations.Nullable;
@@ -38,6 +42,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final CommandManager commands;
     private final TaskScheduler scheduler;
     private final PluginRuntime plugins;
+    private final PlayerRegistry players;
     private final AtomicReference<FandConfig> config;
     private final AtomicReference<LifecyclePhase> phase = new AtomicReference<>(LifecyclePhase.BOOTSTRAP);
     private final AtomicReference<MinecraftServer> minecraftServer = new AtomicReference<>();
@@ -58,6 +63,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.commands = new CommandManager(permissions);
         registerBuiltinCommands();
         this.scheduler = new TaskScheduler(initialConfig.scheduler.asyncThreads);
+        this.players = new PlayerRegistry(permissions);
         var pluginDirectory = Path.of(initialConfig.plugins.directory);
         this.plugins = new PluginRuntime(
                 pluginDirectory,
@@ -218,6 +224,25 @@ public final class FandServer implements Server, AutoCloseable {
     public int maxPlayers() {
         var server = minecraftServer.get();
         return server == null ? -1 : server.getMaxPlayers();
+    }
+
+    @Override
+    public Collection<? extends io.fand.api.entity.Player> players() {
+        return players.snapshot();
+    }
+
+    @Override
+    public Optional<? extends io.fand.api.entity.Player> player(UUID uniqueId) {
+        return players.find(uniqueId);
+    }
+
+    @Override
+    public Optional<? extends io.fand.api.entity.Player> player(String name) {
+        return players.findByName(name);
+    }
+
+    public PlayerRegistry playerRegistry() {
+        return players;
     }
 
     @Override

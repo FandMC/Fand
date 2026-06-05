@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: fand <fand@local>
+Date: Fri, 5 Jun 2026 14:43:41 +0800
+Subject: [PATCH] Fire Fand player join and quit events
+
+
+diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
+index f43c77ec4f1227877fadaacce744ec895b7a4352..8e936cd4e9587488fdcbd583991106b7518eb1e1 100644
+--- a/net/minecraft/server/players/PlayerList.java
++++ b/net/minecraft/server/players/PlayerList.java
+@@ -205,7 +205,20 @@ public abstract class PlayerList {
+             component = Component.translatable("multiplayer.player.joined.renamed", player.getDisplayName(), oldName);
+         }
+ 
+-        this.broadcastSystemMessage(component.withStyle(ChatFormatting.YELLOW), false);
++        net.kyori.adventure.text.Component fandJoinMessage = io.fand.server.command.AdventureBridge.fromVanilla(
++                component.copy().withStyle(ChatFormatting.YELLOW), this.server.registryAccess()
++        );
++        io.fand.server.entity.FandPlayer fandPlayer = io.fand.server.Main.runtime().playerRegistry().attach(player);
++        var fandJoinEvent = new io.fand.api.event.player.PlayerJoinEvent(fandPlayer, fandJoinMessage);
++        try {
++            io.fand.server.Main.runtime().events().fire(fandJoinEvent);
++        } catch (RuntimeException fandFailure) {
++            LOGGER.warn("PlayerJoinEvent listener failed", fandFailure);
++        }
++        var fandFinalJoinMessage = fandJoinEvent.message();
++        if (fandFinalJoinMessage != null) {
++            this.broadcastSystemMessage(io.fand.server.command.AdventureBridge.toVanilla(fandFinalJoinMessage, this.server.registryAccess()), false);
++        }
+         playerConnection.teleport(player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
+         ServerStatus status = this.server.getStatus();
+         if (status != null && !cookie.transferred()) {
+@@ -310,6 +323,19 @@ public abstract class PlayerList {
+ 
+     public void remove(final ServerPlayer player) {
+         ServerLevel level = player.level();
++        var fandPlayerForQuit = io.fand.server.Main.runtime().playerRegistry().detach(player.getUUID()).orElse(null);
++        if (fandPlayerForQuit != null) {
++            var fandQuitEvent = new io.fand.api.event.player.PlayerQuitEvent(fandPlayerForQuit, null);
++            try {
++                io.fand.server.Main.runtime().events().fire(fandQuitEvent);
++            } catch (RuntimeException fandFailure) {
++                LOGGER.warn("PlayerQuitEvent listener failed", fandFailure);
++            }
++            var fandFinalQuitMessage = fandQuitEvent.message();
++            if (fandFinalQuitMessage != null) {
++                this.broadcastSystemMessage(io.fand.server.command.AdventureBridge.toVanilla(fandFinalQuitMessage, this.server.registryAccess()), false);
++            }
++        }
+         player.awardStat(Stats.LEAVE_GAME);
+         this.save(player);
+         if (player.isPassenger()) {
