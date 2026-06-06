@@ -1,5 +1,6 @@
 package io.fand.server.config;
 
+import io.fand.server.network.ProxyForwardingMode;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.scheduler.TaskScheduler;
 import java.nio.file.Path;
@@ -56,6 +57,13 @@ public final class ConfigReloader {
         if (previous.scheduler.asyncThreads != reloaded.scheduler.asyncThreads) {
             scheduler.reconfigureAsyncThreads(reloaded.scheduler.asyncThreads);
             hotApplied.add("scheduler.asyncThreads");
+        }
+        if (ProxyForwardingMode.fromConfig(previous.network.forwarding.mode)
+                != ProxyForwardingMode.fromConfig(reloaded.network.forwarding.mode)) {
+            requiresRestart.add("network.forwarding.mode");
+        }
+        if (!previous.network.forwarding.secret.equals(reloaded.network.forwarding.secret)) {
+            requiresRestart.add("network.forwarding.secret");
         }
 
         plugins.reconfigure(toPluginOptions(reloaded));

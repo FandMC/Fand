@@ -1,0 +1,206 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 6 Jun 2026 22:17:20 +0800
+Subject: [PATCH] Support proxy player forwarding
+
+
+diff --git a/net/minecraft/network/Connection.java b/net/minecraft/network/Connection.java
+index ca22785306bbaa55fcaa7fe79548618802a0488a..b1453c77156973db924ea4c0df396351abed86f5 100644
+--- a/net/minecraft/network/Connection.java
++++ b/net/minecraft/network/Connection.java
+@@ -378,6 +378,10 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         return this.address;
+     }
+ 
++    public void fand$setRemoteAddress(final SocketAddress address) {
++        this.address = address;
++    }
++
+     public String getLoggableAddress(final boolean logIPs) {
+         if (this.address == null) {
+             return "local";
+diff --git a/net/minecraft/network/protocol/handshake/ClientIntentionPacket.java b/net/minecraft/network/protocol/handshake/ClientIntentionPacket.java
+index d88b5d053f612f86c6a380556e0b5227f0b4b513..31ef2a085a76a58f383b9f0b081eb660eb885d00 100644
+--- a/net/minecraft/network/protocol/handshake/ClientIntentionPacket.java
++++ b/net/minecraft/network/protocol/handshake/ClientIntentionPacket.java
+@@ -9,7 +9,7 @@ public record ClientIntentionPacket(int protocolVersion, String hostName, int po
+     public static final StreamCodec<FriendlyByteBuf, ClientIntentionPacket> STREAM_CODEC = Packet.codec(
+         ClientIntentionPacket::write, ClientIntentionPacket::new
+     );
+-    private static final int MAX_HOST_LENGTH = 255;
++    private static final int MAX_HOST_LENGTH = Short.MAX_VALUE;
+ 
+     @Deprecated
+     public ClientIntentionPacket(int protocolVersion, String hostName, int port, ClientIntent intention) {
+@@ -20,7 +20,7 @@ public record ClientIntentionPacket(int protocolVersion, String hostName, int po
+     }
+ 
+     private ClientIntentionPacket(final FriendlyByteBuf input) {
+-        this(input.readVarInt(), input.readUtf(255), input.readUnsignedShort(), ClientIntent.byId(input.readVarInt()));
++        this(input.readVarInt(), input.readUtf(MAX_HOST_LENGTH), input.readUnsignedShort(), ClientIntent.byId(input.readVarInt()));
+     }
+ 
+     private void write(final FriendlyByteBuf output) {
+diff --git a/net/minecraft/network/protocol/login/ServerboundCustomQueryAnswerPacket.java b/net/minecraft/network/protocol/login/ServerboundCustomQueryAnswerPacket.java
+index 07ff6a797ac5b968e2d2d5be71a0d5d960577c54..980364a489ca10ee1ec6d927673dfd5b782c6668 100644
+--- a/net/minecraft/network/protocol/login/ServerboundCustomQueryAnswerPacket.java
++++ b/net/minecraft/network/protocol/login/ServerboundCustomQueryAnswerPacket.java
+@@ -1,5 +1,7 @@
+ package net.minecraft.network.protocol.login;
+ 
++import io.fand.server.network.VelocityForwardingQueryAnswerPayload;
++import io.fand.server.network.VelocityForwardingQueryPayload;
+ import net.minecraft.network.FriendlyByteBuf;
+ import net.minecraft.network.codec.StreamCodec;
+ import net.minecraft.network.protocol.Packet;
+@@ -19,7 +21,14 @@ public record ServerboundCustomQueryAnswerPacket(int transactionId, @Nullable Cu
+         return new ServerboundCustomQueryAnswerPacket(transactionId, readPayload(transactionId, input));
+     }
+ 
+-    private static CustomQueryAnswerPayload readPayload(final int transactionId, final FriendlyByteBuf input) {
++    private static @Nullable CustomQueryAnswerPayload readPayload(final int transactionId, final FriendlyByteBuf input) {
++        return input.readNullable(buf -> readSuccessfulPayload(transactionId, buf));
++    }
++
++    private static CustomQueryAnswerPayload readSuccessfulPayload(final int transactionId, final FriendlyByteBuf input) {
++        if (transactionId == VelocityForwardingQueryPayload.TRANSACTION_ID) {
++            return VelocityForwardingQueryAnswerPayload.read(input);
++        }
+         return readUnknownPayload(input);
+     }
+ 
+diff --git a/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java b/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
+index c77342c64fd36f6fa76f06360dfb378a69cf6120..40034da46c788bc9c8d4d94d60c4f8a83292263c 100644
+--- a/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
+@@ -65,7 +65,7 @@ public class ServerHandshakePacketListenerImpl implements ServerHandshakePacketL
+             this.connection.send(new ClientboundLoginDisconnectPacket(reason));
+             this.connection.disconnect(reason);
+         } else {
+-            this.connection.setupInboundProtocol(LoginProtocols.SERVERBOUND, new ServerLoginPacketListenerImpl(this.server, this.connection, transfer));
++            this.connection.setupInboundProtocol(LoginProtocols.SERVERBOUND, new ServerLoginPacketListenerImpl(this.server, this.connection, transfer, packet.hostName()));
+         }
+     }
+ 
+diff --git a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+index 42241bb2c8420614c6b93333e329cd46f5eda6b1..c2aaa52e90d431de03445c937577d77966699dc0 100644
+--- a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+@@ -5,6 +5,12 @@ import com.mojang.authlib.GameProfile;
+ import com.mojang.authlib.exceptions.AuthenticationUnavailableException;
+ import com.mojang.authlib.yggdrasil.ProfileResult;
+ import com.mojang.logging.LogUtils;
++import io.fand.server.hooks.FandHooks;
++import io.fand.server.network.ForwardedPlayerInfo;
++import io.fand.server.network.ForwardingParseException;
++import io.fand.server.network.ProxyForwardingMode;
++import io.fand.server.network.VelocityForwardingQueryAnswerPayload;
++import io.fand.server.network.VelocityForwardingQueryPayload;
+ import java.math.BigInteger;
+ import java.net.InetAddress;
+ import java.net.InetSocketAddress;
+@@ -26,6 +32,7 @@ import net.minecraft.network.chat.Component;
+ import net.minecraft.network.protocol.configuration.ConfigurationProtocols;
+ import net.minecraft.network.protocol.cookie.ServerboundCookieResponsePacket;
+ import net.minecraft.network.protocol.login.ClientboundHelloPacket;
++import net.minecraft.network.protocol.login.ClientboundCustomQueryPacket;
+ import net.minecraft.network.protocol.login.ClientboundLoginCompressionPacket;
+ import net.minecraft.network.protocol.login.ClientboundLoginDisconnectPacket;
+ import net.minecraft.network.protocol.login.ClientboundLoginFinishedPacket;
+@@ -60,13 +67,21 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+     private @Nullable GameProfile authenticatedProfile;
+     private final String serverId = "";
+     private final boolean transferred;
++    private final String requestedHostName;
+ 
+     public ServerLoginPacketListenerImpl(final MinecraftServer minecraftserver, final Connection connection, final boolean transferred) {
++        this(minecraftserver, connection, transferred, "");
++    }
++
++    public ServerLoginPacketListenerImpl(
++        final MinecraftServer minecraftserver, final Connection connection, final boolean transferred, final String requestedHostName
++    ) {
+         this.server = minecraftserver;
+         this.connection = connection;
+         this.serverActivityMonitor = this.server.getServerActivityMonitor();
+         this.challenge = Ints.toByteArray(RandomSource.create().nextInt());
+         this.transferred = transferred;
++        this.requestedHostName = requestedHostName;
+     }
+ 
+     @Override
+@@ -119,6 +134,17 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+         Validate.validState(this.state == ServerLoginPacketListenerImpl.State.HELLO, "Unexpected hello packet");
+         Validate.validState(StringUtil.isValidPlayerName(packet.name()), "Invalid characters in username");
+         this.requestedUsername = packet.name();
++        ProxyForwardingMode forwardingMode = FandHooks.proxyForwardingMode();
++        if (forwardingMode == ProxyForwardingMode.BUNGEE_LEGACY) {
++            this.handleBungeeForwarding(packet.name());
++            return;
++        }
++        if (forwardingMode == ProxyForwardingMode.VELOCITY_MODERN) {
++            this.state = ServerLoginPacketListenerImpl.State.NEGOTIATING;
++            this.connection.send(new ClientboundCustomQueryPacket(VelocityForwardingQueryPayload.TRANSACTION_ID, VelocityForwardingQueryPayload.INSTANCE));
++            return;
++        }
++
+         GameProfile singleplayerProfile = this.server.getSingleplayerProfile();
+         if (singleplayerProfile != null && this.requestedUsername.equalsIgnoreCase(singleplayerProfile.name())) {
+             this.startClientVerification(singleplayerProfile);
+@@ -132,6 +158,43 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+         }
+     }
+ 
++    private void handleBungeeForwarding(final String playerName) {
++        try {
++            this.applyForwardedInfo(FandHooks.parseBungeeLegacyForwarding(this.requestedHostName, playerName));
++        } catch (ForwardingParseException ex) {
++            LOGGER.warn("BungeeCord forwarding rejected for {}", this.getUserName(), ex);
++            this.disconnect(Component.literal("Invalid proxy forwarding data"));
++        }
++    }
++
++    private void handleVelocityForwarding(final ServerboundCustomQueryAnswerPacket packet) {
++        if (packet.transactionId() != VelocityForwardingQueryPayload.TRANSACTION_ID
++            || !(packet.payload() instanceof VelocityForwardingQueryAnswerPayload payload)) {
++            this.disconnect(Component.literal("Velocity forwarding response is missing"));
++            return;
++        }
++
++        try {
++            this.applyForwardedInfo(FandHooks.parseVelocityModernForwarding(payload));
++        } catch (ForwardingParseException ex) {
++            LOGGER.warn("Velocity forwarding rejected for {}", this.getUserName(), ex);
++            this.disconnect(Component.literal("Invalid proxy forwarding data"));
++        }
++    }
++
++    private void applyForwardedInfo(final ForwardedPlayerInfo forwarded) {
++        GameProfile profile = forwarded.profile();
++        if (!StringUtil.isValidPlayerName(profile.name())) {
++            this.disconnect(Component.literal("Invalid forwarded player name"));
++            return;
++        }
++        this.requestedUsername = profile.name();
++        this.connection.fand$setRemoteAddress(forwarded.address());
++        LOGGER.info("UUID of player {} is {}", profile.name(), profile.id());
++        this.serverActivityMonitor.reportLoginActivity();
++        this.startClientVerification(profile);
++    }
++
+     private void startClientVerification(final GameProfile profile) {
+         this.authenticatedProfile = profile;
+         this.state = ServerLoginPacketListenerImpl.State.VERIFYING;
+@@ -236,6 +299,12 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+ 
+     @Override
+     public void handleCustomQueryPacket(final ServerboundCustomQueryAnswerPacket packet) {
++        if (this.state == ServerLoginPacketListenerImpl.State.NEGOTIATING
++            && FandHooks.proxyForwardingMode() == ProxyForwardingMode.VELOCITY_MODERN) {
++            this.handleVelocityForwarding(packet);
++            return;
++        }
++
+         this.disconnect(ServerCommonPacketListenerImpl.DISCONNECT_UNEXPECTED_QUERY);
+     }
+ 

@@ -19,6 +19,7 @@ import io.fand.server.config.FandConfig;
 import io.fand.server.entity.EntityRegistry;
 import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.event.EventDispatcher;
+import io.fand.server.network.ProxyForwardingSettings;
 import io.fand.server.permission.PermissionManager;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.scheduler.TaskScheduler;
@@ -48,6 +49,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final PluginRuntime plugins;
     private final PlayerRegistry players;
     private final ConfigReloader configReloader;
+    private final ProxyForwardingSettings proxyForwarding;
     private final AtomicReference<WorldRegistry> worlds = new AtomicReference<>();
     private final AtomicReference<EntityRegistry> entities = new AtomicReference<>();
     private final AtomicReference<FandConfig> config;
@@ -65,6 +67,7 @@ public final class FandServer implements Server, AutoCloseable {
     FandServer(Path configPath, FandConfig initialConfig, ClassLoader parentClassLoader) {
         this.configPath = configPath;
         this.config = new AtomicReference<>(initialConfig);
+        this.proxyForwarding = ProxyForwardingSettings.fromConfig(initialConfig);
         this.events = new EventDispatcher();
         this.permissions = new PermissionManager();
         this.commands = new CommandManager(permissions);
@@ -121,6 +124,10 @@ public final class FandServer implements Server, AutoCloseable {
 
     public ConfigReloadResult reloadConfig() {
         return configReloader.reload();
+    }
+
+    public ProxyForwardingSettings proxyForwarding() {
+        return proxyForwarding;
     }
 
     public void attach(MinecraftServer server) {

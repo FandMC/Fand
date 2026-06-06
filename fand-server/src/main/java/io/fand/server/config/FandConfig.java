@@ -1,5 +1,6 @@
 package io.fand.server.config;
 
+import io.fand.server.network.ProxyForwardingMode;
 import java.nio.file.Path;
 
 public final class FandConfig {
@@ -13,8 +14,20 @@ public final class FandConfig {
     @ConfigComment("Async scheduler settings.")
     public final Scheduler scheduler = new Scheduler();
 
+    @ConfigComment("Network and proxy settings.")
+    public final Network network = new Network();
+
     public static FandConfig load(Path path) {
-        return new YamlConfigLoader<>(FandConfig.class).load(path);
+        var config = new YamlConfigLoader<>(FandConfig.class).load(path);
+        validate(config);
+        return config;
+    }
+
+    private static void validate(FandConfig config) {
+        var mode = ProxyForwardingMode.fromConfig(config.network.forwarding.mode);
+        if (mode.requiresSecret() && config.network.forwarding.secret.isBlank()) {
+            throw new ConfigException("network.forwarding.secret must be set when network.forwarding.mode is " + mode.configValue());
+        }
     }
 
     public static final class Identity {
@@ -46,5 +59,23 @@ public final class FandConfig {
         })
         @ConfigRange(min = 0, max = 1024)
         public int asyncThreads = 0;
+    }
+
+    public static final class Network {
+
+        @ConfigComment("Proxy player information forwarding settings.")
+        public final Forwarding forwarding = new Forwarding();
+    }
+
+    public static final class Forwarding {
+
+        @ConfigComment({
+                "Proxy forwarding mode.",
+                "Supported values: none, bungee-legacy, velocity-modern."
+        })
+        public String mode = "none";
+
+        @ConfigComment("Shared secret used by velocity-modern forwarding.")
+        public String secret = "";
     }
 }

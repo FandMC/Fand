@@ -7,6 +7,10 @@ import io.fand.server.Main;
 import io.fand.server.entity.EntityRegistry;
 import io.fand.server.entity.FandPlayer;
 import io.fand.server.entity.PlayerRegistry;
+import io.fand.server.network.ForwardedPlayerInfo;
+import io.fand.server.network.ProxyForwarding;
+import io.fand.server.network.ProxyForwardingMode;
+import io.fand.server.network.VelocityForwardingQueryAnswerPayload;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.WorldRegistry;
 import java.util.Optional;
@@ -78,5 +82,17 @@ public final class FandHooks {
 
     public static Optional<EntityRegistry> entities() {
         return Optional.ofNullable(Main.runtime().entityRegistryOrNull());
+    }
+
+    public static ProxyForwardingMode proxyForwardingMode() {
+        return Main.runtime().proxyForwarding().mode();
+    }
+
+    public static ForwardedPlayerInfo parseBungeeLegacyForwarding(String hostName, String playerName) {
+        return ProxyForwarding.parseBungeeLegacy(hostName, playerName);
+    }
+
+    public static ForwardedPlayerInfo parseVelocityModernForwarding(VelocityForwardingQueryAnswerPayload payload) {
+        return ProxyForwarding.parseVelocityModern(Main.runtime().proxyForwarding().secret(), payload);
     }
 }

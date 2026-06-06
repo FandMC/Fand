@@ -28,6 +28,11 @@ final class ConfigReloadResultTest {
 
                 scheduler:
                   asyncThreads: 0
+
+                network:
+                  forwarding:
+                    mode: none
+                    secret: ''
                 """);
 
         var initial = FandConfig.load(path);
@@ -45,6 +50,11 @@ final class ConfigReloadResultTest {
 
                 scheduler:
                   asyncThreads: 8
+
+                network:
+                  forwarding:
+                    mode: velocity-modern
+                    secret: 'shared-secret'
                 """);
 
         var result = server.reloadConfig();
@@ -58,7 +68,9 @@ final class ConfigReloadResultTest {
                 "scheduler.asyncThreads"
         );
         assertThat(result.requiresRestart()).containsExactlyInAnyOrder(
-                "plugins.directory"
+                "plugins.directory",
+                "network.forwarding.mode",
+                "network.forwarding.secret"
         );
         assertThat(result.restartRequired()).isTrue();
         assertThat(result.changed()).isTrue();

@@ -25,6 +25,8 @@ final class FandConfigTest {
         assertThat(config.plugins.continueOnEnableFailure).isFalse();
         assertThat(config.plugins.logSummary).isTrue();
         assertThat(config.scheduler.asyncThreads).isZero();
+        assertThat(config.network.forwarding.mode).isEqualTo("none");
+        assertThat(config.network.forwarding.secret).isEmpty();
         assertThat(Files.readString(path))
                 .contains("# Public-facing identity settings.")
                 .contains("identity:")
@@ -35,7 +37,11 @@ final class FandConfigTest {
                 .contains("continueOnEnableFailure: false")
                 .contains("logSummary: true")
                 .contains("scheduler:")
-                .contains("asyncThreads: 0");
+                .contains("asyncThreads: 0")
+                .contains("network:")
+                .contains("forwarding:")
+                .contains("mode: none")
+                .contains("secret: ''");
     }
 
     @Test
@@ -53,6 +59,11 @@ final class FandConfigTest {
 
                 scheduler:
                   asyncThreads: 6
+
+                network:
+                  forwarding:
+                    mode: velocity-modern
+                    secret: 'shared-secret'
                 """);
 
         var config = FandConfig.load(path);
@@ -63,6 +74,23 @@ final class FandConfigTest {
         assertThat(config.plugins.continueOnEnableFailure).isTrue();
         assertThat(config.plugins.logSummary).isFalse();
         assertThat(config.scheduler.asyncThreads).isEqualTo(6);
+        assertThat(config.network.forwarding.mode).isEqualTo("velocity-modern");
+        assertThat(config.network.forwarding.secret).isEqualTo("shared-secret");
+    }
+
+    @Test
+    void acceptsBungeeForwardingAlias() throws Exception {
+        var path = tempDir.resolve("fand.yml");
+        Files.writeString(path, """
+                network:
+                  forwarding:
+                    mode: bc
+                    secret: ''
+                """);
+
+        var config = FandConfig.load(path);
+
+        assertThat(config.network.forwarding.mode).isEqualTo("bc");
     }
 
     @Test
@@ -76,5 +104,19 @@ final class FandConfigTest {
         assertThatThrownBy(() -> FandConfig.load(path))
                 .isInstanceOf(ConfigException.class)
                 .hasMessageContaining("scheduler.asyncThreads");
+    }
+
+    @Test
+    void rejectsVelocityForwardingWithoutSecret() throws Exception {
+        var path = tempDir.resolve("fand.yml");
+        Files.writeString(path, """
+                network:
+                  forwarding:
+                    mode: velocity-modern
+                """);
+
+        assertThatThrownBy(() -> FandConfig.load(path))
+                .isInstanceOf(ConfigException.class)
+                .hasMessageContaining("network.forwarding.secret");
     }
 }
