@@ -32,6 +32,9 @@ jobs:
           git config --global user.email "ci@fand.local"
           git config --global user.name "Fand CI"
 
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
