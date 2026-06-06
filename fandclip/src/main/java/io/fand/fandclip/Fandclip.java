@@ -40,10 +40,13 @@ public final class Fandclip {
         }
 
         BundlerLayout layout = BundlerLayout.read(bundler);
-        List<Path> classpath = layout.materialiseLibraries(libsDir);
+        List<Path> libraries = layout.materialiseLibraries(libsDir);
         Path serverJar = home.resolve("fand-server.jar");
         ResourceExtractor.extract("/fand-server.jar", serverJar);
+
+        List<Path> classpath = new java.util.ArrayList<>(libraries.size() + 1);
         classpath.add(serverJar);
+        classpath.addAll(libraries);
 
         URL[] urls = new URL[classpath.size()];
         for (int i = 0; i < classpath.size(); i++) {

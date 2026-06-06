@@ -1,0 +1,29 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Fand <fand@local>
+Date: Sat, 6 Jun 2026 15:54:58 +0800
+Subject: [PATCH] Use TerminalConsoleAppender for server console
+
+
+diff --git a/net/minecraft/server/dedicated/DedicatedServer.java b/net/minecraft/server/dedicated/DedicatedServer.java
+index c9893cdd5c3281aca6a21a9687df8eafd30a2c1f..ff578c4a7c8201e2a76fe039d2fd955f4d3fbad5 100644
+--- a/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -211,6 +211,9 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+ 
+             @Override
+             public void run() {
++                // Fand start - Use TerminalConsoleAppender
++                new io.fand.server.console.FandConsole(DedicatedServer.this).start();
++                /*
+                 BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+ 
+                 String line;
+@@ -221,6 +224,8 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+                 } catch (IOException var4) {
+                     DedicatedServer.LOGGER.error("Exception handling console input", (Throwable)var4);
+                 }
++                */
++                // Fand end - Use TerminalConsoleAppender
+             }
+         };
+         consoleThread.setDaemon(true);
