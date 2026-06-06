@@ -34,6 +34,45 @@ final class CommandTreeBridgeTest {
     }
 
     @Test
+    void usesDeclaredArgumentNames() {
+        var manager = new CommandManager(new io.fand.server.permission.PermissionManager());
+        manager.register(
+                new CommandDescriptor("demo", "give", java.util.List.of(), java.util.List.of("item", "amount", "player"), java.util.List.of(), null),
+                (sender, label, args) -> {
+                },
+                (sender, label, args) -> java.util.List.of()
+        );
+
+        var root = new RootCommandNode<CommandSourceStack>();
+        CommandTreeBridge.appendToRoot(manager, new TestSender(), root);
+
+        var item = root.getChild("give").getChild("item");
+        var amount = item.getChild("amount");
+        var player = amount.getChild("player");
+        assertThat(item).isNotNull();
+        assertThat(amount).isNotNull();
+        assertThat(player).isNotNull();
+        assertThat(root.getChild("give").getChild("args")).isNull();
+    }
+
+    @Test
+    void omitsArgumentNodeWhenNoArgumentsAreDeclared() {
+        var manager = new CommandManager(new io.fand.server.permission.PermissionManager());
+        manager.register(
+                new CommandDescriptor("demo", "info", java.util.List.of(), java.util.List.of(), java.util.List.of(), null),
+                (sender, label, args) -> {
+                },
+                (sender, label, args) -> java.util.List.of()
+        );
+
+        var root = new RootCommandNode<CommandSourceStack>();
+        CommandTreeBridge.appendToRoot(manager, new TestSender(), root);
+
+        assertThat(root.getChild("info")).isNotNull();
+        assertThat(root.getChild("info").getChildren()).isEmpty();
+    }
+
+    @Test
     void omitsAmbiguousLocalRootsButKeepsNamespacedRoots() {
         var manager = new CommandManager(new io.fand.server.permission.PermissionManager());
         manager.register(new CommandDescriptor("fand", "reload", java.util.List.of(), java.util.List.of(), null), (s, l, a) -> {}, (s, l, a) -> java.util.List.of());

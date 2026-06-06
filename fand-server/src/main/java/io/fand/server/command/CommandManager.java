@@ -378,6 +378,10 @@ public final class CommandManager implements CommandRegistry {
         for (var subcommand : descriptor.subcommands()) {
             subcommands.add(normalizePart(subcommand, "subcommand"));
         }
+        var arguments = new ArrayList<String>(descriptor.arguments().size());
+        for (var argument : descriptor.arguments()) {
+            arguments.add(normalizePart(argument, "argument"));
+        }
         var aliases = new ArrayList<String>(descriptor.aliases().size());
         for (var alias : descriptor.aliases()) {
             var normalized = normalizePart(alias, "alias");
@@ -389,7 +393,7 @@ public final class CommandManager implements CommandRegistry {
             }
         }
         var permission = descriptor.permission() == null ? null : descriptor.permission().trim();
-        return new CommandDescriptor(namespace, label, subcommands, aliases, permission == null || permission.isEmpty() ? null : permission);
+        return new CommandDescriptor(namespace, label, subcommands, arguments, aliases, permission == null || permission.isEmpty() ? null : permission);
     }
 
     private static List<String> normalizeTokens(List<String> tokens) {

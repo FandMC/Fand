@@ -15,6 +15,8 @@ public @interface CommandSpec {
 
     String[] subcommands() default {};
 
+    String[] arguments() default {"args"};
+
     String[] aliases() default {};
 
     @Nullable String permission() default "";

@@ -45,7 +45,14 @@ public final class AnnotatedCommands {
         }
         CommandCompleter completer = command instanceof CommandCompleter value ? value : (sender, label, args) -> List.of();
         var permission = spec.permission().isBlank() ? null : spec.permission();
-        var descriptor = new CommandDescriptor(namespace, spec.label(), List.of(spec.subcommands()), List.of(spec.aliases()), permission);
+        var descriptor = new CommandDescriptor(
+                namespace,
+                spec.label(),
+                List.of(spec.subcommands()),
+                List.of(spec.arguments()),
+                List.of(spec.aliases()),
+                permission
+        );
         return registry.register(descriptor, executor, completer);
     }
 }

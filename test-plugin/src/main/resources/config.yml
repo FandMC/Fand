@@ -1,0 +1,18 @@
+messages:
+  greeting: Hello
+  welcome: Welcome from test-plugin, {player}!
+
+features:
+  chat-prefix: true
+  report-right-clicks: false
+  log-inventory-clicks: false
+
+protections:
+  block-tnt-placement: true
+  cancel-fall-damage: true
+
+limits:
+  max-give-amount: 2304
+
+defaults:
+  heal-xp: 5

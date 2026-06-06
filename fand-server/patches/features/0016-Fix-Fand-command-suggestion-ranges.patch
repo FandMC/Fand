@@ -1,0 +1,26 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 6 Jun 2026 23:08:53 +0800
+Subject: [PATCH] Fix Fand command suggestion ranges
+
+
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 2ba6a8cc3f6caef06a0320d46071376cff51226a..9d8f17cbb335920e2c97a2ceb901105d1175f0c1 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -592,10 +592,12 @@ public class ServerGamePacketListenerImpl
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+         var fandSuggestions = io.fand.server.command.CommandBridge.suggestions(this.player.createCommandSourceStack(), packet.getCommand());
+         if (fandSuggestions.isPresent()) {
+-            var suggestionList = fandSuggestions.get().stream()
+-                    .map(value -> new com.mojang.brigadier.suggestion.Suggestion(new com.mojang.brigadier.context.StringRange(0, packet.getCommand().length()), value))
++            var result = fandSuggestions.get();
++            var range = new com.mojang.brigadier.context.StringRange(result.replaceStart(), result.replaceEnd());
++            var suggestionList = result.values().stream()
++                    .map(value -> new com.mojang.brigadier.suggestion.Suggestion(range, value))
+                     .toList();
+-            this.send(new ClientboundCommandSuggestionsPacket(packet.getId(), new Suggestions(new com.mojang.brigadier.context.StringRange(0, packet.getCommand().length()), suggestionList)));
++            this.send(new ClientboundCommandSuggestionsPacket(packet.getId(), new Suggestions(range, suggestionList)));
+             return;
+         }
+         StringReader command = new StringReader(packet.getCommand());

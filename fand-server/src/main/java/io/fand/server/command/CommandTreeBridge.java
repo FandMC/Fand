@@ -2,6 +2,7 @@ package io.fand.server.command;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.tree.CommandNode;
 import com.mojang.brigadier.tree.RootCommandNode;
 import io.fand.api.command.CommandRegistry;
@@ -34,31 +35,46 @@ public final class CommandTreeBridge {
             String rootLabel
     ) {
         var namespacedRoot = entry.descriptor().namespace() + ":" + rootLabel;
-        appendPath(nodes.computeIfAbsent(namespacedRoot, label -> attach(root, literal(label))), entry.descriptor().subcommands());
+        appendPath(
+                nodes.computeIfAbsent(namespacedRoot, label -> attach(root, literal(label))),
+                entry.descriptor().subcommands(),
+                entry.descriptor().arguments()
+        );
 
         if (registry.lookup(rootLabel).filter(found -> found == entry).isPresent()) {
-            appendPath(nodes.computeIfAbsent(rootLabel, label -> attach(root, literal(label))), entry.descriptor().subcommands());
+            appendPath(
+                    nodes.computeIfAbsent(rootLabel, label -> attach(root, literal(label))),
+                    entry.descriptor().subcommands(),
+                    entry.descriptor().arguments()
+            );
         }
     }
 
-    private static void appendPath(CommandNode<CommandSourceStack> root, List<String> path) {
+    private static void appendPath(CommandNode<CommandSourceStack> root, List<String> path, List<String> arguments) {
         var current = root;
         for (var segment : path) {
             current = attach(current, literal(segment));
         }
-        attachGreedyArguments(current);
+        attachArguments(current, arguments);
     }
 
-    private static void attachGreedyArguments(CommandNode<CommandSourceStack> node) {
-        if (node.getChildren().stream().anyMatch(child -> child.getName().equals("args"))) {
-            return;
+    private static void attachArguments(CommandNode<CommandSourceStack> node, List<String> arguments) {
+        var current = node;
+        for (int index = 0; index < arguments.size(); index++) {
+            var name = arguments.get(index);
+            var existing = current.getChild(name);
+            if (existing != null) {
+                current = existing;
+                continue;
+            }
+            var type = index == arguments.size() - 1 ? StringArgumentType.greedyString() : StringArgumentType.word();
+            var child = RequiredArgumentBuilder.<CommandSourceStack, String>argument(name, type)
+                    .suggests(SuggestionProviders.cast(SuggestionProviders.ASK_SERVER))
+                    .executes(context -> 1)
+                    .build();
+            current.addChild(child);
+            current = child;
         }
-        node.addChild(
-                RequiredArgumentBuilder.<CommandSourceStack, String>argument("args", com.mojang.brigadier.arguments.StringArgumentType.greedyString())
-                        .suggests(SuggestionProviders.cast(SuggestionProviders.ASK_SERVER))
-                        .executes(context -> 1)
-                        .build()
-        );
     }
 
     private static CommandNode<CommandSourceStack> attach(CommandNode<CommandSourceStack> parent, LiteralArgumentBuilder<CommandSourceStack> builder) {
