@@ -42,7 +42,7 @@ public final class FandHooks {
     }
 
     public static boolean hasListeners(Class<? extends Event> type) {
-        return Main.runtime().events().hasListeners(type);
+        return events().hasListeners(type);
     }
 
     /**
@@ -50,8 +50,9 @@ public final class FandHooks {
      * Returns {@code event} so callers can chain {@code .cancelled()} reads.
      */
     public static <E extends Event> E fireOrLog(E event, String description) {
+        var bus = events();
         try {
-            Main.runtime().events().fire(event);
+            bus.fire(event);
         } catch (RuntimeException failure) {
             LOGGER.warn("{} listener failed", description, failure);
         }
@@ -63,18 +64,19 @@ public final class FandHooks {
     }
 
     public static @Nullable FandPlayer findPlayer(UUID id) {
-        return Main.runtime().playerRegistry().find(id).orElse(null);
+        return Main.runtime().playerRegistry().findOrNull(id);
     }
 
     public static Optional<WorldRegistry> worlds() {
-        return Main.runtime().worldRegistry();
+        return Optional.ofNullable(Main.runtime().worldRegistryOrNull());
     }
 
     public static @Nullable FandWorld wrapWorld(ServerLevel level) {
-        return Main.runtime().worldRegistry().map(r -> r.wrap(level)).orElse(null);
+        var registry = Main.runtime().worldRegistryOrNull();
+        return registry == null ? null : registry.wrap(level);
     }
 
     public static Optional<EntityRegistry> entities() {
-        return Main.runtime().entityRegistry();
+        return Optional.ofNullable(Main.runtime().entityRegistryOrNull());
     }
 }

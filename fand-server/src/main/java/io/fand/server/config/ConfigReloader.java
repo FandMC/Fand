@@ -1,6 +1,7 @@
 package io.fand.server.config;
 
 import io.fand.server.plugin.PluginRuntime;
+import io.fand.server.scheduler.TaskScheduler;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicReference;
@@ -17,11 +18,18 @@ public final class ConfigReloader {
     private final Path configPath;
     private final AtomicReference<FandConfig> current;
     private final PluginRuntime plugins;
+    private final TaskScheduler scheduler;
 
-    public ConfigReloader(Path configPath, AtomicReference<FandConfig> current, PluginRuntime plugins) {
+    public ConfigReloader(
+            Path configPath,
+            AtomicReference<FandConfig> current,
+            PluginRuntime plugins,
+            TaskScheduler scheduler
+    ) {
         this.configPath = configPath;
         this.current = current;
         this.plugins = plugins;
+        this.scheduler = scheduler;
     }
 
     public ConfigReloadResult reload() {
@@ -46,7 +54,8 @@ public final class ConfigReloader {
             requiresRestart.add("plugins.directory");
         }
         if (previous.scheduler.asyncThreads != reloaded.scheduler.asyncThreads) {
-            requiresRestart.add("scheduler.asyncThreads");
+            scheduler.reconfigureAsyncThreads(reloaded.scheduler.asyncThreads);
+            hotApplied.add("scheduler.asyncThreads");
         }
 
         plugins.reconfigure(toPluginOptions(reloaded));

@@ -13,13 +13,13 @@ import net.minecraft.server.level.ServerLevel;
 
 /**
  * Caches {@link FandWorld} wrappers around vanilla {@link ServerLevel} instances
- * so identity is stable across calls. Reads from {@link MinecraftServer#getAllLevels()}
- * lazily; entries that no longer exist are evicted on the next snapshot.
+ * so identity is stable across calls.
  */
 public final class WorldRegistry {
 
     private final MinecraftServer server;
     private final PlayerRegistry players;
+    private final ConcurrentHashMap<ServerLevel, FandWorld> byLevel = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Key, FandWorld> byKey = new ConcurrentHashMap<>();
 
     public WorldRegistry(MinecraftServer server, PlayerRegistry players) {
@@ -29,13 +29,10 @@ public final class WorldRegistry {
 
     public Collection<World> snapshot() {
         var current = new ArrayList<World>();
-        var seen = new java.util.HashSet<Key>();
         for (var level : server.getAllLevels()) {
             var world = wrap(level);
             current.add(world);
-            seen.add(world.key());
         }
-        byKey.keySet().retainAll(seen);
         return List.copyOf(current);
     }
 
@@ -60,17 +57,15 @@ public final class WorldRegistry {
     }
 
     public FandWorld wrap(ServerLevel level) {
-        var identifier = level.dimension().identifier();
-        var key = Key.key(identifier.getNamespace(), identifier.getPath());
-        var existing = byKey.get(key);
-        if (existing != null && existing.handle() == level) {
+        var existing = byLevel.get(level);
+        if (existing != null) {
+            byKey.putIfAbsent(existing.key(), existing);
             return existing;
         }
-        return byKey.compute(key, (ignored, current) -> {
-            if (current != null && current.handle() == level) {
-                return current;
-            }
-            return new FandWorld(level, players);
+        return byLevel.computeIfAbsent(level, current -> {
+            var world = new FandWorld(current, players);
+            byKey.put(world.key(), world);
+            return world;
         });
     }
 }

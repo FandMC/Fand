@@ -82,7 +82,7 @@ public final class FandServer implements Server, AutoCloseable {
                 scheduler,
                 ConfigReloader.toPluginOptions(initialConfig)
         );
-        this.configReloader = new ConfigReloader(configPath, config, plugins);
+        this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler);
     }
 
     /**
@@ -255,11 +255,19 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     public Optional<WorldRegistry> worldRegistry() {
-        return Optional.ofNullable(worlds.get());
+        return Optional.ofNullable(worldRegistryOrNull());
+    }
+
+    public @Nullable WorldRegistry worldRegistryOrNull() {
+        return worlds.get();
     }
 
     public Optional<EntityRegistry> entityRegistry() {
-        return Optional.ofNullable(entities.get());
+        return Optional.ofNullable(entityRegistryOrNull());
+    }
+
+    public @Nullable EntityRegistry entityRegistryOrNull() {
+        return entities.get();
     }
 
     @Override

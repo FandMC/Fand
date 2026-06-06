@@ -12,13 +12,14 @@ public final class CommandBridge {
     }
 
     public static boolean tryExecute(CommandSourceStack source, String rawCommand) {
-        var sender = new CommandSourceSender(source, io.fand.server.Main.runtime().permissions());
+        var runtime = io.fand.server.Main.runtime();
+        var sender = new CommandSourceSender(source, runtime.permissions());
         var tokens = tokenize(rawCommand, false);
         if (tokens.isEmpty()) {
             return false;
         }
 
-        var registry = io.fand.server.Main.runtime().commands();
+        var registry = runtime.commands();
         var resolved = registry.resolve(sender, tokens);
         if (resolved.isEmpty()) {
             if (registry.claims(tokens)) {
@@ -40,9 +41,10 @@ public final class CommandBridge {
     }
 
     public static Optional<List<String>> suggestions(CommandSourceStack source, String rawCommand) {
-        var sender = new CommandSourceSender(source, io.fand.server.Main.runtime().permissions());
+        var runtime = io.fand.server.Main.runtime();
+        var sender = new CommandSourceSender(source, runtime.permissions());
         var tokens = tokenize(rawCommand, true);
-        var registry = io.fand.server.Main.runtime().commands();
+        var registry = runtime.commands();
         if (!registry.claims(tokens)) {
             return Optional.empty();
         }

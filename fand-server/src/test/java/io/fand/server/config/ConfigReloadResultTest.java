@@ -14,7 +14,7 @@ final class ConfigReloadResultTest {
     Path tempDir;
 
     @Test
-    void reloadsHotApplicableValuesAndFlagsRestartRequiredOnOthers() throws Exception {
+    void reloadsHotApplicableValuesAndFlagsOnlyPluginDirectoryRestartRequired() throws Exception {
         var path = tempDir.resolve("fand.yml");
         Files.writeString(path, """
                 identity:
@@ -54,11 +54,11 @@ final class ConfigReloadResultTest {
                 "identity.brand",
                 "plugins.continueOnLoadFailure",
                 "plugins.continueOnEnableFailure",
-                "plugins.logSummary"
+                "plugins.logSummary",
+                "scheduler.asyncThreads"
         );
         assertThat(result.requiresRestart()).containsExactlyInAnyOrder(
-                "plugins.directory",
-                "scheduler.asyncThreads"
+                "plugins.directory"
         );
         assertThat(result.restartRequired()).isTrue();
         assertThat(result.changed()).isTrue();

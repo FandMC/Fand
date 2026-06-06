@@ -14,9 +14,11 @@ import io.fand.api.permission.PermissionService;
 import io.fand.api.permission.PermissionSubject;
 import io.fand.server.permission.PermissionManager;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
@@ -37,9 +39,7 @@ public final class CommandManager implements CommandRegistry {
 
     private final Object lock = new Object();
     private final PermissionService permissions;
-    private final LinkedHashMap<String, Entry> namespacedPaths = new LinkedHashMap<>();
-    private final LinkedHashMap<String, Integer> localRoots = new LinkedHashMap<>();
-    private final LinkedHashMap<String, Entry> uniqueLocalRoots = new LinkedHashMap<>();
+    private volatile Snapshot snapshot = Snapshot.empty();
 
     @Override
     public CommandRegistration register(Object command) {
@@ -58,17 +58,23 @@ public final class CommandManager implements CommandRegistry {
         }
         var entry = new Entry(normalized, executor, completer, permissions);
         synchronized (lock) {
-            for (var key : pathKeys(normalized)) {
-                if (namespacedPaths.containsKey(key)) {
+            var current = snapshot;
+            var keys = pathKeys(normalized);
+            for (var key : keys) {
+                if (current.namespacedPaths.containsKey(key)) {
                     throw new IllegalStateException("Command path already registered: " + key);
                 }
             }
-            for (var key : pathKeys(normalized)) {
+            var namespacedPaths = new LinkedHashMap<>(current.namespacedPaths);
+            var localRoots = new LinkedHashMap<>(current.localRoots);
+            var uniqueLocalRoots = new LinkedHashMap<>(current.uniqueLocalRoots);
+            for (var key : keys) {
                 namespacedPaths.put(key, entry);
             }
             for (var root : rootKeys(normalized)) {
-                trackLocalRoot(root, entry);
+                trackLocalRoot(root, entry, localRoots, uniqueLocalRoots);
             }
+            snapshot = Snapshot.of(namespacedPaths, localRoots, uniqueLocalRoots);
         }
         return new Registration(this, entry);
     }
@@ -76,15 +82,14 @@ public final class CommandManager implements CommandRegistry {
     @Override
     public List<RegisteredCommand> visibleCommands(CommandSender sender) {
         Objects.requireNonNull(sender, "sender");
-        synchronized (lock) {
-            var seen = new LinkedHashSet<RegisteredCommand>();
-            for (var entry : namespacedPaths.values()) {
-                if (entry.allowed(sender)) {
-                    seen.add(entry);
-                }
+        var current = snapshot;
+        var seen = new LinkedHashSet<RegisteredCommand>();
+        for (var entry : current.namespacedPaths.values()) {
+            if (entry.allowed(sender)) {
+                seen.add(entry);
             }
-            return List.copyOf(seen);
         }
+        return List.copyOf(seen);
     }
 
     public boolean claims(List<String> tokens) {
@@ -94,40 +99,41 @@ public final class CommandManager implements CommandRegistry {
         }
         var normalizedTokens = normalizeTokens(tokens);
         var first = normalizedTokens.getFirst();
-        synchronized (lock) {
-            if (first.contains(":")) {
-                for (var key : namespacedPaths.keySet()) {
-                    if (key.startsWith(first)) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-            for (var root : uniqueLocalRoots.keySet()) {
-                if (root.startsWith(first) || first.equals(root)) {
-                    return true;
-                }
-            }
-            for (var key : namespacedPaths.keySet()) {
-                var local = localRoot(key);
-                if (local.startsWith(first) || first.equals(local)) {
+        var current = snapshot;
+        if (first.contains(":")) {
+            for (var key : current.namespacedPaths.keySet()) {
+                if (key.startsWith(first)) {
                     return true;
                 }
             }
             return false;
         }
+        for (var root : current.uniqueLocalRoots.keySet()) {
+            if (root.startsWith(first) || first.equals(root)) {
+                return true;
+            }
+        }
+        for (var key : current.namespacedPaths.keySet()) {
+            var local = localRoot(key);
+            if (local.startsWith(first) || first.equals(local)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
     public Optional<RegisteredCommand> lookup(String name) {
         Objects.requireNonNull(name, "name");
         var normalized = normalizeInput(name);
-        synchronized (lock) {
-            if (normalized.contains(":")) {
-                return Optional.ofNullable(namespacedPaths.get(normalized));
-            }
-            return Optional.ofNullable(uniqueLocalRoots.get(normalized));
+        var current = snapshot;
+        var entry = normalized.contains(":")
+                ? current.namespacedPaths.get(normalized)
+                : current.uniqueLocalRoots.get(normalized);
+        if (entry == null || !entry.active()) {
+            return Optional.empty();
         }
+        return Optional.of(entry);
     }
 
     public Optional<ResolvedCommand> resolve(CommandSender sender, List<String> tokens) {
@@ -137,34 +143,32 @@ public final class CommandManager implements CommandRegistry {
             return Optional.empty();
         }
         var normalizedTokens = normalizeTokens(tokens);
-        synchronized (lock) {
-            return normalizedTokens.getFirst().contains(":")
-                    ? resolveNamespaced(sender, normalizedTokens)
-                    : resolveLocal(sender, normalizedTokens);
-        }
+        var current = snapshot;
+        return normalizedTokens.getFirst().contains(":")
+                ? resolveNamespaced(current, sender, normalizedTokens)
+                : resolveLocal(current, sender, normalizedTokens);
     }
 
     public List<String> suggestions(CommandSender sender, List<String> tokens) {
         Objects.requireNonNull(sender, "sender");
         Objects.requireNonNull(tokens, "tokens");
-        synchronized (lock) {
-            if (tokens.isEmpty()) {
-                return rootSuggestions(sender, "");
-            }
-            var normalizedTokens = normalizeTokens(tokens);
-            if (normalizedTokens.size() == 1) {
-                return rootSuggestions(sender, normalizedTokens.getFirst());
-            }
-            var root = normalizedTokens.getFirst();
-            var entry = root.contains(":") ? entryForNamespacedRoot(sender, root) : uniqueLocalRoots.get(root);
-            if (entry == null || !entry.allowed(sender)) {
-                return List.of();
-            }
-            return childOrArgumentSuggestions(sender, entry, root, normalizedTokens.subList(1, normalizedTokens.size()));
+        var current = snapshot;
+        if (tokens.isEmpty()) {
+            return rootSuggestions(current, sender, "");
         }
+        var normalizedTokens = normalizeTokens(tokens);
+        if (normalizedTokens.size() == 1) {
+            return rootSuggestions(current, sender, normalizedTokens.getFirst());
+        }
+        var root = normalizedTokens.getFirst();
+        var entry = root.contains(":") ? entryForNamespacedRoot(current, sender, root) : current.uniqueLocalRoots.get(root);
+        if (entry == null || !entry.allowed(sender)) {
+            return List.of();
+        }
+        return childOrArgumentSuggestions(sender, entry, root, normalizedTokens.subList(1, normalizedTokens.size()));
     }
 
-    private Optional<ResolvedCommand> resolveNamespaced(CommandSender sender, List<String> tokens) {
+    private Optional<ResolvedCommand> resolveNamespaced(Snapshot current, CommandSender sender, List<String> tokens) {
         var first = tokens.getFirst();
         var separator = first.indexOf(':');
         if (separator <= 0 || separator == first.length() - 1) {
@@ -172,21 +176,21 @@ public final class CommandManager implements CommandRegistry {
         }
         var namespace = first.substring(0, separator);
         var root = first.substring(separator + 1);
-        return resolvePath(sender, namespace, root, tokens.subList(1, tokens.size()));
+        return resolvePath(current, sender, namespace, root, tokens.subList(1, tokens.size()));
     }
 
-    private Optional<ResolvedCommand> resolveLocal(CommandSender sender, List<String> tokens) {
-        var rootEntry = uniqueLocalRoots.get(tokens.getFirst());
+    private Optional<ResolvedCommand> resolveLocal(Snapshot current, CommandSender sender, List<String> tokens) {
+        var rootEntry = current.uniqueLocalRoots.get(tokens.getFirst());
         if (rootEntry == null || !rootEntry.allowed(sender)) {
             return Optional.empty();
         }
-        return resolvePath(sender, rootEntry.descriptor.namespace(), tokens.getFirst(), tokens.subList(1, tokens.size()));
+        return resolvePath(current, sender, rootEntry.descriptor.namespace(), tokens.getFirst(), tokens.subList(1, tokens.size()));
     }
 
-    private Optional<ResolvedCommand> resolvePath(CommandSender sender, String namespace, String root, List<String> tail) {
+    private Optional<ResolvedCommand> resolvePath(Snapshot current, CommandSender sender, String namespace, String root, List<String> tail) {
         for (int length = tail.size(); length >= 0; length--) {
             var key = toPathKey(namespace, root, tail.subList(0, length));
-            var entry = namespacedPaths.get(key);
+            var entry = current.namespacedPaths.get(key);
             if (entry != null && entry.allowed(sender)) {
                 return Optional.of(new ResolvedCommand(entry, length + 1, root));
             }
@@ -194,23 +198,23 @@ public final class CommandManager implements CommandRegistry {
         return Optional.empty();
     }
 
-    private @Nullable Entry entryForNamespacedRoot(CommandSender sender, String token) {
+    private @Nullable Entry entryForNamespacedRoot(Snapshot current, CommandSender sender, String token) {
         var separator = token.indexOf(':');
         if (separator <= 0 || separator == token.length() - 1) {
             return null;
         }
-        var entry = namespacedPaths.get(token);
+        var entry = current.namespacedPaths.get(token);
         return entry != null && entry.allowed(sender) ? entry : null;
     }
 
-    private List<String> rootSuggestions(CommandSender sender, String prefix) {
+    private List<String> rootSuggestions(Snapshot current, CommandSender sender, String prefix) {
         var suggestions = new LinkedHashSet<String>();
-        for (var entry : uniqueLocalRoots.entrySet()) {
+        for (var entry : current.uniqueLocalRoots.entrySet()) {
             if (entry.getKey().startsWith(prefix) && entry.getValue().allowed(sender)) {
                 suggestions.add(entry.getKey());
             }
         }
-        for (var entry : namespacedPaths.values()) {
+        for (var entry : current.namespacedPaths.values()) {
             if (!entry.allowed(sender)) {
                 continue;
             }
@@ -255,17 +259,27 @@ public final class CommandManager implements CommandRegistry {
             if (!entry.active) {
                 return;
             }
+            var current = snapshot;
+            var namespacedPaths = new LinkedHashMap<>(current.namespacedPaths);
+            var localRoots = new LinkedHashMap<>(current.localRoots);
+            var uniqueLocalRoots = new LinkedHashMap<>(current.uniqueLocalRoots);
             entry.active = false;
             for (var key : pathKeys(entry.descriptor)) {
                 namespacedPaths.remove(key);
             }
             for (var root : rootKeys(entry.descriptor)) {
-                untrackLocalRoot(root, entry);
+                untrackLocalRoot(root, entry, namespacedPaths, localRoots, uniqueLocalRoots);
             }
+            snapshot = Snapshot.of(namespacedPaths, localRoots, uniqueLocalRoots);
         }
     }
 
-    private void trackLocalRoot(String root, Entry entry) {
+    private void trackLocalRoot(
+            String root,
+            Entry entry,
+            LinkedHashMap<String, Integer> localRoots,
+            LinkedHashMap<String, Entry> uniqueLocalRoots
+    ) {
         var next = localRoots.getOrDefault(root, 0) + 1;
         localRoots.put(root, next);
         if (next == 1) {
@@ -275,7 +289,13 @@ public final class CommandManager implements CommandRegistry {
         }
     }
 
-    private void untrackLocalRoot(String root, Entry removed) {
+    private void untrackLocalRoot(
+            String root,
+            Entry removed,
+            LinkedHashMap<String, Entry> namespacedPaths,
+            LinkedHashMap<String, Integer> localRoots,
+            LinkedHashMap<String, Entry> uniqueLocalRoots
+    ) {
         var current = localRoots.get(root);
         if (current == null) {
             return;
@@ -298,6 +318,29 @@ public final class CommandManager implements CommandRegistry {
         }
         if (current - 1 == 1 && survivor != null) {
             uniqueLocalRoots.put(root, survivor);
+        }
+    }
+
+    private record Snapshot(
+            Map<String, Entry> namespacedPaths,
+            Map<String, Integer> localRoots,
+            Map<String, Entry> uniqueLocalRoots
+    ) {
+
+        private static Snapshot empty() {
+            return of(new LinkedHashMap<>(), new LinkedHashMap<>(), new LinkedHashMap<>());
+        }
+
+        private static Snapshot of(
+                LinkedHashMap<String, Entry> namespacedPaths,
+                LinkedHashMap<String, Integer> localRoots,
+                LinkedHashMap<String, Entry> uniqueLocalRoots
+        ) {
+            return new Snapshot(
+                    Collections.unmodifiableMap(new LinkedHashMap<>(namespacedPaths)),
+                    Collections.unmodifiableMap(new LinkedHashMap<>(localRoots)),
+                    Collections.unmodifiableMap(new LinkedHashMap<>(uniqueLocalRoots))
+            );
         }
     }
 
@@ -407,6 +450,9 @@ public final class CommandManager implements CommandRegistry {
         }
 
         boolean allowed(CommandSender sender) {
+            if (!active) {
+                return false;
+            }
             if (descriptor.permission() == null) {
                 return true;
             }
@@ -414,6 +460,10 @@ public final class CommandManager implements CommandRegistry {
                 return permissions.hasPermission(subject, descriptor.permission());
             }
             return sender.hasPermission(descriptor.permission());
+        }
+
+        boolean active() {
+            return active;
         }
 
         @Override

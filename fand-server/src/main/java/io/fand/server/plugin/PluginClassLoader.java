@@ -3,7 +3,10 @@ package io.fand.server.plugin;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 
 public final class PluginClassLoader extends URLClassLoader {
 
@@ -37,7 +40,9 @@ public final class PluginClassLoader extends URLClassLoader {
 
             for (var dependency : dependencies) {
                 try {
-                    return resolveIfNeeded(dependency.loadClassFromDependency(name), resolve);
+                    var visited = Collections.newSetFromMap(new IdentityHashMap<PluginClassLoader, Boolean>());
+                    visited.add(this);
+                    return resolveIfNeeded(dependency.loadClassFromDependency(name, visited), resolve);
                 } catch (ClassNotFoundException ignored) {
                 }
             }
@@ -46,7 +51,10 @@ public final class PluginClassLoader extends URLClassLoader {
         }
     }
 
-    private Class<?> loadClassFromDependency(String name) throws ClassNotFoundException {
+    private Class<?> loadClassFromDependency(String name, Set<PluginClassLoader> visited) throws ClassNotFoundException {
+        if (!visited.add(this)) {
+            throw new ClassNotFoundException(name);
+        }
         synchronized (getClassLoadingLock(name)) {
             var loaded = findLoadedClass(name);
             if (loaded != null) {
@@ -58,7 +66,7 @@ public final class PluginClassLoader extends URLClassLoader {
             }
             for (var dependency : dependencies) {
                 try {
-                    return dependency.loadClassFromDependency(name);
+                    return dependency.loadClassFromDependency(name, visited);
                 } catch (ClassNotFoundException ignored) {
                 }
             }

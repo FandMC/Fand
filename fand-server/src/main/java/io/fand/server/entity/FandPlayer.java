@@ -161,6 +161,9 @@ public final class FandPlayer implements Player {
                         destination.pitch(),
                         true
                 );
+                if (ok) {
+                    registry.refreshSnapshots();
+                }
                 future.complete(ok);
             } catch (Throwable failure) {
                 future.completeExceptionally(failure);
@@ -509,7 +512,7 @@ public final class FandPlayer implements Player {
 
     @Override
     public boolean equals(Object other) {
-        return other instanceof FandPlayer that && this.uniqueId().equals(that.uniqueId());
+        return other instanceof io.fand.api.entity.Entity that && this.uniqueId().equals(that.uniqueId());
     }
 
     @Override

@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 6 Jun 2026 18:50:02 +0800
+Subject: [PATCH] Avoid drag event allocation without listeners
+
+
+diff --git a/net/minecraft/world/inventory/AbstractContainerMenu.java b/net/minecraft/world/inventory/AbstractContainerMenu.java
+index 21b5231361c2c3860e1ee6aeeff1947b54522b81..8490d721b964219e83c8b348931e3169bb840a8a 100644
+--- a/net/minecraft/world/inventory/AbstractContainerMenu.java
++++ b/net/minecraft/world/inventory/AbstractContainerMenu.java
+@@ -374,7 +374,8 @@ public abstract class AbstractContainerMenu {
+                         return;
+                     }
+ 
+-                    if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
++                    if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer
++                        && io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.inventory.InventoryDragEvent.class)) {
+                         java.util.Set<Integer> indices = new java.util.LinkedHashSet<>();
+                         for (Slot slot : this.quickcraftSlots) {
+                             indices.add(slot.index);

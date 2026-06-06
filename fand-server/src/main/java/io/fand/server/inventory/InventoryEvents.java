@@ -8,8 +8,8 @@ import io.fand.api.event.inventory.InventoryDragEvent;
 import io.fand.api.event.inventory.InventoryOpenEvent;
 import io.fand.api.inventory.InventoryType;
 import io.fand.api.item.ItemStack;
-import io.fand.server.Main;
 import io.fand.server.entity.FandPlayer;
+import io.fand.server.hooks.FandHooks;
 import io.fand.server.item.FandItemStacks;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,11 +38,11 @@ public final class InventoryEvents {
 
     /** Returns {@code true} if the open should proceed. */
     public static boolean fireOpen(ServerPlayer player, MenuType<?> type) {
-        var bus = Main.runtime().events();
+        var bus = FandHooks.events();
         if (!bus.hasListeners(InventoryOpenEvent.class)) {
             return true;
         }
-        var fandPlayer = Main.runtime().playerRegistry().find(player.getUUID()).orElse(null);
+        var fandPlayer = FandHooks.findPlayer(player.getUUID());
         if (fandPlayer == null) {
             return true;
         }
@@ -57,11 +57,11 @@ public final class InventoryEvents {
     }
 
     public static void fireClose(ServerPlayer player, AbstractContainerMenu menu) {
-        var bus = Main.runtime().events();
+        var bus = FandHooks.events();
         if (!bus.hasListeners(InventoryCloseEvent.class)) {
             return;
         }
-        var fandPlayer = Main.runtime().playerRegistry().find(player.getUUID()).orElse(null);
+        var fandPlayer = FandHooks.findPlayer(player.getUUID());
         if (fandPlayer == null) {
             return;
         }
@@ -80,11 +80,11 @@ public final class InventoryEvents {
             int slot,
             int button,
             ContainerInput input) {
-        var bus = Main.runtime().events();
+        var bus = FandHooks.events();
         if (!bus.hasListeners(InventoryClickEvent.class)) {
             return true;
         }
-        var fandPlayer = Main.runtime().playerRegistry().find(player.getUUID()).orElse(null);
+        var fandPlayer = FandHooks.findPlayer(player.getUUID());
         if (fandPlayer == null) {
             return true;
         }
@@ -123,11 +123,11 @@ public final class InventoryEvents {
             AbstractContainerMenu menu,
             int quickcraftType,
             java.util.Set<Integer> slotIndices) {
-        var bus = Main.runtime().events();
+        var bus = FandHooks.events();
         if (!bus.hasListeners(InventoryDragEvent.class)) {
             return true;
         }
-        var fandPlayer = Main.runtime().playerRegistry().find(player.getUUID()).orElse(null);
+        var fandPlayer = FandHooks.findPlayer(player.getUUID());
         if (fandPlayer == null) {
             return true;
         }

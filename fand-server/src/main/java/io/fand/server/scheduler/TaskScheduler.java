@@ -78,6 +78,13 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
         return scheduleAsync(task, delay);
     }
 
+    public void reconfigureAsyncThreads(int configuredAsyncThreads) {
+        ensureOpen();
+        if (asyncExecutor instanceof ScheduledThreadPoolExecutor executor) {
+            executor.setCorePoolSize(asyncThreadCount(configuredAsyncThreads));
+        }
+    }
+
     public int tick() {
         var tickTime = nanoTime.getAsLong();
         List<MainTask> ready = new ArrayList<>();

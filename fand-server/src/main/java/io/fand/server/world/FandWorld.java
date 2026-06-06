@@ -5,7 +5,6 @@ import io.fand.api.entity.Player;
 import io.fand.api.world.World;
 import io.fand.server.block.FandBlock;
 import io.fand.server.entity.PlayerRegistry;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import net.kyori.adventure.audience.Audience;
@@ -49,13 +48,7 @@ public final class FandWorld implements World {
         if (players == null) {
             return List.of();
         }
-        var snapshot = new ArrayList<Player>();
-        for (var candidate : players.snapshot()) {
-            if (candidate.handle().level() == handle) {
-                snapshot.add(candidate);
-            }
-        }
-        return List.copyOf(snapshot);
+        return players.snapshot(handle);
     }
 
     @Override
