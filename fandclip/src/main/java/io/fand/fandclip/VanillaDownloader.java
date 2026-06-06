@@ -50,7 +50,7 @@ final class VanillaDownloader {
             Files.deleteIfExists(tmp);
             throw new IOException("HTTP " + resp.statusCode() + " for " + url);
         }
-        String got = BundlerLayout.sha1(tmp);
+        String got = FileHashes.sha1(tmp);
         if (!expectedSha1.equalsIgnoreCase(got)) {
             Files.deleteIfExists(tmp);
             throw new IOException("SHA-1 mismatch for " + url + ": expected " + expectedSha1 + ", got " + got);

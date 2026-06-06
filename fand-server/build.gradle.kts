@@ -112,8 +112,7 @@ val mergeLog4jPlugins by tasks.registering {
     }
 }
 
-val fatJar by tasks.registering(Jar::class) {
-    dependsOn(project(":fand-api").tasks.named("classes"))
+tasks.jar {
     dependsOn(mergeLog4jPlugins)
 
     archiveClassifier.set("")
@@ -128,25 +127,8 @@ val fatJar by tasks.registering(Jar::class) {
     from(log4jPlugins.output) {
         exclude(log4jPluginsCachePath)
     }
-    from(project(":fand-api").sourceSets.main.get().output)
-
-    from(configurations.runtimeClasspath.get().filter {
-        it.name.endsWith(".jar") && !it.name.contains("mache") && !it.name.startsWith("fand-api-")
-    }.map { if (it.isDirectory) it else zipTree(it) })
 
     exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
     exclude("META-INF/versions/*/module-info.class")
     exclude("**/module-info.class")
-
-    // Exclude Logback to use Minecraft's Log4j2
-    exclude("logback*.xml")
-    exclude("ch/qos/logback/**")
-}
-
-tasks.jar {
-    archiveClassifier.set("slim")
-}
-
-tasks.assemble {
-    dependsOn(fatJar)
 }

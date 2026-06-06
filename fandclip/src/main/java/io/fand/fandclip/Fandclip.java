@@ -12,41 +12,45 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Standalone launcher distributed to end users. Resolves the vanilla server
- * libraries from a Mojang bundler, builds a classpath, and hands control to the
- * Fand server entry point in the same JVM.
+ * Standalone launcher distributed to end users. It materialises the embedded
+ * Fand server and libraries, downloads the vanilla bundled server when needed,
+ * and starts the real server main class in an isolated class loader.
  *
- * <p>The classpath layout is intentionally flat: every library jar plus the
- * bundled {@code fand-server.jar} (extracted from this jar's resources). Nothing
- * is downloaded that the bundler itself does not list, and every download is
- * SHA-1 verified against the bundler's manifest.
+ * <p>The on-disk layout mirrors Paperclip: {@code cache/} stores the downloaded
+ * Mojang jar, {@code versions/} stores the Fand server jar, and
+ * {@code libraries/} stores both Fand and vanilla library jars.
  */
 public final class Fandclip {
-
-    private static final String FAND_MAIN_CLASS = "io.fand.server.Main";
 
     private Fandclip() {}
 
     public static void main(String[] args) throws Exception {
-        Path home = resolveHome();
-        Path libsDir = home.resolve("libraries");
-        Files.createDirectories(libsDir);
-
-        Path bundler = home.resolve("vanilla-bundler.jar");
-        if (!Files.exists(bundler)) {
-            String version = ClipManifest.minecraftVersion();
-            System.out.println("[fandclip] no bundler cached, downloading vanilla " + version);
-            new VanillaDownloader().download(version, bundler);
+        if (Paths.get("").toAbsolutePath().toString().contains("!")) {
+            System.err.println("Fandclip may not run in a directory containing '!'. Please rename the affected folder.");
+            System.exit(1);
         }
 
-        BundlerLayout layout = BundlerLayout.read(bundler);
-        List<Path> libraries = layout.materialiseLibraries(libsDir);
-        Path serverJar = home.resolve("fand-server.jar");
-        ResourceExtractor.extract("/fand-server.jar", serverJar);
+        Path repoDir = resolveRepoDir();
+        Path cacheDir = repoDir.resolve("cache");
+        Path versionsDir = repoDir.resolve("versions");
+        Path librariesDir = repoDir.resolve("libraries");
 
-        List<Path> classpath = new java.util.ArrayList<>(libraries.size() + 1);
-        classpath.add(serverJar);
-        classpath.addAll(libraries);
+        String minecraftVersion = ClipManifest.minecraftVersion();
+        Path bundler = cacheDir.resolve("mojang_" + minecraftVersion + ".jar");
+        if (!Files.exists(bundler)) {
+            System.out.println("[fandclip] no vanilla cache, downloading mojang_" + minecraftVersion + ".jar");
+            new VanillaDownloader().download(minecraftVersion, bundler);
+        }
+
+        BundledLayout bundled = BundledLayout.read();
+        List<Path> versions = bundled.materialiseVersions(versionsDir);
+        List<Path> fandLibraries = bundled.materialiseLibraries(librariesDir);
+        List<Path> vanillaLibraries = BundlerLayout.read(bundler).materialiseLibraries(librariesDir);
+
+        List<Path> classpath = new ArrayList<>(versions.size() + fandLibraries.size() + vanillaLibraries.size());
+        classpath.addAll(versions);
+        classpath.addAll(fandLibraries);
+        classpath.addAll(vanillaLibraries);
 
         URL[] urls = new URL[classpath.size()];
         for (int i = 0; i < classpath.size(); i++) {
@@ -54,25 +58,40 @@ public final class Fandclip {
         }
 
         ClassLoader parent = ClassLoader.getSystemClassLoader().getParent();
-        try (URLClassLoader cl = new URLClassLoader("fand", urls, parent)) {
-            Thread.currentThread().setContextClassLoader(cl);
-            Class<?> mainClass = Class.forName(FAND_MAIN_CLASS, true, cl);
-            Method main = mainClass.getMethod("main", String[].class);
+        URLClassLoader classLoader = new URLClassLoader("fand", urls, parent);
+        String mainClassName = bundled.mainClass();
+        System.out.println("Starting " + mainClassName);
+
+        Thread runThread = new Thread(() -> {
             try {
+                Class<?> mainClass = Class.forName(mainClassName, true, classLoader);
+                Method main = mainClass.getMethod("main", String[].class);
                 main.invoke(null, (Object) args);
             } catch (InvocationTargetException ite) {
                 Throwable cause = ite.getTargetException();
-                if (cause instanceof RuntimeException re) throw re;
-                if (cause instanceof Error err) throw err;
-                throw new RuntimeException(cause);
+                throw sneakyThrow(cause);
+            } catch (Throwable t) {
+                throw sneakyThrow(t);
             }
-        }
+        }, "ServerMain");
+        runThread.setContextClassLoader(classLoader);
+        runThread.start();
     }
 
-    private static Path resolveHome() throws IOException {
-        String override = System.getProperty("fand.home");
-        Path base = override != null ? Paths.get(override) : Paths.get(".").toAbsolutePath().normalize().resolve(".fand");
+    private static Path resolveRepoDir() throws IOException {
+        String override = System.getProperty("bundlerRepoDir");
+        if (override == null || override.isBlank()) {
+            override = System.getProperty("fand.home");
+        }
+        Path base = override == null || override.isBlank()
+                ? Paths.get("").toAbsolutePath().normalize()
+                : Paths.get(override);
         Files.createDirectories(base);
         return base;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> RuntimeException sneakyThrow(Throwable throwable) throws T {
+        throw (T) throwable;
     }
 }

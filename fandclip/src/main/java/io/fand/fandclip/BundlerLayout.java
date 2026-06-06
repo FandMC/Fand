@@ -1,35 +1,23 @@
 package io.fand.fandclip;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.jar.JarFile;
 
 /**
- * Reads Mojang's bundler layout (the vanilla server jar produced for 1.18+).
- *
- * <p>Two manifest files matter:
- * <ul>
- *   <li>{@code META-INF/libraries.list} - tab-separated rows of {@code sha1\tcoords\tpath}</li>
- *   <li>{@code META-INF/versions.list}  - same shape, but the path is the real server jar</li>
- * </ul>
- * Every library lives at {@code META-INF/libraries/<path>} inside the bundler.
+ * Reads Mojang's bundled server jar layout and materialises its libraries.
  */
 final class BundlerLayout {
 
     private final Path bundler;
-    private final List<Entry> libraries;
+    private final List<FileEntry> libraries;
 
-    private BundlerLayout(Path bundler, List<Entry> libraries) {
+    private BundlerLayout(Path bundler, List<FileEntry> libraries) {
         this.bundler = bundler;
         this.libraries = libraries;
     }
@@ -47,17 +35,14 @@ final class BundlerLayout {
     List<Path> materialiseLibraries(Path libDir) throws IOException {
         List<Path> out = new ArrayList<>(libraries.size());
         try (JarFile jar = new JarFile(bundler.toFile())) {
-            for (Entry e : libraries) {
-                Path target = libDir.resolve(e.path).normalize();
-                if (!target.startsWith(libDir)) {
-                    throw new IOException("Refusing zip-slip path: " + e.path);
-                }
-                if (Files.exists(target) && e.sha1.equalsIgnoreCase(hash(target, e.sha1.length()))) {
+            for (FileEntry library : libraries) {
+                Path target = library.resolveUnder(libDir);
+                if (Files.exists(target) && library.matches(target)) {
                     out.add(target);
                     continue;
                 }
                 Files.createDirectories(target.getParent());
-                String inner = "META-INF/libraries/" + e.path;
+                String inner = "META-INF/libraries/" + library.path();
                 var entry = jar.getEntry(inner);
                 if (entry == null) {
                     throw new IOException("Bundler missing library " + inner);
@@ -66,10 +51,9 @@ final class BundlerLayout {
                 try (InputStream in = jar.getInputStream(entry)) {
                     Files.copy(in, tmp, StandardCopyOption.REPLACE_EXISTING);
                 }
-                String got = hash(tmp, e.sha1.length());
-                if (!e.sha1.equalsIgnoreCase(got)) {
+                if (!library.matches(tmp)) {
                     Files.deleteIfExists(tmp);
-                    throw new IOException("Hash mismatch for " + e.path + ": expected " + e.sha1 + ", got " + got);
+                    throw new IOException("Hash mismatch for " + library.path());
                 }
                 Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
                 out.add(target);
@@ -78,56 +62,13 @@ final class BundlerLayout {
         return out;
     }
 
-    private static List<Entry> parseList(JarFile jar, String name) throws IOException {
+    private static List<FileEntry> parseList(JarFile jar, String name) throws IOException {
         var entry = jar.getEntry(name);
         if (entry == null) {
             throw new IOException("Bundler missing manifest " + name);
         }
-        List<Entry> list = new ArrayList<>();
-        try (var in = jar.getInputStream(entry);
-             var reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.isBlank()) continue;
-                String[] cols = line.split("\t");
-                if (cols.length < 3) {
-                    throw new IOException("Malformed row in " + name + ": " + line);
-                }
-                list.add(new Entry(cols[0], cols[1], cols[2]));
-            }
-        }
-        return list;
-    }
-
-    static String sha1(Path path) throws IOException {
-        return hash(path, 40);
-    }
-
-    private static String hash(Path path, int expectedLength) throws IOException {
-        String algorithm = expectedLength == 64 ? "SHA-256" : "SHA-1";
-        try {
-            MessageDigest md = MessageDigest.getInstance(algorithm);
-            try (InputStream in = Files.newInputStream(path)) {
-                byte[] buf = new byte[16384];
-                int n;
-                while ((n = in.read(buf)) > 0) md.update(buf, 0, n);
-            }
-            return toHex(md.digest());
-        } catch (NoSuchAlgorithmException e) {
-            throw new AssertionError(algorithm + " missing from JDK", e);
+        try (var in = jar.getInputStream(entry)) {
+            return FileEntry.parse(in, name);
         }
     }
-
-    private static String toHex(byte[] bytes) {
-        char[] hex = "0123456789abcdef".toCharArray();
-        char[] out = new char[bytes.length * 2];
-        for (int i = 0; i < bytes.length; i++) {
-            int b = bytes[i] & 0xff;
-            out[i * 2] = hex[b >>> 4];
-            out[i * 2 + 1] = hex[b & 0x0f];
-        }
-        return new String(out);
-    }
-
-    record Entry(String sha1, String coords, String path) {}
 }
