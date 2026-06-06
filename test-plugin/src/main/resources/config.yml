@@ -4,6 +4,11 @@ messages:
   mute-next-armed: Your next chat message will be blocked by test-plugin.
   muted-chat: Your message was blocked by the test-plugin mute demo.
   gui-locked: This barrier is locked in the demo GUI.
+  actionbar: Action bar from test-plugin.
+  title: Fand API
+  subtitle: Title demo from test-plugin.
+  bossbar: Boss bar from test-plugin.
+  kick-reason: Kicked by test-plugin.
 
 features:
   chat-prefix: true

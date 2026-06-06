@@ -62,6 +62,41 @@ final class TestPluginTest {
         assertThat(TestPlugin.isStackType(ItemStack.EMPTY, "barrier")).isFalse();
     }
 
+    @Test
+    void clampsBossBarProgress() {
+        assertThat(TestPlugin.boundedBossBarProgress(-0.5F)).isZero();
+        assertThat(TestPlugin.boundedBossBarProgress(0.6F)).isEqualTo(0.6F);
+        assertThat(TestPlugin.boundedBossBarProgress(1.5F)).isEqualTo(1.0F);
+    }
+
+    @Test
+    void recognisesFiniteFloatText() {
+        assertThat(TestPlugin.isFloat("0.5")).isTrue();
+        assertThat(TestPlugin.isFloat("NaN")).isFalse();
+        assertThat(TestPlugin.isFloat("hello")).isFalse();
+    }
+
+    @Test
+    void joinsMessageTextWithFallback() {
+        assertThat(TestPlugin.messageText(List.of("hello", "world"), "fallback")).isEqualTo("hello world");
+        assertThat(TestPlugin.messageText(List.of(), "fallback")).isEqualTo("fallback");
+        assertThat(TestPlugin.messageText(List.of("  "), "fallback")).isEqualTo("fallback");
+    }
+
+    @Test
+    void splitsDemoTitleAndSubtitle() {
+        var explicit = TestPlugin.demoTitle("Main | Sub", "Default", "Default Sub");
+        var fallbackSubtitle = TestPlugin.demoTitle("Main", "Default", "Default Sub");
+        var fallbackTitle = TestPlugin.demoTitle(" | Sub", "Default", "Default Sub");
+
+        assertThat(explicit.title()).isEqualTo("Main");
+        assertThat(explicit.subtitle()).isEqualTo("Sub");
+        assertThat(fallbackSubtitle.title()).isEqualTo("Main");
+        assertThat(fallbackSubtitle.subtitle()).isEqualTo("Default Sub");
+        assertThat(fallbackTitle.title()).isEqualTo("Default");
+        assertThat(fallbackTitle.subtitle()).isEqualTo("Sub");
+    }
+
     private static ItemStack stack(String key) {
         return new ItemStack(new TestItemType(Key.key(key), 64), 1);
     }

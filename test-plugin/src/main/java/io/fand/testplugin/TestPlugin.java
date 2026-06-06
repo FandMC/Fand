@@ -45,10 +45,12 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.key.InvalidKeyException;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.title.Title;
 import org.slf4j.Logger;
 
 public final class TestPlugin implements Plugin {
@@ -86,7 +88,11 @@ public final class TestPlugin implements Plugin {
             "fand.testplugin.heal",
             "fand.testplugin.mode",
             "fand.testplugin.fly",
-            "fand.testplugin.gui"
+            "fand.testplugin.gui",
+            "fand.testplugin.actionbar",
+            "fand.testplugin.title",
+            "fand.testplugin.bossbar",
+            "fand.testplugin.kick"
     );
 
     @Override
@@ -106,6 +112,10 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new HealCommand(context));
         context.commands().register(new GameModeCommand());
         context.commands().register(new FlyCommand());
+        context.commands().register(new ActionBarCommand(context));
+        context.commands().register(new TitleCommand(context));
+        context.commands().register(new BossBarCommand(context));
+        context.commands().register(new KickCommand(context));
         context.commands().register(new GuiCommand(context, demoGuiViewers));
         context.events().subscribe(ServerStartedEvent.class, event ->
                 context.logger().info("Server started; Fand brand={} version={} minecraft={}",
@@ -507,6 +517,152 @@ public final class TestPlugin implements Plugin {
         }
     }
 
+    @CommandSpec(label = "fandactionbar", arguments = {"player", "message"}, aliases = {"factionbar"}, permission = "fand.testplugin.actionbar")
+    static final class ActionBarCommand implements CommandExecutor, CommandCompleter {
+
+        private final PluginContext context;
+
+        ActionBarCommand(PluginContext context) {
+            this.context = context;
+        }
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            TargetedArgs targeted = targetedArgs(sender, args, "/fandactionbar <player> [message...]");
+            if (targeted == null) {
+                return;
+            }
+            String text = messageText(targeted.args(), message(context.config(), "messages.actionbar", "Action bar from test-plugin."));
+            targeted.player().sendActionBar(Component.text(text, NamedTextColor.AQUA));
+            if (targeted.player() != sender) {
+                sender.sendMessage(Component.text("Sent action bar to " + targeted.player().name() + ".", NamedTextColor.GREEN));
+            }
+        }
+
+        @Override
+        public List<String> complete(CommandSender sender, String label, List<String> args) {
+            return args.size() <= 1 ? matching(playerNames(), args.isEmpty() ? "" : args.getLast()) : List.of();
+        }
+    }
+
+    @CommandSpec(label = "fandtitle", arguments = {"player", "title"}, aliases = {"ftitle"}, permission = "fand.testplugin.title")
+    static final class TitleCommand implements CommandExecutor, CommandCompleter {
+
+        private final PluginContext context;
+
+        TitleCommand(PluginContext context) {
+            this.context = context;
+        }
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            TargetedArgs targeted = targetedArgs(sender, args, "/fandtitle <player> [title...]");
+            if (targeted == null) {
+                return;
+            }
+            var titleText = demoTitle(
+                    messageText(targeted.args(), message(context.config(), "messages.title", "Fand API")),
+                    message(context.config(), "messages.title", "Fand API"),
+                    message(context.config(), "messages.subtitle", "Title demo from test-plugin."));
+            targeted.player().showTitle(Title.title(
+                    Component.text(titleText.title(), NamedTextColor.GOLD),
+                    Component.text(titleText.subtitle(), NamedTextColor.YELLOW),
+                    Title.Times.times(Duration.ofMillis(500), Duration.ofSeconds(3), Duration.ofMillis(750))));
+            if (targeted.player() != sender) {
+                sender.sendMessage(Component.text("Sent title to " + targeted.player().name() + ".", NamedTextColor.GREEN));
+            }
+        }
+
+        @Override
+        public List<String> complete(CommandSender sender, String label, List<String> args) {
+            return args.size() <= 1 ? matching(playerNames(), args.isEmpty() ? "" : args.getLast()) : List.of();
+        }
+    }
+
+    @CommandSpec(label = "fandbossbar", arguments = {"player", "progress", "message"}, aliases = {"fbossbar"}, permission = "fand.testplugin.bossbar")
+    static final class BossBarCommand implements CommandExecutor, CommandCompleter {
+
+        private final PluginContext context;
+
+        BossBarCommand(PluginContext context) {
+            this.context = context;
+        }
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            TargetedArgs targeted = targetedArgs(sender, args, "/fandbossbar <player> [progress] [message...]");
+            if (targeted == null) {
+                return;
+            }
+            float progress = 1.0F;
+            List<String> messageArgs = targeted.args();
+            if (!messageArgs.isEmpty() && isFloat(messageArgs.getFirst())) {
+                Float parsed = parseFloat(sender, messageArgs.getFirst(), "progress");
+                if (parsed == null) {
+                    return;
+                }
+                progress = boundedBossBarProgress(parsed);
+                messageArgs = messageArgs.subList(1, messageArgs.size());
+            }
+            String text = messageText(messageArgs, message(context.config(), "messages.bossbar", "Boss bar from test-plugin."));
+            BossBar bar = BossBar.bossBar(
+                    Component.text(text, NamedTextColor.GOLD),
+                    progress,
+                    BossBar.Color.BLUE,
+                    BossBar.Overlay.PROGRESS);
+            targeted.player().showBossBar(bar);
+            context.scheduler().runMainAfter(() -> targeted.player().hideBossBar(bar), Duration.ofSeconds(8));
+            if (targeted.player() != sender) {
+                sender.sendMessage(Component.text("Sent boss bar to " + targeted.player().name() + ".", NamedTextColor.GREEN));
+            }
+        }
+
+        @Override
+        public List<String> complete(CommandSender sender, String label, List<String> args) {
+            if (args.size() <= 1) {
+                var values = new ArrayList<>(playerNames());
+                values.addAll(List.of("0.25", "0.5", "0.75", "1.0"));
+                return matching(values, args.isEmpty() ? "" : args.getLast());
+            }
+            if (args.size() == 2 && Fand.server().player(args.getFirst()).isPresent()) {
+                return matching(List.of("0.25", "0.5", "0.75", "1.0"), args.getLast());
+            }
+            return List.of();
+        }
+    }
+
+    @CommandSpec(label = "fandkick", arguments = {"player", "reason"}, aliases = {"fkick"}, permission = "fand.testplugin.kick")
+    static final class KickCommand implements CommandExecutor, CommandCompleter {
+
+        private final PluginContext context;
+
+        KickCommand(PluginContext context) {
+            this.context = context;
+        }
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            if (args.isEmpty()) {
+                sender.sendMessage(Component.text("Usage: /fandkick <player> [reason...]", NamedTextColor.RED));
+                return;
+            }
+            Player target = player(sender, args.getFirst());
+            if (target == null) {
+                return;
+            }
+            String reason = messageText(args.subList(1, args.size()), message(context.config(), "messages.kick-reason", "Kicked by test-plugin."));
+            target.kick(Component.text(reason, NamedTextColor.RED));
+            if (target != sender) {
+                sender.sendMessage(Component.text("Kicked " + target.name() + ".", NamedTextColor.GREEN));
+            }
+        }
+
+        @Override
+        public List<String> complete(CommandSender sender, String label, List<String> args) {
+            return args.size() <= 1 ? matching(playerNames(), args.isEmpty() ? "" : args.getLast()) : List.of();
+        }
+    }
+
     @CommandSpec(label = "fandgui", arguments = {"player"}, aliases = {"fgui"}, permission = "fand.testplugin.gui")
     static final class GuiCommand implements CommandExecutor, CommandCompleter {
 
@@ -770,6 +926,19 @@ public final class TestPlugin implements Plugin {
         }
     }
 
+    private static Float parseFloat(CommandSender sender, String raw, String name) {
+        try {
+            float value = Float.parseFloat(raw);
+            if (!Float.isFinite(value)) {
+                throw new NumberFormatException(raw);
+            }
+            return value;
+        } catch (NumberFormatException ex) {
+            sender.sendMessage(Component.text(name + " must be a number: " + raw, NamedTextColor.RED));
+            return null;
+        }
+    }
+
     private static String message(Configuration config, String path, String fallback) {
         return config.getString(path, fallback);
     }
@@ -795,6 +964,50 @@ public final class TestPlugin implements Plugin {
 
     static boolean isStackType(ItemStack stack, String itemKey) {
         return !stack.isEmpty() && stack.type().key().asString().equals(keyString(itemKey));
+    }
+
+    static boolean isFloat(String raw) {
+        try {
+            return Float.isFinite(Float.parseFloat(raw));
+        } catch (NumberFormatException ex) {
+            return false;
+        }
+    }
+
+    static float boundedBossBarProgress(float progress) {
+        return Math.max(0.0F, Math.min(1.0F, progress));
+    }
+
+    static String messageText(List<String> args, String fallback) {
+        var text = String.join(" ", args).trim();
+        return text.isBlank() ? fallback : text;
+    }
+
+    static DemoTitle demoTitle(String raw, String defaultTitle, String defaultSubtitle) {
+        var parts = raw.split("\\|", 2);
+        var title = parts[0].trim();
+        var subtitle = parts.length == 2 ? parts[1].trim() : "";
+        return new DemoTitle(
+                title.isBlank() ? defaultTitle : title,
+                subtitle.isBlank() ? defaultSubtitle : subtitle);
+    }
+
+    private static TargetedArgs targetedArgs(CommandSender sender, List<String> args, String usage) {
+        if (!args.isEmpty()) {
+            var explicitTarget = Fand.server().player(args.getFirst());
+            if (explicitTarget.isPresent()) {
+                return new TargetedArgs(explicitTarget.get(), args.subList(1, args.size()));
+            }
+            if (!(sender instanceof Player)) {
+                player(sender, args.getFirst());
+                return null;
+            }
+        }
+        if (sender instanceof Player player) {
+            return new TargetedArgs(player, args);
+        }
+        sender.sendMessage(Component.text("Console must provide a target player: " + usage, NamedTextColor.RED));
+        return null;
     }
 
     static List<String> matching(List<String> values, String rawPrefix) {
@@ -827,5 +1040,11 @@ public final class TestPlugin implements Plugin {
 
     private static String trim(double value) {
         return value == Math.rint(value) ? Long.toString(Math.round(value)) : Double.toString(value);
+    }
+
+    record TargetedArgs(Player player, List<String> args) {
+    }
+
+    record DemoTitle(String title, String subtitle) {
     }
 }
