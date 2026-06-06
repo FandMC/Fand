@@ -24,6 +24,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.jar.JarFile;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -44,10 +46,11 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final PermissionService permissions;
     private final Scheduler scheduler;
     private volatile Options options;
-    private final LinkedHashMap<String, LoadedPlugin> loadedPlugins = new LinkedHashMap<>();
-    private boolean loaded;
-    private boolean enabled;
-    private boolean closed;
+    private final ConcurrentHashMap<String, LoadedPlugin> loadedPlugins = new ConcurrentHashMap<>();
+    private final CopyOnWriteArrayList<String> loadOrder = new CopyOnWriteArrayList<>();
+    private volatile boolean loaded;
+    private volatile boolean enabled;
+    private volatile boolean closed;
 
     public PluginRuntime(
             Path pluginsDirectory,
@@ -126,6 +129,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                     var plugin = instantiatePlugin(artifact.descriptor, classLoader);
                     plugin.onLoad(context);
                     loadedPlugins.put(artifact.descriptor.id(), new LoadedPlugin(artifact.descriptor, plugin, context, classLoader));
+                    loadOrder.add(artifact.descriptor.id());
                 } catch (Throwable failure) {
                     context.close();
                     closeQuietly(classLoader, artifact.descriptor.id());
@@ -164,7 +168,11 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         var enabledThisRun = new ArrayDeque<LoadedPlugin>();
         var skipped = 0;
         try {
-            for (var loadedPlugin : loadedPlugins.values()) {
+            for (var pluginId : loadOrder) {
+                var loadedPlugin = loadedPlugins.get(pluginId);
+                if (loadedPlugin == null) {
+                    continue;
+                }
                 var unavailableDependency = firstDisabledDependency(loadedPlugin.descriptor.depends());
                 if (unavailableDependency != null) {
                     if (!options.continueOnEnableFailure()) {
@@ -204,18 +212,23 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         if (!enabled) {
             return;
         }
-        var reverse = new ArrayList<>(loadedPlugins.values());
-        for (int i = reverse.size() - 1; i >= 0; i--) {
-            disablePlugin(reverse.get(i));
+        for (int i = loadOrder.size() - 1; i >= 0; i--) {
+            var loadedPlugin = loadedPlugins.get(loadOrder.get(i));
+            if (loadedPlugin != null) {
+                disablePlugin(loadedPlugin);
+            }
         }
         enabled = false;
     }
 
     @Override
     public Collection<Plugin> loaded() {
-        var plugins = new ArrayList<Plugin>(loadedPlugins.size());
-        for (var loadedPlugin : loadedPlugins.values()) {
-            plugins.add(loadedPlugin.plugin);
+        var plugins = new ArrayList<Plugin>(loadOrder.size());
+        for (var pluginId : loadOrder) {
+            var loadedPlugin = loadedPlugins.get(pluginId);
+            if (loadedPlugin != null) {
+                plugins.add(loadedPlugin.plugin);
+            }
         }
         return List.copyOf(plugins);
     }
@@ -239,13 +252,17 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         }
         closed = true;
         disablePlugins();
-        var reverse = new ArrayList<>(loadedPlugins.values());
-        for (int i = reverse.size() - 1; i >= 0; i--) {
-            var loadedPlugin = reverse.get(i);
+        for (int i = loadOrder.size() - 1; i >= 0; i--) {
+            var pluginId = loadOrder.get(i);
+            var loadedPlugin = loadedPlugins.get(pluginId);
+            if (loadedPlugin == null) {
+                continue;
+            }
             loadedPlugin.context.close();
             closeQuietly(loadedPlugin.classLoader, loadedPlugin.descriptor.id());
         }
         loadedPlugins.clear();
+        loadOrder.clear();
         loaded = false;
         enabled = false;
     }
@@ -442,7 +459,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         private final Plugin plugin;
         private final RuntimePluginContext context;
         private final PluginClassLoader classLoader;
-        private boolean enabled;
+        private volatile boolean enabled;
 
         private LoadedPlugin(
                 PluginDescriptor descriptor,

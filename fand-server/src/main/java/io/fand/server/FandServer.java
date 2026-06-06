@@ -14,7 +14,9 @@ import io.fand.api.scheduler.Scheduler;
 import io.fand.server.command.BuiltinCommands;
 import io.fand.server.command.CommandManager;
 import io.fand.server.config.ConfigReloadResult;
+import io.fand.server.config.ConfigReloader;
 import io.fand.server.config.FandConfig;
+import io.fand.server.entity.EntityRegistry;
 import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.event.EventDispatcher;
 import io.fand.server.permission.PermissionManager;
@@ -22,7 +24,6 @@ import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.scheduler.TaskScheduler;
 import io.fand.server.world.WorldRegistry;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
@@ -46,7 +47,9 @@ public final class FandServer implements Server, AutoCloseable {
     private final TaskScheduler scheduler;
     private final PluginRuntime plugins;
     private final PlayerRegistry players;
+    private final ConfigReloader configReloader;
     private final AtomicReference<WorldRegistry> worlds = new AtomicReference<>();
+    private final AtomicReference<EntityRegistry> entities = new AtomicReference<>();
     private final AtomicReference<FandConfig> config;
     private final AtomicReference<LifecyclePhase> phase = new AtomicReference<>(LifecyclePhase.BOOTSTRAP);
     private final AtomicReference<MinecraftServer> minecraftServer = new AtomicReference<>();
@@ -77,8 +80,9 @@ public final class FandServer implements Server, AutoCloseable {
                 events,
                 permissions,
                 scheduler,
-                pluginOptions(initialConfig)
+                ConfigReloader.toPluginOptions(initialConfig)
         );
+        this.configReloader = new ConfigReloader(configPath, config, plugins);
     }
 
     /**
@@ -116,33 +120,7 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     public ConfigReloadResult reloadConfig() {
-        var previous = config.get();
-        var reloaded = FandConfig.load(configPath);
-        var hotApplied = new ArrayList<String>();
-        var requiresRestart = new ArrayList<String>();
-
-        if (!previous.identity.brand.equals(reloaded.identity.brand)) {
-            hotApplied.add("identity.brand");
-        }
-        if (previous.plugins.continueOnLoadFailure != reloaded.plugins.continueOnLoadFailure) {
-            hotApplied.add("plugins.continueOnLoadFailure");
-        }
-        if (previous.plugins.continueOnEnableFailure != reloaded.plugins.continueOnEnableFailure) {
-            hotApplied.add("plugins.continueOnEnableFailure");
-        }
-        if (previous.plugins.logSummary != reloaded.plugins.logSummary) {
-            hotApplied.add("plugins.logSummary");
-        }
-        if (!previous.plugins.directory.equals(reloaded.plugins.directory)) {
-            requiresRestart.add("plugins.directory");
-        }
-        if (previous.scheduler.asyncThreads != reloaded.scheduler.asyncThreads) {
-            requiresRestart.add("scheduler.asyncThreads");
-        }
-
-        plugins.reconfigure(pluginOptions(reloaded));
-        config.set(reloaded);
-        return new ConfigReloadResult(hotApplied, requiresRestart);
+        return configReloader.reload();
     }
 
     public void attach(MinecraftServer server) {
@@ -152,6 +130,7 @@ public final class FandServer implements Server, AutoCloseable {
         }
         var registry = new WorldRegistry(server, players);
         worlds.set(registry);
+        entities.set(new EntityRegistry(registry));
         players.bindWorldResolver(registry::wrap);
     }
 
@@ -279,6 +258,10 @@ public final class FandServer implements Server, AutoCloseable {
         return Optional.ofNullable(worlds.get());
     }
 
+    public Optional<EntityRegistry> entityRegistry() {
+        return Optional.ofNullable(entities.get());
+    }
+
     @Override
     public Optional<? extends io.fand.api.block.BlockType> blockType(Key key) {
         Objects.requireNonNull(key, "key");
@@ -356,14 +339,6 @@ public final class FandServer implements Server, AutoCloseable {
         }
         phase.set(LifecyclePhase.STOPPED);
         LOGGER.info("Fand runtime stopped");
-    }
-
-    private static PluginRuntime.Options pluginOptions(FandConfig config) {
-        return new PluginRuntime.Options(
-                config.plugins.continueOnLoadFailure,
-                config.plugins.continueOnEnableFailure,
-                config.plugins.logSummary
-        );
     }
 
     private void registerBuiltinCommands() {

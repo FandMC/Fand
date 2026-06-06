@@ -2,6 +2,8 @@ package io.fand.server.audience;
 
 import io.fand.server.command.AdventureBridge;
 import java.util.OptionalLong;
+import java.util.concurrent.ConcurrentHashMap;
+import net.kyori.adventure.key.Key;
 import net.kyori.adventure.sound.Sound;
 import net.kyori.adventure.sound.SoundStop;
 import net.kyori.adventure.text.Component;
@@ -35,6 +37,7 @@ public final class PacketAudience {
     private static final int DEFAULT_FADE_IN = 10;
     private static final int DEFAULT_STAY = 70;
     private static final int DEFAULT_FADE_OUT = 20;
+    private static final ConcurrentHashMap<Key, Holder<SoundEvent>> SOUND_HOLDERS = new ConcurrentHashMap<>();
 
     private PacketAudience() {
     }
@@ -108,8 +111,8 @@ public final class PacketAudience {
     }
 
     private static Holder<SoundEvent> resolveSound(Sound sound) {
-        var event = SoundEvent.createVariableRangeEvent(Identifier.parse(sound.name().asString()));
-        return Holder.direct(event);
+        return SOUND_HOLDERS.computeIfAbsent(sound.name(), key ->
+                Holder.direct(SoundEvent.createVariableRangeEvent(Identifier.parse(key.asString()))));
     }
 
     static SoundSource resolveSource(Sound.Source source) {

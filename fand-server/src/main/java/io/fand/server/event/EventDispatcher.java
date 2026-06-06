@@ -13,6 +13,7 @@ import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class EventDispatcher implements EventBus {
@@ -27,7 +28,7 @@ public final class EventDispatcher implements EventBus {
 
     private final ConcurrentHashMap<Class<? extends Event>, ListenerBucket> buckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Class<? extends Event>, DispatchPlan> dispatchPlans = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Class<? extends Event>, AtomicLong> planGenerations = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Class<? extends Event>, AtomicInteger> applicableCounters = new ConcurrentHashMap<>();
     private final AtomicLong sequence = new AtomicLong();
 
     @Override
@@ -43,7 +44,7 @@ public final class EventDispatcher implements EventBus {
         var bucket = bucket(type);
         var registration = new Registration<>(this, bucket, priority, listener, sequence.getAndIncrement());
         bucket.add(registration);
-        invalidatePlans(type);
+        adjustApplicableCounters(type, +1);
         return registration;
     }
 
@@ -80,24 +81,26 @@ public final class EventDispatcher implements EventBus {
     @Override
     public boolean hasListeners(Class<? extends Event> type) {
         Objects.requireNonNull(type, "type");
-        for (var bucket : buckets.values()) {
-            if (!bucket.type.isAssignableFrom(type)) {
-                continue;
-            }
-            if (bucket.snapshot().registrations.length > 0) {
-                return true;
-            }
+        var counter = applicableCounters.get(type);
+        if (counter != null && counter.get() > 0) {
+            return true;
         }
-        return false;
+        // Cold path: a listener was registered against a supertype but this exact
+        // event subtype has never been queried. Walk the hierarchy once and seed
+        // the counter so subsequent calls take the fast path above.
+        return ensureCounter(type).get() > 0;
     }
 
     private DispatchPlan resolveDispatchPlan(Class<? extends Event> eventType) {
-        var generation = planGeneration(eventType).get();
+        var snapshots = snapshots(eventType);
         var plan = dispatchPlans.get(eventType);
-        if (plan == null || plan.generation != generation) {
-            plan = rebuildDispatchPlan(eventType);
+        if (plan != null && plan.matches(snapshots)) {
+            return plan;
         }
-        return plan;
+        var registrations = mergeSnapshots(snapshots);
+        var fresh = new DispatchPlan(snapshotVersions(snapshots), registrations);
+        dispatchPlans.put(eventType, fresh);
+        return fresh;
     }
 
     private static List<Throwable> invokeAll(DispatchPlan plan, Event event) {
@@ -124,33 +127,32 @@ public final class EventDispatcher implements EventBus {
         return raced != null ? raced : created;
     }
 
-    private AtomicLong planGeneration(Class<? extends Event> eventType) {
-        return planGenerations.computeIfAbsent(eventType, ignored -> new AtomicLong());
+    private AtomicInteger ensureCounter(Class<? extends Event> firedType) {
+        var existing = applicableCounters.get(firedType);
+        if (existing != null) {
+            return existing;
+        }
+        // Seed by summing all bucket sizes whose declared type is assignable from firedType.
+        var seed = new AtomicInteger();
+        for (var bucket : buckets.values()) {
+            if (bucket.type.isAssignableFrom(firedType)) {
+                seed.addAndGet(bucket.activeCount());
+            }
+        }
+        var raced = applicableCounters.putIfAbsent(firedType, seed);
+        return raced != null ? raced : seed;
     }
 
-    private void invalidatePlans(Class<? extends Event> listenerType) {
-        for (var entry : planGenerations.entrySet()) {
-            if (listenerType.isAssignableFrom(entry.getKey())) {
-                entry.getValue().incrementAndGet();
+    private void adjustApplicableCounters(Class<? extends Event> bucketType, int delta) {
+        for (var entry : applicableCounters.entrySet()) {
+            if (bucketType.isAssignableFrom(entry.getKey())) {
+                entry.getValue().addAndGet(delta);
             }
         }
     }
 
-    private DispatchPlan rebuildDispatchPlan(Class<? extends Event> eventType) {
-        var generation = planGeneration(eventType);
-        while (true) {
-            var targetGeneration = generation.get();
-            var snapshots = snapshots(eventType);
-            var registrations = mergeSnapshots(snapshots);
-            if (generation.get() != targetGeneration) {
-                continue;
-            }
-            var plan = new DispatchPlan(targetGeneration, registrations);
-            dispatchPlans.put(eventType, plan);
-            if (generation.get() == targetGeneration) {
-                return plan;
-            }
-        }
+    void onUnregister(ListenerBucket bucket) {
+        adjustApplicableCounters(bucket.type, -1);
     }
 
     private BucketSnapshot[] snapshots(Class<? extends Event> eventType) {
@@ -170,6 +172,20 @@ public final class EventDispatcher implements EventBus {
         }
         return snapshots == null ? EMPTY_SNAPSHOTS : snapshots.toArray(BucketSnapshot[]::new);
     }
+
+    private static long[] snapshotVersions(BucketSnapshot[] snapshots) {
+        if (snapshots.length == 0) {
+            return EMPTY_VERSIONS;
+        }
+        var versions = new long[snapshots.length * 2];
+        for (int i = 0; i < snapshots.length; i++) {
+            versions[i * 2] = System.identityHashCode(snapshots[i].bucket);
+            versions[i * 2 + 1] = snapshots[i].version;
+        }
+        return versions;
+    }
+
+    private static final long[] EMPTY_VERSIONS = new long[0];
 
     private Registration<?>[] mergeSnapshots(BucketSnapshot[] snapshots) {
         if (snapshots.length == 0) {
@@ -198,28 +214,36 @@ public final class EventDispatcher implements EventBus {
         return merged;
     }
 
-    private static final class ListenerBucket {
+    static final class ListenerBucket {
 
         private final Class<? extends Event> type;
         private final Object lock = new Object();
         private final ArrayList<Registration<?>> registrations = new ArrayList<>();
         private final AtomicLong version = new AtomicLong();
         private final AtomicLong inactiveRegistrations = new AtomicLong();
-        private volatile BucketSnapshot snapshot = new BucketSnapshot(0L, EMPTY_REGISTRATIONS);
+        private final AtomicInteger activeCount = new AtomicInteger();
+        private volatile BucketSnapshot snapshot;
 
         private ListenerBucket(Class<? extends Event> type) {
             this.type = type;
+            this.snapshot = new BucketSnapshot(this, 0L, EMPTY_REGISTRATIONS);
+        }
+
+        int activeCount() {
+            return activeCount.get();
         }
 
         private void add(Registration<?> registration) {
             synchronized (lock) {
                 registrations.add(registration);
+                activeCount.incrementAndGet();
                 version.incrementAndGet();
             }
         }
 
         private void unregister() {
             inactiveRegistrations.incrementAndGet();
+            activeCount.decrementAndGet();
             version.incrementAndGet();
         }
 
@@ -250,6 +274,7 @@ public final class EventDispatcher implements EventBus {
                     active.sort(DISPATCH_ORDER);
                 }
                 var updated = new BucketSnapshot(
+                        this,
                         currentVersion,
                         active == null ? EMPTY_REGISTRATIONS : active.toArray(Registration[]::new)
                 );
@@ -272,10 +297,25 @@ public final class EventDispatcher implements EventBus {
         }
     }
 
-    private record BucketSnapshot(long version, Registration<?>[] registrations) {
+    private record BucketSnapshot(ListenerBucket bucket, long version, Registration<?>[] registrations) {
     }
 
-    private record DispatchPlan(long generation, Registration<?>[] registrations) {
+    private record DispatchPlan(long[] bucketVersions, Registration<?>[] registrations) {
+
+        boolean matches(BucketSnapshot[] snapshots) {
+            if (snapshots.length * 2 != bucketVersions.length) {
+                return false;
+            }
+            for (int i = 0; i < snapshots.length; i++) {
+                if (bucketVersions[i * 2] != System.identityHashCode(snapshots[i].bucket)) {
+                    return false;
+                }
+                if (bucketVersions[i * 2 + 1] != snapshots[i].version) {
+                    return false;
+                }
+            }
+            return true;
+        }
     }
 
     private static final class MergeCursor {
@@ -329,7 +369,7 @@ public final class EventDispatcher implements EventBus {
         public void unregister() {
             if (active.compareAndSet(true, false)) {
                 bucket.unregister();
-                owner.invalidatePlans(bucket.type);
+                owner.onUnregister(bucket);
             }
         }
 

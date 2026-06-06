@@ -29,27 +29,24 @@ import net.minecraft.world.entity.EntityType;
 
 public final class FandPlayer implements Player {
 
-    private volatile ServerPlayer handle;
+    private volatile Bound bound;
     private final PermissionService permissions;
     private final PlayerRegistry registry;
-    private volatile FandPlayerInventory inventory;
     private final BossBarTracker bossBars;
 
     public FandPlayer(ServerPlayer handle, PermissionService permissions, PlayerRegistry registry) {
-        this.handle = handle;
+        this.bound = new Bound(handle, new FandPlayerInventory(handle.getInventory()));
         this.permissions = permissions;
         this.registry = registry;
-        this.inventory = new FandPlayerInventory(handle.getInventory());
         this.bossBars = new BossBarTracker(handle);
     }
 
     public ServerPlayer handle() {
-        return handle;
+        return bound.handle;
     }
 
     void refreshHandle(ServerPlayer newHandle) {
-        this.handle = newHandle;
-        this.inventory = new FandPlayerInventory(newHandle.getInventory());
+        this.bound = new Bound(newHandle, new FandPlayerInventory(newHandle.getInventory()));
         bossBars.rebind(newHandle);
     }
 
@@ -57,39 +54,43 @@ public final class FandPlayer implements Player {
         bossBars.clear();
     }
 
+    private record Bound(ServerPlayer handle, FandPlayerInventory inventory) {
+    }
+
     @Override
     public UUID uniqueId() {
-        return handle.getUUID();
+        return bound.handle.getUUID();
     }
 
     @Override
     public int entityId() {
-        return handle.getId();
+        return bound.handle.getId();
     }
 
     @Override
     public Key type() {
-        var identifier = EntityType.getKey(handle.getType());
+        var identifier = EntityType.getKey(bound.handle.getType());
         return Key.key(identifier.getNamespace(), identifier.getPath());
     }
 
     @Override
     public boolean alive() {
-        return online() && handle.isAlive();
+        return online() && bound.handle.isAlive();
     }
 
     @Override
     public double health() {
-        return handle.getHealth();
+        return bound.handle.getHealth();
     }
 
     @Override
     public double maxHealth() {
-        return handle.getMaxHealth();
+        return bound.handle.getMaxHealth();
     }
 
     @Override
     public void setHealth(double health) {
+        var handle = bound.handle;
         var server = handle.level().getServer();
         if (server == null) {
             return;
@@ -107,11 +108,12 @@ public final class FandPlayer implements Player {
 
     @Override
     public boolean online() {
-        return !handle.hasDisconnected();
+        return !bound.handle.hasDisconnected();
     }
 
     @Override
     public void kick(Component reason) {
+        var handle = bound.handle;
         if (handle.connection != null) {
             handle.connection.disconnect(AdventureBridge.toVanilla(reason, handle.registryAccess()));
         }
@@ -119,17 +121,19 @@ public final class FandPlayer implements Player {
 
     @Override
     public Location location() {
+        var handle = bound.handle;
         var world = registry.wrapLevel(handle.level());
         return new Location(world, handle.getX(), handle.getY(), handle.getZ(), handle.getYRot(), handle.getXRot());
     }
 
     @Override
     public World world() {
-        return registry.wrapLevel(handle.level());
+        return registry.wrapLevel(bound.handle.level());
     }
 
     @Override
     public CompletableFuture<Boolean> teleport(Location destination) {
+        var handle = bound.handle;
         var server = handle.level().getServer();
         if (server == null) {
             return CompletableFuture.completedFuture(false);
@@ -186,51 +190,53 @@ public final class FandPlayer implements Player {
 
     @Override
     public String name() {
-        return handle.getGameProfile().name();
+        return bound.handle.getGameProfile().name();
     }
 
     @Override
     public void sendMessage(Component message) {
+        var handle = bound.handle;
         handle.sendSystemMessage(AdventureBridge.toVanilla(message, handle.registryAccess()));
     }
 
     @Override
     public void sendActionBar(Component message) {
-        PacketAudience.sendActionBar(handle, message);
+        PacketAudience.sendActionBar(bound.handle, message);
     }
 
     @Override
     public void showTitle(Title title) {
-        PacketAudience.showTitle(handle, title);
+        PacketAudience.showTitle(bound.handle, title);
     }
 
     @Override
     public <T> void sendTitlePart(TitlePart<T> part, T value) {
-        PacketAudience.sendTitlePart(handle, part, value);
+        PacketAudience.sendTitlePart(bound.handle, part, value);
     }
 
     @Override
     public void clearTitle() {
-        PacketAudience.clearTitle(handle);
+        PacketAudience.clearTitle(bound.handle);
     }
 
     @Override
     public void resetTitle() {
-        PacketAudience.resetTitle(handle);
+        PacketAudience.resetTitle(bound.handle);
     }
 
     @Override
     public void playSound(Sound sound) {
-        PacketAudience.playSound(handle, sound);
+        PacketAudience.playSound(bound.handle, sound);
     }
 
     @Override
     public void playSound(Sound sound, double x, double y, double z) {
-        PacketAudience.playSoundAt(handle, sound, x, y, z);
+        PacketAudience.playSoundAt(bound.handle, sound, x, y, z);
     }
 
     @Override
     public void playSound(Sound sound, Sound.Emitter emitter) {
+        var handle = bound.handle;
         if (emitter == Sound.Emitter.self()) {
             PacketAudience.playSoundAt(handle, sound, handle.getX(), handle.getY(), handle.getZ());
         } else {
@@ -240,7 +246,7 @@ public final class FandPlayer implements Player {
 
     @Override
     public void stopSound(SoundStop stop) {
-        PacketAudience.stopSound(handle, stop);
+        PacketAudience.stopSound(bound.handle, stop);
     }
 
     @Override
@@ -254,7 +260,7 @@ public final class FandPlayer implements Player {
     }
 
     private void runOnMain(Runnable task) {
-        var server = handle.level().getServer();
+        var server = bound.handle.level().getServer();
         if (server == null) {
             return;
         }
@@ -272,6 +278,7 @@ public final class FandPlayer implements Player {
 
     @Override
     public boolean operator() {
+        var handle = bound.handle;
         var server = handle.level().getServer();
         return server != null && server.getPlayerList().isOp(handle.nameAndId());
     }
@@ -283,60 +290,61 @@ public final class FandPlayer implements Player {
 
     @Override
     public io.fand.api.inventory.PlayerInventory inventory() {
-        return inventory;
+        return bound.inventory;
     }
 
     @Override
     public GameMode gameMode() {
-        return GameModes.toApi(handle.gameMode.getGameModeForPlayer());
+        return GameModes.toApi(bound.handle.gameMode.getGameModeForPlayer());
     }
 
     @Override
     public void setGameMode(GameMode mode) {
         var vanilla = GameModes.toVanilla(mode);
-        runOnMain(() -> handle.setGameMode(vanilla));
+        runOnMain(() -> bound.handle.setGameMode(vanilla));
     }
 
     @Override
     public int foodLevel() {
-        return handle.getFoodData().getFoodLevel();
+        return bound.handle.getFoodData().getFoodLevel();
     }
 
     @Override
     public void setFoodLevel(int level) {
         int clamped = Math.max(0, Math.min(20, level));
-        runOnMain(() -> handle.getFoodData().setFoodLevel(clamped));
+        runOnMain(() -> bound.handle.getFoodData().setFoodLevel(clamped));
     }
 
     @Override
     public float saturation() {
-        return handle.getFoodData().getSaturationLevel();
+        return bound.handle.getFoodData().getSaturationLevel();
     }
 
     @Override
     public void setSaturation(float saturation) {
-        runOnMain(() -> handle.getFoodData().setSaturation(saturation));
+        runOnMain(() -> bound.handle.getFoodData().setSaturation(saturation));
     }
 
     @Override
     public int experienceLevel() {
-        return handle.experienceLevel;
+        return bound.handle.experienceLevel;
     }
 
     @Override
     public void setExperienceLevel(int level) {
-        runOnMain(() -> handle.setExperienceLevels(level));
+        runOnMain(() -> bound.handle.setExperienceLevels(level));
     }
 
     @Override
     public float experienceProgress() {
-        return handle.experienceProgress;
+        return bound.handle.experienceProgress;
     }
 
     @Override
     public void setExperienceProgress(float progress) {
         float clamped = Math.max(0.0F, Math.min(0.9999F, progress));
         runOnMain(() -> {
+            var handle = bound.handle;
             handle.experienceProgress = clamped;
             handle.resetSentInfo();
         });
@@ -347,18 +355,18 @@ public final class FandPlayer implements Player {
         if (points == 0) {
             return;
         }
-        runOnMain(() -> handle.giveExperiencePoints(points));
+        runOnMain(() -> bound.handle.giveExperiencePoints(points));
     }
 
     @Override
     public boolean flying() {
-        return handle.getAbilities().flying;
+        return bound.handle.getAbilities().flying;
     }
 
     @Override
     public void setFlying(boolean flying) {
         runOnMain(() -> {
-            var abilities = handle.getAbilities();
+            var abilities = bound.handle.getAbilities();
             if (flying && !abilities.mayfly) {
                 pushAbilities();
                 return;
@@ -372,13 +380,13 @@ public final class FandPlayer implements Player {
 
     @Override
     public boolean allowFlight() {
-        return handle.getAbilities().mayfly;
+        return bound.handle.getAbilities().mayfly;
     }
 
     @Override
     public void setAllowFlight(boolean allow) {
         runOnMain(() -> {
-            var abilities = handle.getAbilities();
+            var abilities = bound.handle.getAbilities();
             if (abilities.mayfly == allow) {
                 return;
             }
@@ -405,6 +413,7 @@ public final class FandPlayer implements Player {
         if (built == null) {
             return CompletableFuture.completedFuture(Optional.empty());
         }
+        var handle = bound.handle;
         var server = handle.level().getServer();
         if (server == null) {
             return CompletableFuture.completedFuture(Optional.empty());
@@ -442,6 +451,7 @@ public final class FandPlayer implements Player {
             throw new IllegalArgumentException(
                     "openInventory(Inventory) requires an inventory created via Inventories.create");
         }
+        var handle = bound.handle;
         var server = handle.level().getServer();
         if (server == null) {
             return CompletableFuture.completedFuture(false);
@@ -477,6 +487,7 @@ public final class FandPlayer implements Player {
 
     @Override
     public Optional<io.fand.api.inventory.Inventory> openInventory() {
+        var handle = bound.handle;
         var menu = handle.containerMenu;
         if (menu == null || menu == handle.inventoryMenu) {
             return Optional.empty();
@@ -486,10 +497,11 @@ public final class FandPlayer implements Player {
 
     @Override
     public void closeInventory() {
-        runOnMain(handle::closeContainer);
+        runOnMain(() -> bound.handle.closeContainer());
     }
 
     private void pushAbilities() {
+        var handle = bound.handle;
         if (handle.connection != null) {
             handle.connection.send(new ClientboundPlayerAbilitiesPacket(handle.getAbilities()));
         }
