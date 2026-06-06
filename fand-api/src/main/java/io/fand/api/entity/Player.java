@@ -1,8 +1,11 @@
 package io.fand.api.entity;
 
 import io.fand.api.command.CommandSender;
+import io.fand.api.inventory.Inventory;
+import io.fand.api.inventory.InventoryType;
 import io.fand.api.permission.PermissionSubject;
 import io.fand.api.world.Location;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.text.Component;
 
@@ -95,4 +98,59 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
      * already flying forces them to drop. Marshals to the main thread.
      */
     void setAllowFlight(boolean allow);
+
+    /**
+     * Opens a transient container of the given {@code type} for this player,
+     * backed by an empty server-side inventory. The future completes on the
+     * main thread once the menu is shown.
+     *
+     * <p>{@code size} is honoured for variable-size types (CHEST: 9-54 in
+     * multiples of 9, HOPPER: ignored, etc.) and ignored for fixed-size
+     * types. Pass {@code 0} to use the type's default size.
+     *
+     * <p>Returns {@link Optional#empty()} when the player is offline, the
+     * type is {@link InventoryType#PLAYER} or {@link InventoryType#UNKNOWN},
+     * the menu type isn't supported by this server, or an
+     * {@link io.fand.api.event.inventory.InventoryOpenEvent} listener
+     * cancelled the open.
+     *
+     * @throws IllegalArgumentException if {@code size} is invalid for the
+     *         requested {@code type} (e.g. not a multiple of 9 for CHEST)
+     */
+    CompletableFuture<Optional<Inventory>> openInventory(InventoryType type, int size);
+
+    /**
+     * Convenience overload using the type's default size — equivalent to
+     * {@code openInventory(type, 0)}.
+     */
+    default CompletableFuture<Optional<Inventory>> openInventory(InventoryType type) {
+        return openInventory(type, 0);
+    }
+
+    /**
+     * Shows {@code inventory} to this player. The inventory must be one
+     * created via {@link io.fand.api.inventory.Inventories#create} — passing
+     * a {@link io.fand.api.inventory.PlayerInventory} or an inventory
+     * surfaced through events is rejected.
+     *
+     * <p>The future completes with {@code true} once the menu is shown, or
+     * {@code false} when the player is offline, the inventory isn't
+     * shareable, or an open listener cancelled.
+     */
+    CompletableFuture<Boolean> openInventory(Inventory inventory);
+
+    /**
+     * The container the player is currently viewing, if any. Returns
+     * {@link Optional#empty()} when the player only has their own inventory
+     * open. The returned handle reflects live state and may become stale if
+     * the player closes the menu.
+     */
+    Optional<Inventory> openInventory();
+
+    /**
+     * Closes whatever container the player has open and returns them to
+     * their own inventory. No-op if no container is open. Marshals to the
+     * main thread.
+     */
+    void closeInventory();
 }

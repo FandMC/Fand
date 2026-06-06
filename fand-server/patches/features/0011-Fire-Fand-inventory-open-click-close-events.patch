@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 6 Jun 2026 11:17:37 +0800
+Subject: [PATCH] Fire Fand inventory open/click/close events
+
+
+diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
+index a5fb9188b3da4a562955b473decfc190753ba117..6486ce6a8d7dd3b357ef7277f9301c3515667171 100644
+--- a/net/minecraft/server/level/ServerPlayer.java
++++ b/net/minecraft/server/level/ServerPlayer.java
+@@ -1378,6 +1378,9 @@ public class ServerPlayer extends Player {
+ 
+                 return OptionalInt.empty();
+             } else {
++                if (!io.fand.server.inventory.InventoryEvents.fireOpen(this, menu.getType())) {
++                    return OptionalInt.empty();
++                }
+                 this.connection.send(new ClientboundOpenScreenPacket(menu.containerId, menu.getType(), provider.getDisplayName()));
+                 this.initMenu(menu);
+                 this.containerMenu = menu;
+@@ -1448,6 +1451,9 @@ public class ServerPlayer extends Player {
+ 
+     @Override
+     public void doCloseContainer() {
++        if (this.containerMenu != this.inventoryMenu) {
++            io.fand.server.inventory.InventoryEvents.fireClose(this, this.containerMenu);
++        }
+         this.containerMenu.removed(this);
+         this.inventoryMenu.transferState(this.containerMenu);
+         this.containerMenu = this.inventoryMenu;
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 04032aa11038dd738fe9c682132385c9774cfc61..4d68a9bd0cf3abb62e3cfecc9e5469795e82a776 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -2054,6 +2054,13 @@ public class ServerGamePacketListenerImpl
+                     );
+                 } else {
+                     boolean fullResyncNeeded = packet.stateId() != this.player.containerMenu.getStateId();
++                    boolean fandAccepted = io.fand.server.inventory.InventoryEvents.fireClick(
++                        this.player, this.player.containerMenu, slotIndex, packet.buttonNum(), packet.containerInput()
++                    );
++                    if (!fandAccepted) {
++                        this.player.containerMenu.broadcastFullState();
++                        return;
++                    }
+                     this.player.containerMenu.suppressRemoteUpdates();
+                     this.player.containerMenu.clicked(slotIndex, packet.buttonNum(), packet.containerInput(), this.player);
+ 

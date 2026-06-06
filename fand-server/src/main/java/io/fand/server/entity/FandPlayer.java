@@ -10,6 +10,7 @@ import io.fand.server.audience.PacketAudience;
 import io.fand.server.command.AdventureBridge;
 import io.fand.server.inventory.FandPlayerInventory;
 import io.fand.server.world.FandWorld;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -387,6 +388,105 @@ public final class FandPlayer implements Player {
             }
             pushAbilities();
         });
+    }
+
+    @Override
+    public CompletableFuture<Optional<io.fand.api.inventory.Inventory>> openInventory(
+            io.fand.api.inventory.InventoryType type, int size) {
+        Objects.requireNonNull(type, "type");
+        if (size < 0) {
+            throw new IllegalArgumentException("size must be >= 0, got " + size);
+        }
+        if (type == io.fand.api.inventory.InventoryType.PLAYER
+                || type == io.fand.api.inventory.InventoryType.UNKNOWN) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        var built = io.fand.server.inventory.OpenableContainers.build(type, size);
+        if (built == null) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        var server = handle.level().getServer();
+        if (server == null) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        var future = new CompletableFuture<Optional<io.fand.api.inventory.Inventory>>();
+        Runnable run = () -> {
+            if (!online()) {
+                future.complete(Optional.empty());
+                return;
+            }
+            try {
+                var slot = handle.openMenu(built.provider());
+                if (slot.isPresent()) {
+                    future.complete(Optional.of(
+                            new io.fand.server.inventory.FandContainerInventory(built.container(), type)));
+                } else {
+                    future.complete(Optional.empty());
+                }
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        };
+        if (server.isSameThread()) {
+            run.run();
+        } else {
+            server.executeIfPossible(run);
+        }
+        return future;
+    }
+
+    @Override
+    public CompletableFuture<Boolean> openInventory(io.fand.api.inventory.Inventory inventory) {
+        Objects.requireNonNull(inventory, "inventory");
+        if (!(inventory instanceof io.fand.server.inventory.FandInventory fand)) {
+            throw new IllegalArgumentException(
+                    "openInventory(Inventory) requires an inventory created via Inventories.create");
+        }
+        var server = handle.level().getServer();
+        if (server == null) {
+            return CompletableFuture.completedFuture(false);
+        }
+        var future = new CompletableFuture<Boolean>();
+        Runnable run = () -> {
+            if (!online()) {
+                future.complete(false);
+                return;
+            }
+            try {
+                var vanillaTitle = io.fand.server.command.AdventureBridge.toVanilla(
+                        fand.title(), handle.registryAccess());
+                var built = io.fand.server.inventory.OpenableContainers.build(
+                        fand.type(), fand.size(), fand.container(), vanillaTitle);
+                if (built == null) {
+                    future.complete(false);
+                    return;
+                }
+                var slot = handle.openMenu(built.provider());
+                future.complete(slot.isPresent());
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        };
+        if (server.isSameThread()) {
+            run.run();
+        } else {
+            server.executeIfPossible(run);
+        }
+        return future;
+    }
+
+    @Override
+    public Optional<io.fand.api.inventory.Inventory> openInventory() {
+        var menu = handle.containerMenu;
+        if (menu == null || menu == handle.inventoryMenu) {
+            return Optional.empty();
+        }
+        return Optional.of(new io.fand.server.inventory.ContainerMenuView(menu));
+    }
+
+    @Override
+    public void closeInventory() {
+        runOnMain(handle::closeContainer);
     }
 
     private void pushAbilities() {

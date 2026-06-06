@@ -1,5 +1,6 @@
 package io.fand.server.inventory;
 
+import io.fand.api.inventory.InventoryType;
 import io.fand.api.inventory.PlayerInventory;
 import io.fand.api.item.ItemStack;
 import io.fand.server.item.FandItemStacks;
@@ -11,6 +12,11 @@ public final class FandPlayerInventory implements PlayerInventory {
 
     public FandPlayerInventory(Inventory handle) {
         this.handle = handle;
+    }
+
+    @Override
+    public InventoryType type() {
+        return InventoryType.PLAYER;
     }
 
     @Override

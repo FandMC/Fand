@@ -312,6 +312,29 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
+    public io.fand.api.inventory.Inventory createInventory(
+            io.fand.api.inventory.InventoryType type,
+            int size,
+            net.kyori.adventure.text.Component title) {
+        java.util.Objects.requireNonNull(type, "type");
+        java.util.Objects.requireNonNull(title, "title");
+        if (size < 0) {
+            throw new IllegalArgumentException("size must be >= 0, got " + size);
+        }
+        if (type == io.fand.api.inventory.InventoryType.PLAYER
+                || type == io.fand.api.inventory.InventoryType.UNKNOWN) {
+            throw new IllegalArgumentException("Cannot create a standalone inventory of type " + type);
+        }
+        var probe = io.fand.server.inventory.OpenableContainers.build(type, size);
+        if (probe == null) {
+            throw new IllegalArgumentException(
+                    "InventoryType " + type + " cannot be opened standalone — needs a backing block");
+        }
+        int resolvedSize = probe.container().getContainerSize();
+        return new io.fand.server.inventory.FandInventory(type, resolvedSize, title);
+    }
+
+    @Override
     public void close() {
         var current = phase.getAndSet(LifecyclePhase.STOPPING);
         if (current == LifecyclePhase.STOPPED) {

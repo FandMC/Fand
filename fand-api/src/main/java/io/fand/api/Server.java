@@ -86,4 +86,18 @@ public interface Server extends ForwardingAudience {
 
     /** Initiates an orderly shutdown. */
     void shutdown(@Nullable String reason);
+
+    /**
+     * Creates a new server-side {@link io.fand.api.inventory.Inventory} of
+     * the given type, size, and title. Used by
+     * {@link io.fand.api.inventory.Inventories} — plugins should usually
+     * call that instead.
+     *
+     * @throws IllegalArgumentException if {@code size} is invalid for
+     *         {@code type}, or if {@code type} is not standalone-openable
+     */
+    io.fand.api.inventory.Inventory createInventory(
+            io.fand.api.inventory.InventoryType type,
+            int size,
+            net.kyori.adventure.text.Component title);
 }
