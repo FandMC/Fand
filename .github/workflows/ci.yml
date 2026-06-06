@@ -66,6 +66,16 @@ jobs:
       - name: Build
         run: ./gradlew build --no-daemon --stacktrace
 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fand-build-${{ github.sha }}
+          path: |
+            fandclip/build/libs/*.jar
+            fand-server/build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload test reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
