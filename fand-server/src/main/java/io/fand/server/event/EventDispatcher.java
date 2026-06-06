@@ -29,6 +29,7 @@ public final class EventDispatcher implements EventBus {
     private final ConcurrentHashMap<Class<? extends Event>, ListenerBucket> buckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Class<? extends Event>, DispatchPlan> dispatchPlans = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Class<? extends Event>, AtomicInteger> applicableCounters = new ConcurrentHashMap<>();
+    private final Object counterLock = new Object();
     private final AtomicLong sequence = new AtomicLong();
 
     @Override
@@ -43,8 +44,10 @@ public final class EventDispatcher implements EventBus {
 
         var bucket = bucket(type);
         var registration = new Registration<>(this, bucket, priority, listener, sequence.getAndIncrement());
-        bucket.add(registration);
-        adjustApplicableCounters(type, +1);
+        synchronized (counterLock) {
+            bucket.add(registration);
+            adjustApplicableCounters(type, +1);
+        }
         return registration;
     }
 
@@ -132,15 +135,28 @@ public final class EventDispatcher implements EventBus {
         if (existing != null) {
             return existing;
         }
-        // Seed by summing all bucket sizes whose declared type is assignable from firedType.
-        var seed = new AtomicInteger();
-        for (var bucket : buckets.values()) {
-            if (bucket.type.isAssignableFrom(firedType)) {
-                seed.addAndGet(bucket.activeCount());
+        synchronized (counterLock) {
+            existing = applicableCounters.get(firedType);
+            if (existing != null) {
+                return existing;
             }
+            var seed = new AtomicInteger();
+            for (var bucket : buckets.values()) {
+                if (bucket.type.isAssignableFrom(firedType)) {
+                    seed.addAndGet(bucket.activeCount());
+                }
+            }
+            applicableCounters.put(firedType, seed);
+            return seed;
         }
-        var raced = applicableCounters.putIfAbsent(firedType, seed);
-        return raced != null ? raced : seed;
+    }
+
+
+    void unregisterAndDecrement(ListenerBucket bucket) {
+        synchronized (counterLock) {
+            bucket.unregister();
+            adjustApplicableCounters(bucket.type, -1);
+        }
     }
 
     private void adjustApplicableCounters(Class<? extends Event> bucketType, int delta) {
@@ -149,10 +165,6 @@ public final class EventDispatcher implements EventBus {
                 entry.getValue().addAndGet(delta);
             }
         }
-    }
-
-    void onUnregister(ListenerBucket bucket) {
-        adjustApplicableCounters(bucket.type, -1);
     }
 
     private BucketSnapshot[] snapshots(Class<? extends Event> eventType) {
@@ -368,8 +380,7 @@ public final class EventDispatcher implements EventBus {
         @Override
         public void unregister() {
             if (active.compareAndSet(true, false)) {
-                bucket.unregister();
-                owner.onUnregister(bucket);
+                owner.unregisterAndDecrement(bucket);
             }
         }
 

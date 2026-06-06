@@ -226,4 +226,44 @@ final class EventDispatcherTest {
         subscription.unregister();
         assertThat(bus.hasListeners(ChildEvent.class)).isFalse();
     }
+
+    @Test
+    void hasListenersStaysAccurateUnderConcurrentSubscribeUnregisterAndQuery() throws Exception {
+        int threads = 8;
+        int iterationsPerThread = 4_000;
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        try {
+            var ready = new java.util.concurrent.CountDownLatch(threads);
+            var go = new java.util.concurrent.CountDownLatch(1);
+            var futures = new java.util.ArrayList<java.util.concurrent.Future<?>>(threads);
+            for (int t = 0; t < threads; t++) {
+                futures.add(executor.submit(() -> {
+                    ready.countDown();
+                    go.await();
+                    for (int i = 0; i < iterationsPerThread; i++) {
+                        var sub = bus.subscribe(ChildEvent.class, event -> {});
+                        bus.hasListeners(ChildEvent.class);
+                        bus.hasListeners(BaseEvent.class);
+                        sub.unregister();
+                    }
+                    return null;
+                }));
+            }
+            ready.await();
+            go.countDown();
+            for (var f : futures) {
+                f.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(bus.hasListeners(ChildEvent.class)).isFalse();
+        assertThat(bus.hasListeners(BaseEvent.class)).isFalse();
+
+        var probe = bus.subscribe(ChildEvent.class, event -> {});
+        assertThat(bus.hasListeners(ChildEvent.class)).isTrue();
+        probe.unregister();
+        assertThat(bus.hasListeners(ChildEvent.class)).isFalse();
+    }
 }
