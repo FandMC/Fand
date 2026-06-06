@@ -34,6 +34,14 @@ final class TestPluginTest {
     }
 
     @Test
+    void recognisesTabAndSidebarModes() {
+        assertThat(TestPlugin.isClearMode(" clear ")).isTrue();
+        assertThat(TestPlugin.isClearMode("show")).isFalse();
+        assertThat(TestPlugin.isShowMode(" SHOW ")).isTrue();
+        assertThat(TestPlugin.isShowMode("clear")).isFalse();
+    }
+
+    @Test
     void locksBarrierInDemoGui() {
         var barrier = stack("minecraft:barrier");
 

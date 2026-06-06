@@ -35,6 +35,7 @@ import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
 import io.fand.api.plugin.Plugin;
 import io.fand.api.plugin.PluginContext;
+import io.fand.api.scoreboard.Sidebar;
 import io.fand.api.world.World;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -58,6 +59,8 @@ public final class TestPlugin implements Plugin {
     static final int DEMO_GUI_LOCKED_SLOT = 22;
     static final String DEMO_GUI_LOCKED_ITEM = "minecraft:barrier";
     static final String MUTE_NEXT_COMMAND = "!mute-next";
+    static final String CLEAR_MODE = "clear";
+    static final String SHOW_MODE = "show";
 
     private static final List<String> SAMPLE_BLOCKS = List.of(
             "minecraft:stone",
@@ -92,7 +95,9 @@ public final class TestPlugin implements Plugin {
             "fand.testplugin.actionbar",
             "fand.testplugin.title",
             "fand.testplugin.bossbar",
-            "fand.testplugin.kick"
+            "fand.testplugin.kick",
+            "fand.testplugin.tab",
+            "fand.testplugin.sidebar"
     );
 
     @Override
@@ -116,6 +121,8 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new TitleCommand(context));
         context.commands().register(new BossBarCommand(context));
         context.commands().register(new KickCommand(context));
+        context.commands().register(new TabCommand(context));
+        context.commands().register(new SidebarCommand());
         context.commands().register(new GuiCommand(context, demoGuiViewers));
         context.events().subscribe(ServerStartedEvent.class, event ->
                 context.logger().info("Server started; Fand brand={} version={} minecraft={}",
@@ -663,6 +670,95 @@ public final class TestPlugin implements Plugin {
         }
     }
 
+    @CommandSpec(label = "fandtab", arguments = {"player", "message"}, aliases = {"ftab"}, permission = "fand.testplugin.tab")
+    static final class TabCommand implements CommandExecutor, CommandCompleter {
+
+        private final PluginContext context;
+
+        TabCommand(PluginContext context) {
+            this.context = context;
+        }
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            TargetedArgs targeted = targetedArgs(sender, args, "/fandtab <player> [clear|message...]");
+            if (targeted == null) {
+                return;
+            }
+            if (targeted.args().size() == 1 && isClearMode(targeted.args().getFirst())) {
+                targeted.player().clearTabList();
+                sender.sendMessage(Component.text("Cleared tab header/footer for " + targeted.player().name() + ".", NamedTextColor.GREEN));
+                return;
+            }
+            String text = messageText(targeted.args(), message(context.config(), "messages.tab-header", "Fand tab demo"));
+            var location = targeted.player().location();
+            targeted.player().sendTabList(
+                    Component.text(text, NamedTextColor.GOLD),
+                    Component.text("World " + targeted.player().world().name()
+                            + " | XYZ " + location.blockX() + " " + location.blockY() + " " + location.blockZ(),
+                            NamedTextColor.GRAY));
+            if (targeted.player() != sender) {
+                sender.sendMessage(Component.text("Sent tab header/footer to " + targeted.player().name() + ".", NamedTextColor.GREEN));
+            }
+        }
+
+        @Override
+        public List<String> complete(CommandSender sender, String label, List<String> args) {
+            if (args.size() <= 1) {
+                var values = new ArrayList<>(playerNames());
+                if (sender instanceof Player) {
+                    values.add(CLEAR_MODE);
+                }
+                return matching(values, args.isEmpty() ? "" : args.getLast());
+            }
+            if (args.size() == 2 && Fand.server().player(args.getFirst()).isPresent()) {
+                return matching(List.of(CLEAR_MODE), args.getLast());
+            }
+            return List.of();
+        }
+    }
+
+    @CommandSpec(label = "fandsidebar", arguments = {"player", "mode"}, aliases = {"fsidebar"}, permission = "fand.testplugin.sidebar")
+    static final class SidebarCommand implements CommandExecutor, CommandCompleter {
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            TargetedArgs targeted = targetedArgs(sender, args, "/fandsidebar <player> [show|clear]");
+            if (targeted == null) {
+                return;
+            }
+            String mode = targeted.args().isEmpty() ? SHOW_MODE : targeted.args().getFirst();
+            if (isClearMode(mode)) {
+                targeted.player().clearSidebar();
+                sender.sendMessage(Component.text("Cleared sidebar for " + targeted.player().name() + ".", NamedTextColor.GREEN));
+                return;
+            }
+            if (!isShowMode(mode)) {
+                sender.sendMessage(Component.text("Usage: /fandsidebar <player> [show|clear]", NamedTextColor.RED));
+                return;
+            }
+            targeted.player().showSidebar(demoSidebar(targeted.player()));
+            if (targeted.player() != sender) {
+                sender.sendMessage(Component.text("Shown sidebar for " + targeted.player().name() + ".", NamedTextColor.GREEN));
+            }
+        }
+
+        @Override
+        public List<String> complete(CommandSender sender, String label, List<String> args) {
+            if (args.size() <= 1) {
+                var values = new ArrayList<>(playerNames());
+                if (sender instanceof Player) {
+                    values.addAll(List.of(SHOW_MODE, CLEAR_MODE));
+                }
+                return matching(values, args.isEmpty() ? "" : args.getLast());
+            }
+            if (args.size() == 2 && Fand.server().player(args.getFirst()).isPresent()) {
+                return matching(List.of(SHOW_MODE, CLEAR_MODE), args.getLast());
+            }
+            return List.of();
+        }
+    }
+
     @CommandSpec(label = "fandgui", arguments = {"player"}, aliases = {"fgui"}, permission = "fand.testplugin.gui")
     static final class GuiCommand implements CommandExecutor, CommandCompleter {
 
@@ -953,6 +1049,28 @@ public final class TestPlugin implements Plugin {
 
     static boolean isMuteNextCommand(String text) {
         return text.trim().equalsIgnoreCase(MUTE_NEXT_COMMAND);
+    }
+
+    static boolean isClearMode(String text) {
+        return text.trim().equalsIgnoreCase(CLEAR_MODE);
+    }
+
+    static boolean isShowMode(String text) {
+        return text.trim().equalsIgnoreCase(SHOW_MODE);
+    }
+
+    static Sidebar demoSidebar(Player player) {
+        var loc = player.location();
+        return Sidebar.of(
+                Component.text("Fand Demo", NamedTextColor.GOLD),
+                Component.text("Player: ", NamedTextColor.GRAY).append(Component.text(player.name(), NamedTextColor.AQUA)),
+                Component.text("World: ", NamedTextColor.GRAY).append(Component.text(player.world().name(), NamedTextColor.WHITE)),
+                Component.text("XYZ: " + loc.blockX() + " " + loc.blockY() + " " + loc.blockZ(), NamedTextColor.YELLOW),
+                Component.text("HP: " + trim(player.health()) + "/" + trim(player.maxHealth()), NamedTextColor.RED),
+                Component.text("Food: " + player.foodLevel(), NamedTextColor.GREEN),
+                Component.text("Mode: " + player.gameMode(), NamedTextColor.LIGHT_PURPLE),
+                Component.text("Held: " + stackName(player.inventory().heldItem()), NamedTextColor.GRAY)
+        );
     }
 
     static boolean isLockedDemoGuiClick(boolean demoGuiViewer, InventoryType inventoryType, int slot, ItemStack currentItem) {

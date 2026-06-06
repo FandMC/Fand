@@ -4,6 +4,7 @@ import io.fand.api.command.CommandSender;
 import io.fand.api.inventory.Inventory;
 import io.fand.api.inventory.InventoryType;
 import io.fand.api.permission.PermissionSubject;
+import io.fand.api.scoreboard.Sidebar;
 import io.fand.api.world.Location;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -25,6 +26,18 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
 
     /** Disconnects the player with the given reason. No-op if already offline. */
     void kick(Component reason);
+
+    /** Sends a tab-list header and footer to this player. */
+    void sendTabList(Component header, Component footer);
+
+    /** Clears the tab-list header and footer previously sent to this player. */
+    void clearTabList();
+
+    /** Shows or replaces this player's transient sidebar scoreboard. */
+    void showSidebar(Sidebar sidebar);
+
+    /** Clears the transient sidebar scoreboard sent through Fand. */
+    void clearSidebar();
 
     /**
      * Teleports the player to {@code destination}. Schedules the move on the
