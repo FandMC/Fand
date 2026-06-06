@@ -38,9 +38,13 @@ import io.fand.api.plugin.PluginContext;
 import io.fand.api.world.World;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.key.InvalidKeyException;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
@@ -48,6 +52,10 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import org.slf4j.Logger;
 
 public final class TestPlugin implements Plugin {
+
+    static final int DEMO_GUI_LOCKED_SLOT = 22;
+    static final String DEMO_GUI_LOCKED_ITEM = "minecraft:barrier";
+    static final String MUTE_NEXT_COMMAND = "!mute-next";
 
     private static final List<String> SAMPLE_BLOCKS = List.of(
             "minecraft:stone",
@@ -88,6 +96,7 @@ public final class TestPlugin implements Plugin {
 
     @Override
     public void onEnable(PluginContext context) {
+        Set<UUID> demoGuiViewers = ConcurrentHashMap.newKeySet();
         registerPermissions(context);
         context.commands().register(new HelloCommand(context));
         context.commands().register(new DemoCommand(context));
@@ -97,7 +106,7 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new HealCommand(context));
         context.commands().register(new GameModeCommand());
         context.commands().register(new FlyCommand());
-        context.commands().register(new GuiCommand(context));
+        context.commands().register(new GuiCommand(context, demoGuiViewers));
         context.events().subscribe(ServerStartedEvent.class, event ->
                 context.logger().info("Server started; Fand brand={} version={} minecraft={}",
                         event.server().brand(), event.server().version(), event.server().minecraftVersion()));
@@ -108,7 +117,7 @@ public final class TestPlugin implements Plugin {
                 event.player().sendMessage(Component.text(welcome.replace("{player}", event.player().name()), NamedTextColor.AQUA));
             }
         });
-        context.events().registerListener(new PlayerEvents(context));
+        context.events().registerListener(new PlayerEvents(context, demoGuiViewers));
         context.scheduler().runAsync(() -> context.logger().info("test-plugin config file={}", context.config().file()));
         context.scheduler().runMainRepeating(
                 () -> context.logger().debug("test-plugin heartbeat; online={}", Fand.server().onlinePlayers()),
@@ -502,9 +511,11 @@ public final class TestPlugin implements Plugin {
     static final class GuiCommand implements CommandExecutor, CommandCompleter {
 
         private final PluginContext context;
+        private final Set<UUID> demoGuiViewers;
 
-        GuiCommand(PluginContext context) {
+        GuiCommand(PluginContext context, Set<UUID> demoGuiViewers) {
             this.context = context;
+            this.demoGuiViewers = demoGuiViewers;
         }
 
         @Override
@@ -523,6 +534,7 @@ public final class TestPlugin implements Plugin {
             put(inventory, 12, "minecraft:golden_apple", 1);
             put(inventory, 14, "minecraft:compass", 1);
             put(inventory, 16, "minecraft:oak_log", 16);
+            put(inventory, DEMO_GUI_LOCKED_SLOT, DEMO_GUI_LOCKED_ITEM, 1);
             inventory.addSlotChangeListener((slot, oldStack, newStack) ->
                     context.logger().info("demo gui slot {} changed: {} -> {}", slot, stackName(oldStack), stackName(newStack)));
             target.openInventory(inventory).whenComplete((opened, failure) -> {
@@ -532,6 +544,7 @@ public final class TestPlugin implements Plugin {
                     return;
                 }
                 if (Boolean.TRUE.equals(opened)) {
+                    demoGuiViewers.add(target.uniqueId());
                     target.sendMessage(Component.text("Opened a server-created inventory.", NamedTextColor.GREEN));
                     if (target != sender) {
                         sender.sendMessage(Component.text("Opened demo GUI for " + target.name() + ".", NamedTextColor.GREEN));
@@ -552,14 +565,19 @@ public final class TestPlugin implements Plugin {
 
         private final PluginContext context;
         private final Logger logger;
+        private final Set<UUID> demoGuiViewers;
+        private final Set<UUID> mutedNextMessages = new HashSet<>();
 
-        PlayerEvents(PluginContext context) {
+        PlayerEvents(PluginContext context, Set<UUID> demoGuiViewers) {
             this.context = context;
             this.logger = context.logger();
+            this.demoGuiViewers = demoGuiViewers;
         }
 
         @Subscribe
         public void onQuit(PlayerQuitEvent event) {
+            demoGuiViewers.remove(event.player().uniqueId());
+            mutedNextMessages.remove(event.player().uniqueId());
             logger.info("{} left", event.player().name());
         }
 
@@ -571,6 +589,24 @@ public final class TestPlugin implements Plugin {
                 event.player().sendMessage(Component.text("You are at " + event.player().world().name()
                         + " " + loc.blockX() + "," + loc.blockY() + "," + loc.blockZ(), NamedTextColor.AQUA));
                 return;
+            }
+            if (context.config().getBoolean("features.mute-next-demo", true)) {
+                UUID playerId = event.player().uniqueId();
+                if (isMuteNextCommand(event.originalText())) {
+                    mutedNextMessages.add(playerId);
+                    event.setCancelled(true);
+                    event.player().sendMessage(Component.text(
+                            message(context.config(), "messages.mute-next-armed", "Your next chat message will be blocked by test-plugin."),
+                            NamedTextColor.YELLOW));
+                    return;
+                }
+                if (mutedNextMessages.remove(playerId)) {
+                    event.setCancelled(true);
+                    event.player().sendMessage(Component.text(
+                            message(context.config(), "messages.muted-chat", "Your message was blocked by the test-plugin mute demo."),
+                            NamedTextColor.RED));
+                    return;
+                }
             }
             if (context.config().getBoolean("features.chat-prefix", true)) {
                 event.setMessage(Component.text("[FandDemo] ", NamedTextColor.LIGHT_PURPLE).append(event.message()));
@@ -621,11 +657,22 @@ public final class TestPlugin implements Plugin {
 
         @Subscribe
         public void onInventoryClose(InventoryCloseEvent event) {
+            demoGuiViewers.remove(event.player().uniqueId());
             logger.debug("{} closed {}", event.player().name(), event.type());
         }
 
         @Subscribe
         public void onInventoryClick(InventoryClickEvent event) {
+            if (isLockedDemoGuiClick(
+                    demoGuiViewers.contains(event.player().uniqueId()),
+                    event.inventory().type(),
+                    event.slot(),
+                    event.currentItem())) {
+                event.setCancelled(true);
+                event.player().sendMessage(Component.text(
+                        message(context.config(), "messages.gui-locked", "This barrier is locked in the demo GUI."),
+                        NamedTextColor.RED));
+            }
             if (context.config().getBoolean("features.log-inventory-clicks", false)) {
                 logger.info("{} clicked {} slot={} current={} cursor={}",
                         event.player().name(), event.clickType(), event.slot(),
@@ -735,7 +782,22 @@ public final class TestPlugin implements Plugin {
         return Fand.server().worlds().stream().map(world -> world.key().asString()).toList();
     }
 
-    private static List<String> matching(List<String> values, String rawPrefix) {
+    static boolean isMuteNextCommand(String text) {
+        return text.trim().equalsIgnoreCase(MUTE_NEXT_COMMAND);
+    }
+
+    static boolean isLockedDemoGuiClick(boolean demoGuiViewer, InventoryType inventoryType, int slot, ItemStack currentItem) {
+        return demoGuiViewer
+                && inventoryType == InventoryType.CHEST
+                && slot == DEMO_GUI_LOCKED_SLOT
+                && isStackType(currentItem, DEMO_GUI_LOCKED_ITEM);
+    }
+
+    static boolean isStackType(ItemStack stack, String itemKey) {
+        return !stack.isEmpty() && stack.type().key().asString().equals(keyString(itemKey));
+    }
+
+    static List<String> matching(List<String> values, String rawPrefix) {
         var prefix = rawPrefix.toLowerCase(Locale.ROOT);
         var matches = new ArrayList<String>();
         for (var value : values) {
@@ -746,7 +808,7 @@ public final class TestPlugin implements Plugin {
         return matches;
     }
 
-    private static String keyString(String raw) {
+    static String keyString(String raw) {
         var value = raw.trim().toLowerCase(Locale.ROOT);
         return value.indexOf(':') >= 0 ? value : "minecraft:" + value;
     }

@@ -1,9 +1,13 @@
 messages:
   greeting: Hello
   welcome: Welcome from test-plugin, {player}!
+  mute-next-armed: Your next chat message will be blocked by test-plugin.
+  muted-chat: Your message was blocked by the test-plugin mute demo.
+  gui-locked: This barrier is locked in the demo GUI.
 
 features:
   chat-prefix: true
+  mute-next-demo: true
   report-right-clicks: false
   log-inventory-clicks: false
 
