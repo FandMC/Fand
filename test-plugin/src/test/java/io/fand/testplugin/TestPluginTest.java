@@ -3,6 +3,8 @@ package io.fand.testplugin;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.fand.api.inventory.InventoryType;
+import io.fand.api.item.component.ItemComponentKeys;
+import io.fand.api.item.component.ItemRarity;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
 import java.util.List;
@@ -103,6 +105,19 @@ final class TestPluginTest {
         assertThat(fallbackSubtitle.subtitle()).isEqualTo("Default Sub");
         assertThat(fallbackTitle.title()).isEqualTo("Default");
         assertThat(fallbackTitle.subtitle()).isEqualTo("Sub");
+    }
+
+    @Test
+    void buildsDemoComponentItem() {
+        var item = TestPlugin.demoComponentItem(new TestItemType(Key.key("minecraft:diamond"), 64), "tester");
+
+        assertThat(item.maxStackSize()).isEqualTo(99);
+        assertThat(item.customName()).contains(net.kyori.adventure.text.Component.text("Fand Component Item", net.kyori.adventure.text.format.NamedTextColor.GOLD));
+        assertThat(item.lore()).hasSize(2);
+        assertThat(item.enchantmentGlintOverride()).contains(true);
+        assertThat(item.rarity()).contains(ItemRarity.RARE);
+        assertThat(item.components().has(ItemComponentKeys.CUSTOM_MODEL_DATA)).isTrue();
+        assertThat(item.customData()).get().extracting(json -> json.get("source").getAsString()).isEqualTo("tester");
     }
 
     private static ItemStack stack(String key) {

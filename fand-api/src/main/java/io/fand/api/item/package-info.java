@@ -1,6 +1,5 @@
 /**
  * Item types and immutable item stacks. {@link io.fand.api.item.ItemStack}
- * carries a type and amount only; richer item data (components, lore) is out of
- * scope for the initial API.
+ * carries a type, amount, and modern item data components.
  */
 package io.fand.api.item;

@@ -1,5 +1,6 @@
 package io.fand.testplugin;
 
+import com.google.gson.JsonObject;
 import io.fand.api.Fand;
 import io.fand.api.Server;
 import io.fand.api.block.Block;
@@ -30,6 +31,8 @@ import io.fand.api.inventory.Inventories;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
 import io.fand.api.item.ItemTypes;
+import io.fand.api.item.component.CustomModelData;
+import io.fand.api.item.component.ItemRarity;
 import io.fand.api.lifecycle.ServerStartedEvent;
 import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
@@ -88,6 +91,7 @@ public final class TestPlugin implements Plugin {
             "fand.testplugin.tp",
             "fand.testplugin.setblock",
             "fand.testplugin.give",
+            "fand.testplugin.item",
             "fand.testplugin.heal",
             "fand.testplugin.mode",
             "fand.testplugin.fly",
@@ -114,6 +118,7 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new TeleportCommand(context));
         context.commands().register(new SetBlockCommand(context));
         context.commands().register(new GiveCommand(context));
+        context.commands().register(new ComponentItemCommand(context));
         context.commands().register(new HealCommand(context));
         context.commands().register(new GameModeCommand());
         context.commands().register(new FlyCommand());
@@ -394,6 +399,67 @@ public final class TestPlugin implements Plugin {
             }
             if (args.size() == 3) {
                 return matching(playerNames(), args.getLast());
+            }
+            return List.of();
+        }
+    }
+
+    @CommandSpec(label = "fanditem", arguments = {"player", "item", "amount"}, aliases = {"fitem"}, permission = "fand.testplugin.item")
+    static final class ComponentItemCommand implements CommandExecutor, CommandCompleter {
+
+        private final PluginContext context;
+
+        ComponentItemCommand(PluginContext context) {
+            this.context = context;
+        }
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            TargetedArgs targeted = targetedArgs(sender, args, "/fanditem <player> [item] [amount]");
+            if (targeted == null) {
+                return;
+            }
+            List<String> itemArgs = targeted.args();
+            ItemType type = itemArgs.isEmpty() ? ItemTypes.of("minecraft:diamond") : itemType(sender, itemArgs.getFirst());
+            if (type == null) {
+                return;
+            }
+            int amount = 1;
+            if (itemArgs.size() >= 2) {
+                Integer parsed = parseInt(sender, itemArgs.get(1), "amount");
+                if (parsed == null) {
+                    return;
+                }
+                amount = parsed;
+            }
+            int limit = Math.max(1, context.config().getInt("limits.max-give-amount", 2304));
+            if (amount < 1 || amount > limit) {
+                sender.sendMessage(Component.text("Amount must be in 1.." + limit, NamedTextColor.RED));
+                return;
+            }
+            ItemStack demo = demoComponentItem(type, sender.name());
+            int given = give(targeted.player(), demo, amount);
+            int leftover = amount - given;
+            targeted.player().sendMessage(Component.text("Received " + given + " component item"
+                    + (leftover > 0 ? " (" + leftover + " did not fit)" : ""), NamedTextColor.GREEN));
+            if (targeted.player() != sender) {
+                sender.sendMessage(Component.text("Gave " + given + " component item to " + targeted.player().name()
+                        + (leftover > 0 ? " (" + leftover + " did not fit)" : ""), NamedTextColor.GREEN));
+            }
+        }
+
+        @Override
+        public List<String> complete(CommandSender sender, String label, List<String> args) {
+            if (args.size() <= 1) {
+                var values = new ArrayList<>(playerNames());
+                values.addAll(SAMPLE_ITEMS);
+                return matching(values, args.isEmpty() ? "" : args.getLast());
+            }
+            if (args.size() == 2 && Fand.server().player(args.getFirst()).isPresent()) {
+                return matching(SAMPLE_ITEMS, args.getLast());
+            }
+            if (args.size() == 2 || args.size() == 3) {
+                return matching(List.of("1", "8", "16", "32", "64", "99"), args.getLast());
             }
             return List.of();
         }
@@ -934,10 +1000,14 @@ public final class TestPlugin implements Plugin {
     }
 
     private static int give(Player target, ItemType type, int amount) {
+        return give(target, type.one(), amount);
+    }
+
+    private static int give(Player target, ItemStack base, int amount) {
         int remaining = amount;
         while (remaining > 0) {
-            int batch = Math.min(remaining, type.maxStackSize());
-            ItemStack leftover = target.inventory().add(type.stack(batch));
+            int batch = Math.min(remaining, base.maxStackSize());
+            ItemStack leftover = target.inventory().add(base.withAmount(batch));
             int accepted = batch - (leftover.isEmpty() ? 0 : leftover.amount());
             remaining -= accepted;
             if (accepted < batch) {
@@ -949,6 +1019,26 @@ public final class TestPlugin implements Plugin {
 
     private static void put(Inventory inventory, int slot, String item, int amount) {
         inventory.set(slot, ItemTypes.of(keyString(item)).stack(amount));
+    }
+
+    static ItemStack demoComponentItem(ItemType type, String source) {
+        var customData = new JsonObject();
+        customData.addProperty("created_by", "fand-test-plugin");
+        customData.addProperty("source", source);
+        return type.one()
+                .withMaxStackSize(99)
+                .withCustomName(Component.text("Fand Component Item", NamedTextColor.GOLD))
+                .withLore(
+                        Component.text("Modern data components are attached.", NamedTextColor.LIGHT_PURPLE),
+                        Component.text("Lore, model data, glint, and custom data survive inventory round-trips.", NamedTextColor.GRAY))
+                .withRarity(ItemRarity.RARE)
+                .withEnchantmentGlintOverride(true)
+                .withCustomModelData(new CustomModelData(
+                        List.of(20018.0F),
+                        List.of(true),
+                        List.of("fand-demo"),
+                        List.of(0x33CCFF)))
+                .withCustomData(customData);
     }
 
     private static Player player(CommandSender sender, String name) {
