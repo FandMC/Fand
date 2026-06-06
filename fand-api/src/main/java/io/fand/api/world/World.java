@@ -1,5 +1,6 @@
 package io.fand.api.world;
 
+import io.fand.api.entity.Entity;
 import io.fand.api.entity.Player;
 import java.util.Collection;
 import net.kyori.adventure.audience.ForwardingAudience;
@@ -16,7 +17,7 @@ import net.kyori.adventure.key.Key;
  * <p>{@code World} is an Adventure {@link ForwardingAudience} that forwards to
  * the players currently in this world.
  */
-public interface World extends ForwardingAudience {
+public interface World extends ForwardingAudience, ParticleEmitter {
 
     /** Dimension key, e.g. {@code minecraft:overworld}. */
     Key key();
@@ -31,6 +32,9 @@ public interface World extends ForwardingAudience {
 
     /** Snapshot of all players currently in this world. */
     Collection<? extends Player> players();
+
+    /** Snapshot of all entities currently in this world. */
+    Collection<? extends Entity> entities();
 
     /** Builds a {@link Location} in this world. */
     default Location at(double x, double y, double z) {
@@ -48,4 +52,67 @@ public interface World extends ForwardingAudience {
      * {@link io.fand.api.block.Block#setType} is invoked.
      */
     io.fand.api.block.Block blockAt(int x, int y, int z);
+
+    /**
+     * Spawns particles using the full playback parameter set. All players within
+     * range see the effect. Marshals to the main thread when called off-thread.
+     *
+     * @param playback particle type/data, position, count, spread, speed, and force flag
+     */
+    @Override
+    void spawnParticle(ParticlePlayback playback);
+
+    /**
+     * Plays a sound using the full playback parameter set. All players within
+     * range hear it, or all players in this world when {@link SoundPlayback#minVolume()}
+     * is positive. Marshals to the main thread when called off-thread.
+     *
+     * @param playback sound, position, category, volume, pitch, min volume, and seed
+     */
+    void playSound(SoundPlayback playback);
+
+    /**
+     * Current world time in ticks (0-23999 for a full day/night cycle). The
+     * time wraps after 24000, but this method returns the raw value which may
+     * exceed that if the world has existed for multiple days.
+     */
+    long time();
+
+    /**
+     * Sets the world time. Marshals to the main thread when called off-thread.
+     */
+    void setTime(long time);
+
+    /**
+     * Whether the day/night cycle is enabled. When {@code false}, time does
+     * not advance naturally.
+     */
+    boolean dayNightCycleEnabled();
+
+    /**
+     * Sets whether the day/night cycle advances. Marshals to the main thread.
+     */
+    void setDayNightCycleEnabled(boolean enabled);
+
+    /**
+     * Whether weather is currently active (rain/snow). Thunder is separate.
+     */
+    boolean storming();
+
+    /**
+     * Sets whether it is raining or snowing. Marshals to the main thread.
+     */
+    void setStorming(boolean storming);
+
+    /**
+     * Whether thunder is currently active. Only meaningful when
+     * {@link #storming()} is {@code true}.
+     */
+    boolean thundering();
+
+    /**
+     * Sets whether thunder is active. Marshals to the main thread. Has no
+     * visible effect unless {@link #storming()} is also {@code true}.
+     */
+    void setThundering(boolean thundering);
 }

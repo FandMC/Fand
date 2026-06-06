@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 
 public final class CommandBridge {
 
@@ -12,14 +13,13 @@ public final class CommandBridge {
     }
 
     public static boolean tryExecute(CommandSourceStack source, String rawCommand) {
-        var runtime = io.fand.server.Main.runtime();
-        var sender = new CommandSourceSender(source, runtime.permissions());
+        var sender = sender(source);
         var tokens = tokenize(rawCommand, false);
         if (tokens.isEmpty()) {
             return false;
         }
 
-        var registry = runtime.commands();
+        var registry = io.fand.server.Main.runtime().commands();
         var resolved = registry.resolve(sender, tokens);
         if (resolved.isEmpty()) {
             if (registry.claims(tokens)) {
@@ -41,14 +41,24 @@ public final class CommandBridge {
     }
 
     public static Optional<List<String>> suggestions(CommandSourceStack source, String rawCommand) {
-        var runtime = io.fand.server.Main.runtime();
-        var sender = new CommandSourceSender(source, runtime.permissions());
+        var sender = sender(source);
         var tokens = tokenize(rawCommand, true);
-        var registry = runtime.commands();
+        var registry = io.fand.server.Main.runtime().commands();
         if (!registry.claims(tokens)) {
             return Optional.empty();
         }
         return Optional.of(registry.suggestions(sender, tokens));
+    }
+
+    public static io.fand.api.command.CommandSender sender(CommandSourceStack source) {
+        var runtime = io.fand.server.Main.runtime();
+        ServerPlayer player = source.getPlayer();
+        if (player != null) {
+            return runtime.playerRegistry()
+                    .find(player.getUUID())
+                    .orElseGet(() -> runtime.playerRegistry().attach(player));
+        }
+        return new CommandSourceSender(source, runtime.permissions());
     }
 
     private static List<String> tokenize(String rawCommand, boolean preserveTrailingArgument) {

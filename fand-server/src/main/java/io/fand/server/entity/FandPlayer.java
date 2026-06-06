@@ -4,6 +4,8 @@ import io.fand.api.entity.GameMode;
 import io.fand.api.entity.Player;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.world.Location;
+import io.fand.api.world.ParticlePlayback;
+import io.fand.api.world.SoundPlayback;
 import io.fand.api.world.World;
 import io.fand.server.audience.BossBarTracker;
 import io.fand.server.audience.PacketAudience;
@@ -501,6 +503,16 @@ public final class FandPlayer implements Player {
     @Override
     public void closeInventory() {
         runOnMain(() -> bound.handle.closeContainer());
+    }
+
+    @Override
+    public void spawnParticle(ParticlePlayback playback) {
+        io.fand.server.world.ParticleEffects.spawnParticle(bound.handle, playback);
+    }
+
+    @Override
+    public void playSound(SoundPlayback playback) {
+        io.fand.server.world.SoundEffects.playSound(bound.handle, playback);
     }
 
     private void pushAbilities() {

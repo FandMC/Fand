@@ -5,6 +5,9 @@ import io.fand.api.inventory.Inventory;
 import io.fand.api.inventory.InventoryType;
 import io.fand.api.permission.PermissionSubject;
 import io.fand.api.world.Location;
+import io.fand.api.world.ParticleEmitter;
+import io.fand.api.world.ParticlePlayback;
+import io.fand.api.world.SoundPlayback;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.text.Component;
@@ -18,7 +21,7 @@ import net.kyori.adventure.text.Component;
  * return their last-known values. {@link #alive()} returns {@code false} once
  * the player disconnects.
  */
-public interface Player extends LivingEntity, CommandSender, PermissionSubject {
+public interface Player extends LivingEntity, CommandSender, PermissionSubject, ParticleEmitter {
 
     /** Whether the player is still connected. */
     boolean online();
@@ -153,4 +156,22 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
      * main thread.
      */
     void closeInventory();
+
+    /**
+     * Spawns particles visible only to this player using the full playback
+     * parameter set. Marshals to the main thread when called off-thread.
+     *
+     * @param playback particle type/data, position, count, spread, speed, and force flag
+     */
+    @Override
+    void spawnParticle(ParticlePlayback playback);
+
+    /**
+     * Plays a sound audible only to this player using the full playback
+     * parameter set. Marshals to the main thread when called off-thread.
+     *
+     * @param playback sound, position, category, volume, pitch, min volume, and seed
+     */
+    void playSound(SoundPlayback playback);
+
 }
