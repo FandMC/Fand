@@ -5,6 +5,8 @@ import java.util.Map;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.AbstractMountInventoryMenu;
+import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.inventory.MenuType;
 
 /**
@@ -45,9 +47,17 @@ final class InventoryTypes {
     }
 
     static InventoryType resolve(AbstractContainerMenu menu) {
-        var type = menu.getType();
-        if (type == null) {
+        if (menu instanceof InventoryMenu) {
             return InventoryType.PLAYER;
+        }
+        if (menu instanceof AbstractMountInventoryMenu) {
+            return InventoryType.HORSE;
+        }
+        MenuType<?> type;
+        try {
+            type = menu.getType();
+        } catch (UnsupportedOperationException ignored) {
+            return InventoryType.UNKNOWN;
         }
         return resolve(type);
     }
