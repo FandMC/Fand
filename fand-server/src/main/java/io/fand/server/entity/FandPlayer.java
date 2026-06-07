@@ -1,5 +1,6 @@
 package io.fand.server.entity;
 
+import io.fand.api.entity.ClientSettings;
 import io.fand.api.entity.GameMode;
 import io.fand.api.entity.Player;
 import io.fand.api.permission.PermissionService;
@@ -120,6 +121,18 @@ public final class FandPlayer implements Player {
     @Override
     public boolean online() {
         return !bound.handle.hasDisconnected();
+    }
+
+    @Override
+    public int ping() {
+        var connection = bound.handle.connection;
+        return connection == null ? 0 : connection.latency();
+    }
+
+    @Override
+    public ClientSettings clientSettings() {
+        var information = bound.handle.clientInformation();
+        return new ClientSettings(information.language(), information.viewDistance());
     }
 
     @Override
