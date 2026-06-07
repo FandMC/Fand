@@ -25,6 +25,8 @@ final class FandConfigTest {
         assertThat(config.plugins.continueOnEnableFailure).isFalse();
         assertThat(config.plugins.logSummary).isTrue();
         assertThat(config.scheduler.asyncThreads).isZero();
+        assertThat(config.console.gui.enabled).isTrue();
+        assertThat(config.console.gui.theme).isEqualTo("system");
         assertThat(config.network.forwarding.mode).isEqualTo("none");
         assertThat(config.network.forwarding.secret).isEmpty();
         assertThat(Files.readString(path))
@@ -38,6 +40,10 @@ final class FandConfigTest {
                 .contains("logSummary: true")
                 .contains("scheduler:")
                 .contains("asyncThreads: 0")
+                .contains("console:")
+                .contains("gui:")
+                .contains("enabled: true")
+                .contains("theme: system")
                 .contains("network:")
                 .contains("forwarding:")
                 .contains("mode: none")
@@ -60,6 +66,11 @@ final class FandConfigTest {
                 scheduler:
                   asyncThreads: 6
 
+                console:
+                  gui:
+                    enabled: false
+                    theme: dark
+
                 network:
                   forwarding:
                     mode: velocity-modern
@@ -74,6 +85,8 @@ final class FandConfigTest {
         assertThat(config.plugins.continueOnEnableFailure).isTrue();
         assertThat(config.plugins.logSummary).isFalse();
         assertThat(config.scheduler.asyncThreads).isEqualTo(6);
+        assertThat(config.console.gui.enabled).isFalse();
+        assertThat(config.console.gui.theme).isEqualTo("dark");
         assertThat(config.network.forwarding.mode).isEqualTo("velocity-modern");
         assertThat(config.network.forwarding.secret).isEqualTo("shared-secret");
     }

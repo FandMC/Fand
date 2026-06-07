@@ -14,6 +14,9 @@ public final class FandConfig {
     @ConfigComment("Async scheduler settings.")
     public final Scheduler scheduler = new Scheduler();
 
+    @ConfigComment("Server console and GUI settings.")
+    public final Console console = new Console();
+
     @ConfigComment("Network and proxy settings.")
     public final Network network = new Network();
 
@@ -59,6 +62,25 @@ public final class FandConfig {
         })
         @ConfigRange(min = 0, max = 1024)
         public int asyncThreads = 0;
+    }
+
+    public static final class Console {
+
+        @ConfigComment("Graphical server console window settings.")
+        public final Gui gui = new Gui();
+    }
+
+    public static final class Gui {
+
+        @ConfigComment("Show the graphical console window when a display is available and --nogui is not set.")
+        public boolean enabled = true;
+
+        @ConfigComment({
+                "Initial colour theme for the GUI.",
+                "Supported values: dark, light, system. Unknown values fall back to system.",
+                "The theme can also be switched at runtime from the GUI itself."
+        })
+        public String theme = "system";
     }
 
     public static final class Network {

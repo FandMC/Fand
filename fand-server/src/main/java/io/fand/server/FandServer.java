@@ -73,6 +73,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.configPath = configPath;
         this.config = new AtomicReference<>(initialConfig);
         this.proxyForwarding = ProxyForwardingSettings.fromConfig(initialConfig);
+        io.fand.server.console.gui.GuiThemes.initFromConfig(initialConfig.console.gui.theme);
         this.events = new EventDispatcher();
         this.permissions = new PermissionManager();
         this.commands = new CommandManager(permissions);
@@ -137,6 +138,10 @@ public final class FandServer implements Server, AutoCloseable {
 
     public ProxyForwardingSettings proxyForwarding() {
         return proxyForwarding;
+    }
+
+    public boolean consoleGuiEnabled() {
+        return config.get().console.gui.enabled;
     }
 
     public void attach(MinecraftServer server) {

@@ -111,6 +111,10 @@ public final class FandHooks {
         return Main.runtime().proxyForwarding().mode();
     }
 
+    public static boolean consoleGuiEnabled() {
+        return Main.runtime().consoleGuiEnabled();
+    }
+
     public static ForwardedPlayerInfo parseBungeeLegacyForwarding(String hostName, String playerName) {
         return ProxyForwarding.parseBungeeLegacy(hostName, playerName);
     }
