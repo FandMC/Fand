@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.fand.server.command.CommandManager;
 import io.fand.server.permission.PermissionManager;
+import io.fand.server.recipe.FandRecipeRegistry;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -63,6 +64,44 @@ final class PluginCleanupTest {
         }
     }
 
+    @Test
+    void unregistersPluginRecipesOnClose() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("recipes.jar"),
+                PluginRuntimeTestSupport.descriptorJson("recipes", "testplugins.recipes.RecipesPlugin", List.of()),
+                Map.of("testplugins/recipes/RecipesPlugin.java", recipesPluginSource()),
+                List.of()
+        );
+
+        var recipes = new FandRecipeRegistry();
+        var scheduler = new io.fand.server.scheduler.TaskScheduler();
+        var runtime = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new CommandManager(),
+                new io.fand.server.event.EventDispatcher(),
+                new PermissionManager(),
+                scheduler,
+                recipes,
+                PluginRuntime.Options.defaults()
+        );
+        try {
+            runtime.loadPlugins();
+            runtime.enablePlugins();
+
+            assertThat(recipes.find(net.kyori.adventure.key.Key.key("recipes:stone_to_diamond"))).isPresent();
+        } finally {
+            runtime.close();
+            scheduler.close();
+        }
+
+        assertThat(recipes.find(net.kyori.adventure.key.Key.key("recipes:stone_to_diamond"))).isEmpty();
+    }
+
     private static String cleanupPluginSource() {
         return """
                 package testplugins.cleanup;
@@ -99,6 +138,35 @@ final class PluginCleanupTest {
                         } catch (IOException ex) {
                             throw new RuntimeException(ex);
                         }
+                    }
+                }
+                """;
+    }
+
+    private static String recipesPluginSource() {
+        return """
+                package testplugins.recipes;
+
+                import io.fand.api.item.ItemStack;
+                import io.fand.api.item.ItemType;
+                import io.fand.api.plugin.Plugin;
+                import io.fand.api.plugin.PluginContext;
+                import io.fand.api.recipe.RecipeIngredient;
+                import io.fand.api.recipe.ShapelessRecipe;
+                import java.util.List;
+                import net.kyori.adventure.key.Key;
+
+                public final class RecipesPlugin implements Plugin {
+                    @Override
+                    public void onEnable(PluginContext context) {
+                        context.recipes().register(new ShapelessRecipe(
+                                Key.key("minecraft:stone_to_diamond"),
+                                List.of(RecipeIngredient.of(Key.key("minecraft:stone"))),
+                                new ItemStack(new TestItemType(Key.key("minecraft:diamond"), 64), 1)
+                        ));
+                    }
+
+                    private record TestItemType(Key key, int maxStackSize) implements ItemType {
                     }
                 }
                 """;

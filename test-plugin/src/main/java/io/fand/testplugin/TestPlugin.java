@@ -53,6 +53,15 @@ import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
 import io.fand.api.plugin.Plugin;
 import io.fand.api.plugin.PluginContext;
+import io.fand.api.recipe.CookingRecipe;
+import io.fand.api.recipe.CookingRecipeCategory;
+import io.fand.api.recipe.CraftingRecipeCategory;
+import io.fand.api.recipe.Recipe;
+import io.fand.api.recipe.RecipeIngredient;
+import io.fand.api.recipe.RecipeType;
+import io.fand.api.recipe.ShapedRecipe;
+import io.fand.api.recipe.ShapelessRecipe;
+import io.fand.api.recipe.StonecuttingRecipe;
 import io.fand.api.scoreboard.Sidebar;
 import io.fand.api.world.World;
 import java.time.Duration;
@@ -60,6 +69,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.UUID;
@@ -80,6 +90,10 @@ public final class TestPlugin implements Plugin {
     static final String CLEAR_MODE = "clear";
     static final String SHOW_MODE = "show";
     static final String COMMAND_ALIAS_DEMO = "fwhere";
+    static final Key DEMO_COMPONENT_RECIPE = Key.key("fand-test-plugin:component_diamond");
+    static final Key DEMO_NAVIGATOR_RECIPE = Key.key("fand-test-plugin:kit_navigator");
+    static final Key DEMO_SNACK_RECIPE = Key.key("fand-test-plugin:demo_snack");
+    static final Key DEMO_GLASS_RECIPE = Key.key("fand-test-plugin:cut_glass");
 
     private static final List<String> SAMPLE_BLOCKS = List.of(
             "minecraft:stone",
@@ -119,7 +133,8 @@ public final class TestPlugin implements Plugin {
             "fand.testplugin.bossbar",
             "fand.testplugin.kick",
             "fand.testplugin.tab",
-            "fand.testplugin.sidebar"
+            "fand.testplugin.sidebar",
+            "fand.testplugin.recipe"
     );
 
     @Override
@@ -148,7 +163,9 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new KickCommand(context));
         context.commands().register(new TabCommand(context));
         context.commands().register(new SidebarCommand());
+        context.commands().register(new RecipeCommand(context));
         context.commands().register(new GuiCommand(context, demoGuiViewers));
+        registerDemoRecipes(context);
         context.events().subscribe(ServerStartedEvent.class, event ->
                 context.logger().info("Server started; Fand brand={} version={} minecraft={}",
                         event.server().brand(), event.server().version(), event.server().minecraftVersion()));
@@ -177,6 +194,16 @@ public final class TestPlugin implements Plugin {
         for (var node : PERMISSIONS) {
             context.permissions().register(new PermissionDescriptor(node, PermissionDefault.OPERATOR));
         }
+    }
+
+    private static void registerDemoRecipes(PluginContext context) {
+        var recipes = demoRecipes(
+                ItemTypes.of("minecraft:diamond"),
+                ItemTypes.of("minecraft:compass"),
+                ItemTypes.of("minecraft:golden_apple"),
+                ItemTypes.of("minecraft:glass"));
+        recipes.forEach(recipe -> context.recipes().register(recipe));
+        context.logger().info("Registered {} demo recipes", recipes.size());
     }
 
     @CommandSpec(label = "fandtest", arguments = {"greeting"}, aliases = {"ftest"}, permission = "fand.testplugin.use")
@@ -905,6 +932,45 @@ public final class TestPlugin implements Plugin {
         }
     }
 
+    @CommandSpec(label = "fandrecipe", arguments = {"key"}, aliases = {"frecipe"}, permission = "fand.testplugin.recipe")
+    static final class RecipeCommand implements CommandExecutor, CommandCompleter {
+
+        private final PluginContext context;
+
+        RecipeCommand(PluginContext context) {
+            this.context = context;
+        }
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            if (args.size() > 1) {
+                sender.sendMessage(Component.text("Usage: /fandrecipe [recipe]", NamedTextColor.RED));
+                return;
+            }
+            if (args.isEmpty()) {
+                var recipes = context.recipes().all();
+                sender.sendMessage(Component.text("Fand demo recipes", NamedTextColor.GOLD));
+                for (var recipe : recipes) {
+                    sender.sendMessage(Component.text(recipeSummary(recipe), NamedTextColor.GRAY));
+                }
+                return;
+            }
+            try {
+                var key = Key.key(keyString(args.getFirst()));
+                context.recipes().find(key).ifPresentOrElse(
+                        recipe -> sender.sendMessage(Component.text(recipeSummary(recipe), NamedTextColor.GREEN)),
+                        () -> sender.sendMessage(Component.text("Unknown demo recipe: " + key.asString(), NamedTextColor.RED)));
+            } catch (InvalidKeyException ex) {
+                sender.sendMessage(Component.text("Invalid recipe key: " + args.getFirst(), NamedTextColor.RED));
+            }
+        }
+
+        @Override
+        public List<String> complete(CommandSender sender, String label, List<String> args) {
+            return args.size() <= 1 ? matching(demoRecipeKeySuggestions(), args.isEmpty() ? "" : args.getLast()) : List.of();
+        }
+    }
+
     @CommandSpec(label = "fandgui", arguments = {"player"}, aliases = {"fgui"}, permission = "fand.testplugin.gui")
     static final class GuiCommand implements CommandExecutor, CommandCompleter {
 
@@ -1214,6 +1280,76 @@ public final class TestPlugin implements Plugin {
                 sender.sendMessage(Component.text("Inventory open was rejected or the player went offline.", NamedTextColor.YELLOW));
             }
         });
+    }
+
+    static List<Recipe> demoRecipes(ItemType diamond, ItemType compass, ItemType goldenApple, ItemType glass) {
+        return List.of(
+                new ShapelessRecipe(
+                        DEMO_COMPONENT_RECIPE,
+                        List.of(
+                                RecipeIngredient.of(Key.key("minecraft:diamond")),
+                                RecipeIngredient.of(Key.key("minecraft:redstone"))),
+                        demoComponentItem(diamond, "recipe").withAmount(2),
+                        "fand_demo",
+                        CraftingRecipeCategory.EQUIPMENT,
+                        true),
+                new ShapedRecipe(
+                        DEMO_NAVIGATOR_RECIPE,
+                        List.of(" R ", "RCR", " R "),
+                        Map.of(
+                                'R', RecipeIngredient.of(Key.key("minecraft:redstone")),
+                                'C', RecipeIngredient.of(Key.key("minecraft:compass"))),
+                        demoKitNavigator(compass, "recipe"),
+                        "fand_demo",
+                        CraftingRecipeCategory.EQUIPMENT,
+                        true),
+                new CookingRecipe(
+                        DEMO_SNACK_RECIPE,
+                        RecipeType.SMELTING,
+                        RecipeIngredient.of(Key.key("minecraft:apple")),
+                        demoKitSnack(goldenApple),
+                        0.35F,
+                        120,
+                        "fand_demo",
+                        CookingRecipeCategory.FOOD,
+                        true),
+                new StonecuttingRecipe(
+                        DEMO_GLASS_RECIPE,
+                        RecipeIngredient.of(Key.key("minecraft:glass")),
+                        demoGlassRecipeResult(glass),
+                        "fand_demo",
+                        true));
+    }
+
+    static ItemStack demoGlassRecipeResult(ItemType type) {
+        var customData = new JsonObject();
+        customData.addProperty("created_by", "fand-test-plugin");
+        customData.addProperty("demo_role", "fand_recipe_glass");
+        return type.one()
+                .withCustomName(Component.text("Fand Cut Glass", NamedTextColor.AQUA))
+                .withLore(Component.text("Created by a stonecutting recipe registered through Fand.", NamedTextColor.GRAY))
+                .withRarity(ItemRarity.UNCOMMON)
+                .withCustomData(customData);
+    }
+
+    static List<String> demoRecipeKeySuggestions() {
+        return List.of(
+                DEMO_COMPONENT_RECIPE.asString(),
+                DEMO_NAVIGATOR_RECIPE.asString(),
+                DEMO_SNACK_RECIPE.asString(),
+                DEMO_GLASS_RECIPE.asString(),
+                DEMO_COMPONENT_RECIPE.value(),
+                DEMO_NAVIGATOR_RECIPE.value(),
+                DEMO_SNACK_RECIPE.value(),
+                DEMO_GLASS_RECIPE.value());
+    }
+
+    static String recipeSummary(Recipe recipe) {
+        return recipe.key().asString()
+                + " "
+                + recipe.type().name().toLowerCase(Locale.ROOT)
+                + " -> "
+                + stackName(recipe.result());
     }
 
     static ItemStack demoComponentItem(ItemType type, String source) {

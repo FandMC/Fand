@@ -7,6 +7,7 @@ import io.fand.api.lifecycle.LifecyclePhase;
 import io.fand.api.performance.ServerPerformance;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.PluginManager;
+import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.world.World;
 import java.util.Collection;
@@ -48,6 +49,9 @@ public interface Server extends ForwardingAudience {
 
     /** Global command registry. */
     CommandRegistry commands();
+
+    /** Global recipe registry. Registration and removal marshal to the server thread. */
+    RecipeRegistry recipes();
 
     /** Main-thread and async task scheduler. */
     Scheduler scheduler();

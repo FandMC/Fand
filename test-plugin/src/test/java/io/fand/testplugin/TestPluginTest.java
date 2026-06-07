@@ -10,8 +10,15 @@ import io.fand.api.performance.MetricStatistics;
 import io.fand.api.performance.TickAverages;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
+import io.fand.api.recipe.CookingRecipe;
+import io.fand.api.recipe.RecipeType;
+import io.fand.api.recipe.ShapedRecipe;
+import io.fand.api.recipe.ShapelessRecipe;
+import io.fand.api.recipe.StonecuttingRecipe;
 import java.util.List;
 import net.kyori.adventure.key.Key;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.junit.jupiter.api.Test;
 
 final class TestPluginTest {
@@ -156,6 +163,66 @@ final class TestPluginTest {
         assertThat(snack.food()).get().extracting(food -> food.nutrition()).isEqualTo(6);
         assertThat(snack.consumable()).isPresent();
         assertThat(snack.customData()).get().extracting(json -> json.get("demo_role").getAsString()).isEqualTo("fand_kit_snack");
+    }
+
+    @Test
+    void buildsDemoRecipeModels() {
+        var recipes = TestPlugin.demoRecipes(
+                new TestItemType(Key.key("minecraft:diamond"), 64),
+                new TestItemType(Key.key("minecraft:compass"), 64),
+                new TestItemType(Key.key("minecraft:golden_apple"), 64),
+                new TestItemType(Key.key("minecraft:glass"), 64));
+
+        assertThat(recipes).extracting(recipe -> recipe.key()).containsExactly(
+                TestPlugin.DEMO_COMPONENT_RECIPE,
+                TestPlugin.DEMO_NAVIGATOR_RECIPE,
+                TestPlugin.DEMO_SNACK_RECIPE,
+                TestPlugin.DEMO_GLASS_RECIPE);
+        assertThat(recipes).extracting(recipe -> recipe.type()).containsExactly(
+                RecipeType.SHAPELESS,
+                RecipeType.SHAPED,
+                RecipeType.SMELTING,
+                RecipeType.STONECUTTING);
+        assertThat(recipes.get(0)).isInstanceOfSatisfying(ShapelessRecipe.class, recipe -> {
+            assertThat(recipe.ingredients()).hasSize(2);
+            assertThat(recipe.result().amount()).isEqualTo(2);
+            assertThat(recipe.result().customName()).contains(Component.text("Fand Component Item", NamedTextColor.GOLD));
+        });
+        assertThat(recipes.get(1)).isInstanceOfSatisfying(ShapedRecipe.class, recipe -> {
+            assertThat(recipe.pattern()).containsExactly(" R ", "RCR", " R ");
+            assertThat(recipe.ingredients()).containsOnlyKeys('R', 'C');
+            assertThat(recipe.result().customData()).get().extracting(json -> json.get("demo_role").getAsString())
+                    .isEqualTo("fand_kit_navigator");
+        });
+        assertThat(recipes.get(2)).isInstanceOfSatisfying(CookingRecipe.class, recipe -> {
+            assertThat(recipe.experience()).isEqualTo(0.35F);
+            assertThat(recipe.cookingTimeTicks()).isEqualTo(120);
+            assertThat(recipe.result().customData()).get().extracting(json -> json.get("demo_role").getAsString())
+                    .isEqualTo("fand_kit_snack");
+        });
+        assertThat(recipes.get(3)).isInstanceOfSatisfying(StonecuttingRecipe.class, recipe -> {
+            assertThat(recipe.result().customName()).contains(Component.text("Fand Cut Glass", NamedTextColor.AQUA));
+            assertThat(recipe.result().customData()).get().extracting(json -> json.get("demo_role").getAsString())
+                    .isEqualTo("fand_recipe_glass");
+        });
+    }
+
+    @Test
+    void formatsDemoRecipeSummariesAndSuggestions() {
+        var recipe = TestPlugin.demoRecipes(
+                new TestItemType(Key.key("minecraft:diamond"), 64),
+                new TestItemType(Key.key("minecraft:compass"), 64),
+                new TestItemType(Key.key("minecraft:golden_apple"), 64),
+                new TestItemType(Key.key("minecraft:glass"), 64)).getFirst();
+
+        assertThat(TestPlugin.recipeSummary(recipe))
+                .isEqualTo("fand-test-plugin:component_diamond shapeless -> 2x minecraft:diamond");
+        assertThat(TestPlugin.demoRecipeKeySuggestions()).contains(
+                "fand-test-plugin:component_diamond",
+                "component_diamond",
+                "kit_navigator",
+                "demo_snack",
+                "cut_glass");
     }
 
     @Test

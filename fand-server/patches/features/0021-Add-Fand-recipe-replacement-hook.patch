@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 7 Jun 2026 17:18:18 +0800
+Subject: [PATCH] Add Fand recipe replacement hook
+
+
+diff --git a/net/minecraft/world/item/crafting/RecipeManager.java b/net/minecraft/world/item/crafting/RecipeManager.java
+index 284d744b85e54cc391d1ea4cda83bcdcaeba607d..66e60520e0e4311f5612ecd650ef94e8403e63ac 100644
+--- a/net/minecraft/world/item/crafting/RecipeManager.java
++++ b/net/minecraft/world/item/crafting/RecipeManager.java
+@@ -87,6 +87,11 @@ public class RecipeManager extends SimplePreparableReloadListener<RecipeMap> imp
+         LOGGER.info("Loaded {} recipes", recipes.values().size());
+     }
+ 
++    public void fand$replaceRecipes(final Collection<RecipeHolder<?>> recipes, final FeatureFlagSet enabledFlags) {
++        this.recipes = RecipeMap.create(recipes);
++        this.finalizeRecipeLoading(enabledFlags);
++    }
++
+     public void finalizeRecipeLoading(final FeatureFlagSet enabledFlags) {
+         List<SelectableRecipe.SingleInputEntry<StonecutterRecipe>> stonecutterRecipes = new ArrayList<>();
+         List<RecipeManager.IngredientCollector> propertySetCollectors = RECIPE_PROPERTY_SETS.entrySet()

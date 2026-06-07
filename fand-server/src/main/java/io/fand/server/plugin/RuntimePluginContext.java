@@ -6,6 +6,7 @@ import io.fand.api.event.EventBus;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.PluginContext;
 import io.fand.api.plugin.PluginDescriptor;
+import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.server.config.YamlConfiguration;
 import java.io.IOException;
@@ -25,6 +26,7 @@ public final class RuntimePluginContext implements PluginContext {
     private final EventBus events;
     private final PermissionService permissions;
     private final CommandRegistry commands;
+    private final RecipeRegistry recipes;
     private final Scheduler scheduler;
     private final Path dataDirectory;
     private final PluginResourceTracker resources;
@@ -37,6 +39,7 @@ public final class RuntimePluginContext implements PluginContext {
             EventBus events,
             PermissionService permissions,
             CommandRegistry commands,
+            RecipeRegistry recipes,
             Scheduler scheduler,
             Path dataDirectory,
             PluginResourceTracker resources,
@@ -47,6 +50,7 @@ public final class RuntimePluginContext implements PluginContext {
         this.events = events;
         this.permissions = permissions;
         this.commands = commands;
+        this.recipes = recipes;
         this.scheduler = scheduler;
         this.dataDirectory = dataDirectory;
         this.resources = resources;
@@ -76,6 +80,11 @@ public final class RuntimePluginContext implements PluginContext {
     @Override
     public CommandRegistry commands() {
         return commands;
+    }
+
+    @Override
+    public RecipeRegistry recipes() {
+        return recipes;
     }
 
     @Override

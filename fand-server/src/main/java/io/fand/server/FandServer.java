@@ -10,6 +10,7 @@ import io.fand.api.lifecycle.ServerStartingEvent;
 import io.fand.api.lifecycle.ServerStoppingEvent;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.PluginManager;
+import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.server.command.BuiltinCommands;
 import io.fand.server.command.CommandManager;
@@ -23,6 +24,7 @@ import io.fand.server.network.ProxyForwardingSettings;
 import io.fand.server.permission.PermissionManager;
 import io.fand.server.performance.ServerPerformanceTracker;
 import io.fand.server.plugin.PluginRuntime;
+import io.fand.server.recipe.FandRecipeRegistry;
 import io.fand.server.scheduler.TaskScheduler;
 import io.fand.server.world.WorldRegistry;
 import java.nio.file.Path;
@@ -47,6 +49,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final PermissionManager permissions;
     private final CommandManager commands;
     private final TaskScheduler scheduler;
+    private final FandRecipeRegistry recipes;
     private final PluginRuntime plugins;
     private final PlayerRegistry players;
     private final ServerPerformanceTracker performance;
@@ -75,6 +78,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.commands = new CommandManager(permissions);
         registerBuiltinCommands();
         this.scheduler = new TaskScheduler(initialConfig.scheduler.asyncThreads);
+        this.recipes = new FandRecipeRegistry();
         this.players = new PlayerRegistry(permissions);
         this.performance = new ServerPerformanceTracker();
         var pluginDirectory = Path.of(initialConfig.plugins.directory);
@@ -86,6 +90,7 @@ public final class FandServer implements Server, AutoCloseable {
                 events,
                 permissions,
                 scheduler,
+                recipes,
                 ConfigReloader.toPluginOptions(initialConfig)
         );
         this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler);
@@ -117,6 +122,7 @@ public final class FandServer implements Server, AutoCloseable {
         try {
             events.fire(new ServerStartingEvent(this));
             plugins.enablePlugins();
+            recipes.applyLoadedRecipes();
             phase.set(LifecyclePhase.RUNNING);
             events.fire(new ServerStartedEvent(this));
         } catch (Throwable failure) {
@@ -143,6 +149,7 @@ public final class FandServer implements Server, AutoCloseable {
         entities.set(new EntityRegistry(registry));
         players.bindWorldResolver(registry::wrap);
         io.fand.server.item.FandItemStacks.useRegistries(server.registryAccess());
+        recipes.bind(server);
     }
 
     /**
@@ -165,6 +172,7 @@ public final class FandServer implements Server, AutoCloseable {
 
     public void tickScheduler() {
         scheduler.tick();
+        recipes.tick();
     }
 
     public void recordTick(long tickStartNanos, long tickDurationNanos) {
@@ -212,6 +220,11 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public CommandRegistry commands() {
         return commands;
+    }
+
+    @Override
+    public RecipeRegistry recipes() {
+        return recipes;
     }
 
     @Override

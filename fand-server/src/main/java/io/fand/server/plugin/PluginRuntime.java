@@ -8,7 +8,9 @@ import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.Plugin;
 import io.fand.api.plugin.PluginDescriptor;
 import io.fand.api.plugin.PluginManager;
+import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
+import io.fand.server.recipe.FandRecipeRegistry;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.lang.reflect.InvocationTargetException;
@@ -44,6 +46,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final CommandRegistry commandRegistry;
     private final EventBus eventBus;
     private final PermissionService permissions;
+    private final RecipeRegistry recipeRegistry;
     private final Scheduler scheduler;
     private volatile Options options;
     private final ConcurrentHashMap<String, LoadedPlugin> loadedPlugins = new ConcurrentHashMap<>();
@@ -61,7 +64,17 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             PermissionService permissions,
             Scheduler scheduler
     ) {
-        this(pluginsDirectory, dataDirectoryRoot, parentClassLoader, commandRegistry, eventBus, permissions, scheduler, Options.defaults());
+        this(
+                pluginsDirectory,
+                dataDirectoryRoot,
+                parentClassLoader,
+                commandRegistry,
+                eventBus,
+                permissions,
+                scheduler,
+                new FandRecipeRegistry(),
+                Options.defaults()
+        );
     }
 
     public PluginRuntime(
@@ -74,12 +87,37 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             Scheduler scheduler,
             Options options
     ) {
+        this(
+                pluginsDirectory,
+                dataDirectoryRoot,
+                parentClassLoader,
+                commandRegistry,
+                eventBus,
+                permissions,
+                scheduler,
+                new FandRecipeRegistry(),
+                options
+        );
+    }
+
+    public PluginRuntime(
+            Path pluginsDirectory,
+            Path dataDirectoryRoot,
+            ClassLoader parentClassLoader,
+            CommandRegistry commandRegistry,
+            EventBus eventBus,
+            PermissionService permissions,
+            Scheduler scheduler,
+            RecipeRegistry recipeRegistry,
+            Options options
+    ) {
         this.pluginsDirectory = pluginsDirectory;
         this.dataDirectoryRoot = dataDirectoryRoot;
         this.parentClassLoader = parentClassLoader;
         this.commandRegistry = commandRegistry;
         this.eventBus = eventBus;
         this.permissions = permissions;
+        this.recipeRegistry = recipeRegistry;
         this.scheduler = scheduler;
         this.options = options;
     }
@@ -120,6 +158,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                         new PluginEventBus(eventBus, resources),
                         permissions,
                         new PluginCommandRegistry(commandRegistry, resources, artifact.descriptor.id()),
+                        new PluginRecipeRegistry(recipeRegistry, resources, artifact.descriptor.id()),
                         new PluginScheduler(scheduler, resources),
                         dataDirectoryRoot.resolve(artifact.descriptor.id()),
                         resources,

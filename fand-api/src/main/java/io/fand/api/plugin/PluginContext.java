@@ -4,6 +4,7 @@ import io.fand.api.command.CommandRegistry;
 import io.fand.api.config.Configuration;
 import io.fand.api.event.EventBus;
 import io.fand.api.permission.PermissionService;
+import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import java.nio.file.Path;
 import org.slf4j.Logger;
@@ -26,6 +27,9 @@ public interface PluginContext {
 
     /** Command registry scoped to this plugin's lifecycle. */
     CommandRegistry commands();
+
+    /** Recipe registry scoped to this plugin's lifecycle. */
+    RecipeRegistry recipes();
 
     /** Scheduler scoped to this plugin's lifecycle. */
     Scheduler scheduler();
