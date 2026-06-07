@@ -78,7 +78,7 @@ public final class FandConfig {
 
         @ConfigComment({
                 "Initial colour theme for the GUI.",
-                "Supported values: dark, light, system. Unknown values fall back to system.",
+                "Supported values: dark, light, system. Unknown values are rejected.",
                 "The theme can also be switched at runtime from the GUI itself."
         })
         public String theme = "system";
