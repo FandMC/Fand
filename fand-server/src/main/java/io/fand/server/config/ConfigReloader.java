@@ -1,5 +1,7 @@
 package io.fand.server.config;
 
+import io.fand.server.console.gui.GuiTheme;
+import io.fand.server.console.gui.GuiThemeService;
 import io.fand.server.network.ProxyForwardingMode;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.scheduler.TaskScheduler;
@@ -20,17 +22,20 @@ public final class ConfigReloader {
     private final AtomicReference<FandConfig> current;
     private final PluginRuntime plugins;
     private final TaskScheduler scheduler;
+    private final GuiThemeService guiThemes;
 
     public ConfigReloader(
             Path configPath,
             AtomicReference<FandConfig> current,
             PluginRuntime plugins,
-            TaskScheduler scheduler
+            TaskScheduler scheduler,
+            GuiThemeService guiThemes
     ) {
         this.configPath = configPath;
         this.current = current;
         this.plugins = plugins;
         this.scheduler = scheduler;
+        this.guiThemes = guiThemes;
     }
 
     public ConfigReloadResult reload() {
@@ -64,6 +69,15 @@ public final class ConfigReloader {
         }
         if (!previous.network.forwarding.secret.equals(reloaded.network.forwarding.secret)) {
             requiresRestart.add("network.forwarding.secret");
+        }
+        var previousTheme = GuiTheme.fromConfig(previous.console.gui.theme);
+        var reloadedTheme = GuiTheme.fromConfig(reloaded.console.gui.theme);
+        if (previousTheme != reloadedTheme) {
+            guiThemes.set(reloadedTheme);
+            hotApplied.add("console.gui.theme");
+        }
+        if (previous.console.gui.enabled != reloaded.console.gui.enabled) {
+            requiresRestart.add("console.gui.enabled");
         }
 
         plugins.reconfigure(toPluginOptions(reloaded));

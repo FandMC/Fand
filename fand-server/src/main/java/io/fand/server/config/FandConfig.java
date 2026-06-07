@@ -14,6 +14,9 @@ public final class FandConfig {
     @ConfigComment("Async scheduler settings.")
     public final Scheduler scheduler = new Scheduler();
 
+    @ConfigComment("Server console and GUI settings.")
+    public final Console console = new Console();
+
     @ConfigComment("Network and proxy settings.")
     public final Network network = new Network();
 
@@ -28,6 +31,7 @@ public final class FandConfig {
         if (mode.requiresSecret() && config.network.forwarding.secret.isBlank()) {
             throw new ConfigException("network.forwarding.secret must be set when network.forwarding.mode is " + mode.configValue());
         }
+        io.fand.server.console.gui.GuiTheme.fromConfig(config.console.gui.theme);
     }
 
     public static final class Identity {
@@ -59,6 +63,25 @@ public final class FandConfig {
         })
         @ConfigRange(min = 0, max = 1024)
         public int asyncThreads = 0;
+    }
+
+    public static final class Console {
+
+        @ConfigComment("Graphical server console window settings.")
+        public final Gui gui = new Gui();
+    }
+
+    public static final class Gui {
+
+        @ConfigComment("Show the graphical console window when a display is available and --nogui is not set.")
+        public boolean enabled = true;
+
+        @ConfigComment({
+                "Initial colour theme for the GUI.",
+                "Supported values: dark, light, system. Unknown values are rejected.",
+                "The theme can also be switched at runtime from the GUI itself."
+        })
+        public String theme = "system";
     }
 
     public static final class Network {

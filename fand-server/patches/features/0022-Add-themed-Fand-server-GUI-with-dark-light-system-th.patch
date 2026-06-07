@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryorin1337 <ryorin64@gmail.com>
+Date: Sun, 7 Jun 2026 18:36:05 +0800
+Subject: [PATCH] Add themed Fand server GUI with dark/light/system themes
+
+
+diff --git a/net/minecraft/server/Main.java b/net/minecraft/server/Main.java
+index 637b34f411ce5ca1ca9f022b2816e4b2e4006419..8f41c60a4bc4e04aee2873a039d3b9559a6c8202 100644
+--- a/net/minecraft/server/Main.java
++++ b/net/minecraft/server/Main.java
+@@ -209,7 +209,7 @@ public class Main {
+                     server.setDemo(options.has(demo));
+                     server.setId(options.valueOf(serverId));
+                     boolean gui = !options.has(nogui) && !options.valuesOf(nonOptions).contains("nogui");
+-                    if (gui && !GraphicsEnvironment.isHeadless()) {
++                    if (gui && !GraphicsEnvironment.isHeadless() && io.fand.server.hooks.FandHooks.consoleGuiEnabled()) { // Fand - allow disabling the GUI via config
+                         server.showGui();
+                     }
+ 
+diff --git a/net/minecraft/server/gui/MinecraftServerGui.java b/net/minecraft/server/gui/MinecraftServerGui.java
+index 1ceb8e1ac9ba0d17fb01e38cf44ed75ceb977782..2c939b5ead705a762cbaf53bd09fcb5d83019e6a 100644
+--- a/net/minecraft/server/gui/MinecraftServerGui.java
++++ b/net/minecraft/server/gui/MinecraftServerGui.java
+@@ -65,6 +65,9 @@ public class MinecraftServerGui extends JComponent {
+             }
+         });
+         gui.addFinalizer(frame::dispose);
++        // Fand start - themed server GUI
++        gui.addFinalizer(io.fand.server.console.gui.FandGuiSupport.attachTheming(frame));
++        // Fand end - themed server GUI
+         gui.start();
+         return gui;
+     }
+@@ -77,6 +80,11 @@ public class MinecraftServerGui extends JComponent {
+         try {
+             this.add(this.buildChatPanel(), "Center");
+             this.add(this.buildInfoPanel(), "West");
++            // Fand start - themed server GUI
++            var themeBar = io.fand.server.console.gui.FandGuiSupport.buildThemeBar();
++            this.add(themeBar.component(), "North");
++            this.finalizers.add(themeBar.cleanup());
++            // Fand end - themed server GUI
+         } catch (Exception var3) {
+             LOGGER.error("Couldn't build server GUI", (Throwable)var3);
+         }
+diff --git a/net/minecraft/server/gui/StatsComponent.java b/net/minecraft/server/gui/StatsComponent.java
+index 60c7378400ee9bdd90a74187b141fb466a67eb31..ac702ce90ab5e697c504ace3e802d76cbbf0142a 100644
+--- a/net/minecraft/server/gui/StatsComponent.java
++++ b/net/minecraft/server/gui/StatsComponent.java
+@@ -66,16 +66,19 @@ public class StatsComponent extends JComponent {
+ 
+     @Override
+     public void paint(final Graphics g) {
+-        g.setColor(new Color(16777215));
++        // Fand start - themed server GUI
++        var palette = io.fand.server.console.gui.FandGuiSupport.palette();
++        g.setColor(palette.graphBackground());
+         g.fillRect(0, 0, 456, 246);
+ 
+         for (int x = 0; x < 256; x++) {
+             int v = this.values[x + this.vp & 0xFF];
+-            g.setColor(new Color(v + 28 << 16));
++            g.setColor(io.fand.server.console.gui.FandGuiSupport.graphLineColor(v));
+             g.fillRect(x, 100 - v, 1, v);
+         }
+ 
+-        g.setColor(Color.BLACK);
++        g.setColor(palette.foreground());
++        // Fand end - themed server GUI
+ 
+         for (int i = 0; i < this.msgs.length; i++) {
+             String msg = this.msgs[i];
