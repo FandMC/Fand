@@ -1,0 +1,310 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Mon, 8 Jun 2026 00:00:12 +0800
+Subject: [PATCH] Expand Fand event hooks
+
+Add vanilla hook points for world saves, weather changes, chunk lifecycle, entity lifecycle, entity teleports, explosions, player item/state events, game mode changes, kicks, and low-level block change/physics events.
+
+Keep patched code thin by routing all API wrapping and listener failure handling through Fand server bridge classes.
+
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index 1c9fad515b99267d72dcaf041d46cb5e500a9d18..0cd5067498fb439a3623e1725e6a6b590536903a 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -608,6 +608,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+                 LOGGER.info("Saving chunks for level '{}'/{}", level, level.dimension().identifier());
+             }
+ 
++            io.fand.server.event.WorldEvents.fireSave(level);
+             level.save(null, flush, SharedConstants.DEBUG_DONT_SAVE_WORLD || level.noSave && !force);
+             result = true;
+         }
+@@ -1252,6 +1253,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+             return false;
+         }
+ 
++        io.fand.server.event.WorldEvents.fireSave(level);
+         this.scoreboard.storeToSaveDataIfDirty(this.getDataStorage().computeIfAbsent(ScoreboardSaveData.TYPE));
+         level.save(null, true, SharedConstants.DEBUG_DONT_SAVE_WORLD);
+         GameProfile singleplayerProfile = this.getSingleplayerProfile();
+@@ -1896,6 +1898,9 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     }
+ 
+     public void setWeatherParameters(final int clearTime, final int rainTime, final boolean raining, final boolean thundering) {
++        if (!io.fand.server.event.WorldEvents.fireWeatherChanges(this, raining, thundering)) {
++            return;
++        }
+         WeatherData weatherData = this.getWeatherData();
+         weatherData.setClearWeatherTime(clearTime);
+         weatherData.setRainTime(rainTime);
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index ac08b0343d22885cceea56092d6e7e9e8410da3c..a4c9130e21a7bd07f217c1e55ef964e7fe8cfdac 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -1275,6 +1275,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     }
+ 
+     void onFullChunkStatusChange(final ChunkPos pos, final FullChunkStatus status) {
++        io.fand.server.event.WorldEvents.fireChunkStatus(this.level, pos, status);
+         this.chunkStatusListener.onChunkStatusChange(pos, status);
+     }
+ 
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index 810b9a46d1170f601918cde78d26189beb2ad475..a92ede04cc65611de0292e399803dc3a978cffa5 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -960,7 +960,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+         if (entity instanceof ServerPlayer player) {
+             this.addPlayer(player);
+         } else {
+-            this.addEntity(entity);
++            this.addEntity(entity, io.fand.api.event.entity.EntitySpawnEvent.Cause.DIMENSION_TRAVEL);
+         }
+     }
+ 
+@@ -984,9 +984,15 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     }
+ 
+     private boolean addEntity(final Entity entity) {
++        return this.addEntity(entity, io.fand.api.event.entity.EntitySpawnEvent.Cause.UNKNOWN);
++    }
++
++    private boolean addEntity(final Entity entity, final io.fand.api.event.entity.EntitySpawnEvent.Cause cause) {
+         if (entity.isRemoved()) {
+             LOGGER.warn("Tried to add entity {} but it was marked as removed already", entity.typeHolder().getRegisteredName());
+             return false;
++        } else if (!io.fand.server.event.EntityEvents.fireSpawn(entity, cause)) {
++            return false;
+         } else {
+             return this.entityManager.addNewEntity(entity);
+         }
+@@ -1173,6 +1179,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+ 
+     @Override
+     public void neighborChanged(final BlockPos pos, final Block changedBlock, final @Nullable Orientation orientation) {
++        if (!io.fand.server.event.BlockEvents.firePhysics(this, pos, changedBlock)) {
++            return;
++        }
+         this.neighborUpdater.neighborChanged(pos, changedBlock, orientation);
+     }
+ 
+@@ -1180,6 +1189,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     public void neighborChanged(
+         final BlockState state, final BlockPos pos, final Block changedBlock, final @Nullable Orientation orientation, final boolean movedByPiston
+     ) {
++        if (!io.fand.server.event.BlockEvents.firePhysics(this, pos, changedBlock)) {
++            return;
++        }
+         this.neighborUpdater.neighborChanged(state, pos, changedBlock, orientation, movedByPiston);
+     }
+ 
+@@ -1224,14 +1236,22 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+             case TRIGGER -> Explosion.BlockInteraction.TRIGGER_BLOCK;
+         };
+         Vec3 center = new Vec3(x, y, z);
+-        ServerExplosion explosion = new ServerExplosion(this, source, damageSource, damageCalculator, center, r, fire, blockInteraction);
++        var fandExplosion = io.fand.server.event.EntityEvents.fireExplosionPrime(this, source, x, y, z, r, fire);
++        if (fandExplosion == null) {
++            return;
++        }
++        ServerExplosion explosion = new ServerExplosion(
++            this, source, damageSource, damageCalculator, center, fandExplosion.radius(), fandExplosion.fire(), blockInteraction
++        );
+         int blockCount = explosion.explode();
+         ParticleOptions explosionParticle = explosion.isSmall() ? smallExplosionParticles : largeExplosionParticles;
+ 
+         for (ServerPlayer player : this.players) {
+             if (player.distanceToSqr(center) < 4096.0) {
+                 Optional<Vec3> playerKnockback = Optional.ofNullable(explosion.getHitPlayers().get(player));
+-                player.connection.send(new ClientboundExplodePacket(center, r, blockCount, playerKnockback, explosionParticle, explosionSound, blockParticles));
++                player.connection.send(
++                    new ClientboundExplodePacket(center, fandExplosion.radius(), blockCount, playerKnockback, explosionParticle, explosionSound, blockParticles)
++                );
+             }
+         }
+     }
+@@ -1741,11 +1761,15 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     }
+ 
+     public void addLegacyChunkEntities(final Stream<Entity> loaded) {
+-        this.entityManager.addLegacyChunkEntities(loaded);
++        this.entityManager.addLegacyChunkEntities(
++            loaded.filter(entity -> io.fand.server.event.EntityEvents.fireSpawn(entity, io.fand.api.event.entity.EntitySpawnEvent.Cause.LOAD))
++        );
+     }
+ 
+     public void addWorldGenChunkEntities(final Stream<Entity> loaded) {
+-        this.entityManager.addWorldGenChunkEntities(loaded);
++        this.entityManager.addWorldGenChunkEntities(
++            loaded.filter(entity -> io.fand.server.event.EntityEvents.fireSpawn(entity, io.fand.api.event.entity.EntitySpawnEvent.Cause.CHUNK_GENERATION))
++        );
+     }
+ 
+     public void startTickingChunk(final LevelChunk levelChunk) {
+@@ -1909,6 +1933,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+ 
+         @Override
+         public void onDestroyed(final Entity entity) {
++            io.fand.server.event.EntityEvents.fireRemove(entity);
+             if (entity instanceof WaypointTransmitter waypoint) {
+                 ServerLevel.this.getWaypointManager().untrackWaypoint(waypoint);
+             }
+diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
+index 7d1d6831d9569bc6d02bc92132257540ded786d0..cd63e13409a14a8b95efb70c2783a99e436c84b4 100644
+--- a/net/minecraft/server/level/ServerPlayer.java
++++ b/net/minecraft/server/level/ServerPlayer.java
+@@ -1621,6 +1621,10 @@ public class ServerPlayer extends Player {
+     @Override
+     protected void completeUsingItem() {
+         if (!this.useItem.isEmpty() && this.isUsingItem()) {
++            if (!io.fand.server.event.PlayerEvents.fireItemConsume(this, this.useItem.copy())) {
++                this.stopUsingItem();
++                return;
++            }
+             this.connection.send(new ClientboundEntityEventPacket(this, EntityEvent.USE_ITEM_COMPLETE));
+             super.completeUsingItem();
+         }
+@@ -1812,11 +1816,15 @@ public class ServerPlayer extends Player {
+ 
+     public boolean setGameMode(final GameType mode) {
+         boolean wasSpectator = this.isSpectator();
+-        if (!this.gameMode.changeGameModeForPlayer(mode)) {
++        GameType fandMode = io.fand.server.event.PlayerEvents.fireGameModeChange(this, this.gameMode.getGameModeForPlayer(), mode);
++        if (fandMode == null) {
++            return false;
++        }
++        if (!this.gameMode.changeGameModeForPlayer(fandMode)) {
+             return false;
+         } else {
+-            this.connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.CHANGE_GAME_MODE, mode.getId()));
+-            if (mode == GameType.SPECTATOR) {
++            this.connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.CHANGE_GAME_MODE, fandMode.getId()));
++            if (fandMode == GameType.SPECTATOR) {
+                 this.removeEntitiesOnShoulder();
+                 this.stopRiding();
+                 this.stopUsingItem();
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index bdf961c914a610f8e2c4ab6835a77a99be0fc39b..dd631bb943275cdb63ef2fdd9742c77865d3ec42 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -1322,9 +1322,14 @@ public class ServerGamePacketListenerImpl
+                     }
+                 case SWAP_ITEM_WITH_OFFHAND:
+                     if (!this.player.isSpectator()) {
+-                        ItemStack swap = this.player.getItemInHand(InteractionHand.OFF_HAND);
+-                        this.player.setItemInHand(InteractionHand.OFF_HAND, this.player.getItemInHand(InteractionHand.MAIN_HAND));
+-                        this.player.setItemInHand(InteractionHand.MAIN_HAND, swap);
++                        ItemStack mainHandItem = this.player.getItemInHand(InteractionHand.MAIN_HAND);
++                        ItemStack offHandItem = this.player.getItemInHand(InteractionHand.OFF_HAND);
++                        var fandSwap = io.fand.server.event.PlayerEvents.fireSwapHandItems(this.player, offHandItem, mainHandItem);
++                        if (fandSwap == null) {
++                            return;
++                        }
++                        this.player.setItemInHand(InteractionHand.OFF_HAND, fandSwap.offHandItem());
++                        this.player.setItemInHand(InteractionHand.MAIN_HAND, fandSwap.mainHandItem());
+                         this.player.stopUsingItem();
+                     }
+ 
+@@ -1545,6 +1550,15 @@ public class ServerGamePacketListenerImpl
+         super.onDisconnect(details);
+     }
+ 
++    @Override
++    public void disconnect(final Component reason) {
++        Component fandReason = io.fand.server.event.PlayerEvents.fireKick(this.player, reason);
++        if (fandReason == null) {
++            return;
++        }
++        super.disconnect(fandReason);
++    }
++
+     private void removePlayerFromWorld() {
+         this.chatMessageChain.close();
+         this.server.invalidateStatus();
+diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
+index ce003bf7375d340d4e6d03774eabeb2d53bcb0bc..597557faa37bb349067de68d3e24b1d7dc756438 100644
+--- a/net/minecraft/world/entity/Entity.java
++++ b/net/minecraft/world/entity/Entity.java
+@@ -2606,6 +2606,11 @@ public abstract class Entity
+     }
+ 
+     public void setShiftKeyDown(final boolean shiftKeyDown) {
++        if (this instanceof net.minecraft.server.level.ServerPlayer fandPlayer
++            && this.isShiftKeyDown() != shiftKeyDown
++            && !io.fand.server.event.PlayerEvents.fireToggleSneak(fandPlayer, shiftKeyDown)) {
++            return;
++        }
+         this.setSharedFlag(FLAG_SHIFT_KEY_DOWN, shiftKeyDown);
+     }
+ 
+@@ -2971,13 +2976,17 @@ public abstract class Entity
+ 
+     public @Nullable Entity teleport(final TeleportTransition transition) {
+         if (this.level() instanceof ServerLevel serverLevel && !this.isRemoved()) {
+-            ServerLevel newLevel = transition.newLevel();
++            TeleportTransition fandTransition = io.fand.server.event.EntityEvents.fireTeleport(this, transition);
++            if (fandTransition == null) {
++                return null;
++            }
++            ServerLevel newLevel = fandTransition.newLevel();
+             boolean otherDimension = newLevel.dimension() != serverLevel.dimension();
+-            if (!transition.asPassenger()) {
++            if (!fandTransition.asPassenger()) {
+                 this.stopRiding();
+             }
+ 
+-            return otherDimension ? this.teleportCrossDimension(serverLevel, newLevel, transition) : this.teleportSameDimension(serverLevel, transition);
++            return otherDimension ? this.teleportCrossDimension(serverLevel, newLevel, fandTransition) : this.teleportSameDimension(serverLevel, fandTransition);
+         } else {
+             return null;
+         }
+diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
+index 3c6c44b3e23fb1e4308a84e0fff08a38932530ab..df17a7f8ba196b283a10fe8fbd9887b51fb04afa 100644
+--- a/net/minecraft/world/entity/LivingEntity.java
++++ b/net/minecraft/world/entity/LivingEntity.java
+@@ -2300,6 +2300,11 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+ 
+     @Override
+     public void setSprinting(final boolean isSprinting) {
++        if (this instanceof net.minecraft.server.level.ServerPlayer fandPlayer
++            && this.isSprinting() != isSprinting
++            && !io.fand.server.event.PlayerEvents.fireToggleSprint(fandPlayer, isSprinting)) {
++            return;
++        }
+         super.setSprinting(isSprinting);
+         AttributeInstance speed = this.getAttribute(Attributes.MOVEMENT_SPEED);
+         speed.removeModifier(SPEED_MODIFIER_SPRINTING.id());
+diff --git a/net/minecraft/world/item/ItemStack.java b/net/minecraft/world/item/ItemStack.java
+index 5f789cbc111b143d25ad870e171b6c07add88c4a..3931c7a25baac9d213986c86b3293e0f6d8a77d8 100644
+--- a/net/minecraft/world/item/ItemStack.java
++++ b/net/minecraft/world/item/ItemStack.java
+@@ -449,7 +449,8 @@ public final class ItemStack implements DataComponentHolder, ItemInstance {
+     }
+ 
+     public void hurtAndBreak(final int amount, final ServerLevel level, final @Nullable ServerPlayer player, final Consumer<Item> onBreak) {
+-        int newAmount = this.processDurabilityChange(amount, level, player);
++        int requestedAmount = player == null ? amount : io.fand.server.event.PlayerEvents.fireItemDamage(player, this, amount);
++        int newAmount = this.processDurabilityChange(requestedAmount, level, player);
+         if (newAmount != 0) {
+             this.applyDamage(this.getDamageValue() + newAmount, player, onBreak);
+         }
+diff --git a/net/minecraft/world/level/Level.java b/net/minecraft/world/level/Level.java
+index a0ee0af1191ed0447ca143fecd9163272ceeaa42..305aa7fc9d2a61c751fc83de7fc32b1d4cde137c 100644
+--- a/net/minecraft/world/level/Level.java
++++ b/net/minecraft/world/level/Level.java
+@@ -224,7 +224,14 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         } else {
+             LevelChunk chunk = this.getChunkAt(pos);
+             Block block = blockState.getBlock();
+-            BlockState oldState = chunk.setBlockState(pos, blockState, updateFlags);
++            BlockState oldState = chunk.getBlockState(pos);
++            if (!this.isClientSide()
++                && this instanceof net.minecraft.server.level.ServerLevel fandServerLevel
++                && !io.fand.server.event.BlockEvents.fireChange(fandServerLevel, pos, oldState, blockState, updateFlags)) {
++                return false;
++            }
++
++            oldState = chunk.setBlockState(pos, blockState, updateFlags);
+             if (oldState == null) {
+                 return false;
+             } else {

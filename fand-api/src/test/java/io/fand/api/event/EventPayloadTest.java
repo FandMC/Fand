@@ -3,20 +3,42 @@ package io.fand.api.event;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.fand.api.entity.LivingEntity;
+import io.fand.api.entity.Entity;
+import io.fand.api.entity.GameMode;
 import io.fand.api.entity.Player;
+import io.fand.api.block.Block;
+import io.fand.api.block.BlockType;
+import io.fand.api.event.block.BlockChangeEvent;
+import io.fand.api.event.block.BlockPhysicsEvent;
 import io.fand.api.event.command.CommandExecuteEvent;
 import io.fand.api.event.entity.EntityDamageEvent;
 import io.fand.api.event.entity.EntityDeathEvent;
+import io.fand.api.event.entity.EntityRemoveEvent;
+import io.fand.api.event.entity.EntitySpawnEvent;
+import io.fand.api.event.entity.EntityTeleportEvent;
+import io.fand.api.event.entity.ExplosionPrimeEvent;
 import io.fand.api.event.inventory.ClickType;
 import io.fand.api.event.inventory.InventoryAction;
 import io.fand.api.event.inventory.InventoryClickEvent;
 import io.fand.api.event.player.PlayerCommandPreprocessEvent;
 import io.fand.api.event.player.PlayerDropItemEvent;
+import io.fand.api.event.player.PlayerGameModeChangeEvent;
 import io.fand.api.event.player.PlayerInteractEvent;
+import io.fand.api.event.player.PlayerItemConsumeEvent;
+import io.fand.api.event.player.PlayerItemDamageEvent;
+import io.fand.api.event.player.PlayerKickEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
+import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
+import io.fand.api.event.player.PlayerToggleSneakEvent;
+import io.fand.api.event.player.PlayerToggleSprintEvent;
+import io.fand.api.event.world.ChunkLoadEvent;
+import io.fand.api.event.world.ChunkUnloadEvent;
+import io.fand.api.event.world.ThunderChangeEvent;
+import io.fand.api.event.world.WeatherChangeEvent;
 import io.fand.api.event.world.WorldLoadEvent;
+import io.fand.api.event.world.WorldSaveEvent;
 import io.fand.api.event.world.WorldUnloadEvent;
 import io.fand.api.inventory.Inventory;
 import io.fand.api.item.ItemStack;
@@ -242,11 +264,114 @@ final class EventPayloadTest {
     }
 
     @Test
+    void entityLifecycleEventsCarryTypedCausesAndMutableTeleport() {
+        var entity = proxy(Entity.class);
+        var from = location("minecraft:overworld", 0, 64, 0);
+        var to = location("minecraft:overworld", 10, 64, 0);
+        var retargeted = location("minecraft:the_end", 0, 80, 0);
+
+        var spawn = new EntitySpawnEvent(entity, EntitySpawnEvent.Cause.SPAWNER);
+        spawn.setCancelled(true);
+        var remove = new EntityRemoveEvent(entity, EntityRemoveEvent.Cause.UNLOADED_TO_CHUNK);
+        var teleport = new EntityTeleportEvent(entity, from, to, EntityTeleportEvent.Cause.DIMENSION_CHANGE);
+        teleport.setTo(retargeted);
+
+        assertThat(spawn.entity()).isSameAs(entity);
+        assertThat(spawn.cause()).isEqualTo(EntitySpawnEvent.Cause.SPAWNER);
+        assertThat(spawn.cancelled()).isTrue();
+        assertThat(remove.cause()).isEqualTo(EntityRemoveEvent.Cause.UNLOADED_TO_CHUNK);
+        assertThat(teleport.to()).isSameAs(retargeted);
+    }
+
+    @Test
+    void explosionPrimeEventCarriesSourceAndMutableShape() {
+        var entity = proxy(Entity.class);
+        var location = location("minecraft:overworld", 1, 2, 3);
+
+        var event = new ExplosionPrimeEvent(location, Optional.of(entity), 4.0F, true);
+        event.setRadius(-1.0F);
+        event.setFire(false);
+        event.setCancelled(true);
+
+        assertThat(event.location()).isSameAs(location);
+        assertThat(event.source()).contains(entity);
+        assertThat(event.radius()).isZero();
+        assertThat(event.fire()).isFalse();
+        assertThat(event.cancelled()).isTrue();
+    }
+
+    @Test
+    void playerItemAndStateEventsCarryMutableFields() {
+        var player = proxy(Player.class);
+        var stone = stack("minecraft:stone", 1);
+        var diamond = stack("minecraft:diamond", 1);
+
+        var consume = new PlayerItemConsumeEvent(player, stone);
+        consume.setCancelled(true);
+        var damage = new PlayerItemDamageEvent(player, stone, 3);
+        damage.setDamage(5);
+        var swap = new PlayerSwapHandItemsEvent(player, stone, diamond);
+        swap.setMainHandItem(diamond);
+        swap.setOffHandItem(stone);
+        var sneak = new PlayerToggleSneakEvent(player, true);
+        var sprint = new PlayerToggleSprintEvent(player, false);
+
+        assertThat(consume.cancelled()).isTrue();
+        assertThat(damage.damage()).isEqualTo(5);
+        assertThat(swap.mainHandItem()).isSameAs(diamond);
+        assertThat(swap.offHandItem()).isSameAs(stone);
+        assertThat(sneak.sneaking()).isTrue();
+        assertThat(sprint.sprinting()).isFalse();
+    }
+
+    @Test
+    void playerGameModeAndKickEventsAreMutableAndCancellable() {
+        var player = proxy(Player.class);
+        var kick = new PlayerKickEvent(player, net.kyori.adventure.text.Component.text("bye"));
+        kick.setReason(net.kyori.adventure.text.Component.text("later"));
+        kick.setCancelled(true);
+        var gameMode = new PlayerGameModeChangeEvent(player, GameMode.SURVIVAL, GameMode.CREATIVE);
+        gameMode.setToGameMode(GameMode.ADVENTURE);
+
+        assertThat(kick.reason()).isEqualTo(net.kyori.adventure.text.Component.text("later"));
+        assertThat(kick.cancelled()).isTrue();
+        assertThat(gameMode.fromGameMode()).isEqualTo(GameMode.SURVIVAL);
+        assertThat(gameMode.toGameMode()).isEqualTo(GameMode.ADVENTURE);
+    }
+
+    @Test
+    void blockLowLevelEventsCarryBlockTypes() {
+        var block = proxy(Block.class);
+        var oldType = proxy(BlockType.class);
+        var newType = proxy(BlockType.class);
+
+        var change = new BlockChangeEvent(block, oldType, newType, 3);
+        change.setCancelled(true);
+        var physics = new BlockPhysicsEvent(block, oldType);
+
+        assertThat(change.block()).isSameAs(block);
+        assertThat(change.oldType()).isSameAs(oldType);
+        assertThat(change.newType()).isSameAs(newType);
+        assertThat(change.updateFlags()).isEqualTo(3);
+        assertThat(change.cancelled()).isTrue();
+        assertThat(physics.sourceType()).isSameAs(oldType);
+    }
+
+    @Test
     void worldLifecycleEventsCarryWorld() {
         var world = new TestWorld(Key.key("minecraft:overworld"));
 
         assertThat(new WorldLoadEvent(world).world()).isSameAs(world);
         assertThat(new WorldUnloadEvent(world).world()).isSameAs(world);
+        assertThat(new WorldSaveEvent(world).world()).isSameAs(world);
+        assertThat(new ChunkLoadEvent(world, 1, -2).chunkX()).isEqualTo(1);
+        assertThat(new ChunkUnloadEvent(world, 1, -2).chunkZ()).isEqualTo(-2);
+        var weather = new WeatherChangeEvent(world, false, true);
+        var thunder = new ThunderChangeEvent(world, false, true);
+        thunder.setCancelled(true);
+        assertThat(weather.toStorm()).isTrue();
+        assertThat(thunder.toThundering()).isTrue();
+        assertThat(thunder.cancelled()).isTrue();
     }
 
     private static <T> T proxy(Class<T> type) {

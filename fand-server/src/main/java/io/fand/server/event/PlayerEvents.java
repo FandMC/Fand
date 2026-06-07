@@ -1,11 +1,20 @@
 package io.fand.server.event;
 
 import io.fand.api.event.player.PlayerDropItemEvent;
+import io.fand.api.event.player.PlayerGameModeChangeEvent;
+import io.fand.api.event.player.PlayerItemConsumeEvent;
+import io.fand.api.event.player.PlayerItemDamageEvent;
+import io.fand.api.event.player.PlayerKickEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
+import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
+import io.fand.api.event.player.PlayerToggleSneakEvent;
+import io.fand.api.event.player.PlayerToggleSprintEvent;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
+import io.fand.server.command.AdventureBridge;
+import io.fand.server.entity.GameModes;
 import io.fand.server.command.CommandEvents;
 import io.fand.server.entity.FandPlayer;
 import io.fand.server.hooks.FandHooks;
@@ -18,6 +27,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.entity.Relative;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.portal.TeleportTransition;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
@@ -134,6 +144,179 @@ public final class PlayerEvents {
             LOGGER.warn("PlayerPickupItemEvent supplied an invalid item stack", failure);
         }
         return true;
+    }
+
+    public static boolean fireItemConsume(ServerPlayer player, net.minecraft.world.item.ItemStack itemStack) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerItemConsumeEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return true;
+        }
+        var event = new PlayerItemConsumeEvent(fandPlayer, FandItemStacks.fromVanilla(itemStack));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerItemConsumeEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static int fireItemDamage(
+            ServerPlayer player,
+            net.minecraft.world.item.ItemStack itemStack,
+            int damage
+    ) {
+        if (damage <= 0) {
+            return damage;
+        }
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerItemDamageEvent.class)) {
+            return damage;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return damage;
+        }
+        var event = new PlayerItemDamageEvent(fandPlayer, FandItemStacks.fromVanilla(itemStack), damage);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerItemDamageEvent listener failed", failure);
+            return damage;
+        }
+        return event.cancelled() ? 0 : event.damage();
+    }
+
+    public static @Nullable SwapHandItems fireSwapHandItems(
+            ServerPlayer player,
+            net.minecraft.world.item.ItemStack mainHandItem,
+            net.minecraft.world.item.ItemStack offHandItem
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerSwapHandItemsEvent.class)) {
+            return new SwapHandItems(mainHandItem, offHandItem);
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return new SwapHandItems(mainHandItem, offHandItem);
+        }
+        var event = new PlayerSwapHandItemsEvent(
+                fandPlayer,
+                FandItemStacks.fromVanilla(mainHandItem),
+                FandItemStacks.fromVanilla(offHandItem));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerSwapHandItemsEvent listener failed", failure);
+            return new SwapHandItems(mainHandItem, offHandItem);
+        }
+        if (event.cancelled()) {
+            return null;
+        }
+        try {
+            return new SwapHandItems(
+                    FandItemStacks.toVanilla(event.mainHandItem()),
+                    FandItemStacks.toVanilla(event.offHandItem()));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerSwapHandItemsEvent supplied an invalid item stack", failure);
+            return new SwapHandItems(mainHandItem, offHandItem);
+        }
+    }
+
+    public static boolean fireToggleSneak(ServerPlayer player, boolean sneaking) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerToggleSneakEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return true;
+        }
+        var event = new PlayerToggleSneakEvent(fandPlayer, sneaking);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerToggleSneakEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireToggleSprint(ServerPlayer player, boolean sprinting) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerToggleSprintEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return true;
+        }
+        var event = new PlayerToggleSprintEvent(fandPlayer, sprinting);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerToggleSprintEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static @Nullable GameType fireGameModeChange(ServerPlayer player, GameType from, GameType to) {
+        if (from == to) {
+            return to;
+        }
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerGameModeChangeEvent.class)) {
+            return to;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return to;
+        }
+        var event = new PlayerGameModeChangeEvent(fandPlayer, GameModes.toApi(from), GameModes.toApi(to));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerGameModeChangeEvent listener failed", failure);
+            return to;
+        }
+        return event.cancelled() ? null : GameModes.toVanilla(event.toGameMode());
+    }
+
+    public static net.minecraft.network.chat.@Nullable Component fireKick(
+            ServerPlayer player,
+            net.minecraft.network.chat.Component reason
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerKickEvent.class)) {
+            return reason;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return reason;
+        }
+        net.kyori.adventure.text.Component adventureReason;
+        try {
+            adventureReason = AdventureBridge.fromVanilla(reason, player.registryAccess());
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerKickEvent reason conversion failed; using plain text fallback", failure);
+            adventureReason = net.kyori.adventure.text.Component.text(reason.getString());
+        }
+        var event = new PlayerKickEvent(fandPlayer, adventureReason);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerKickEvent listener failed", failure);
+            return reason;
+        }
+        if (event.cancelled()) {
+            return null;
+        }
+        return AdventureBridge.toVanillaOrFallback(event.reason(), reason, player.registryAccess());
     }
 
     public static @Nullable TeleportTransition fireTeleport(ServerPlayer player, TeleportTransition transition) {
@@ -291,5 +474,11 @@ public final class PlayerEvents {
                 && Double.compare(a.z(), b.z()) == 0
                 && Float.compare(a.yaw(), b.yaw()) == 0
                 && Float.compare(a.pitch(), b.pitch()) == 0;
+    }
+
+    public record SwapHandItems(
+            net.minecraft.world.item.ItemStack mainHandItem,
+            net.minecraft.world.item.ItemStack offHandItem
+    ) {
     }
 }

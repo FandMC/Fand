@@ -18,10 +18,20 @@ features:
   mute-next-demo: true
   report-right-clicks: false
   log-inventory-clicks: false
+  log-world-events: true
+  log-chunk-events: false
+  log-block-change-events: false
+  log-block-physics-events: false
+  log-entity-spawns: false
+  log-entity-removes: false
+  log-entity-teleports: false
+  log-player-state-events: false
+  decorate-kick-reason: true
 
 protections:
   block-tnt-placement: true
   cancel-fall-damage: true
+  limit-explosion-radius: true
 
 limits:
   max-give-amount: 2304

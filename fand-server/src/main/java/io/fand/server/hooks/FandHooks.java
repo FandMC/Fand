@@ -2,6 +2,7 @@ package io.fand.server.hooks;
 
 import io.fand.api.event.Event;
 import io.fand.api.event.EventBus;
+import io.fand.api.entity.Entity;
 import io.fand.api.entity.LivingEntity;
 import io.fand.api.performance.ServerPerformance;
 import io.fand.server.FandServer;
@@ -96,6 +97,14 @@ public final class FandHooks {
     public static @Nullable LivingEntity wrapLivingEntity(
             net.minecraft.world.entity.LivingEntity entity
     ) {
+        if (entity instanceof net.minecraft.server.level.ServerPlayer player) {
+            return findPlayer(player.getUUID());
+        }
+        var registry = Main.runtime().entityRegistryOrNull();
+        return registry == null ? null : registry.wrap(entity);
+    }
+
+    public static @Nullable Entity wrapEntity(net.minecraft.world.entity.Entity entity) {
         if (entity instanceof net.minecraft.server.level.ServerPlayer player) {
             return findPlayer(player.getUUID());
         }

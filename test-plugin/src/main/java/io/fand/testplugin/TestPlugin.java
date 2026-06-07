@@ -18,23 +18,41 @@ import io.fand.api.entity.Player;
 import io.fand.api.event.Listener;
 import io.fand.api.event.Subscribe;
 import io.fand.api.event.block.BlockBreakEvent;
+import io.fand.api.event.block.BlockChangeEvent;
+import io.fand.api.event.block.BlockPhysicsEvent;
 import io.fand.api.event.block.BlockPlaceEvent;
 import io.fand.api.event.command.CommandExecuteEvent;
 import io.fand.api.event.entity.EntityDamageEvent;
 import io.fand.api.event.entity.EntityDeathEvent;
+import io.fand.api.event.entity.EntityRemoveEvent;
+import io.fand.api.event.entity.EntitySpawnEvent;
+import io.fand.api.event.entity.EntityTeleportEvent;
+import io.fand.api.event.entity.ExplosionPrimeEvent;
 import io.fand.api.event.inventory.InventoryClickEvent;
 import io.fand.api.event.inventory.InventoryCloseEvent;
 import io.fand.api.event.inventory.InventoryOpenEvent;
 import io.fand.api.event.player.PlayerChatEvent;
 import io.fand.api.event.player.PlayerCommandPreprocessEvent;
 import io.fand.api.event.player.PlayerDropItemEvent;
+import io.fand.api.event.player.PlayerGameModeChangeEvent;
 import io.fand.api.event.player.PlayerInteractEvent;
+import io.fand.api.event.player.PlayerItemConsumeEvent;
+import io.fand.api.event.player.PlayerItemDamageEvent;
+import io.fand.api.event.player.PlayerKickEvent;
 import io.fand.api.event.player.PlayerJoinEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
 import io.fand.api.event.player.PlayerQuitEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
+import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
+import io.fand.api.event.player.PlayerToggleSneakEvent;
+import io.fand.api.event.player.PlayerToggleSprintEvent;
+import io.fand.api.event.world.ChunkLoadEvent;
+import io.fand.api.event.world.ChunkUnloadEvent;
+import io.fand.api.event.world.ThunderChangeEvent;
+import io.fand.api.event.world.WeatherChangeEvent;
 import io.fand.api.event.world.WorldLoadEvent;
+import io.fand.api.event.world.WorldSaveEvent;
 import io.fand.api.event.world.WorldUnloadEvent;
 import io.fand.api.inventory.Inventory;
 import io.fand.api.inventory.InventoryType;
@@ -238,6 +256,35 @@ public final class TestPlugin implements Plugin {
                 context.logger().info("World loaded: {}", event.world().key().asString()));
         context.events().subscribe(WorldUnloadEvent.class, event ->
                 context.logger().info("World unloading: {}", event.world().key().asString()));
+        context.events().subscribe(WorldSaveEvent.class, event -> {
+            if (context.config().getBoolean("features.log-world-events", true)) {
+                context.logger().info("World saving: {}", event.world().key().asString());
+            }
+        });
+        context.events().subscribe(WeatherChangeEvent.class, event -> {
+            if (context.config().getBoolean("features.log-world-events", true)) {
+                context.logger().info("Weather changed in {}: storm {} -> {}",
+                        event.world().key().asString(), event.fromStorm(), event.toStorm());
+            }
+        });
+        context.events().subscribe(ThunderChangeEvent.class, event -> {
+            if (context.config().getBoolean("features.log-world-events", true)) {
+                context.logger().info("Thunder changed in {}: thunder {} -> {}",
+                        event.world().key().asString(), event.fromThundering(), event.toThundering());
+            }
+        });
+        context.events().subscribe(ChunkLoadEvent.class, event -> {
+            if (context.config().getBoolean("features.log-chunk-events", false)) {
+                context.logger().info("Chunk loaded: {} [{},{}]",
+                        event.world().key().asString(), event.chunkX(), event.chunkZ());
+            }
+        });
+        context.events().subscribe(ChunkUnloadEvent.class, event -> {
+            if (context.config().getBoolean("features.log-chunk-events", false)) {
+                context.logger().info("Chunk unloaded: {} [{},{}]",
+                        event.world().key().asString(), event.chunkX(), event.chunkZ());
+            }
+        });
         context.events().subscribe(PlayerJoinEvent.class, event -> {
             context.logger().info("{} joined ({} online players)", event.player().name(), Fand.server().onlinePlayers());
             var welcome = message(context.config(), "messages.welcome", "Welcome from test-plugin, {player}!");
@@ -1623,6 +1670,44 @@ public final class TestPlugin implements Plugin {
         }
 
         @Subscribe
+        public void onItemConsume(PlayerItemConsumeEvent event) {
+            if (event.item().customData()
+                    .map(data -> data.has("demo_role") && data.get("demo_role").getAsString().equals("fand_kit_snack"))
+                    .orElse(false)) {
+                event.player().sendActionBar(Component.text("Snack consume event observed.", NamedTextColor.GOLD));
+            }
+        }
+
+        @Subscribe
+        public void onItemDamage(PlayerItemDamageEvent event) {
+            if (context.config().getBoolean("features.log-item-events", false)) {
+                logger.info("{} item damage {} +{}", event.player().name(), stackName(event.item()), event.damage());
+            }
+        }
+
+        @Subscribe
+        public void onSwapHandItems(PlayerSwapHandItemsEvent event) {
+            if (isKitNavigator(event.offHandItem())) {
+                event.setCancelled(true);
+                event.player().sendMessage(Component.text("The kit navigator cannot be moved to off-hand.", NamedTextColor.YELLOW));
+            }
+        }
+
+        @Subscribe
+        public void onToggleSneak(PlayerToggleSneakEvent event) {
+            if (context.config().getBoolean("features.log-player-state-events", false)) {
+                logger.info("{} sneaking={}", event.player().name(), event.sneaking());
+            }
+        }
+
+        @Subscribe
+        public void onToggleSprint(PlayerToggleSprintEvent event) {
+            if (context.config().getBoolean("features.log-player-state-events", false)) {
+                logger.info("{} sprinting={}", event.player().name(), event.sprinting());
+            }
+        }
+
+        @Subscribe
         public void onTeleport(PlayerTeleportEvent event) {
             if (context.config().getBoolean("protections.block-low-teleport", true)
                     && event.to().y() < -64.0) {
@@ -1646,6 +1731,51 @@ public final class TestPlugin implements Plugin {
         public void onEntityDeath(EntityDeathEvent event) {
             if (context.config().getBoolean("features.log-entity-deaths", false)) {
                 logger.info("{} died from {}", event.entity().type().asString(), event.cause());
+            }
+        }
+
+        @Subscribe
+        public void onEntitySpawn(EntitySpawnEvent event) {
+            if (context.config().getBoolean("features.log-entity-spawns", false)) {
+                logger.info("Entity spawned: {} cause={} at {}",
+                        event.entity().type().asString(), event.cause(), compactLocation(event.entity().location()));
+            }
+        }
+
+        @Subscribe
+        public void onEntityRemove(EntityRemoveEvent event) {
+            if (context.config().getBoolean("features.log-entity-removes", false)) {
+                logger.info("Entity removed: {} cause={}", event.entity().type().asString(), event.cause());
+            }
+        }
+
+        @Subscribe
+        public void onEntityTeleport(EntityTeleportEvent event) {
+            if (context.config().getBoolean("features.log-entity-teleports", false)) {
+                logger.info("Entity teleport: {} {} -> {}",
+                        event.entity().type().asString(), compactLocation(event.from()), compactLocation(event.to()));
+            }
+        }
+
+        @Subscribe
+        public void onExplosionPrime(ExplosionPrimeEvent event) {
+            if (context.config().getBoolean("protections.limit-explosion-radius", true) && event.radius() > 8.0F) {
+                event.setRadius(8.0F);
+                logger.info("Limited explosion at {} to radius {}", compactLocation(event.location()), event.radius());
+            }
+        }
+
+        @Subscribe
+        public void onGameModeChange(PlayerGameModeChangeEvent event) {
+            if (context.config().getBoolean("features.log-player-state-events", false)) {
+                logger.info("{} game mode {} -> {}", event.player().name(), event.fromGameMode(), event.toGameMode());
+            }
+        }
+
+        @Subscribe
+        public void onKick(PlayerKickEvent event) {
+            if (context.config().getBoolean("features.decorate-kick-reason", true)) {
+                event.setReason(event.reason().append(Component.text(" (via Fand event)", NamedTextColor.GRAY)));
             }
         }
 
@@ -1686,6 +1816,26 @@ public final class TestPlugin implements Plugin {
                     && blockName(event.placedType()).equals("minecraft:tnt")) {
                 event.setCancelled(true);
                 event.player().sendMessage(Component.text("test-plugin cancelled TNT placement.", NamedTextColor.RED));
+            }
+        }
+
+        @Subscribe
+        public void onBlockChange(BlockChangeEvent event) {
+            if (context.config().getBoolean("features.log-block-change-events", false)) {
+                logger.info("Block changed: {} {},{},{} {} -> {}",
+                        event.block().world().key().asString(),
+                        event.block().x(), event.block().y(), event.block().z(),
+                        blockName(event.oldType()), blockName(event.newType()));
+            }
+        }
+
+        @Subscribe
+        public void onBlockPhysics(BlockPhysicsEvent event) {
+            if (context.config().getBoolean("features.log-block-physics-events", false)) {
+                logger.info("Block physics: {} {},{},{} source={}",
+                        event.block().world().key().asString(),
+                        event.block().x(), event.block().y(), event.block().z(),
+                        blockName(event.sourceType()));
             }
         }
 
