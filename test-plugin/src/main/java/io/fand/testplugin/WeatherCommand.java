@@ -1,23 +1,18 @@
 package io.fand.testplugin;
 
+import io.fand.api.command.CommandCompleter;
 import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
 import io.fand.api.command.CommandSpec;
 import io.fand.api.entity.Player;
-import io.fand.api.plugin.PluginContext;
-import io.fand.api.world.Particles;
 import java.util.List;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
 @CommandSpec(label = "fandweather", permission = "fand.testplugin.weather")
-final class WeatherCommand implements CommandExecutor {
+final class WeatherCommand implements CommandExecutor, CommandCompleter {
 
-    private final PluginContext context;
-
-    WeatherCommand(PluginContext context) {
-        this.context = context;
-    }
+    private static final List<String> WEATHER_SUGGESTIONS = List.of("clear", "rain", "thunder");
 
     @Override
     public void execute(CommandSender sender, String label, List<String> args) {
@@ -49,5 +44,16 @@ final class WeatherCommand implements CommandExecutor {
             }
             default -> sender.sendMessage(Component.text("Unknown weather: " + weatherType, NamedTextColor.RED));
         }
+    }
+
+    @Override
+    public List<String> complete(CommandSender sender, String label, List<String> args) {
+        if (args.size() > 1) {
+            return List.of();
+        }
+        var prefix = args.isEmpty() ? "" : args.get(0).toLowerCase();
+        return WEATHER_SUGGESTIONS.stream()
+                .filter(option -> option.startsWith(prefix))
+                .toList();
     }
 }

@@ -2,6 +2,7 @@ package io.fand.api.world;
 
 import io.fand.api.entity.Entity;
 import io.fand.api.entity.Player;
+import java.time.Duration;
 import java.util.Collection;
 import net.kyori.adventure.audience.ForwardingAudience;
 import net.kyori.adventure.key.Key;
@@ -72,25 +73,30 @@ public interface World extends ForwardingAudience, ParticleEmitter {
     void playSound(SoundPlayback playback);
 
     /**
-     * Current world time in ticks (0-23999 for a full day/night cycle). The
-     * time wraps after 24000, but this method returns the raw value which may
-     * exceed that if the world has existed for multiple days.
+     * Current default clock time in ticks. For vanilla overworld-like dimensions
+     * this is the day/night clock used by {@code /time set}, where 0-23999 is a
+     * full cycle; the raw value may exceed 23999 after multiple days. Dimensions
+     * without a default clock return {@code 0}.
      */
     long time();
 
     /**
-     * Sets the world time. Marshals to the main thread when called off-thread.
+     * Sets the default clock time. Marshals to the main thread when called
+     * off-thread. No-ops for dimensions without a default clock. Negative times
+     * are rejected.
      */
     void setTime(long time);
 
     /**
-     * Whether the day/night cycle is enabled. When {@code false}, time does
-     * not advance naturally.
+     * Whether the server-wide day/night cycle gamerule is enabled. When
+     * {@code false}, world clocks do not advance naturally. Minecraft 26.1.2
+     * stores this as a global gamerule even though it is exposed here for
+     * convenience from a world handle.
      */
     boolean dayNightCycleEnabled();
 
     /**
-     * Sets whether the day/night cycle advances. Marshals to the main thread.
+     * Sets the server-wide day/night cycle gamerule. Marshals to the main thread.
      */
     void setDayNightCycleEnabled(boolean enabled);
 
@@ -100,9 +106,22 @@ public interface World extends ForwardingAudience, ParticleEmitter {
     boolean storming();
 
     /**
-     * Sets whether it is raining or snowing. Marshals to the main thread.
+     * Sets whether it is raining or snowing using the server default weather
+     * duration. Marshals to the main thread.
      */
     void setStorming(boolean storming);
+
+    /**
+     * Sets whether it is raining or snowing for {@code duration}. Marshals to
+     * the main thread. Negative durations are rejected.
+     */
+    void setStorming(boolean storming, Duration duration);
+
+    /**
+     * Sets whether it is raining or snowing for {@code ticks}. Marshals to the
+     * main thread. Negative durations are rejected.
+     */
+    void setStorming(boolean storming, int ticks);
 
     /**
      * Whether thunder is currently active. Only meaningful when
@@ -112,7 +131,20 @@ public interface World extends ForwardingAudience, ParticleEmitter {
 
     /**
      * Sets whether thunder is active. Marshals to the main thread. Has no
-     * visible effect unless {@link #storming()} is also {@code true}.
+     * visible effect unless {@link #storming()} is also {@code true}. Uses the
+     * server default weather duration.
      */
     void setThundering(boolean thundering);
+
+    /**
+     * Sets whether thunder is active for {@code duration}. Marshals to the main
+     * thread. Negative durations are rejected.
+     */
+    void setThundering(boolean thundering, Duration duration);
+
+    /**
+     * Sets whether thunder is active for {@code ticks}. Marshals to the main
+     * thread. Negative durations are rejected.
+     */
+    void setThundering(boolean thundering, int ticks);
 }

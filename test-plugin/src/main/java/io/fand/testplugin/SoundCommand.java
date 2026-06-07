@@ -1,5 +1,6 @@
 package io.fand.testplugin;
 
+import io.fand.api.command.CommandCompleter;
 import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
 import io.fand.api.command.CommandSpec;
@@ -12,7 +13,30 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
 @CommandSpec(label = "fandsound", permission = "fand.testplugin.sound")
-final class SoundCommand implements CommandExecutor {
+final class SoundCommand implements CommandExecutor, CommandCompleter {
+
+    private static final List<String> SOUND_ALIASES = List.of(
+            "levelup",
+            "xp",
+            "orb",
+            "pling",
+            "anvil",
+            "villager_yes",
+            "villager_no",
+            "teleport",
+            "explode",
+            "chest_open",
+            "chest_close",
+            "totem",
+            "click",
+            "hurt",
+            "death",
+            "minecraft:block.note_block.pling"
+    );
+
+    private static final List<String> VOLUME_SUGGESTIONS = List.of("1", "2", "4");
+    private static final List<String> PITCH_SUGGESTIONS = List.of("0.5", "1", "1.5", "2");
+    private static final List<String> MIN_VOLUME_SUGGESTIONS = List.of("0", "0.25", "1");
 
     @Override
     public void execute(CommandSender sender, String label, List<String> args) {
@@ -38,8 +62,8 @@ final class SoundCommand implements CommandExecutor {
         if (Float.isNaN(minVolume)) {
             return;
         }
-        long seed = parseLong(sender, args, 4, 0L);
-        if (seed == Long.MIN_VALUE) {
+        Long seed = parseLong(sender, args, 4);
+        if (args.size() > 4 && seed == null) {
             return;
         }
         var sound = resolveSound(soundType);
@@ -53,14 +77,28 @@ final class SoundCommand implements CommandExecutor {
                 .category(Sound.Category.MASTER)
                 .volume(volume)
                 .pitch(pitch)
-                .minVolume(minVolume)
-                .seed(seed);
+                .minVolume(minVolume);
+        if (seed != null) {
+            playback = playback.seed(seed);
+        }
         player.world().playSound(playback);
+        var seedDescription = seed == null ? "random" : seed.toString();
         player.sendMessage(Component.text(
                 "Played " + sound.key().asString()
                         + " at " + String.format("%.1f %.1f %.1f", loc.x(), loc.y(), loc.z())
-                        + " (volume=" + volume + ", pitch=" + pitch + ", minVolume=" + minVolume + ", seed=" + seed + ")",
+                        + " (volume=" + volume + ", pitch=" + pitch + ", minVolume=" + minVolume + ", seed=" + seedDescription + ")",
                 NamedTextColor.GREEN));
+    }
+
+    @Override
+    public List<String> complete(CommandSender sender, String label, List<String> args) {
+        return switch (args.size()) {
+            case 0, 1 -> matching(SOUND_ALIASES, args.isEmpty() ? "" : args.get(0));
+            case 2 -> matching(VOLUME_SUGGESTIONS, args.get(1));
+            case 3 -> matching(PITCH_SUGGESTIONS, args.get(2));
+            case 4 -> matching(MIN_VOLUME_SUGGESTIONS, args.get(3));
+            default -> List.of();
+        };
     }
 
     private Sound resolveSound(String soundType) {
@@ -80,7 +118,7 @@ final class SoundCommand implements CommandExecutor {
                 case "click" -> Sounds.UI_BUTTON_CLICK;
                 case "hurt" -> Sounds.ENTITY_PLAYER_HURT;
                 case "death" -> Sounds.ENTITY_PLAYER_DEATH;
-                default -> soundType.contains(":") ? Sounds.sound(soundType) : null;
+                default -> soundType.contains(":") ? Sounds.key(soundType) : null;
             };
         } catch (InvalidKeyException ex) {
             return null;
@@ -94,7 +132,7 @@ final class SoundCommand implements CommandExecutor {
         }
         try {
             float value = Float.parseFloat(args.get(index));
-            if (value < min || value > max) {
+            if (!Float.isFinite(value) || value < min || value > max) {
                 sender.sendMessage(Component.text(label + " must be " + min + "-" + max, NamedTextColor.RED));
                 return Float.NaN;
             }
@@ -105,15 +143,22 @@ final class SoundCommand implements CommandExecutor {
         }
     }
 
-    private long parseLong(CommandSender sender, List<String> args, int index, long fallback) {
+    private Long parseLong(CommandSender sender, List<String> args, int index) {
         if (args.size() <= index) {
-            return fallback;
+            return null;
         }
         try {
             return Long.parseLong(args.get(index));
         } catch (NumberFormatException ex) {
             sender.sendMessage(Component.text("Seed must be an integer", NamedTextColor.RED));
-            return Long.MIN_VALUE;
+            return null;
         }
+    }
+
+    private List<String> matching(List<String> options, String prefix) {
+        var lowerPrefix = prefix.toLowerCase();
+        return options.stream()
+                .filter(option -> option.startsWith(lowerPrefix))
+                .toList();
     }
 }

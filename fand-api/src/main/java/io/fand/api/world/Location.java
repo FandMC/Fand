@@ -11,6 +11,11 @@ public record Location(World world, double x, double y, double z, float yaw, flo
 
     public Location {
         Objects.requireNonNull(world, "world");
+        requireFinite(x, "x");
+        requireFinite(y, "y");
+        requireFinite(z, "z");
+        requireFinite(yaw, "yaw");
+        requireFinite(pitch, "pitch");
     }
 
     public Location withCoordinates(double x, double y, double z) {
@@ -35,5 +40,17 @@ public record Location(World world, double x, double y, double z, float yaw, flo
 
     public int blockZ() {
         return (int) Math.floor(z);
+    }
+
+    private static void requireFinite(double value, String name) {
+        if (!Double.isFinite(value)) {
+            throw new IllegalArgumentException(name + " must be finite, got " + value);
+        }
+    }
+
+    private static void requireFinite(float value, String name) {
+        if (!Float.isFinite(value)) {
+            throw new IllegalArgumentException(name + " must be finite, got " + value);
+        }
     }
 }

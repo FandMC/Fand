@@ -32,8 +32,8 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new GiveCommand(context));
         context.commands().register(new ParticleCommand());
         context.commands().register(new SoundCommand());
-        context.commands().register(new TimeCommand(context));
-        context.commands().register(new WeatherCommand(context));
+        context.commands().register(new TimeCommand());
+        context.commands().register(new WeatherCommand());
         context.commands().register(new EffectCommand(context));
         context.events().subscribe(ServerStartedEvent.class, event ->
                 context.logger().info("Server started; Fand brand={} version={}",

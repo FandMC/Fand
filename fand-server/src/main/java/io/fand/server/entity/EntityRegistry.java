@@ -2,6 +2,7 @@ package io.fand.server.entity;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import io.fand.api.entity.Entity;
 import io.fand.server.world.WorldRegistry;
 import java.time.Duration;
 import java.util.UUID;
@@ -19,22 +20,47 @@ import net.minecraft.world.entity.LivingEntity;
 public final class EntityRegistry {
 
     private final WorldRegistry worldRegistry;
-    private final Cache<UUID, FandLivingEntity> wrappers = Caffeine.newBuilder()
+    private final PlayerRegistry players;
+    private final Cache<UUID, FandEntity> entityWrappers = Caffeine.newBuilder()
+            .expireAfterAccess(Duration.ofMinutes(5))
+            .maximumSize(8192)
+            .build();
+    private final Cache<UUID, FandLivingEntity> livingWrappers = Caffeine.newBuilder()
             .expireAfterAccess(Duration.ofMinutes(5))
             .maximumSize(8192)
             .build();
 
-    public EntityRegistry(WorldRegistry worldRegistry) {
+    public EntityRegistry(WorldRegistry worldRegistry, PlayerRegistry players) {
         this.worldRegistry = worldRegistry;
+        this.players = players;
+    }
+
+    public Entity wrap(net.minecraft.world.entity.Entity handle) {
+        if (handle instanceof net.minecraft.server.level.ServerPlayer player) {
+            var wrapped = players.findOrNull(player.getUUID());
+            if (wrapped != null) {
+                return wrapped;
+            }
+        }
+        if (handle instanceof LivingEntity living) {
+            return wrap(living);
+        }
+        var existing = entityWrappers.getIfPresent(handle.getUUID());
+        if (existing != null && existing.handle() == handle) {
+            return existing;
+        }
+        var fresh = new FandEntity(handle, worldRegistry);
+        entityWrappers.put(handle.getUUID(), fresh);
+        return fresh;
     }
 
     public FandLivingEntity wrap(LivingEntity handle) {
-        var existing = wrappers.getIfPresent(handle.getUUID());
+        var existing = livingWrappers.getIfPresent(handle.getUUID());
         if (existing != null && existing.handle() == handle) {
             return existing;
         }
         var fresh = new FandLivingEntity(handle, worldRegistry);
-        wrappers.put(handle.getUUID(), fresh);
+        livingWrappers.put(handle.getUUID(), fresh);
         return fresh;
     }
 }

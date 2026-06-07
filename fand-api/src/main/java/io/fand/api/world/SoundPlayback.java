@@ -1,6 +1,7 @@
 package io.fand.api.world;
 
 import java.util.Objects;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Complete parameters for playing a positional sound.
@@ -9,8 +10,8 @@ import java.util.Objects;
  * playback speed. {@code minVolume} mirrors Minecraft's {@code /playsound}
  * fallback volume: when playing directly to a player outside normal range, a
  * positive value keeps the sound audible by shifting the apparent source near
- * that player. {@code seed} controls deterministic client-side sound variant
- * selection.
+ * that player. {@code seed} controls client-side sound variant selection;
+ * factory methods choose a random seed by default to match vanilla playback.
  */
 public record SoundPlayback(
         Sound sound,
@@ -27,6 +28,12 @@ public record SoundPlayback(
     public SoundPlayback {
         Objects.requireNonNull(sound, "sound");
         Objects.requireNonNull(category, "category");
+        requireFinite(x, "x");
+        requireFinite(y, "y");
+        requireFinite(z, "z");
+        requireFinite(volume, "volume");
+        requireFinite(pitch, "pitch");
+        requireFinite(minVolume, "minVolume");
         if (volume < 0.0F) {
             throw new IllegalArgumentException("volume must be >= 0, got " + volume);
         }
@@ -44,7 +51,7 @@ public record SoundPlayback(
     }
 
     public static SoundPlayback of(Sound sound, double x, double y, double z) {
-        return new SoundPlayback(sound, Sound.Category.MASTER, x, y, z, 1.0F, 1.0F, 0.0F, 0L);
+        return new SoundPlayback(sound, Sound.Category.MASTER, x, y, z, 1.0F, 1.0F, 0.0F, ThreadLocalRandom.current().nextLong());
     }
 
     public SoundPlayback category(Sound.Category category) {
@@ -65,5 +72,22 @@ public record SoundPlayback(
 
     public SoundPlayback seed(long seed) {
         return new SoundPlayback(sound, category, x, y, z, volume, pitch, minVolume, seed);
+    }
+
+    /** Returns a copy with a fresh random seed for client-side variant selection. */
+    public SoundPlayback randomSeed() {
+        return seed(ThreadLocalRandom.current().nextLong());
+    }
+
+    private static void requireFinite(double value, String name) {
+        if (!Double.isFinite(value)) {
+            throw new IllegalArgumentException(name + " must be finite, got " + value);
+        }
+    }
+
+    private static void requireFinite(float value, String name) {
+        if (!Float.isFinite(value)) {
+            throw new IllegalArgumentException(name + " must be finite, got " + value);
+        }
     }
 }

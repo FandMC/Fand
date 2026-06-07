@@ -3,15 +3,19 @@ package io.fand.server.world;
 import io.fand.api.world.Particle;
 import io.fand.api.world.ParticlePlayback;
 import com.mojang.brigadier.StringReader;
+import java.util.Optional;
 import net.minecraft.commands.arguments.ParticleArgument;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.particles.ParticleOptions;
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class ParticleEffects {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ParticleEffects.class);
 
     private ParticleEffects() {}
 
@@ -35,8 +39,11 @@ public final class ParticleEffects {
         }
         Runnable run = () -> {
             var vanillaParticle = resolveParticle(playback.particle(), level.registryAccess());
+            if (vanillaParticle.isEmpty()) {
+                return;
+            }
             level.sendParticles(
-                    vanillaParticle,
+                    vanillaParticle.get(),
                     playback.force(),
                     playback.force(),
                     playback.x(), playback.y(), playback.z(),
@@ -57,8 +64,11 @@ public final class ParticleEffects {
             return;
         }
         var vanillaParticle = resolveParticle(playback.particle(), player.registryAccess());
+        if (vanillaParticle.isEmpty()) {
+            return;
+        }
         player.connection.send(new ClientboundLevelParticlesPacket(
-                vanillaParticle,
+                vanillaParticle.get(),
                 playback.force(),
                 playback.force(),
                 playback.x(), playback.y(), playback.z(),
@@ -68,11 +78,12 @@ public final class ParticleEffects {
         ));
     }
 
-    private static ParticleOptions resolveParticle(Particle particle, HolderLookup.Provider registries) {
+    private static Optional<ParticleOptions> resolveParticle(Particle particle, HolderLookup.Provider registries) {
         try {
-            return ParticleArgument.readParticle(new StringReader(particle.argument()), registries);
-        } catch (Exception ignored) {
+            return Optional.of(ParticleArgument.readParticle(new StringReader(particle.argument()), registries));
+        } catch (Exception failure) {
+            LOGGER.warn("Invalid particle argument '{}'; particle playback skipped", particle.argument(), failure);
+            return Optional.empty();
         }
-        return ParticleTypes.POOF;
     }
 }

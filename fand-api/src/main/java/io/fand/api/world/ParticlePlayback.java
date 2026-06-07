@@ -25,6 +25,13 @@ public record ParticlePlayback(
 
     public ParticlePlayback {
         Objects.requireNonNull(particle, "particle");
+        requireFinite(x, "x");
+        requireFinite(y, "y");
+        requireFinite(z, "z");
+        requireFinite(offsetX, "offsetX");
+        requireFinite(offsetY, "offsetY");
+        requireFinite(offsetZ, "offsetZ");
+        requireFinite(speed, "speed");
         if (count < 0) {
             throw new IllegalArgumentException("count must be >= 0, got " + count);
         }
@@ -57,5 +64,11 @@ public record ParticlePlayback(
 
     public ParticlePlayback move(double dx, double dy, double dz) {
         return new ParticlePlayback(particle, x + dx, y + dy, z + dz, count, offsetX, offsetY, offsetZ, speed, force);
+    }
+
+    private static void requireFinite(double value, String name) {
+        if (!Double.isFinite(value)) {
+            throw new IllegalArgumentException(name + " must be finite, got " + value);
+        }
     }
 }

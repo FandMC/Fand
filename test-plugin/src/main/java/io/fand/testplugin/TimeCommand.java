@@ -1,22 +1,18 @@
 package io.fand.testplugin;
 
+import io.fand.api.command.CommandCompleter;
 import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
 import io.fand.api.command.CommandSpec;
 import io.fand.api.entity.Player;
-import io.fand.api.plugin.PluginContext;
 import java.util.List;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
 @CommandSpec(label = "fandtime", permission = "fand.testplugin.time")
-final class TimeCommand implements CommandExecutor {
+final class TimeCommand implements CommandExecutor, CommandCompleter {
 
-    private final PluginContext context;
-
-    TimeCommand(PluginContext context) {
-        this.context = context;
-    }
+    private static final List<String> TIME_SUGGESTIONS = List.of("day", "noon", "night", "midnight");
 
     @Override
     public void execute(CommandSender sender, String label, List<String> args) {
@@ -53,6 +49,10 @@ final class TimeCommand implements CommandExecutor {
             default -> {
                 try {
                     long time = Long.parseLong(timeType);
+                    if (time < 0L) {
+                        sender.sendMessage(Component.text("Time must be >= 0", NamedTextColor.RED));
+                        return;
+                    }
                     world.setTime(time);
                     sender.sendMessage(Component.text("Time set to " + time, NamedTextColor.GREEN));
                 } catch (NumberFormatException ex) {
@@ -60,5 +60,16 @@ final class TimeCommand implements CommandExecutor {
                 }
             }
         }
+    }
+
+    @Override
+    public List<String> complete(CommandSender sender, String label, List<String> args) {
+        if (args.size() > 1) {
+            return List.of();
+        }
+        var prefix = args.isEmpty() ? "" : args.get(0).toLowerCase();
+        return TIME_SUGGESTIONS.stream()
+                .filter(option -> option.startsWith(prefix))
+                .toList();
     }
 }

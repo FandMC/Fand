@@ -9,6 +9,7 @@ import io.fand.api.world.World;
 import io.fand.server.block.FandBlock;
 import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.hooks.FandHooks;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -18,6 +19,8 @@ import net.minecraft.server.level.ServerLevel;
 import org.jspecify.annotations.Nullable;
 
 public final class FandWorld implements World {
+
+    private static final int DEFAULT_WEATHER_TICKS = 6000;
 
     private final ServerLevel handle;
     private final Key key;
@@ -70,9 +73,7 @@ public final class FandWorld implements World {
         }
         var snapshot = new ArrayList<Entity>();
         for (var entity : handle.getAllEntities()) {
-            if (entity instanceof net.minecraft.world.entity.LivingEntity living) {
-                snapshot.add(registry.get().wrap(living));
-            }
+            snapshot.add(registry.get().wrap(entity));
         }
         return List.copyOf(snapshot);
     }
@@ -99,20 +100,24 @@ public final class FandWorld implements World {
 
     @Override
     public long time() {
-        return handle.getLevelData().getGameTime();
+        return handle.dimensionType()
+                .defaultClock()
+                .map(clock -> handle.clockManager().getTotalTicks(clock))
+                .orElse(0L);
     }
 
     @Override
     public void setTime(long time) {
+        if (time < 0L) {
+            throw new IllegalArgumentException("time must be >= 0, got " + time);
+        }
         var server = handle.getServer();
         if (server == null) {
             return;
         }
-        Runnable run = () -> {
-            if (handle.getLevelData() instanceof net.minecraft.world.level.storage.ServerLevelData serverData) {
-                serverData.setGameTime(time);
-            }
-        };
+        Runnable run = () -> handle.dimensionType()
+                .defaultClock()
+                .ifPresent(clock -> server.clockManager().setTotalTicks(clock, time));
         if (server.isSameThread()) {
             run.run();
         } else {
@@ -146,13 +151,25 @@ public final class FandWorld implements World {
 
     @Override
     public void setStorming(boolean storming) {
+        setStorming(storming, DEFAULT_WEATHER_TICKS);
+    }
+
+    @Override
+    public void setStorming(boolean storming, Duration duration) {
+        setStorming(storming, durationToTicks(duration));
+    }
+
+    @Override
+    public void setStorming(boolean storming, int ticks) {
+        requireNonNegativeTicks(ticks, "ticks");
         var server = handle.getServer();
         if (server == null) {
             return;
         }
         Runnable run = () -> {
             var weatherData = handle.getWeatherData();
-            weatherData.setRainTime(storming ? 6000 : 0);
+            weatherData.setClearWeatherTime(storming ? 0 : ticks);
+            weatherData.setRainTime(ticks);
             weatherData.setRaining(storming);
         };
         if (server.isSameThread()) {
@@ -169,16 +186,28 @@ public final class FandWorld implements World {
 
     @Override
     public void setThundering(boolean thundering) {
+        setThundering(thundering, DEFAULT_WEATHER_TICKS);
+    }
+
+    @Override
+    public void setThundering(boolean thundering, Duration duration) {
+        setThundering(thundering, durationToTicks(duration));
+    }
+
+    @Override
+    public void setThundering(boolean thundering, int ticks) {
+        requireNonNegativeTicks(ticks, "ticks");
         var server = handle.getServer();
         if (server == null) {
             return;
         }
         Runnable run = () -> {
             var weatherData = handle.getWeatherData();
-            weatherData.setThunderTime(thundering ? 6000 : 0);
+            weatherData.setThunderTime(ticks);
             weatherData.setThundering(thundering);
             if (thundering && !handle.isRaining()) {
-                weatherData.setRainTime(6000);
+                weatherData.setClearWeatherTime(0);
+                weatherData.setRainTime(ticks);
                 weatherData.setRaining(true);
             }
         };
@@ -186,6 +215,20 @@ public final class FandWorld implements World {
             run.run();
         } else {
             server.executeIfPossible(run);
+        }
+    }
+
+    private static int durationToTicks(Duration duration) {
+        java.util.Objects.requireNonNull(duration, "duration");
+        if (duration.isNegative()) {
+            throw new IllegalArgumentException("duration must be non-negative, got " + duration);
+        }
+        return Math.toIntExact(Math.min(Integer.MAX_VALUE, duration.toMillis() / 50L));
+    }
+
+    private static void requireNonNegativeTicks(int ticks, String name) {
+        if (ticks < 0) {
+            throw new IllegalArgumentException(name + " must be >= 0, got " + ticks);
         }
     }
 
