@@ -33,9 +33,15 @@ import io.fand.api.item.ItemType;
 import io.fand.api.item.ItemTypes;
 import io.fand.api.item.component.CustomModelData;
 import io.fand.api.item.component.EnchantmentKeys;
+import io.fand.api.item.component.ItemConsumable;
 import io.fand.api.item.component.ItemComponentKeys;
+import io.fand.api.item.component.ItemFood;
 import io.fand.api.item.component.ItemRarity;
+import io.fand.api.item.component.ItemUseCooldown;
+import io.fand.api.item.component.ItemWrittenBookContent;
 import io.fand.api.lifecycle.ServerStartedEvent;
+import io.fand.api.performance.MetricStatistics;
+import io.fand.api.performance.TickAverages;
 import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
 import io.fand.api.plugin.Plugin;
@@ -90,6 +96,8 @@ public final class TestPlugin implements Plugin {
     private static final List<String> PERMISSIONS = List.of(
             "fand.testplugin.use",
             "fand.testplugin.demo",
+            "fand.testplugin.kit",
+            "fand.testplugin.performance",
             "fand.testplugin.tp",
             "fand.testplugin.setblock",
             "fand.testplugin.give",
@@ -117,6 +125,8 @@ public final class TestPlugin implements Plugin {
         registerPermissions(context);
         context.commands().register(new HelloCommand(context));
         context.commands().register(new DemoCommand(context));
+        context.commands().register(new KitCommand(context, demoGuiViewers));
+        context.commands().register(new PerformanceCommand());
         context.commands().register(new TeleportCommand(context));
         context.commands().register(new SetBlockCommand(context));
         context.commands().register(new GiveCommand(context));
@@ -210,6 +220,66 @@ public final class TestPlugin implements Plugin {
                         + ", hotbar=" + player.inventory().selectedSlot()
                         + ", openInventory=" + player.openInventory().map(inv -> inv.type().name()).orElse("none"), NamedTextColor.AQUA));
             }
+        }
+    }
+
+    @CommandSpec(label = "fandkit", arguments = {"player"}, aliases = {"fkit"}, permission = "fand.testplugin.kit")
+    static final class KitCommand implements CommandExecutor, CommandCompleter {
+
+        private final PluginContext context;
+        private final Set<UUID> demoGuiViewers;
+
+        KitCommand(PluginContext context, Set<UUID> demoGuiViewers) {
+            this.context = context;
+            this.demoGuiViewers = demoGuiViewers;
+        }
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            if (args.size() > 1) {
+                sender.sendMessage(Component.text("Usage: /fandkit [player]", NamedTextColor.RED));
+                return;
+            }
+            Player target = args.isEmpty() ? sender instanceof Player player ? player : null : player(sender, args.getFirst());
+            if (target == null) {
+                sender.sendMessage(Component.text("Console must provide a target player: /fandkit <player>", NamedTextColor.RED));
+                return;
+            }
+
+            int accepted = give(target, demoComponentItem(ItemTypes.of("minecraft:diamond"), sender.name()), 1);
+            accepted += give(target, demoKitNavigator(ItemTypes.of("minecraft:compass"), target.name()), 1);
+            accepted += give(target, demoKitBook(ItemTypes.of("minecraft:written_book"), target.name()), 1);
+            accepted += give(target, demoKitSnack(ItemTypes.of("minecraft:golden_apple")), 8);
+
+            sendKitPresentation(context, target);
+            openDemoInventory(
+                    context,
+                    sender,
+                    target,
+                    demoGuiViewers,
+                    demoKitInventory(context, target.name()),
+                    "Opened the kit inventory. Right-click the navigator compass to reopen it.");
+            sender.sendMessage(Component.text("Prepared Fand kit for " + target.name() + " (" + accepted + " items accepted).", NamedTextColor.GREEN));
+        }
+
+        @Override
+        public List<String> complete(CommandSender sender, String label, List<String> args) {
+            return args.size() <= 1 ? matching(playerNames(), args.isEmpty() ? "" : args.getLast()) : List.of();
+        }
+    }
+
+    @CommandSpec(label = "fandperf", arguments = {}, aliases = {"fperf"}, permission = "fand.testplugin.performance")
+    static final class PerformanceCommand implements CommandExecutor {
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            var performance = Fand.server().performance();
+            sender.sendMessage(Component.text("Fand performance", NamedTextColor.GOLD));
+            sender.sendMessage(Component.text("TPS: " + formatTickAverages(performance.ticksPerSecond()), NamedTextColor.GREEN));
+            sender.sendMessage(Component.text("MSPT 5s: " + formatMetricStatistics(performance.fiveSeconds().millisecondsPerTick())
+                    + ", samples=" + performance.fiveSeconds().sampleCount(), NamedTextColor.AQUA));
+            sender.sendMessage(Component.text("Utilization 5s: "
+                    + String.format(Locale.ROOT, "%.1f%%", performance.fiveSeconds().utilization() * 100.0), NamedTextColor.GRAY));
         }
     }
 
@@ -849,30 +919,13 @@ public final class TestPlugin implements Plugin {
                 sender.sendMessage(Component.text("Console must provide a target player: /fandgui <player>", NamedTextColor.RED));
                 return;
             }
-            Inventory inventory = Inventories.create(InventoryType.CHEST, 27, Component.text("Fand API Demo", NamedTextColor.DARK_AQUA));
-            put(inventory, 10, "minecraft:diamond", 3);
-            put(inventory, 12, "minecraft:golden_apple", 1);
-            put(inventory, 14, "minecraft:compass", 1);
-            put(inventory, 16, "minecraft:oak_log", 16);
-            put(inventory, DEMO_GUI_LOCKED_SLOT, DEMO_GUI_LOCKED_ITEM, 1);
-            inventory.addSlotChangeListener((slot, oldStack, newStack) ->
-                    context.logger().info("demo gui slot {} changed: {} -> {}", slot, stackName(oldStack), stackName(newStack)));
-            target.openInventory(inventory).whenComplete((opened, failure) -> {
-                if (failure != null) {
-                    context.logger().warn("Could not open demo GUI for {}", target.name(), failure);
-                    sender.sendMessage(Component.text("Could not open demo GUI.", NamedTextColor.RED));
-                    return;
-                }
-                if (Boolean.TRUE.equals(opened)) {
-                    demoGuiViewers.add(target.uniqueId());
-                    target.sendMessage(Component.text("Opened a server-created inventory.", NamedTextColor.GREEN));
-                    if (target != sender) {
-                        sender.sendMessage(Component.text("Opened demo GUI for " + target.name() + ".", NamedTextColor.GREEN));
-                    }
-                } else {
-                    sender.sendMessage(Component.text("Inventory open was rejected or the player went offline.", NamedTextColor.YELLOW));
-                }
-            });
+            openDemoInventory(
+                    context,
+                    sender,
+                    target,
+                    demoGuiViewers,
+                    demoGuiInventory(context),
+                    "Opened a server-created inventory.");
         }
 
         @Override
@@ -935,6 +988,19 @@ public final class TestPlugin implements Plugin {
 
         @Subscribe
         public void onInteract(PlayerInteractEvent event) {
+            if (event.hand() == PlayerInteractEvent.Hand.MAIN_HAND
+                    && isKitNavigator(event.player().inventory().heldItem())) {
+                event.setCancelled(true);
+                openDemoInventory(
+                        context,
+                        event.player(),
+                        event.player(),
+                        demoGuiViewers,
+                        demoKitInventory(context, event.player().name()),
+                        message(context.config(), "messages.kit-navigator", "Opened your Fand kit navigator."));
+                event.player().sendActionBar(Component.text("Fand kit navigator opened.", NamedTextColor.AQUA));
+                return;
+            }
             if (!context.config().getBoolean("features.report-right-clicks", false)
                     || event.hand() != PlayerInteractEvent.Hand.MAIN_HAND) {
                 return;
@@ -1023,6 +1089,59 @@ public final class TestPlugin implements Plugin {
         inventory.set(slot, ItemTypes.of(keyString(item)).stack(amount));
     }
 
+    private static void put(Inventory inventory, int slot, ItemStack stack) {
+        inventory.set(slot, stack);
+    }
+
+    private static Inventory demoGuiInventory(PluginContext context) {
+        Inventory inventory = Inventories.create(InventoryType.CHEST, 27, Component.text("Fand API Demo", NamedTextColor.DARK_AQUA));
+        put(inventory, 10, "minecraft:diamond", 3);
+        put(inventory, 12, "minecraft:golden_apple", 1);
+        put(inventory, 14, "minecraft:compass", 1);
+        put(inventory, 16, "minecraft:oak_log", 16);
+        put(inventory, DEMO_GUI_LOCKED_SLOT, DEMO_GUI_LOCKED_ITEM, 1);
+        inventory.addSlotChangeListener((slot, oldStack, newStack) ->
+                context.logger().info("demo gui slot {} changed: {} -> {}", slot, stackName(oldStack), stackName(newStack)));
+        return inventory;
+    }
+
+    private static Inventory demoKitInventory(PluginContext context, String playerName) {
+        Inventory inventory = Inventories.create(InventoryType.CHEST, 27, Component.text("Fand Kit", NamedTextColor.GOLD));
+        put(inventory, 10, demoComponentItem(ItemTypes.of("minecraft:diamond"), playerName));
+        put(inventory, 12, demoKitNavigator(ItemTypes.of("minecraft:compass"), playerName));
+        put(inventory, 14, demoKitBook(ItemTypes.of("minecraft:written_book"), playerName));
+        put(inventory, 16, demoKitSnack(ItemTypes.of("minecraft:golden_apple")).withAmount(8));
+        put(inventory, DEMO_GUI_LOCKED_SLOT, DEMO_GUI_LOCKED_ITEM, 1);
+        inventory.addSlotChangeListener((slot, oldStack, newStack) ->
+                context.logger().info("kit gui slot {} changed: {} -> {}", slot, stackName(oldStack), stackName(newStack)));
+        return inventory;
+    }
+
+    private static void openDemoInventory(
+            PluginContext context,
+            CommandSender sender,
+            Player target,
+            Set<UUID> demoGuiViewers,
+            Inventory inventory,
+            String openedMessage) {
+        target.openInventory(inventory).whenComplete((opened, failure) -> {
+            if (failure != null) {
+                context.logger().warn("Could not open demo GUI for {}", target.name(), failure);
+                sender.sendMessage(Component.text("Could not open demo GUI.", NamedTextColor.RED));
+                return;
+            }
+            if (Boolean.TRUE.equals(opened)) {
+                demoGuiViewers.add(target.uniqueId());
+                target.sendMessage(Component.text(openedMessage, NamedTextColor.GREEN));
+                if (target != sender) {
+                    sender.sendMessage(Component.text("Opened demo GUI for " + target.name() + ".", NamedTextColor.GREEN));
+                }
+            } else {
+                sender.sendMessage(Component.text("Inventory open was rejected or the player went offline.", NamedTextColor.YELLOW));
+            }
+        });
+    }
+
     static ItemStack demoComponentItem(ItemType type, String source) {
         var customData = new JsonObject();
         customData.addProperty("created_by", "fand-test-plugin");
@@ -1045,6 +1164,92 @@ public final class TestPlugin implements Plugin {
                         List.of("fand-demo"),
                         List.of(0x33CCFF)))
                 .withCustomData(customData);
+    }
+
+    static ItemStack demoKitNavigator(ItemType type, String playerName) {
+        var customData = new JsonObject();
+        customData.addProperty("created_by", "fand-test-plugin");
+        customData.addProperty("demo_role", "fand_kit_navigator");
+        customData.addProperty("owner", playerName);
+        return type.one()
+                .withCustomName(Component.text("Fand Kit Navigator", NamedTextColor.AQUA))
+                .withLore(
+                        Component.text("Right-click to reopen the kit GUI.", NamedTextColor.GRAY),
+                        Component.text("Uses custom_data to connect an item to an event.", NamedTextColor.DARK_AQUA))
+                .withRarity(ItemRarity.UNCOMMON)
+                .withEnchantmentGlintOverride(true)
+                .withUseCooldown(new ItemUseCooldown(1.5F))
+                .withCustomModelData(new CustomModelData(
+                        List.of(20018.1F),
+                        List.of(true),
+                        List.of("kit-navigator"),
+                        List.of(0x00CCFF)))
+                .withCustomData(customData);
+    }
+
+    static ItemStack demoKitBook(ItemType type, String playerName) {
+        var customData = new JsonObject();
+        customData.addProperty("created_by", "fand-test-plugin");
+        customData.addProperty("demo_role", "fand_kit_guide");
+        customData.addProperty("owner", playerName);
+        return type.one()
+                .withCustomName(Component.text("Fand API Field Guide", NamedTextColor.GOLD))
+                .withLore(
+                        Component.text("A written book built through typed item components.", NamedTextColor.GRAY),
+                        Component.text("Shows text components embedded inside item data.", NamedTextColor.DARK_GRAY))
+                .withRarity(ItemRarity.RARE)
+                .withWrittenBookContent(new ItemWrittenBookContent(
+                        "Fand API",
+                        "fand-test-plugin",
+                        List.of(
+                                Component.text("Welcome, " + playerName + ".", NamedTextColor.GOLD)
+                                        .append(Component.newline())
+                                        .append(Component.text("This kit was built with the public Fand API.", NamedTextColor.GRAY)),
+                                Component.text("Try /fandperf, /fandgui, /fandtab, and /fandsidebar.", NamedTextColor.AQUA))))
+                .withCustomData(customData);
+    }
+
+    static ItemStack demoKitSnack(ItemType type) {
+        var customData = new JsonObject();
+        customData.addProperty("created_by", "fand-test-plugin");
+        customData.addProperty("demo_role", "fand_kit_snack");
+        return type.one()
+                .withCustomName(Component.text("Fand Demo Snack", NamedTextColor.YELLOW))
+                .withLore(Component.text("Food and consumable components can be overridden too.", NamedTextColor.GRAY))
+                .withRarity(ItemRarity.UNCOMMON)
+                .withFood(new ItemFood(6, 8.0F, true))
+                .withConsumable(ItemConsumable.DEFAULT)
+                .withCustomData(customData);
+    }
+
+    static boolean isKitNavigator(ItemStack stack) {
+        return !stack.isEmpty()
+                && stack.customData()
+                        .map(data -> data.has("demo_role")
+                                && data.get("demo_role").getAsString().equals("fand_kit_navigator"))
+                        .orElse(false);
+    }
+
+    private static void sendKitPresentation(PluginContext context, Player target) {
+        var performance = Fand.server().performance();
+        target.sendActionBar(Component.text(
+                "TPS " + formatTickAverages(performance.ticksPerSecond()) + " | MSPT " + trim(performance.currentMillisecondsPerTick()),
+                NamedTextColor.AQUA));
+        target.showTitle(Title.title(
+                Component.text(message(context.config(), "messages.kit-title", "Fand Kit"), NamedTextColor.GOLD),
+                Component.text(message(context.config(), "messages.kit-subtitle", "Components, GUI, tab, sidebar, and performance."), NamedTextColor.YELLOW),
+                Title.Times.times(Duration.ofMillis(500), Duration.ofSeconds(3), Duration.ofMillis(750))));
+        target.sendTabList(
+                Component.text("Fand Kit Demo", NamedTextColor.GOLD),
+                Component.text("TPS " + formatTickAverages(performance.ticksPerSecond()), NamedTextColor.GRAY));
+        target.showSidebar(demoSidebar(target));
+        BossBar bar = BossBar.bossBar(
+                Component.text("Fand kit ready", NamedTextColor.GOLD),
+                boundedBossBarProgress((float) (1.0 - Math.min(1.0, performance.fiveSeconds().utilization()))),
+                BossBar.Color.GREEN,
+                BossBar.Overlay.PROGRESS);
+        target.showBossBar(bar);
+        context.scheduler().runMainAfter(() -> target.hideBossBar(bar), Duration.ofSeconds(8));
     }
 
     private static Player player(CommandSender sender, String name) {
@@ -1195,6 +1400,25 @@ public final class TestPlugin implements Plugin {
     static String messageText(List<String> args, String fallback) {
         var text = String.join(" ", args).trim();
         return text.isBlank() ? fallback : text;
+    }
+
+    static String formatTickAverages(TickAverages averages) {
+        return String.format(
+                Locale.ROOT,
+                "%.2f, %.2f, %.2f (1m, 5m, 15m)",
+                averages.oneMinute(),
+                averages.fiveMinutes(),
+                averages.fifteenMinutes());
+    }
+
+    static String formatMetricStatistics(MetricStatistics statistics) {
+        return String.format(
+                Locale.ROOT,
+                "avg %.2f / min %.2f / max %.2f / median %.2f",
+                statistics.average(),
+                statistics.minimum(),
+                statistics.maximum(),
+                statistics.median());
     }
 
     static DemoTitle demoTitle(String raw, String defaultTitle, String defaultSubtitle) {

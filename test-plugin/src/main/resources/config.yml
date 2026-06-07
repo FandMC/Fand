@@ -9,6 +9,9 @@ messages:
   subtitle: Title demo from test-plugin.
   bossbar: Boss bar from test-plugin.
   kick-reason: Kicked by test-plugin.
+  kit-title: Fand Kit
+  kit-subtitle: Components, GUI, tab, sidebar, and performance.
+  kit-navigator: Opened your Fand kit navigator.
 
 features:
   chat-prefix: true
