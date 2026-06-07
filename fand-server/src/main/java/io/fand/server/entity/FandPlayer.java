@@ -119,10 +119,13 @@ public final class FandPlayer implements Player {
 
     @Override
     public void kick(Component reason) {
-        var handle = bound.handle;
-        if (handle.connection != null) {
-            handle.connection.disconnect(AdventureBridge.toVanilla(reason, handle.registryAccess()));
-        }
+        Objects.requireNonNull(reason, "reason");
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            if (handle.connection != null) {
+                handle.connection.disconnect(AdventureBridge.toVanilla(reason, handle.registryAccess()));
+            }
+        });
     }
 
     @Override
@@ -207,23 +210,29 @@ public final class FandPlayer implements Player {
 
     @Override
     public void sendMessage(Component message) {
-        var handle = bound.handle;
-        handle.sendSystemMessage(AdventureBridge.toVanilla(message, handle.registryAccess()));
+        Objects.requireNonNull(message, "message");
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            handle.sendSystemMessage(AdventureBridge.toVanilla(message, handle.registryAccess()));
+        });
     }
 
     @Override
     public void sendActionBar(Component message) {
-        PacketAudience.sendActionBar(bound.handle, message);
+        Objects.requireNonNull(message, "message");
+        runOnServerThread(() -> PacketAudience.sendActionBar(bound.handle, message));
     }
 
     @Override
     public void sendTabList(Component header, Component footer) {
-        PacketAudience.sendTabList(bound.handle, header, footer);
+        Objects.requireNonNull(header, "header");
+        Objects.requireNonNull(footer, "footer");
+        runOnServerThread(() -> PacketAudience.sendTabList(bound.handle, header, footer));
     }
 
     @Override
     public void clearTabList() {
-        PacketAudience.clearTabList(bound.handle);
+        runOnServerThread(() -> PacketAudience.clearTabList(bound.handle));
     }
 
     @Override
@@ -243,71 +252,83 @@ public final class FandPlayer implements Player {
 
     @Override
     public void showTitle(Title title) {
-        PacketAudience.showTitle(bound.handle, title);
+        Objects.requireNonNull(title, "title");
+        runOnServerThread(() -> PacketAudience.showTitle(bound.handle, title));
     }
 
     @Override
     public <T> void sendTitlePart(TitlePart<T> part, T value) {
-        PacketAudience.sendTitlePart(bound.handle, part, value);
+        Objects.requireNonNull(part, "part");
+        Objects.requireNonNull(value, "value");
+        runOnServerThread(() -> PacketAudience.sendTitlePart(bound.handle, part, value));
     }
 
     @Override
     public void clearTitle() {
-        PacketAudience.clearTitle(bound.handle);
+        runOnServerThread(() -> PacketAudience.clearTitle(bound.handle));
     }
 
     @Override
     public void resetTitle() {
-        PacketAudience.resetTitle(bound.handle);
+        runOnServerThread(() -> PacketAudience.resetTitle(bound.handle));
     }
 
     @Override
     public void playSound(Sound sound) {
-        PacketAudience.playSound(bound.handle, sound);
+        Objects.requireNonNull(sound, "sound");
+        runOnServerThread(() -> PacketAudience.playSound(bound.handle, sound));
     }
 
     @Override
     public void playSound(Sound sound, double x, double y, double z) {
-        PacketAudience.playSoundAt(bound.handle, sound, x, y, z);
+        Objects.requireNonNull(sound, "sound");
+        runOnServerThread(() -> PacketAudience.playSoundAt(bound.handle, sound, x, y, z));
     }
 
     @Override
     public void playSound(Sound sound, Sound.Emitter emitter) {
-        var handle = bound.handle;
-        if (emitter == Sound.Emitter.self()) {
-            PacketAudience.playSoundAt(handle, sound, handle.getX(), handle.getY(), handle.getZ());
-        } else {
-            PacketAudience.playSound(handle, sound);
-        }
+        Objects.requireNonNull(sound, "sound");
+        Objects.requireNonNull(emitter, "emitter");
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            if (emitter == Sound.Emitter.self()) {
+                PacketAudience.playSoundAt(handle, sound, handle.getX(), handle.getY(), handle.getZ());
+            } else {
+                PacketAudience.playSound(handle, sound);
+            }
+        });
     }
 
     @Override
     public void stopSound(SoundStop stop) {
-        PacketAudience.stopSound(bound.handle, stop);
+        Objects.requireNonNull(stop, "stop");
+        runOnServerThread(() -> PacketAudience.stopSound(bound.handle, stop));
     }
 
     @Override
     public void showBossBar(BossBar bar) {
-        runOnMain(() -> bossBars.show(bar));
+        Objects.requireNonNull(bar, "bar");
+        runOnServerThread(() -> bossBars.show(bar));
     }
 
     @Override
     public void hideBossBar(BossBar bar) {
-        runOnMain(() -> bossBars.hide(bar));
+        Objects.requireNonNull(bar, "bar");
+        runOnServerThread(() -> bossBars.hide(bar));
     }
 
     @Override
     public void showSidebar(Sidebar view) {
         Objects.requireNonNull(view, "view");
-        runOnMain(() -> sidebar.show(view));
+        runOnServerThread(() -> sidebar.show(view));
     }
 
     @Override
     public void clearSidebar() {
-        runOnMain(sidebar::clear);
+        runOnServerThread(sidebar::clear);
     }
 
-    private void runOnMain(Runnable task) {
+    private void runOnServerThread(Runnable task) {
         var server = bound.handle.level().getServer();
         if (server == null) {
             return;
@@ -349,7 +370,7 @@ public final class FandPlayer implements Player {
     @Override
     public void setGameMode(GameMode mode) {
         var vanilla = GameModes.toVanilla(mode);
-        runOnMain(() -> bound.handle.setGameMode(vanilla));
+        runOnServerThread(() -> bound.handle.setGameMode(vanilla));
     }
 
     @Override
@@ -360,7 +381,7 @@ public final class FandPlayer implements Player {
     @Override
     public void setFoodLevel(int level) {
         int clamped = Math.max(0, Math.min(20, level));
-        runOnMain(() -> bound.handle.getFoodData().setFoodLevel(clamped));
+        runOnServerThread(() -> bound.handle.getFoodData().setFoodLevel(clamped));
     }
 
     @Override
@@ -370,7 +391,7 @@ public final class FandPlayer implements Player {
 
     @Override
     public void setSaturation(float saturation) {
-        runOnMain(() -> bound.handle.getFoodData().setSaturation(saturation));
+        runOnServerThread(() -> bound.handle.getFoodData().setSaturation(saturation));
     }
 
     @Override
@@ -380,7 +401,7 @@ public final class FandPlayer implements Player {
 
     @Override
     public void setExperienceLevel(int level) {
-        runOnMain(() -> bound.handle.setExperienceLevels(level));
+        runOnServerThread(() -> bound.handle.setExperienceLevels(level));
     }
 
     @Override
@@ -391,7 +412,7 @@ public final class FandPlayer implements Player {
     @Override
     public void setExperienceProgress(float progress) {
         float clamped = Math.max(0.0F, Math.min(0.9999F, progress));
-        runOnMain(() -> {
+        runOnServerThread(() -> {
             var handle = bound.handle;
             handle.experienceProgress = clamped;
             handle.resetSentInfo();
@@ -403,7 +424,7 @@ public final class FandPlayer implements Player {
         if (points == 0) {
             return;
         }
-        runOnMain(() -> bound.handle.giveExperiencePoints(points));
+        runOnServerThread(() -> bound.handle.giveExperiencePoints(points));
     }
 
     @Override
@@ -413,7 +434,7 @@ public final class FandPlayer implements Player {
 
     @Override
     public void setFlying(boolean flying) {
-        runOnMain(() -> {
+        runOnServerThread(() -> {
             var abilities = bound.handle.getAbilities();
             if (flying && !abilities.mayfly) {
                 pushAbilities();
@@ -433,7 +454,7 @@ public final class FandPlayer implements Player {
 
     @Override
     public void setAllowFlight(boolean allow) {
-        runOnMain(() -> {
+        runOnServerThread(() -> {
             var abilities = bound.handle.getAbilities();
             if (abilities.mayfly == allow) {
                 return;
@@ -545,7 +566,7 @@ public final class FandPlayer implements Player {
 
     @Override
     public void closeInventory() {
-        runOnMain(() -> bound.handle.closeContainer());
+        runOnServerThread(() -> bound.handle.closeContainer());
     }
 
     private void pushAbilities() {

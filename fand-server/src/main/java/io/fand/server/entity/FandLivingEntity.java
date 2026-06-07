@@ -11,8 +11,9 @@ import net.minecraft.world.entity.EntityType;
 
 /**
  * Thin handle around a vanilla {@link net.minecraft.world.entity.LivingEntity}
- * for use by API consumers (mostly event dispatch). Reads run on the caller's
- * thread; mutating writes thunk to the main thread via the underlying server.
+ * for use by API consumers (mostly event dispatch). Reads follow the public
+ * entity contract; mutating writes marshal to the server thread via the
+ * underlying server.
  *
  * <p>For {@code ServerPlayer} victims prefer the {@link FandPlayer} cached in
  * the registry — its handle is refreshed across respawns and wires up the

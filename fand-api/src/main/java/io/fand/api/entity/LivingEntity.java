@@ -3,7 +3,7 @@ package io.fand.api.entity;
 /**
  * An entity with health (mobs, players, armor stands, etc.).
  *
- * <p>{@link #setHealth(double)} runs on the main thread; off-thread writes are
+ * <p>{@link #setHealth(double)} runs on the server thread; off-thread writes are
  * silently rescheduled. Setting health to {@code 0} or below kills the entity
  * via the same path as {@code minecraft:generic_kill} damage, firing the usual
  * death events.

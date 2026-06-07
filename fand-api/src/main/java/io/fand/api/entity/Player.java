@@ -17,7 +17,8 @@ import net.kyori.adventure.text.Component;
  *
  * <p>An offline player handle remains valid as a reference but read methods
  * return their last-known values. {@link #alive()} returns {@code false} once
- * the player disconnects.
+ * the player disconnects. Player state mutations and packet sends marshal to
+ * the server thread unless a method documents a stricter requirement.
  */
 public interface Player extends LivingEntity, CommandSender, PermissionSubject {
 
@@ -41,7 +42,7 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
 
     /**
      * Teleports the player to {@code destination}. Schedules the move on the
-     * main thread; the returned future completes with {@code true} on success
+     * server thread; the returned future completes with {@code true} on success
      * or {@code false} if the player went offline before the teleport ran.
      */
     CompletableFuture<Boolean> teleport(Location destination);
@@ -53,7 +54,7 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     GameMode gameMode();
 
     /**
-     * Switches the player to {@code mode}. Marshals to the main thread when
+     * Switches the player to {@code mode}. Marshals to the server thread when
      * called from elsewhere; takes effect on the next tick at the latest.
      */
     void setGameMode(GameMode mode);
@@ -62,7 +63,7 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     int foodLevel();
 
     /**
-     * Sets the food level, clamped to {@code [0, 20]}. Marshals to the main
+     * Sets the food level, clamped to {@code [0, 20]}. Marshals to the server
      * thread when called from elsewhere.
      */
     void setFoodLevel(int level);
@@ -72,14 +73,14 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
 
     /**
      * Sets saturation, clamped to {@code [0, foodLevel()]} by vanilla on the
-     * next eat. Marshals to the main thread when called from elsewhere.
+     * next eat. Marshals to the server thread when called from elsewhere.
      */
     void setSaturation(float saturation);
 
     /** The XP level shown in the action bar. */
     int experienceLevel();
 
-    /** Sets the XP level. Marshals to the main thread. */
+    /** Sets the XP level. Marshals to the server thread. */
     void setExperienceLevel(int level);
 
     /** Progress toward the next level, in {@code [0, 1)}. */
@@ -87,7 +88,7 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
 
     /**
      * Sets the in-bar progress toward the next level. Values are clamped to
-     * {@code [0, 1)}; vanilla rejects exact 1.0. Marshals to the main thread.
+     * {@code [0, 1)}; vanilla rejects exact 1.0. Marshals to the server thread.
      */
     void setExperienceProgress(float progress);
 
@@ -99,7 +100,7 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
 
     /**
      * Toggles flight. Has no effect (and resyncs to the client) when
-     * {@link #allowFlight()} is {@code false}. Marshals to the main thread.
+     * {@link #allowFlight()} is {@code false}. Marshals to the server thread.
      */
     void setFlying(boolean flying);
 
@@ -108,14 +109,14 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
 
     /**
      * Sets whether flight is permitted. Disabling flight while the player is
-     * already flying forces them to drop. Marshals to the main thread.
+     * already flying forces them to drop. Marshals to the server thread.
      */
     void setAllowFlight(boolean allow);
 
     /**
      * Opens a transient container of the given {@code type} for this player,
      * backed by an empty server-side inventory. The future completes on the
-     * main thread once the menu is shown.
+     * server thread once the menu is shown.
      *
      * <p>{@code size} is honoured for variable-size types (CHEST: 9-54 in
      * multiples of 9, HOPPER: ignored, etc.) and ignored for fixed-size
@@ -163,7 +164,7 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     /**
      * Closes whatever container the player has open and returns them to
      * their own inventory. No-op if no container is open. Marshals to the
-     * main thread.
+     * server thread.
      */
     void closeInventory();
 }

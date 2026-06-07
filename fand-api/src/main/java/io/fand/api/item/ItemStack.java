@@ -60,6 +60,7 @@ import java.util.function.Function;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An immutable item stack: a {@link ItemType}, a positive {@code amount}, and
@@ -68,9 +69,9 @@ import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
  * <p>The empty stack is represented by {@link #EMPTY}. Use {@code with*}
  * methods to build modified copies; no method mutates this instance.
  */
-public record ItemStack(ItemType type, int amount, ItemComponents components) {
+public record ItemStack(@Nullable ItemType type, int amount, ItemComponents components) {
 
-    /** Sentinel empty stack (type {@code null}, amount 0). */
+    /** Sentinel empty stack (type {@code null}, amount 0). Prefer {@link #isEmpty()} over null checks. */
     public static final ItemStack EMPTY = new ItemStack(null, 0, ItemComponents.EMPTY);
 
     public ItemStack(ItemType type, int amount) {

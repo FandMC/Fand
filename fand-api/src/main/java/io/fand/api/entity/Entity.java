@@ -9,7 +9,7 @@ import net.kyori.adventure.key.Key;
  * Base handle for any entity in a {@link World}.
  *
  * <p>Instances are thin handles backed by the underlying server entity. Reads
- * must happen on the main thread unless explicitly documented otherwise.
+ * must happen on the server thread unless explicitly documented otherwise.
  * Equality is by {@link #uniqueId()}; a handle may become {@linkplain #alive()
  * non-alive} after the entity is removed (death, dimension change cleanup,
  * unload).
@@ -31,7 +31,7 @@ public interface Entity {
     /** Whether the entity is still in a loaded world and not removed. */
     boolean alive();
 
-    /** Current location. May be slightly stale if read off the main thread. */
+    /** Current location. May be slightly stale if read off the server thread. */
     Location location();
 
     /** World currently containing the entity. */
