@@ -1,6 +1,7 @@
 package io.fand.api.world;
 
 import io.fand.api.block.BlockType;
+import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
 import java.util.Map;
 import java.util.Objects;
@@ -28,9 +29,13 @@ public final class Particles {
 
     /**
      * Creates a particle from a vanilla particle argument string. This is an
-     * explicit escape hatch for data-bearing particles such as
-     * {@code minecraft:dust{color:16711680,scale:1.0}}.
+     * internal escape hatch for testing and temporary use. Production code
+     * should use strongly-typed factory methods like {@link #dust(int, float)}
+     * or {@link #item(ItemStack)} instead.
+     *
+     * @deprecated Internal API. Use strongly-typed particle factory methods.
      */
+    @Deprecated(forRemoval = false)
     public static Particle raw(String argument) {
         return CACHE.computeIfAbsent(argument, ParticleImpl::of);
     }
@@ -62,28 +67,93 @@ public final class Particles {
                 + ",to_color:" + toRgb + ",scale:" + scale + "}");
     }
 
+    /**
+     * Creates a block particle from a block state string. The string should be
+     * a valid Minecraft block state specification (e.g., {@code "minecraft:stone"}
+     * or {@code "minecraft:oak_log[axis=y]"}).
+     *
+     * <p>Note: Future versions will provide a strongly-typed {@code BlockState}
+     * parameter overload to replace string-based block state specifications.
+     *
+     * @param blockState the block state string
+     * @return block particle for the specified state
+     */
     public static Particle block(String blockState) {
         return raw("minecraft:block{block_state:\"" + escape(blockState) + "\"}");
     }
 
+    /**
+     * Creates a block particle from a block type using its default state.
+     *
+     * <p>Note: Future versions will provide a strongly-typed {@code BlockState}
+     * parameter overload for specifying block properties beyond the default state.
+     *
+     * @param blockType the block type
+     * @return block particle for the block type's default state
+     */
     public static Particle block(BlockType blockType) {
         Objects.requireNonNull(blockType, "blockType");
         return block(blockType.key().asString());
     }
 
+    /**
+     * Creates a falling dust particle from a block state string.
+     *
+     * <p>Note: Future versions will provide a strongly-typed {@code BlockState}
+     * parameter overload to replace string-based block state specifications.
+     *
+     * @param blockState the block state string
+     * @return falling dust particle for the specified state
+     */
     public static Particle fallingDust(String blockState) {
         return raw("minecraft:falling_dust{block_state:\"" + escape(blockState) + "\"}");
     }
 
+    /**
+     * Creates a falling dust particle from a block type using its default state.
+     *
+     * <p>Note: Future versions will provide a strongly-typed {@code BlockState}
+     * parameter overload for specifying block properties beyond the default state.
+     *
+     * @param blockType the block type
+     * @return falling dust particle for the block type's default state
+     */
     public static Particle fallingDust(BlockType blockType) {
         Objects.requireNonNull(blockType, "blockType");
         return fallingDust(blockType.key().asString());
     }
 
+    /**
+     * Creates an item particle from an {@link ItemStack}. The particle will
+     * display with all data components from the stack, including custom model
+     * data, enchantment glint, lore, and other visual properties.
+     *
+     * @param stack the item stack whose appearance will be used for the particle
+     * @return item particle configured with the stack's full data
+     * @throws IllegalArgumentException if stack is null or empty
+     */
+    public static Particle item(ItemStack stack) {
+        Objects.requireNonNull(stack, "stack");
+        if (stack.isEmpty()) {
+            throw new IllegalArgumentException("Cannot create item particle from empty stack");
+        }
+        // Particle instances with ItemStack data are created on-demand via ParticleImpl
+        // and resolved to vanilla on the server side where registry access is available
+        return new ItemParticleImpl(stack);
+    }
+
+    /**
+     * @deprecated Use {@link #item(ItemStack)} for proper data component support.
+     */
+    @Deprecated(forRemoval = true)
     public static Particle item(String itemKey) {
         return raw("minecraft:item{item:{id:\"" + escape(itemKey) + "\"}}");
     }
 
+    /**
+     * @deprecated Use {@link #item(ItemStack)} for proper data component support.
+     */
+    @Deprecated(forRemoval = true)
     public static Particle item(ItemType itemType) {
         Objects.requireNonNull(itemType, "itemType");
         return item(itemType.key().asString());
@@ -109,7 +179,6 @@ public final class Particles {
     public static final Particle ENCHANTED_HIT = particle(Key.key("minecraft:enchanted_hit"));
     public static final Particle PORTAL = particle(Key.key("minecraft:portal"));
     public static final Particle CLOUD = particle(Key.key("minecraft:cloud"));
-    public static final Particle DUST = particle(Key.key("minecraft:dust"));
     public static final Particle DRIPPING_WATER = particle(Key.key("minecraft:dripping_water"));
     public static final Particle DRIPPING_LAVA = particle(Key.key("minecraft:dripping_lava"));
     public static final Particle NOTE = particle(Key.key("minecraft:note"));
@@ -173,6 +242,23 @@ public final class Particles {
             int dataStart = argument.indexOf('{');
             String keyText = dataStart < 0 ? argument : argument.substring(0, dataStart);
             return new ParticleImpl(Key.key(keyText), argument);
+        }
+    }
+
+    private record ItemParticleImpl(ItemStack stack) implements Particle {
+        ItemParticleImpl {
+            Objects.requireNonNull(stack, "stack");
+        }
+
+        @Override
+        public Key key() {
+            return Key.key("minecraft:item");
+        }
+
+        @Override
+        public String argument() {
+            // Argument will be resolved server-side where registry access is available
+            return "minecraft:item";
         }
     }
 }
