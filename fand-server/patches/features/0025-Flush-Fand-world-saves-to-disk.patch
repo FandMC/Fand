@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 7 Jun 2026 23:14:16 +0800
+Subject: [PATCH] Flush Fand world saves to disk
+
+
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index a826cfce5f127d347aaa8f0b1262d119b661713f..1c9fad515b99267d72dcaf041d46cb5e500a9d18 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -1242,6 +1242,24 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         return this.levels.values();
+     }
+ 
++    public boolean fand$saveLevelToDisk(final ResourceKey<Level> dimension) {
++        if (!this.isSameThread()) {
++            throw new IllegalStateException("Worlds must be saved on the server thread");
++        }
++
++        ServerLevel level = this.levels.get(dimension);
++        if (level == null) {
++            return false;
++        }
++
++        this.scoreboard.storeToSaveDataIfDirty(this.getDataStorage().computeIfAbsent(ScoreboardSaveData.TYPE));
++        level.save(null, true, SharedConstants.DEBUG_DONT_SAVE_WORLD);
++        GameProfile singleplayerProfile = this.getSingleplayerProfile();
++        this.storageSource.saveDataTag(this.worldData, singleplayerProfile == null ? null : singleplayerProfile.id());
++        this.savedDataStorage.saveAndJoin();
++        return true;
++    }
++
+     public ServerLevel fand$createDynamicLevel(final ResourceKey<Level> dimension, final ResourceKey<LevelStem> template) {
+         if (!this.isSameThread()) {
+             throw new IllegalStateException("Dynamic worlds must be created on the server thread");
+@@ -1294,7 +1312,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         }
+ 
+         level.noSave = false;
+-        level.save(null, true, false);
++        this.fand$saveLevelToDisk(dimension);
+         try {
+             level.close();
+         } catch (IOException failure) {

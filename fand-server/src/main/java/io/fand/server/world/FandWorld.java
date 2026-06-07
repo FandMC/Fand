@@ -133,8 +133,7 @@ public final class FandWorld implements World {
         var future = new CompletableFuture<Boolean>();
         runOnServerThread(() -> {
             try {
-                handle.save(null, true, handle.noSave());
-                future.complete(true);
+                future.complete(handle.getServer().fand$saveLevelToDisk(handle.dimension()));
             } catch (Throwable failure) {
                 future.completeExceptionally(failure);
             }
