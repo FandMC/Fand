@@ -28,6 +28,21 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     /** Whether the player is still connected. */
     boolean online();
 
+    /**
+     * The player's connection latency in milliseconds, as a rolling average
+     * vanilla keeps from keep-alive round-trips. Returns the last-known value
+     * once the player is {@linkplain #online() offline}.
+     */
+    int ping();
+
+    /**
+     * The client-side options this player last reported (locale, view
+     * distance). Returns the last-known settings once the player is
+     * {@linkplain #online() offline}; defaults until the client sends its
+     * first settings packet.
+     */
+    ClientSettings clientSettings();
+
     /** Disconnects the player with the given reason. No-op if already offline. */
     void kick(Component reason);
 
