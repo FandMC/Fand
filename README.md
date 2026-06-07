@@ -59,3 +59,8 @@ The patched Minecraft code lives in `fand-server/src/minecraft/` after setup.
 
 See `PROJECT_PROPOSAL.md` for the full roadmap and `CODING_STANDARDS.md` for
 development guidelines.
+
+## License
+
+Fand is licensed under the GNU General Public License v3.0. See `LICENSE` for
+the full license text.
