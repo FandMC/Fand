@@ -36,22 +36,38 @@ public final class FandGuiSupport {
 
     /**
      * Builds the theme toggle bar shown at the top of the GUI. The button cycles
-     * Dark → Light → System and reflects the active theme. Must be called on the
-     * EDT, like the rest of GUI construction in {@code MinecraftServerGui}.
+     * Dark → Light → System on click and stays in sync with the active theme even
+     * when it changes elsewhere (e.g. via {@code /fand reload}), through a service
+     * listener. Must be called on the EDT, like the rest of GUI construction in
+     * {@code MinecraftServerGui}.
+     *
+     * @return the bar component plus a cleanup that releases the sync listener;
+     *     the caller must register the cleanup as a GUI finalizer
      */
-    public static JComponent buildThemeBar() {
-        var themes = themes();
+    public static ThemeBar buildThemeBar() {
+        return buildThemeBar(themes());
+    }
+
+    /** Service-injecting variant of {@link #buildThemeBar()}, for testing. */
+    static ThemeBar buildThemeBar(GuiThemeService themes) {
         var bar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
         bar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
 
         var label = new JLabel("Theme:");
         var button = new JButton(themes.current().displayName());
         button.setFocusable(false);
-        button.addActionListener(event -> button.setText(themes.cycle().displayName()));
+        button.addActionListener(event -> themes.cycle());
+
+        AutoCloseable handle = themes.addListener(
+                () -> runOnEdt(() -> button.setText(themes.current().displayName())));
 
         bar.add(label);
         bar.add(button);
-        return bar;
+        return new ThemeBar(bar, releasing(handle));
+    }
+
+    /** A theme bar component paired with the cleanup that detaches its listener. */
+    public record ThemeBar(JComponent component, Runnable cleanup) {
     }
 
     /**
@@ -65,6 +81,11 @@ public final class FandGuiSupport {
     public static Runnable attachTheming(Component root) {
         runOnEdt(() -> applyTheme(root));
         AutoCloseable handle = themes().addListener(() -> runOnEdt(() -> applyTheme(root)));
+        return releasing(handle);
+    }
+
+    /** Wraps a listener handle as an idempotent, exception-swallowing finalizer. */
+    private static Runnable releasing(AutoCloseable handle) {
         return () -> {
             try {
                 handle.close();
