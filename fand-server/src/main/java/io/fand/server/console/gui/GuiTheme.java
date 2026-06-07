@@ -1,5 +1,6 @@
 package io.fand.server.console.gui;
 
+import io.fand.server.config.ConfigException;
 import java.awt.Color;
 import java.util.Locale;
 import javax.swing.UIManager;
@@ -84,17 +85,21 @@ public enum GuiTheme {
     }
 
     /**
-     * Parses a configured theme name, falling back to {@link #SYSTEM} for blank or
-     * unrecognised values so a typo never aborts boot.
+     * Parses a configured theme name. Blank values default to {@link #SYSTEM};
+     * unrecognised values are rejected with a {@link ConfigException} so a typo is
+     * surfaced rather than silently swallowed, matching how other config enums are
+     * validated.
      */
     public static GuiTheme fromConfig(String value) {
-        if (value == null) {
+        if (value == null || value.isBlank()) {
             return SYSTEM;
         }
         return switch (value.trim().toLowerCase(Locale.ROOT)) {
             case "dark" -> DARK;
             case "light" -> LIGHT;
-            default -> SYSTEM;
+            case "system" -> SYSTEM;
+            default -> throw new ConfigException(
+                    "console.gui.theme must be one of: dark, light, system");
         };
     }
 

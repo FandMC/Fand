@@ -1,6 +1,5 @@
 package io.fand.server.console.gui;
 
-import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import javax.swing.BorderFactory;
@@ -19,18 +18,15 @@ import javax.swing.plaf.basic.BasicButtonUI;
  *
  * <p>Kept separate from the patched vanilla GUI classes so the patch sites only
  * need a single call, and so the styling rules live in normal Fand source that
- * is unit-testable and not tangled with decompiled code.
+ * is unit-testable and not tangled with decompiled code. Call on the event
+ * dispatch thread.
  */
 public final class GuiStyles {
 
     private GuiStyles() {
     }
 
-    /** Recolours {@code root} and every descendant for the active theme. */
-    public static void apply(Component root) {
-        apply(root, GuiThemes.palette());
-    }
-
+    /** Recolours {@code root} and every descendant for {@code palette}. */
     public static void apply(Component root, GuiPalette palette) {
         style(root, palette);
         if (root instanceof Container container) {
@@ -97,10 +93,5 @@ public final class GuiStyles {
         if (component.getBorder() instanceof TitledBorder titled) {
             titled.setTitleColor(palette.mutedForeground());
         }
-    }
-
-    /** A neutral border colour usable before a palette is resolved. */
-    public static Color neutralBorder() {
-        return GuiThemes.palette().border();
     }
 }

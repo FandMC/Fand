@@ -55,6 +55,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final ServerPerformanceTracker performance;
     private final ConfigReloader configReloader;
     private final ProxyForwardingSettings proxyForwarding;
+    private final io.fand.server.console.gui.GuiThemeService guiThemes;
     private final AtomicReference<WorldRegistry> worlds = new AtomicReference<>();
     private final AtomicReference<EntityRegistry> entities = new AtomicReference<>();
     private final AtomicReference<FandConfig> config;
@@ -73,7 +74,8 @@ public final class FandServer implements Server, AutoCloseable {
         this.configPath = configPath;
         this.config = new AtomicReference<>(initialConfig);
         this.proxyForwarding = ProxyForwardingSettings.fromConfig(initialConfig);
-        io.fand.server.console.gui.GuiThemes.initFromConfig(initialConfig.console.gui.theme);
+        this.guiThemes = new io.fand.server.console.gui.GuiThemeService(
+                io.fand.server.console.gui.GuiTheme.fromConfig(initialConfig.console.gui.theme));
         this.events = new EventDispatcher();
         this.permissions = new PermissionManager();
         this.commands = new CommandManager(permissions);
@@ -94,7 +96,7 @@ public final class FandServer implements Server, AutoCloseable {
                 recipes,
                 ConfigReloader.toPluginOptions(initialConfig)
         );
-        this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler);
+        this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, guiThemes);
     }
 
     /**
@@ -142,6 +144,10 @@ public final class FandServer implements Server, AutoCloseable {
 
     public boolean consoleGuiEnabled() {
         return config.get().console.gui.enabled;
+    }
+
+    public io.fand.server.console.gui.GuiThemeService guiThemes() {
+        return guiThemes;
     }
 
     public void attach(MinecraftServer server) {
@@ -384,6 +390,7 @@ public final class FandServer implements Server, AutoCloseable {
         plugins.disablePlugins();
         plugins.close();
         scheduler.close();
+        guiThemes.close();
         if (current != LifecyclePhase.BOOTSTRAP) {
             Fand.unbind(this);
         }

@@ -16,26 +16,38 @@ import javax.swing.SwingUtilities;
  *
  * <p>Concentrating the logic here keeps the vanilla patch to a handful of calls
  * and keeps the styling rules in normal, testable Fand source rather than in
- * decompiled code. All methods must be called on the Swing event dispatch
- * thread.
+ * decompiled code. The theme state itself is owned by the runtime
+ * ({@link GuiThemeService}, reached via {@code FandHooks.guiThemes()}).
+ *
+ * <p>Threading is handled internally: every method that touches Swing marshals
+ * onto the event dispatch thread itself, so callers (including the vanilla
+ * {@code showFrameFor} path, which is not guaranteed to run on the EDT) do not
+ * have to reason about it. {@link #palette()} and {@link #graphLineColor} only
+ * read immutable theme data and are safe from any thread.
  */
 public final class FandGuiSupport {
 
     private FandGuiSupport() {
     }
 
+    private static GuiThemeService themes() {
+        return io.fand.server.hooks.FandHooks.guiThemes();
+    }
+
     /**
      * Builds the theme toggle bar shown at the top of the GUI. The button cycles
-     * Dark → Light → System and reflects the active theme.
+     * Dark → Light → System and reflects the active theme. Must be called on the
+     * EDT, like the rest of GUI construction in {@code MinecraftServerGui}.
      */
     public static JComponent buildThemeBar() {
+        var themes = themes();
         var bar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
         bar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
 
         var label = new JLabel("Theme:");
-        var button = new JButton(GuiThemes.current().displayName());
+        var button = new JButton(themes.current().displayName());
         button.setFocusable(false);
-        button.addActionListener(event -> button.setText(GuiThemes.cycle().displayName()));
+        button.addActionListener(event -> button.setText(themes.cycle().displayName()));
 
         bar.add(label);
         bar.add(button);
@@ -43,17 +55,16 @@ public final class FandGuiSupport {
     }
 
     /**
-     * Applies the active palette to the whole window and registers a listener that
-     * restyles and repaints whenever the theme changes at runtime.
+     * Applies the active palette to {@code root}'s window and registers a listener
+     * that restyles and repaints whenever the theme changes. Theme-change
+     * notifications may arrive on any thread, so the listener marshals onto the
+     * EDT before touching Swing.
      *
      * @return a cleanup action that detaches the listener; register it as a GUI finalizer
      */
     public static Runnable attachTheming(Component root) {
-        applyTheme(root);
-        AutoCloseable handle = GuiThemes.addListener(() -> SwingUtilities.invokeLater(() -> {
-            applyTheme(root);
-            repaintWindow(root);
-        }));
+        runOnEdt(() -> applyTheme(root));
+        AutoCloseable handle = themes().addListener(() -> runOnEdt(() -> applyTheme(root)));
         return () -> {
             try {
                 handle.close();
@@ -63,13 +74,15 @@ public final class FandGuiSupport {
         };
     }
 
-    /** Recolours {@code root} (and its window, if any) for the active theme. */
+    /** Recolours {@code root}'s window for the active theme, on the EDT. */
     public static void applyTheme(Component root) {
-        var target = targetFor(root);
-        GuiStyles.apply(target);
-        target.invalidate();
-        target.validate();
-        target.repaint();
+        runOnEdt(() -> {
+            var target = targetFor(root);
+            GuiStyles.apply(target, themes().palette());
+            target.invalidate();
+            target.validate();
+            target.repaint();
+        });
     }
 
     private static Component targetFor(Component root) {
@@ -77,27 +90,21 @@ public final class FandGuiSupport {
         return window != null ? window : root;
     }
 
-    private static void repaintWindow(Component root) {
-        targetFor(root).repaint();
+    private static void runOnEdt(Runnable task) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            task.run();
+        } else {
+            SwingUtilities.invokeLater(task);
+        }
     }
 
-    /** Current palette, exposed so patched paint code can read theme colours. */
+    /** Current palette. Reads immutable theme data; safe from any thread. */
     public static GuiPalette palette() {
-        return GuiThemes.palette();
+        return themes().palette();
     }
 
-    /**
-     * Colour for a memory-usage graph bar of the given height (0-100), scaled
-     * from a dim baseline up to the theme's full-intensity graph line so the plot
-     * stays legible on both dark and light backgrounds.
-     */
+    /** Graph-bar colour for the given height. Safe from any thread. */
     public static Color graphLineColor(int barHeight) {
-        var line = palette().graphLine();
-        int clamped = Math.max(0, Math.min(100, barHeight));
-        float intensity = 0.45f + 0.55f * (clamped / 100.0f);
-        int r = Math.round(line.getRed() * intensity);
-        int gg = Math.round(line.getGreen() * intensity);
-        int b = Math.round(line.getBlue() * intensity);
-        return new Color(r, gg, b);
+        return themes().graphLineColor(barHeight);
     }
 }

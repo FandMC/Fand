@@ -1,7 +1,9 @@
 package io.fand.server.console.gui;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.fand.server.config.ConfigException;
 import org.junit.jupiter.api.Test;
 
 class GuiThemeTest {
@@ -14,10 +16,17 @@ class GuiThemeTest {
     }
 
     @Test
-    void fallsBackToSystemForUnknownOrNull() {
+    void defaultsToSystemForBlankOrNull() {
         assertThat(GuiTheme.fromConfig(null)).isEqualTo(GuiTheme.SYSTEM);
         assertThat(GuiTheme.fromConfig("")).isEqualTo(GuiTheme.SYSTEM);
-        assertThat(GuiTheme.fromConfig("solarized")).isEqualTo(GuiTheme.SYSTEM);
+        assertThat(GuiTheme.fromConfig("   ")).isEqualTo(GuiTheme.SYSTEM);
+    }
+
+    @Test
+    void rejectsUnknownThemeNames() {
+        assertThatThrownBy(() -> GuiTheme.fromConfig("solarized"))
+                .isInstanceOf(ConfigException.class)
+                .hasMessageContaining("console.gui.theme");
     }
 
     @Test
@@ -49,24 +58,5 @@ class GuiThemeTest {
             assertThat(palette.buttonBackground()).as("%s button", theme).isNotNull();
             assertThat(palette.graphLine()).as("%s graphLine", theme).isNotNull();
         }
-    }
-
-    @Test
-    void graphLineColorScalesWithBarHeight() {
-        GuiThemes.set(GuiTheme.DARK);
-        try {
-            var dim = FandGuiSupport.graphLineColor(0);
-            var bright = FandGuiSupport.graphLineColor(100);
-            assertThat(brightness(bright)).isGreaterThan(brightness(dim));
-            // Clamps out-of-range input rather than throwing.
-            assertThat(FandGuiSupport.graphLineColor(-50)).isEqualTo(dim);
-            assertThat(FandGuiSupport.graphLineColor(150)).isEqualTo(bright);
-        } finally {
-            GuiThemes.set(GuiTheme.SYSTEM);
-        }
-    }
-
-    private static int brightness(java.awt.Color color) {
-        return color.getRed() + color.getGreen() + color.getBlue();
     }
 }

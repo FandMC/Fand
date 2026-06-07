@@ -56,14 +56,22 @@ final class FandReloadCommandTest {
 
                 scheduler:
                   asyncThreads: 0
+
+                console:
+                  gui:
+                    enabled: false
+                    theme: dark
                 """);
 
         var resolved = server.commandManager().resolve(allowed, List.of("fand", "reload")).orElseThrow();
         resolved.command().executor().execute(allowed, resolved.usedLabel(), List.of());
 
         assertThat(server.brand()).isEqualTo("Reloaded Brand");
+        assertThat(server.guiThemes().current())
+                .isEqualTo(io.fand.server.console.gui.GuiTheme.DARK);
         assertThat(allowed.messages).containsExactly(
-                Component.text("Hot-applied: identity.brand, plugins.continueOnLoadFailure")
+                Component.text("Hot-applied: identity.brand, plugins.continueOnLoadFailure, console.gui.theme"),
+                Component.text("Requires restart: console.gui.enabled")
         );
     }
 

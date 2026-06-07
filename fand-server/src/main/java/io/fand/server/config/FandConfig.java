@@ -31,6 +31,7 @@ public final class FandConfig {
         if (mode.requiresSecret() && config.network.forwarding.secret.isBlank()) {
             throw new ConfigException("network.forwarding.secret must be set when network.forwarding.mode is " + mode.configValue());
         }
+        io.fand.server.console.gui.GuiTheme.fromConfig(config.console.gui.theme);
     }
 
     public static final class Identity {
