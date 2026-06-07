@@ -32,6 +32,8 @@ import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
 import io.fand.api.item.ItemTypes;
 import io.fand.api.item.component.CustomModelData;
+import io.fand.api.item.component.EnchantmentKeys;
+import io.fand.api.item.component.ItemComponentKeys;
 import io.fand.api.item.component.ItemRarity;
 import io.fand.api.lifecycle.ServerStartedEvent;
 import io.fand.api.permission.PermissionDefault;
@@ -1033,6 +1035,10 @@ public final class TestPlugin implements Plugin {
                         Component.text("Lore, model data, glint, and custom data survive inventory round-trips.", NamedTextColor.GRAY))
                 .withRarity(ItemRarity.RARE)
                 .withEnchantmentGlintOverride(true)
+                .withEnchantment(EnchantmentKeys.UNBREAKING, 3)
+                .withStoredEnchantment(EnchantmentKeys.MENDING, 1)
+                .withEnchantable(30)
+                .withHiddenTooltipComponent(ItemComponentKeys.STORED_ENCHANTMENTS, true)
                 .withCustomModelData(new CustomModelData(
                         List.of(20018.0F),
                         List.of(true),

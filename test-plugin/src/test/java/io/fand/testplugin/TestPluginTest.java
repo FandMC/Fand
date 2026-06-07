@@ -3,6 +3,7 @@ package io.fand.testplugin;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.fand.api.inventory.InventoryType;
+import io.fand.api.item.component.EnchantmentKeys;
 import io.fand.api.item.component.ItemComponentKeys;
 import io.fand.api.item.component.ItemRarity;
 import io.fand.api.item.ItemStack;
@@ -115,6 +116,10 @@ final class TestPluginTest {
         assertThat(item.customName()).contains(net.kyori.adventure.text.Component.text("Fand Component Item", net.kyori.adventure.text.format.NamedTextColor.GOLD));
         assertThat(item.lore()).hasSize(2);
         assertThat(item.enchantmentGlintOverride()).contains(true);
+        assertThat(item.enchantments().level(EnchantmentKeys.UNBREAKING)).isEqualTo(3);
+        assertThat(item.storedEnchantments().level(EnchantmentKeys.MENDING)).isEqualTo(1);
+        assertThat(item.enchantable()).contains(30);
+        assertThat(item.tooltipDisplay().hides(ItemComponentKeys.STORED_ENCHANTMENTS)).isTrue();
         assertThat(item.rarity()).contains(ItemRarity.RARE);
         assertThat(item.components().has(ItemComponentKeys.CUSTOM_MODEL_DATA)).isTrue();
         assertThat(item.customData()).get().extracting(json -> json.get("source").getAsString()).isEqualTo("tester");

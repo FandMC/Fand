@@ -4,17 +4,18 @@ import com.google.gson.JsonElement;
 import com.mojang.serialization.JsonOps;
 import io.fand.api.item.component.ItemComponents;
 import java.util.Objects;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.component.DataComponentPatch;
 
 final class ItemComponentBridge {
 
-    private static volatile RegistryAccess registries = RegistryAccess.EMPTY;
+    private static volatile HolderLookup.Provider registries = RegistryAccess.EMPTY;
 
     private ItemComponentBridge() {
     }
 
-    static void useRegistries(RegistryAccess access) {
+    static void useRegistries(HolderLookup.Provider access) {
         registries = Objects.requireNonNull(access, "access");
     }
 

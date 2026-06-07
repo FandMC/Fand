@@ -3,12 +3,13 @@ package io.fand.server.item;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.gson.JsonObject;
-import io.fand.api.item.ItemStack;
 import io.fand.api.item.component.CustomModelData;
+import io.fand.api.item.component.EnchantmentKeys;
+import io.fand.api.item.component.ItemComponentKeys;
 import io.fand.api.item.component.ItemRarity;
 import java.util.List;
-import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.data.registries.VanillaRegistries;
 import net.kyori.adventure.text.Component;
 import net.minecraft.SharedConstants;
 import net.minecraft.server.Bootstrap;
@@ -22,10 +23,10 @@ class FandItemStacksTest {
     static void bootstrapVanilla() {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
-        var registryAccess = RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY);
-        BuiltInRegistries.DATA_COMPONENT_INITIALIZERS.build(registryAccess)
+        var registries = VanillaRegistries.createLookup();
+        BuiltInRegistries.DATA_COMPONENT_INITIALIZERS.build(registries)
                 .forEach(pending -> pending.apply());
-        FandItemStacks.useRegistries(registryAccess);
+        FandItemStacks.useRegistries(registries);
     }
 
     @Test
@@ -40,6 +41,10 @@ class FandItemStacksTest {
                 .withLore(Component.text("line one"), Component.text("line two"))
                 .withCustomModelData(new CustomModelData(List.of(7.0F), List.of(true), List.of("model"), List.of(0xFFAA00)))
                 .withEnchantmentGlintOverride(true)
+                .withEnchantment(EnchantmentKeys.SHARPNESS, 5)
+                .withStoredEnchantment(EnchantmentKeys.MENDING, 1)
+                .withEnchantable(30)
+                .withHiddenTooltipComponent(ItemComponentKeys.STORED_ENCHANTMENTS, true)
                 .withRarity(ItemRarity.EPIC)
                 .withCustomData(customData);
 
@@ -54,6 +59,10 @@ class FandItemStacksTest {
         assertThat(roundTripped.lore()).containsExactly(Component.text("line one"), Component.text("line two"));
         assertThat(roundTripped.customModelData()).contains(new CustomModelData(List.of(7.0F), List.of(true), List.of("model"), List.of(0xFFAA00)));
         assertThat(roundTripped.enchantmentGlintOverride()).contains(true);
+        assertThat(roundTripped.enchantments().level(EnchantmentKeys.SHARPNESS)).isEqualTo(5);
+        assertThat(roundTripped.storedEnchantments().level(EnchantmentKeys.MENDING)).isEqualTo(1);
+        assertThat(roundTripped.enchantable()).contains(30);
+        assertThat(roundTripped.tooltipDisplay().hides(ItemComponentKeys.STORED_ENCHANTMENTS)).isTrue();
         assertThat(roundTripped.rarity()).contains(ItemRarity.EPIC);
         assertThat(roundTripped.customData()).get().extracting(json -> json.get("source").getAsString()).isEqualTo("test");
     }

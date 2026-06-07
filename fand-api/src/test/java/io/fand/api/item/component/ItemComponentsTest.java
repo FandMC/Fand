@@ -35,4 +35,23 @@ class ItemComponentsTest {
         assertThat(components.get(Key.key("minecraft:custom_data")).orElseThrow().getAsJsonObject().has("after"))
                 .isFalse();
     }
+
+    @Test
+    void exposesKnownVanillaComponentKeys() {
+        assertThat(ItemComponentKeys.all())
+                .contains(ItemComponentKeys.CUSTOM_DATA, ItemComponentKeys.ENCHANTMENTS, ItemComponentKeys.SHULKER_COLOR);
+        assertThat(ItemComponentKeys.isKnown(ItemComponentKeys.TOOLTIP_DISPLAY)).isTrue();
+    }
+
+    @Test
+    void typedHelpersWritePrimitiveValues() {
+        var components = ItemComponents.empty()
+                .withInt(ItemComponentKeys.REPAIR_COST, 4)
+                .withBoolean(ItemComponentKeys.ENCHANTMENT_GLINT_OVERRIDE, true)
+                .withKey(ItemComponentKeys.ITEM_MODEL, Key.key("fand:test"));
+
+        assertThat(components.get(ItemComponentKeys.REPAIR_COST)).contains(new JsonPrimitive(4));
+        assertThat(components.get(ItemComponentKeys.ENCHANTMENT_GLINT_OVERRIDE)).contains(new JsonPrimitive(true));
+        assertThat(components.get(ItemComponentKeys.ITEM_MODEL)).contains(new JsonPrimitive("fand:test"));
+    }
 }
