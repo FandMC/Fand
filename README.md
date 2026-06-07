@@ -5,8 +5,11 @@ type-safe plugin API. Spiritually a sibling of Paper: same mechanism (work on
 the decompiled vanilla server, ship as a chain of patches), different surface
 (no Bukkit compatibility, modernised core APIs).
 
-**Current status**: Phase 0 complete, Phase 1 in progress. Build pipeline is
-functional; runtime integration with patched vanilla code is underway.
+**Current status**: Phase 0 complete, Phase 1 late-stage. Build pipeline is
+functional; runtime integration with patched vanilla code is active across
+plugins, events, commands, scheduling, configuration, inventories, and proxy
+forwarding. The remaining Phase 1 work is hardening, documentation, and
+end-to-end validation rather than initial runtime scaffolding.
 
 ## Modules
 
@@ -42,9 +45,17 @@ The patched Minecraft code lives in `fand-server/src/minecraft/` after setup.
 - First sample patch applied
 
 **Phase 1 (Core API Design)**: 🚧 In Progress
-- API interfaces defined (events, plugins, scheduler, commands)
-- Runtime implementation pending
-- Integration with vanilla server underway
+- API interfaces defined (events, plugins, scheduler, commands, permissions,
+  worlds/entities, inventories/items)
+- Runtime implementation exists for plugins, events, scheduler, commands,
+  permissions, config reload, inventories/items, and proxy forwarding
+- Vanilla integration underway through ordered feature patches
+
+**Immediate engineering focus**:
+- Harden plugin failure paths and resource cleanup
+- Reduce allocations and repeated runtime lookups in hot event patches
+- Clarify scheduler thread/tick semantics in public API docs
+- Stabilize local/CI build memory settings for paperweight workflows
 
 See `PROJECT_PROPOSAL.md` for the full roadmap and `CODING_STANDARDS.md` for
 development guidelines.
