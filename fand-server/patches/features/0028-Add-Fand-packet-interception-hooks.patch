@@ -1,0 +1,55 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryorin1337 <ryorin64@gmail.com>
+Date: Mon, 8 Jun 2026 02:11:44 +0800
+Subject: [PATCH] Add Fand packet interception hooks
+
+
+diff --git a/net/minecraft/network/Connection.java b/net/minecraft/network/Connection.java
+index b1453c77156973db924ea4c0df396351abed86f5..5468fae8c4b0b8a49122b5db3bff23cd7fffebb8 100644
+--- a/net/minecraft/network/Connection.java
++++ b/net/minecraft/network/Connection.java
+@@ -150,14 +150,19 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+             if (packetListener == null) {
+                 throw new IllegalStateException("Received a packet before the packet listener was initialized");
+             } else {
+-                if (packetListener.shouldHandleMessage(packet)) {
++                // Fand: inbound packet API hook — may replace the packet or drop it (returns null).
++                Packet<?> dispatched = (Packet<?>) io.fand.server.hooks.FandHooks.interceptInbound(packet, this);
++                if (dispatched == null) {
++                    return;
++                }
++                if (packetListener.shouldHandleMessage(dispatched)) {
+                     try {
+-                        genericsFtw(packet, packetListener);
++                        genericsFtw(dispatched, packetListener);
+                     } catch (RunningOnDifferentThreadException var5) {
+                     } catch (RejectedExecutionException var6) {
+                         this.disconnect(Component.translatable("multiplayer.disconnect.server_shutdown"));
+                     } catch (ClassCastException var7) {
+-                        LOGGER.error("Received {} that couldn't be processed", packet.getClass(), var7);
++                        LOGGER.error("Received {} that couldn't be processed", dispatched.getClass(), var7);
+                         this.disconnect(Component.translatable("multiplayer.disconnect.invalid_packet"));
+                     }
+ 
+@@ -307,13 +312,18 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     }
+ 
+     private void doSendPacket(final Packet<?> packet, final @Nullable ChannelFutureListener listener, final boolean flush) {
++        // Fand: outbound packet API hook — runs on the channel event loop; may replace or drop (returns null).
++        Packet<?> dispatched = (Packet<?>) io.fand.server.hooks.FandHooks.interceptOutbound(packet, this);
++        if (dispatched == null) {
++            return;
++        }
+         if (listener != null) {
+-            ChannelFuture future = flush ? this.channel.writeAndFlush(packet) : this.channel.write(packet);
++            ChannelFuture future = flush ? this.channel.writeAndFlush(dispatched) : this.channel.write(dispatched);
+             future.addListener(listener);
+         } else if (flush) {
+-            this.channel.writeAndFlush(packet, this.channel.voidPromise());
++            this.channel.writeAndFlush(dispatched, this.channel.voidPromise());
+         } else {
+-            this.channel.write(packet, this.channel.voidPromise());
++            this.channel.write(dispatched, this.channel.voidPromise());
+         }
+     }
+ 

@@ -128,6 +128,36 @@ public final class FandHooks {
         return Main.runtime().guiThemes();
     }
 
+    /**
+     * Hook for inbound packets, called from {@code Connection.channelRead0} on
+     * the connection I/O thread. Returns the packet to keep processing it
+     * (possibly a replacement), or {@code null} to drop it. Tolerates being
+     * called before the runtime is bootstrapped.
+     */
+    public static @Nullable Object interceptInbound(Object packet, Object connection) {
+        var runtime = Main.runtimeOrNull();
+        if (runtime == null) {
+            return packet;
+        }
+        return runtime.packetRegistry().interceptInbound(
+                (net.minecraft.network.protocol.Packet<?>) packet, (net.minecraft.network.Connection) connection);
+    }
+
+    /**
+     * Hook for outbound packets, called from {@code Connection.doSendPacket} on
+     * the connection event loop. Returns the packet to keep sending it
+     * (possibly a replacement), or {@code null} to drop it. Tolerates being
+     * called before the runtime is bootstrapped.
+     */
+    public static @Nullable Object interceptOutbound(Object packet, Object connection) {
+        var runtime = Main.runtimeOrNull();
+        if (runtime == null) {
+            return packet;
+        }
+        return runtime.packetRegistry().interceptOutbound(
+                (net.minecraft.network.protocol.Packet<?>) packet, (net.minecraft.network.Connection) connection);
+    }
+
     public static ForwardedPlayerInfo parseBungeeLegacyForwarding(String hostName, String playerName) {
         return ProxyForwarding.parseBungeeLegacy(hostName, playerName);
     }

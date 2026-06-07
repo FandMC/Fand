@@ -60,6 +60,15 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     /** Spawns particles at {@code location} for this player. No-op if offline or in another world. */
     void spawnParticle(Location location, ParticleEffect effect, ParticleEmission emission);
 
+    /**
+     * Sends a block-change acknowledgement for the given client prediction
+     * {@code sequence}. The client rolls back any predicted block changes the
+     * server has not confirmed — use this after cancelling a place/break packet
+     * so the client reverts to the server's authoritative blocks. No-op if
+     * offline.
+     */
+    void acknowledgeBlockChange(int sequence);
+
     /** Sends a tab-list header and footer to this player. */
     void sendTabList(Component header, Component footer);
 

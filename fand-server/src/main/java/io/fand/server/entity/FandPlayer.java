@@ -299,6 +299,14 @@ public final class FandPlayer implements Player {
     }
 
     @Override
+    public void acknowledgeBlockChange(int sequence) {
+        var connection = bound.handle.connection;
+        if (connection != null) {
+            connection.send(new net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket(sequence));
+        }
+    }
+
+    @Override
     public void sendTabList(Component header, Component footer) {
         Objects.requireNonNull(header, "header");
         Objects.requireNonNull(footer, "footer");

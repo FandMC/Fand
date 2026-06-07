@@ -1,0 +1,488 @@
+package io.fand.server.network.packet;
+
+import io.fand.api.packet.PacketType;
+import java.util.Map;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.common.ClientboundClearDialogPacket;
+import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
+import net.minecraft.network.protocol.common.ClientboundCustomReportDetailsPacket;
+import net.minecraft.network.protocol.common.ClientboundDisconnectPacket;
+import net.minecraft.network.protocol.common.ClientboundKeepAlivePacket;
+import net.minecraft.network.protocol.common.ClientboundPingPacket;
+import net.minecraft.network.protocol.common.ClientboundResourcePackPopPacket;
+import net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket;
+import net.minecraft.network.protocol.common.ClientboundServerLinksPacket;
+import net.minecraft.network.protocol.common.ClientboundShowDialogPacket;
+import net.minecraft.network.protocol.common.ClientboundStoreCookiePacket;
+import net.minecraft.network.protocol.common.ClientboundTransferPacket;
+import net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket;
+import net.minecraft.network.protocol.common.ServerboundClientInformationPacket;
+import net.minecraft.network.protocol.common.ServerboundCustomClickActionPacket;
+import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
+import net.minecraft.network.protocol.common.ServerboundKeepAlivePacket;
+import net.minecraft.network.protocol.common.ServerboundPongPacket;
+import net.minecraft.network.protocol.common.ServerboundResourcePackPacket;
+import net.minecraft.network.protocol.configuration.ClientboundCodeOfConductPacket;
+import net.minecraft.network.protocol.configuration.ClientboundFinishConfigurationPacket;
+import net.minecraft.network.protocol.configuration.ClientboundRegistryDataPacket;
+import net.minecraft.network.protocol.configuration.ClientboundResetChatPacket;
+import net.minecraft.network.protocol.configuration.ClientboundSelectKnownPacks;
+import net.minecraft.network.protocol.configuration.ClientboundUpdateEnabledFeaturesPacket;
+import net.minecraft.network.protocol.configuration.ServerboundAcceptCodeOfConductPacket;
+import net.minecraft.network.protocol.configuration.ServerboundFinishConfigurationPacket;
+import net.minecraft.network.protocol.configuration.ServerboundSelectKnownPacks;
+import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundAnimatePacket;
+import net.minecraft.network.protocol.game.ClientboundAwardStatsPacket;
+import net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket;
+import net.minecraft.network.protocol.game.ClientboundBlockDestructionPacket;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.network.protocol.game.ClientboundBlockEventPacket;
+import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundBossEventPacket;
+import net.minecraft.network.protocol.game.ClientboundBundleDelimiterPacket;
+import net.minecraft.network.protocol.game.ClientboundBundlePacket;
+import net.minecraft.network.protocol.game.ClientboundChangeDifficultyPacket;
+import net.minecraft.network.protocol.game.ClientboundChunkBatchFinishedPacket;
+import net.minecraft.network.protocol.game.ClientboundChunkBatchStartPacket;
+import net.minecraft.network.protocol.game.ClientboundChunksBiomesPacket;
+import net.minecraft.network.protocol.game.ClientboundClearTitlesPacket;
+import net.minecraft.network.protocol.game.ClientboundCommandSuggestionsPacket;
+import net.minecraft.network.protocol.game.ClientboundCommandsPacket;
+import net.minecraft.network.protocol.game.ClientboundContainerClosePacket;
+import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
+import net.minecraft.network.protocol.game.ClientboundContainerSetDataPacket;
+import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
+import net.minecraft.network.protocol.game.ClientboundCooldownPacket;
+import net.minecraft.network.protocol.game.ClientboundCustomChatCompletionsPacket;
+import net.minecraft.network.protocol.game.ClientboundDamageEventPacket;
+import net.minecraft.network.protocol.game.ClientboundDebugBlockValuePacket;
+import net.minecraft.network.protocol.game.ClientboundDebugChunkValuePacket;
+import net.minecraft.network.protocol.game.ClientboundDebugEntityValuePacket;
+import net.minecraft.network.protocol.game.ClientboundDebugEventPacket;
+import net.minecraft.network.protocol.game.ClientboundDebugSamplePacket;
+import net.minecraft.network.protocol.game.ClientboundDeleteChatPacket;
+import net.minecraft.network.protocol.game.ClientboundDisguisedChatPacket;
+import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
+import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket;
+import net.minecraft.network.protocol.game.ClientboundExplodePacket;
+import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
+import net.minecraft.network.protocol.game.ClientboundGameEventPacket;
+import net.minecraft.network.protocol.game.ClientboundGameRuleValuesPacket;
+import net.minecraft.network.protocol.game.ClientboundGameTestHighlightPosPacket;
+import net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket;
+import net.minecraft.network.protocol.game.ClientboundInitializeBorderPacket;
+import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
+import net.minecraft.network.protocol.game.ClientboundLevelEventPacket;
+import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket;
+import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundLoginPacket;
+import net.minecraft.network.protocol.game.ClientboundLowDiskSpaceWarningPacket;
+import net.minecraft.network.protocol.game.ClientboundMapItemDataPacket;
+import net.minecraft.network.protocol.game.ClientboundMerchantOffersPacket;
+import net.minecraft.network.protocol.game.ClientboundMountScreenOpenPacket;
+import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundMoveMinecartPacket;
+import net.minecraft.network.protocol.game.ClientboundMoveVehiclePacket;
+import net.minecraft.network.protocol.game.ClientboundOpenBookPacket;
+import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
+import net.minecraft.network.protocol.game.ClientboundOpenSignEditorPacket;
+import net.minecraft.network.protocol.game.ClientboundPlaceGhostRecipePacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerChatPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerCombatEndPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerCombatEnterPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerCombatKillPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerLookAtPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerRotationPacket;
+import net.minecraft.network.protocol.game.ClientboundProjectilePowerPacket;
+import net.minecraft.network.protocol.game.ClientboundRecipeBookAddPacket;
+import net.minecraft.network.protocol.game.ClientboundRecipeBookRemovePacket;
+import net.minecraft.network.protocol.game.ClientboundRecipeBookSettingsPacket;
+import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
+import net.minecraft.network.protocol.game.ClientboundRemoveMobEffectPacket;
+import net.minecraft.network.protocol.game.ClientboundResetScorePacket;
+import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
+import net.minecraft.network.protocol.game.ClientboundRotateHeadPacket;
+import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundSelectAdvancementsTabPacket;
+import net.minecraft.network.protocol.game.ClientboundServerDataPacket;
+import net.minecraft.network.protocol.game.ClientboundSetActionBarTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetBorderCenterPacket;
+import net.minecraft.network.protocol.game.ClientboundSetBorderLerpSizePacket;
+import net.minecraft.network.protocol.game.ClientboundSetBorderSizePacket;
+import net.minecraft.network.protocol.game.ClientboundSetBorderWarningDelayPacket;
+import net.minecraft.network.protocol.game.ClientboundSetBorderWarningDistancePacket;
+import net.minecraft.network.protocol.game.ClientboundSetCameraPacket;
+import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
+import net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket;
+import net.minecraft.network.protocol.game.ClientboundSetCursorItemPacket;
+import net.minecraft.network.protocol.game.ClientboundSetDefaultSpawnPositionPacket;
+import net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket;
+import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
+import net.minecraft.network.protocol.game.ClientboundSetEntityLinkPacket;
+import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
+import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
+import net.minecraft.network.protocol.game.ClientboundSetExperiencePacket;
+import net.minecraft.network.protocol.game.ClientboundSetHealthPacket;
+import net.minecraft.network.protocol.game.ClientboundSetHeldSlotPacket;
+import net.minecraft.network.protocol.game.ClientboundSetObjectivePacket;
+import net.minecraft.network.protocol.game.ClientboundSetPassengersPacket;
+import net.minecraft.network.protocol.game.ClientboundSetPlayerInventoryPacket;
+import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket;
+import net.minecraft.network.protocol.game.ClientboundSetScorePacket;
+import net.minecraft.network.protocol.game.ClientboundSetSimulationDistancePacket;
+import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTimePacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
+import net.minecraft.network.protocol.game.ClientboundSoundEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundSoundPacket;
+import net.minecraft.network.protocol.game.ClientboundStartConfigurationPacket;
+import net.minecraft.network.protocol.game.ClientboundStopSoundPacket;
+import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
+import net.minecraft.network.protocol.game.ClientboundTabListPacket;
+import net.minecraft.network.protocol.game.ClientboundTagQueryPacket;
+import net.minecraft.network.protocol.game.ClientboundTakeItemEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundTestInstanceBlockStatus;
+import net.minecraft.network.protocol.game.ClientboundTickingStatePacket;
+import net.minecraft.network.protocol.game.ClientboundTickingStepPacket;
+import net.minecraft.network.protocol.game.ClientboundTrackedWaypointPacket;
+import net.minecraft.network.protocol.game.ClientboundUpdateAdvancementsPacket;
+import net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket;
+import net.minecraft.network.protocol.game.ClientboundUpdateMobEffectPacket;
+import net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket;
+import net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket;
+import net.minecraft.network.protocol.game.ServerboundAttackPacket;
+import net.minecraft.network.protocol.game.ServerboundBlockEntityTagQueryPacket;
+import net.minecraft.network.protocol.game.ServerboundChangeDifficultyPacket;
+import net.minecraft.network.protocol.game.ServerboundChangeGameModePacket;
+import net.minecraft.network.protocol.game.ServerboundChatAckPacket;
+import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
+import net.minecraft.network.protocol.game.ServerboundChatCommandSignedPacket;
+import net.minecraft.network.protocol.game.ServerboundChatPacket;
+import net.minecraft.network.protocol.game.ServerboundChatSessionUpdatePacket;
+import net.minecraft.network.protocol.game.ServerboundChunkBatchReceivedPacket;
+import net.minecraft.network.protocol.game.ServerboundClientCommandPacket;
+import net.minecraft.network.protocol.game.ServerboundClientTickEndPacket;
+import net.minecraft.network.protocol.game.ServerboundCommandSuggestionPacket;
+import net.minecraft.network.protocol.game.ServerboundConfigurationAcknowledgedPacket;
+import net.minecraft.network.protocol.game.ServerboundContainerButtonClickPacket;
+import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
+import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
+import net.minecraft.network.protocol.game.ServerboundContainerSlotStateChangedPacket;
+import net.minecraft.network.protocol.game.ServerboundDebugSubscriptionRequestPacket;
+import net.minecraft.network.protocol.game.ServerboundEditBookPacket;
+import net.minecraft.network.protocol.game.ServerboundEntityTagQueryPacket;
+import net.minecraft.network.protocol.game.ServerboundInteractPacket;
+import net.minecraft.network.protocol.game.ServerboundJigsawGeneratePacket;
+import net.minecraft.network.protocol.game.ServerboundLockDifficultyPacket;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket;
+import net.minecraft.network.protocol.game.ServerboundPaddleBoatPacket;
+import net.minecraft.network.protocol.game.ServerboundPickItemFromBlockPacket;
+import net.minecraft.network.protocol.game.ServerboundPickItemFromEntityPacket;
+import net.minecraft.network.protocol.game.ServerboundPlaceRecipePacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerAbilitiesPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerLoadedPacket;
+import net.minecraft.network.protocol.game.ServerboundRecipeBookChangeSettingsPacket;
+import net.minecraft.network.protocol.game.ServerboundRecipeBookSeenRecipePacket;
+import net.minecraft.network.protocol.game.ServerboundRenameItemPacket;
+import net.minecraft.network.protocol.game.ServerboundSeenAdvancementsPacket;
+import net.minecraft.network.protocol.game.ServerboundSelectBundleItemPacket;
+import net.minecraft.network.protocol.game.ServerboundSelectTradePacket;
+import net.minecraft.network.protocol.game.ServerboundSetBeaconPacket;
+import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
+import net.minecraft.network.protocol.game.ServerboundSetCommandBlockPacket;
+import net.minecraft.network.protocol.game.ServerboundSetCommandMinecartPacket;
+import net.minecraft.network.protocol.game.ServerboundSetCreativeModeSlotPacket;
+import net.minecraft.network.protocol.game.ServerboundSetGameRulePacket;
+import net.minecraft.network.protocol.game.ServerboundSetJigsawBlockPacket;
+import net.minecraft.network.protocol.game.ServerboundSetStructureBlockPacket;
+import net.minecraft.network.protocol.game.ServerboundSetTestBlockPacket;
+import net.minecraft.network.protocol.game.ServerboundSignUpdatePacket;
+import net.minecraft.network.protocol.game.ServerboundSpectateEntityPacket;
+import net.minecraft.network.protocol.game.ServerboundSwingPacket;
+import net.minecraft.network.protocol.game.ServerboundTeleportToEntityPacket;
+import net.minecraft.network.protocol.game.ServerboundTestInstanceBlockActionPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
+import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
+import net.minecraft.network.protocol.login.ClientboundCustomQueryPacket;
+import net.minecraft.network.protocol.login.ClientboundHelloPacket;
+import net.minecraft.network.protocol.login.ClientboundLoginCompressionPacket;
+import net.minecraft.network.protocol.login.ClientboundLoginDisconnectPacket;
+import net.minecraft.network.protocol.login.ClientboundLoginFinishedPacket;
+import net.minecraft.network.protocol.login.ServerboundCustomQueryAnswerPacket;
+import net.minecraft.network.protocol.login.ServerboundHelloPacket;
+import net.minecraft.network.protocol.login.ServerboundKeyPacket;
+import net.minecraft.network.protocol.login.ServerboundLoginAcknowledgedPacket;
+import net.minecraft.network.protocol.ping.ClientboundPongResponsePacket;
+import net.minecraft.network.protocol.ping.ServerboundPingRequestPacket;
+import net.minecraft.network.protocol.status.ClientboundStatusResponsePacket;
+import net.minecraft.network.protocol.status.ServerboundStatusRequestPacket;
+
+/**
+ * Maps each {@link PacketType} constant to its concrete vanilla packet class.
+ *
+ * <p>This is the single point that couples the stable public enum to the
+ * version-specific vanilla classes: a Minecraft update that renames packets is
+ * absorbed here, leaving {@code fand-api} untouched.
+ */
+final class PacketTypeMapping {
+
+    private static final Map<PacketType, Class<? extends Packet<?>>> BY_TYPE = Map.ofEntries(
+            entry(PacketType.C2S_CLIENT_INTENTION, ClientIntentionPacket.class),
+            entry(PacketType.C2S_ACCEPT_CODE_OF_CONDUCT, ServerboundAcceptCodeOfConductPacket.class),
+            entry(PacketType.C2S_ACCEPT_TELEPORTATION, ServerboundAcceptTeleportationPacket.class),
+            entry(PacketType.C2S_ATTACK, ServerboundAttackPacket.class),
+            entry(PacketType.C2S_BLOCK_ENTITY_TAG_QUERY, ServerboundBlockEntityTagQueryPacket.class),
+            entry(PacketType.C2S_CHANGE_DIFFICULTY, ServerboundChangeDifficultyPacket.class),
+            entry(PacketType.C2S_CHANGE_GAME_MODE, ServerboundChangeGameModePacket.class),
+            entry(PacketType.C2S_CHAT_ACK, ServerboundChatAckPacket.class),
+            entry(PacketType.C2S_CHAT_COMMAND, ServerboundChatCommandPacket.class),
+            entry(PacketType.C2S_CHAT_COMMAND_SIGNED, ServerboundChatCommandSignedPacket.class),
+            entry(PacketType.C2S_CHAT, ServerboundChatPacket.class),
+            entry(PacketType.C2S_CHAT_SESSION_UPDATE, ServerboundChatSessionUpdatePacket.class),
+            entry(PacketType.C2S_CHUNK_BATCH_RECEIVED, ServerboundChunkBatchReceivedPacket.class),
+            entry(PacketType.C2S_CLIENT_COMMAND, ServerboundClientCommandPacket.class),
+            entry(PacketType.C2S_CLIENT_INFORMATION, ServerboundClientInformationPacket.class),
+            entry(PacketType.C2S_CLIENT_TICK_END, ServerboundClientTickEndPacket.class),
+            entry(PacketType.C2S_COMMAND_SUGGESTION, ServerboundCommandSuggestionPacket.class),
+            entry(PacketType.C2S_CONFIGURATION_ACKNOWLEDGED, ServerboundConfigurationAcknowledgedPacket.class),
+            entry(PacketType.C2S_CONTAINER_BUTTON_CLICK, ServerboundContainerButtonClickPacket.class),
+            entry(PacketType.C2S_CONTAINER_CLICK, ServerboundContainerClickPacket.class),
+            entry(PacketType.C2S_CONTAINER_CLOSE, ServerboundContainerClosePacket.class),
+            entry(PacketType.C2S_CONTAINER_SLOT_STATE_CHANGED, ServerboundContainerSlotStateChangedPacket.class),
+            entry(PacketType.C2S_CUSTOM_CLICK_ACTION, ServerboundCustomClickActionPacket.class),
+            entry(PacketType.C2S_CUSTOM_PAYLOAD, ServerboundCustomPayloadPacket.class),
+            entry(PacketType.C2S_CUSTOM_QUERY_ANSWER, ServerboundCustomQueryAnswerPacket.class),
+            entry(PacketType.C2S_DEBUG_SUBSCRIPTION_REQUEST, ServerboundDebugSubscriptionRequestPacket.class),
+            entry(PacketType.C2S_EDIT_BOOK, ServerboundEditBookPacket.class),
+            entry(PacketType.C2S_ENTITY_TAG_QUERY, ServerboundEntityTagQueryPacket.class),
+            entry(PacketType.C2S_FINISH_CONFIGURATION, ServerboundFinishConfigurationPacket.class),
+            entry(PacketType.C2S_HELLO, ServerboundHelloPacket.class),
+            entry(PacketType.C2S_INTERACT, ServerboundInteractPacket.class),
+            entry(PacketType.C2S_JIGSAW_GENERATE, ServerboundJigsawGeneratePacket.class),
+            entry(PacketType.C2S_KEEP_ALIVE, ServerboundKeepAlivePacket.class),
+            entry(PacketType.C2S_KEY, ServerboundKeyPacket.class),
+            entry(PacketType.C2S_LOCK_DIFFICULTY, ServerboundLockDifficultyPacket.class),
+            entry(PacketType.C2S_LOGIN_ACKNOWLEDGED, ServerboundLoginAcknowledgedPacket.class),
+            entry(PacketType.C2S_MOVE_PLAYER, ServerboundMovePlayerPacket.class),
+            entry(PacketType.C2S_MOVE_VEHICLE, ServerboundMoveVehiclePacket.class),
+            entry(PacketType.C2S_PADDLE_BOAT, ServerboundPaddleBoatPacket.class),
+            entry(PacketType.C2S_PICK_ITEM_FROM_BLOCK, ServerboundPickItemFromBlockPacket.class),
+            entry(PacketType.C2S_PICK_ITEM_FROM_ENTITY, ServerboundPickItemFromEntityPacket.class),
+            entry(PacketType.C2S_PING_REQUEST, ServerboundPingRequestPacket.class),
+            entry(PacketType.C2S_PLACE_RECIPE, ServerboundPlaceRecipePacket.class),
+            entry(PacketType.C2S_PLAYER_ABILITIES, ServerboundPlayerAbilitiesPacket.class),
+            entry(PacketType.C2S_PLAYER_ACTION, ServerboundPlayerActionPacket.class),
+            entry(PacketType.C2S_PLAYER_COMMAND, ServerboundPlayerCommandPacket.class),
+            entry(PacketType.C2S_PLAYER_INPUT, ServerboundPlayerInputPacket.class),
+            entry(PacketType.C2S_PLAYER_LOADED, ServerboundPlayerLoadedPacket.class),
+            entry(PacketType.C2S_PONG, ServerboundPongPacket.class),
+            entry(PacketType.C2S_RECIPE_BOOK_CHANGE_SETTINGS, ServerboundRecipeBookChangeSettingsPacket.class),
+            entry(PacketType.C2S_RECIPE_BOOK_SEEN_RECIPE, ServerboundRecipeBookSeenRecipePacket.class),
+            entry(PacketType.C2S_RENAME_ITEM, ServerboundRenameItemPacket.class),
+            entry(PacketType.C2S_RESOURCE_PACK, ServerboundResourcePackPacket.class),
+            entry(PacketType.C2S_SEEN_ADVANCEMENTS, ServerboundSeenAdvancementsPacket.class),
+            entry(PacketType.C2S_SELECT_BUNDLE_ITEM, ServerboundSelectBundleItemPacket.class),
+            entry(PacketType.C2S_SELECT_KNOWN_PACKS, ServerboundSelectKnownPacks.class),
+            entry(PacketType.C2S_SELECT_TRADE, ServerboundSelectTradePacket.class),
+            entry(PacketType.C2S_SET_BEACON, ServerboundSetBeaconPacket.class),
+            entry(PacketType.C2S_SET_CARRIED_ITEM, ServerboundSetCarriedItemPacket.class),
+            entry(PacketType.C2S_SET_COMMAND_BLOCK, ServerboundSetCommandBlockPacket.class),
+            entry(PacketType.C2S_SET_COMMAND_MINECART, ServerboundSetCommandMinecartPacket.class),
+            entry(PacketType.C2S_SET_CREATIVE_MODE_SLOT, ServerboundSetCreativeModeSlotPacket.class),
+            entry(PacketType.C2S_SET_GAME_RULE, ServerboundSetGameRulePacket.class),
+            entry(PacketType.C2S_SET_JIGSAW_BLOCK, ServerboundSetJigsawBlockPacket.class),
+            entry(PacketType.C2S_SET_STRUCTURE_BLOCK, ServerboundSetStructureBlockPacket.class),
+            entry(PacketType.C2S_SET_TEST_BLOCK, ServerboundSetTestBlockPacket.class),
+            entry(PacketType.C2S_SIGN_UPDATE, ServerboundSignUpdatePacket.class),
+            entry(PacketType.C2S_SPECTATE_ENTITY, ServerboundSpectateEntityPacket.class),
+            entry(PacketType.C2S_STATUS_REQUEST, ServerboundStatusRequestPacket.class),
+            entry(PacketType.C2S_SWING, ServerboundSwingPacket.class),
+            entry(PacketType.C2S_TELEPORT_TO_ENTITY, ServerboundTeleportToEntityPacket.class),
+            entry(PacketType.C2S_TEST_INSTANCE_BLOCK_ACTION, ServerboundTestInstanceBlockActionPacket.class),
+            entry(PacketType.C2S_USE_ITEM_ON, ServerboundUseItemOnPacket.class),
+            entry(PacketType.C2S_USE_ITEM, ServerboundUseItemPacket.class),
+            entry(PacketType.S2C_ADD_ENTITY, ClientboundAddEntityPacket.class),
+            entry(PacketType.S2C_ANIMATE, ClientboundAnimatePacket.class),
+            entry(PacketType.S2C_AWARD_STATS, ClientboundAwardStatsPacket.class),
+            entry(PacketType.S2C_BLOCK_CHANGED_ACK, ClientboundBlockChangedAckPacket.class),
+            entry(PacketType.S2C_BLOCK_DESTRUCTION, ClientboundBlockDestructionPacket.class),
+            entry(PacketType.S2C_BLOCK_ENTITY_DATA, ClientboundBlockEntityDataPacket.class),
+            entry(PacketType.S2C_BLOCK_EVENT, ClientboundBlockEventPacket.class),
+            entry(PacketType.S2C_BLOCK_UPDATE, ClientboundBlockUpdatePacket.class),
+            entry(PacketType.S2C_BOSS_EVENT, ClientboundBossEventPacket.class),
+            entry(PacketType.S2C_BUNDLE_DELIMITER, ClientboundBundleDelimiterPacket.class),
+            entry(PacketType.S2C_BUNDLE, ClientboundBundlePacket.class),
+            entry(PacketType.S2C_CHANGE_DIFFICULTY, ClientboundChangeDifficultyPacket.class),
+            entry(PacketType.S2C_CHUNK_BATCH_FINISHED, ClientboundChunkBatchFinishedPacket.class),
+            entry(PacketType.S2C_CHUNK_BATCH_START, ClientboundChunkBatchStartPacket.class),
+            entry(PacketType.S2C_CHUNKS_BIOMES, ClientboundChunksBiomesPacket.class),
+            entry(PacketType.S2C_CLEAR_DIALOG, ClientboundClearDialogPacket.class),
+            entry(PacketType.S2C_CLEAR_TITLES, ClientboundClearTitlesPacket.class),
+            entry(PacketType.S2C_CODE_OF_CONDUCT, ClientboundCodeOfConductPacket.class),
+            entry(PacketType.S2C_COMMAND_SUGGESTIONS, ClientboundCommandSuggestionsPacket.class),
+            entry(PacketType.S2C_COMMANDS, ClientboundCommandsPacket.class),
+            entry(PacketType.S2C_CONTAINER_CLOSE, ClientboundContainerClosePacket.class),
+            entry(PacketType.S2C_CONTAINER_SET_CONTENT, ClientboundContainerSetContentPacket.class),
+            entry(PacketType.S2C_CONTAINER_SET_DATA, ClientboundContainerSetDataPacket.class),
+            entry(PacketType.S2C_CONTAINER_SET_SLOT, ClientboundContainerSetSlotPacket.class),
+            entry(PacketType.S2C_COOLDOWN, ClientboundCooldownPacket.class),
+            entry(PacketType.S2C_CUSTOM_CHAT_COMPLETIONS, ClientboundCustomChatCompletionsPacket.class),
+            entry(PacketType.S2C_CUSTOM_PAYLOAD, ClientboundCustomPayloadPacket.class),
+            entry(PacketType.S2C_CUSTOM_QUERY, ClientboundCustomQueryPacket.class),
+            entry(PacketType.S2C_CUSTOM_REPORT_DETAILS, ClientboundCustomReportDetailsPacket.class),
+            entry(PacketType.S2C_DAMAGE_EVENT, ClientboundDamageEventPacket.class),
+            entry(PacketType.S2C_DEBUG_BLOCK_VALUE, ClientboundDebugBlockValuePacket.class),
+            entry(PacketType.S2C_DEBUG_CHUNK_VALUE, ClientboundDebugChunkValuePacket.class),
+            entry(PacketType.S2C_DEBUG_ENTITY_VALUE, ClientboundDebugEntityValuePacket.class),
+            entry(PacketType.S2C_DEBUG_EVENT, ClientboundDebugEventPacket.class),
+            entry(PacketType.S2C_DEBUG_SAMPLE, ClientboundDebugSamplePacket.class),
+            entry(PacketType.S2C_DELETE_CHAT, ClientboundDeleteChatPacket.class),
+            entry(PacketType.S2C_DISCONNECT, ClientboundDisconnectPacket.class),
+            entry(PacketType.S2C_DISGUISED_CHAT, ClientboundDisguisedChatPacket.class),
+            entry(PacketType.S2C_ENTITY_EVENT, ClientboundEntityEventPacket.class),
+            entry(PacketType.S2C_ENTITY_POSITION_SYNC, ClientboundEntityPositionSyncPacket.class),
+            entry(PacketType.S2C_EXPLODE, ClientboundExplodePacket.class),
+            entry(PacketType.S2C_FINISH_CONFIGURATION, ClientboundFinishConfigurationPacket.class),
+            entry(PacketType.S2C_FORGET_LEVEL_CHUNK, ClientboundForgetLevelChunkPacket.class),
+            entry(PacketType.S2C_GAME_EVENT, ClientboundGameEventPacket.class),
+            entry(PacketType.S2C_GAME_RULE_VALUES, ClientboundGameRuleValuesPacket.class),
+            entry(PacketType.S2C_GAME_TEST_HIGHLIGHT_POS, ClientboundGameTestHighlightPosPacket.class),
+            entry(PacketType.S2C_HELLO, ClientboundHelloPacket.class),
+            entry(PacketType.S2C_HURT_ANIMATION, ClientboundHurtAnimationPacket.class),
+            entry(PacketType.S2C_INITIALIZE_BORDER, ClientboundInitializeBorderPacket.class),
+            entry(PacketType.S2C_KEEP_ALIVE, ClientboundKeepAlivePacket.class),
+            entry(PacketType.S2C_LEVEL_CHUNK_WITH_LIGHT, ClientboundLevelChunkWithLightPacket.class),
+            entry(PacketType.S2C_LEVEL_EVENT, ClientboundLevelEventPacket.class),
+            entry(PacketType.S2C_LEVEL_PARTICLES, ClientboundLevelParticlesPacket.class),
+            entry(PacketType.S2C_LIGHT_UPDATE, ClientboundLightUpdatePacket.class),
+            entry(PacketType.S2C_LOGIN_COMPRESSION, ClientboundLoginCompressionPacket.class),
+            entry(PacketType.S2C_LOGIN_DISCONNECT, ClientboundLoginDisconnectPacket.class),
+            entry(PacketType.S2C_LOGIN_FINISHED, ClientboundLoginFinishedPacket.class),
+            entry(PacketType.S2C_LOGIN, ClientboundLoginPacket.class),
+            entry(PacketType.S2C_LOW_DISK_SPACE_WARNING, ClientboundLowDiskSpaceWarningPacket.class),
+            entry(PacketType.S2C_MAP_ITEM_DATA, ClientboundMapItemDataPacket.class),
+            entry(PacketType.S2C_MERCHANT_OFFERS, ClientboundMerchantOffersPacket.class),
+            entry(PacketType.S2C_MOUNT_SCREEN_OPEN, ClientboundMountScreenOpenPacket.class),
+            entry(PacketType.S2C_MOVE_ENTITY, ClientboundMoveEntityPacket.class),
+            entry(PacketType.S2C_MOVE_MINECART, ClientboundMoveMinecartPacket.class),
+            entry(PacketType.S2C_MOVE_VEHICLE, ClientboundMoveVehiclePacket.class),
+            entry(PacketType.S2C_OPEN_BOOK, ClientboundOpenBookPacket.class),
+            entry(PacketType.S2C_OPEN_SCREEN, ClientboundOpenScreenPacket.class),
+            entry(PacketType.S2C_OPEN_SIGN_EDITOR, ClientboundOpenSignEditorPacket.class),
+            entry(PacketType.S2C_PING, ClientboundPingPacket.class),
+            entry(PacketType.S2C_PLACE_GHOST_RECIPE, ClientboundPlaceGhostRecipePacket.class),
+            entry(PacketType.S2C_PLAYER_ABILITIES, ClientboundPlayerAbilitiesPacket.class),
+            entry(PacketType.S2C_PLAYER_CHAT, ClientboundPlayerChatPacket.class),
+            entry(PacketType.S2C_PLAYER_COMBAT_END, ClientboundPlayerCombatEndPacket.class),
+            entry(PacketType.S2C_PLAYER_COMBAT_ENTER, ClientboundPlayerCombatEnterPacket.class),
+            entry(PacketType.S2C_PLAYER_COMBAT_KILL, ClientboundPlayerCombatKillPacket.class),
+            entry(PacketType.S2C_PLAYER_INFO_REMOVE, ClientboundPlayerInfoRemovePacket.class),
+            entry(PacketType.S2C_PLAYER_INFO_UPDATE, ClientboundPlayerInfoUpdatePacket.class),
+            entry(PacketType.S2C_PLAYER_LOOK_AT, ClientboundPlayerLookAtPacket.class),
+            entry(PacketType.S2C_PLAYER_POSITION, ClientboundPlayerPositionPacket.class),
+            entry(PacketType.S2C_PLAYER_ROTATION, ClientboundPlayerRotationPacket.class),
+            entry(PacketType.S2C_PONG_RESPONSE, ClientboundPongResponsePacket.class),
+            entry(PacketType.S2C_PROJECTILE_POWER, ClientboundProjectilePowerPacket.class),
+            entry(PacketType.S2C_RECIPE_BOOK_ADD, ClientboundRecipeBookAddPacket.class),
+            entry(PacketType.S2C_RECIPE_BOOK_REMOVE, ClientboundRecipeBookRemovePacket.class),
+            entry(PacketType.S2C_RECIPE_BOOK_SETTINGS, ClientboundRecipeBookSettingsPacket.class),
+            entry(PacketType.S2C_REGISTRY_DATA, ClientboundRegistryDataPacket.class),
+            entry(PacketType.S2C_REMOVE_ENTITIES, ClientboundRemoveEntitiesPacket.class),
+            entry(PacketType.S2C_REMOVE_MOB_EFFECT, ClientboundRemoveMobEffectPacket.class),
+            entry(PacketType.S2C_RESET_CHAT, ClientboundResetChatPacket.class),
+            entry(PacketType.S2C_RESET_SCORE, ClientboundResetScorePacket.class),
+            entry(PacketType.S2C_RESOURCE_PACK_POP, ClientboundResourcePackPopPacket.class),
+            entry(PacketType.S2C_RESOURCE_PACK_PUSH, ClientboundResourcePackPushPacket.class),
+            entry(PacketType.S2C_RESPAWN, ClientboundRespawnPacket.class),
+            entry(PacketType.S2C_ROTATE_HEAD, ClientboundRotateHeadPacket.class),
+            entry(PacketType.S2C_SECTION_BLOCKS_UPDATE, ClientboundSectionBlocksUpdatePacket.class),
+            entry(PacketType.S2C_SELECT_ADVANCEMENTS_TAB, ClientboundSelectAdvancementsTabPacket.class),
+            entry(PacketType.S2C_SELECT_KNOWN_PACKS, ClientboundSelectKnownPacks.class),
+            entry(PacketType.S2C_SERVER_DATA, ClientboundServerDataPacket.class),
+            entry(PacketType.S2C_SERVER_LINKS, ClientboundServerLinksPacket.class),
+            entry(PacketType.S2C_SET_ACTION_BAR_TEXT, ClientboundSetActionBarTextPacket.class),
+            entry(PacketType.S2C_SET_BORDER_CENTER, ClientboundSetBorderCenterPacket.class),
+            entry(PacketType.S2C_SET_BORDER_LERP_SIZE, ClientboundSetBorderLerpSizePacket.class),
+            entry(PacketType.S2C_SET_BORDER_SIZE, ClientboundSetBorderSizePacket.class),
+            entry(PacketType.S2C_SET_BORDER_WARNING_DELAY, ClientboundSetBorderWarningDelayPacket.class),
+            entry(PacketType.S2C_SET_BORDER_WARNING_DISTANCE, ClientboundSetBorderWarningDistancePacket.class),
+            entry(PacketType.S2C_SET_CAMERA, ClientboundSetCameraPacket.class),
+            entry(PacketType.S2C_SET_CHUNK_CACHE_CENTER, ClientboundSetChunkCacheCenterPacket.class),
+            entry(PacketType.S2C_SET_CHUNK_CACHE_RADIUS, ClientboundSetChunkCacheRadiusPacket.class),
+            entry(PacketType.S2C_SET_CURSOR_ITEM, ClientboundSetCursorItemPacket.class),
+            entry(PacketType.S2C_SET_DEFAULT_SPAWN_POSITION, ClientboundSetDefaultSpawnPositionPacket.class),
+            entry(PacketType.S2C_SET_DISPLAY_OBJECTIVE, ClientboundSetDisplayObjectivePacket.class),
+            entry(PacketType.S2C_SET_ENTITY_DATA, ClientboundSetEntityDataPacket.class),
+            entry(PacketType.S2C_SET_ENTITY_LINK, ClientboundSetEntityLinkPacket.class),
+            entry(PacketType.S2C_SET_ENTITY_MOTION, ClientboundSetEntityMotionPacket.class),
+            entry(PacketType.S2C_SET_EQUIPMENT, ClientboundSetEquipmentPacket.class),
+            entry(PacketType.S2C_SET_EXPERIENCE, ClientboundSetExperiencePacket.class),
+            entry(PacketType.S2C_SET_HEALTH, ClientboundSetHealthPacket.class),
+            entry(PacketType.S2C_SET_HELD_SLOT, ClientboundSetHeldSlotPacket.class),
+            entry(PacketType.S2C_SET_OBJECTIVE, ClientboundSetObjectivePacket.class),
+            entry(PacketType.S2C_SET_PASSENGERS, ClientboundSetPassengersPacket.class),
+            entry(PacketType.S2C_SET_PLAYER_INVENTORY, ClientboundSetPlayerInventoryPacket.class),
+            entry(PacketType.S2C_SET_PLAYER_TEAM, ClientboundSetPlayerTeamPacket.class),
+            entry(PacketType.S2C_SET_SCORE, ClientboundSetScorePacket.class),
+            entry(PacketType.S2C_SET_SIMULATION_DISTANCE, ClientboundSetSimulationDistancePacket.class),
+            entry(PacketType.S2C_SET_SUBTITLE_TEXT, ClientboundSetSubtitleTextPacket.class),
+            entry(PacketType.S2C_SET_TIME, ClientboundSetTimePacket.class),
+            entry(PacketType.S2C_SET_TITLE_TEXT, ClientboundSetTitleTextPacket.class),
+            entry(PacketType.S2C_SET_TITLES_ANIMATION, ClientboundSetTitlesAnimationPacket.class),
+            entry(PacketType.S2C_SHOW_DIALOG, ClientboundShowDialogPacket.class),
+            entry(PacketType.S2C_SOUND_ENTITY, ClientboundSoundEntityPacket.class),
+            entry(PacketType.S2C_SOUND, ClientboundSoundPacket.class),
+            entry(PacketType.S2C_START_CONFIGURATION, ClientboundStartConfigurationPacket.class),
+            entry(PacketType.S2C_STATUS_RESPONSE, ClientboundStatusResponsePacket.class),
+            entry(PacketType.S2C_STOP_SOUND, ClientboundStopSoundPacket.class),
+            entry(PacketType.S2C_STORE_COOKIE, ClientboundStoreCookiePacket.class),
+            entry(PacketType.S2C_SYSTEM_CHAT, ClientboundSystemChatPacket.class),
+            entry(PacketType.S2C_TAB_LIST, ClientboundTabListPacket.class),
+            entry(PacketType.S2C_TAG_QUERY, ClientboundTagQueryPacket.class),
+            entry(PacketType.S2C_TAKE_ITEM_ENTITY, ClientboundTakeItemEntityPacket.class),
+            entry(PacketType.S2C_TELEPORT_ENTITY, ClientboundTeleportEntityPacket.class),
+            entry(PacketType.S2C_TEST_INSTANCE_BLOCK_STATUS, ClientboundTestInstanceBlockStatus.class),
+            entry(PacketType.S2C_TICKING_STATE, ClientboundTickingStatePacket.class),
+            entry(PacketType.S2C_TICKING_STEP, ClientboundTickingStepPacket.class),
+            entry(PacketType.S2C_TRACKED_WAYPOINT, ClientboundTrackedWaypointPacket.class),
+            entry(PacketType.S2C_TRANSFER, ClientboundTransferPacket.class),
+            entry(PacketType.S2C_UPDATE_ADVANCEMENTS, ClientboundUpdateAdvancementsPacket.class),
+            entry(PacketType.S2C_UPDATE_ATTRIBUTES, ClientboundUpdateAttributesPacket.class),
+            entry(PacketType.S2C_UPDATE_ENABLED_FEATURES, ClientboundUpdateEnabledFeaturesPacket.class),
+            entry(PacketType.S2C_UPDATE_MOB_EFFECT, ClientboundUpdateMobEffectPacket.class),
+            entry(PacketType.S2C_UPDATE_RECIPES, ClientboundUpdateRecipesPacket.class),
+            entry(PacketType.S2C_UPDATE_TAGS, ClientboundUpdateTagsPacket.class)
+    );
+
+    private PacketTypeMapping() {
+    }
+
+    static Class<? extends Packet<?>> vanillaClass(PacketType type) {
+        Class<? extends Packet<?>> cls = BY_TYPE.get(type);
+        if (cls == null) {
+            throw new IllegalStateException("No vanilla class mapped for packet type " + type);
+        }
+        return cls;
+    }
+
+    static Map<PacketType, Class<? extends Packet<?>>> all() {
+        return BY_TYPE;
+    }
+
+    private static Map.Entry<PacketType, Class<? extends Packet<?>>> entry(
+            PacketType type, Class<? extends Packet<?>> cls) {
+        return Map.entry(type, cls);
+    }
+}

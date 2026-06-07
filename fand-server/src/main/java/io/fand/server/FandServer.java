@@ -60,6 +60,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final CommandManager commands;
     private final TaskScheduler scheduler;
     private final FandRecipeRegistry recipes;
+    private final io.fand.server.network.packet.PacketRegistryImpl packets;
     private final PluginRuntime plugins;
     private final PlayerRegistry players;
     private final ServerPerformanceTracker performance;
@@ -93,6 +94,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.scheduler = new TaskScheduler(initialConfig.scheduler.asyncThreads);
         this.recipes = new FandRecipeRegistry();
         this.players = new PlayerRegistry(permissions);
+        this.packets = new io.fand.server.network.packet.PacketRegistryImpl(players);
         this.performance = new ServerPerformanceTracker();
         var pluginDirectory = Path.of(initialConfig.plugins.directory);
         this.plugins = new PluginRuntime(
@@ -171,6 +173,7 @@ public final class FandServer implements Server, AutoCloseable {
         entities.set(new EntityRegistry(registry));
         players.bindWorldResolver(registry::wrap);
         io.fand.server.item.FandItemStacks.useRegistries(server.registryAccess());
+        io.fand.server.network.packet.PacketRegistryImpl.useRegistries(server.registryAccess());
         recipes.bind(server);
     }
 
@@ -247,6 +250,15 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public RecipeRegistry recipes() {
         return recipes;
+    }
+
+    @Override
+    public io.fand.api.packet.PacketRegistry packets() {
+        return packets;
+    }
+
+    public io.fand.server.network.packet.PacketRegistryImpl packetRegistry() {
+        return packets;
     }
 
     @Override

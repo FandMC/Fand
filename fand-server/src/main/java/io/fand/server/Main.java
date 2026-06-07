@@ -19,6 +19,10 @@ public final class Main {
         return local;
     }
 
+    public static @Nullable FandServer runtimeOrNull() {
+        return runtime;
+    }
+
     static void bind(FandServer server) {
         synchronized (Main.class) {
             if (runtime != null) {

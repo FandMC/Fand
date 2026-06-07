@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryorin1337 <ryorin64@gmail.com>
+Date: Mon, 8 Jun 2026 02:11:44 +0800
+Subject: [PATCH] Retain custom payload bytes for the Fand packet API
+
+
+diff --git a/net/minecraft/network/protocol/common/custom/DiscardedPayload.java b/net/minecraft/network/protocol/common/custom/DiscardedPayload.java
+index 5f8cc073b9b85167b16bb6e88eae4679cc1f4c0d..30adc6ee2e84a284766ecfe0b0c6f4d6a2ad20a5 100644
+--- a/net/minecraft/network/protocol/common/custom/DiscardedPayload.java
++++ b/net/minecraft/network/protocol/common/custom/DiscardedPayload.java
+@@ -4,19 +4,32 @@ import net.minecraft.network.FriendlyByteBuf;
+ import net.minecraft.network.codec.StreamCodec;
+ import net.minecraft.resources.Identifier;
+ 
+-public record DiscardedPayload(Identifier id) implements CustomPacketPayload {
++// Fand: retain the raw payload bytes instead of discarding them, so the Fand
++// packet API can read inbound custom-channel data and write outbound payloads
++// for channels vanilla has no codec for. Vanilla skipped these bytes outright.
++public record DiscardedPayload(Identifier id, byte[] data) implements CustomPacketPayload {
++    public DiscardedPayload {
++        data = data.clone();
++    }
++
+     public static <T extends FriendlyByteBuf> StreamCodec<T, DiscardedPayload> codec(final Identifier id, final int maxPayloadSize) {
+-        return CustomPacketPayload.codec((payload, buf) -> {}, buf -> {
++        return CustomPacketPayload.codec((payload, buf) -> buf.writeBytes(payload.data()), buf -> {
+             int length = buf.readableBytes();
+             if (length >= 0 && length <= maxPayloadSize) {
+-                buf.skipBytes(length);
+-                return new DiscardedPayload(id);
++                byte[] data = new byte[length];
++                buf.readBytes(data);
++                return new DiscardedPayload(id, data);
+             } else {
+                 throw new IllegalArgumentException("Payload may not be larger than " + maxPayloadSize + " bytes");
+             }
+         });
+     }
+ 
++    @Override
++    public byte[] data() {
++        return this.data.clone();
++    }
++
+     @Override
+     public CustomPacketPayload.Type<DiscardedPayload> type() {
+         return new CustomPacketPayload.Type<>(this.id);

@@ -52,6 +52,9 @@ public interface Server extends ForwardingAudience {
     /** Global command registry. */
     CommandRegistry commands();
 
+    /** Vanilla packet interception and custom packet channels. */
+    io.fand.api.packet.PacketRegistry packets();
+
     /** Global recipe registry. Registration and removal marshal to the server thread. */
     RecipeRegistry recipes();
 
