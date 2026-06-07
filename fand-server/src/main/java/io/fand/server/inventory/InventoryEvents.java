@@ -103,6 +103,7 @@ public final class InventoryEvents {
             }
         }
         ItemStack cursorItem = FandItemStacks.fromVanilla(menu.getCarried());
+        var action = ClickTypes.action(clickType, slot, currentItem, cursorItem);
         var event = new InventoryClickEvent(
                 fandPlayer,
                 new ContainerMenuView(menu),
@@ -111,6 +112,7 @@ public final class InventoryEvents {
                 containerSlot,
                 playerInventorySlot,
                 clickType,
+                action,
                 button,
                 currentItem,
                 cursorItem);

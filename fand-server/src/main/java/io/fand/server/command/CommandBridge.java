@@ -12,13 +12,13 @@ public final class CommandBridge {
     }
 
     public static boolean tryExecute(CommandSourceStack source, String rawCommand) {
-        var runtime = io.fand.server.Main.runtime();
-        var sender = new CommandSourceSender(source, runtime.permissions());
+        var sender = CommandEvents.sender(source);
         var tokens = tokenize(rawCommand, false);
         if (tokens.isEmpty()) {
             return false;
         }
 
+        var runtime = io.fand.server.Main.runtime();
         var registry = runtime.commands();
         var resolved = registry.resolve(sender, tokens);
         if (resolved.isEmpty()) {
@@ -32,7 +32,17 @@ public final class CommandBridge {
         var command = resolved.get();
         var args = tokens.size() <= command.matchedLength() ? List.<String>of() : tokens.subList(command.matchedLength(), tokens.size());
         try {
-            command.command().executor().execute(sender, command.usedLabel(), args);
+            CommandEvents.runInCommandContext(() -> {
+                try {
+                    command.command().executor().execute(sender, command.usedLabel(), args);
+                } catch (Exception failure) {
+                    throw new CommandExecutionFailure(failure);
+                }
+            });
+        } catch (CommandExecutionFailure failure) {
+            var cause = failure.getCause();
+            var message = cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
+            source.sendFailure(Component.literal("Fand command failed: " + message));
         } catch (Exception failure) {
             var message = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
             source.sendFailure(Component.literal("Fand command failed: " + message));
@@ -89,5 +99,12 @@ public final class CommandBridge {
     }
 
     private record NormalizedCommand(int prefixLength, String command) {
+    }
+
+    private static final class CommandExecutionFailure extends RuntimeException {
+
+        private CommandExecutionFailure(Throwable cause) {
+            super(cause);
+        }
     }
 }

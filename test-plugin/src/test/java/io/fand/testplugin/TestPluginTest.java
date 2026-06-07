@@ -39,6 +39,12 @@ final class TestPluginTest {
     }
 
     @Test
+    void recognisesCommandAliasDemo() {
+        assertThat(TestPlugin.isCommandAliasDemo(" fwhere ")).isTrue();
+        assertThat(TestPlugin.isCommandAliasDemo("fanddemo")).isFalse();
+    }
+
+    @Test
     void recognisesTabAndSidebarModes() {
         assertThat(TestPlugin.isClearMode(" clear ")).isTrue();
         assertThat(TestPlugin.isClearMode("show")).isFalse();

@@ -17,14 +17,21 @@ import io.fand.api.event.Listener;
 import io.fand.api.event.Subscribe;
 import io.fand.api.event.block.BlockBreakEvent;
 import io.fand.api.event.block.BlockPlaceEvent;
+import io.fand.api.event.command.CommandExecuteEvent;
 import io.fand.api.event.entity.EntityDamageEvent;
+import io.fand.api.event.entity.EntityDeathEvent;
 import io.fand.api.event.inventory.InventoryClickEvent;
 import io.fand.api.event.inventory.InventoryCloseEvent;
 import io.fand.api.event.inventory.InventoryOpenEvent;
 import io.fand.api.event.player.PlayerChatEvent;
+import io.fand.api.event.player.PlayerCommandPreprocessEvent;
+import io.fand.api.event.player.PlayerDropItemEvent;
 import io.fand.api.event.player.PlayerInteractEvent;
 import io.fand.api.event.player.PlayerJoinEvent;
+import io.fand.api.event.player.PlayerPickupItemEvent;
 import io.fand.api.event.player.PlayerQuitEvent;
+import io.fand.api.event.player.PlayerRespawnEvent;
+import io.fand.api.event.player.PlayerTeleportEvent;
 import io.fand.api.inventory.Inventory;
 import io.fand.api.inventory.InventoryType;
 import io.fand.api.inventory.Inventories;
@@ -72,6 +79,7 @@ public final class TestPlugin implements Plugin {
     static final String MUTE_NEXT_COMMAND = "!mute-next";
     static final String CLEAR_MODE = "clear";
     static final String SHOW_MODE = "show";
+    static final String COMMAND_ALIAS_DEMO = "fwhere";
 
     private static final List<String> SAMPLE_BLOCKS = List.of(
             "minecraft:stone",
@@ -955,6 +963,26 @@ public final class TestPlugin implements Plugin {
         }
 
         @Subscribe
+        public void onCommandPreprocess(PlayerCommandPreprocessEvent event) {
+            if (event.command().equalsIgnoreCase(COMMAND_ALIAS_DEMO)) {
+                event.setCommand("fanddemo");
+                event.player().sendActionBar(Component.text("Rewrote /" + COMMAND_ALIAS_DEMO + " to /fanddemo", NamedTextColor.AQUA));
+                return;
+            }
+            if (event.command().equalsIgnoreCase("stopdemo")) {
+                event.setCancelled(true);
+                event.player().sendMessage(Component.text("test-plugin cancelled /stopdemo before dispatch.", NamedTextColor.RED));
+            }
+        }
+
+        @Subscribe
+        public void onCommandExecute(CommandExecuteEvent event) {
+            if (context.config().getBoolean("features.log-command-execute", false)) {
+                logger.info("{} executing /{}", event.sender().name(), event.command());
+            }
+        }
+
+        @Subscribe
         public void onChat(PlayerChatEvent event) {
             if (event.originalText().equalsIgnoreCase("!where")) {
                 var loc = event.player().location();
@@ -983,6 +1011,52 @@ public final class TestPlugin implements Plugin {
             }
             if (context.config().getBoolean("features.chat-prefix", true)) {
                 event.setMessage(Component.text("[FandDemo] ", NamedTextColor.LIGHT_PURPLE).append(event.message()));
+            }
+        }
+
+        @Subscribe
+        public void onDrop(PlayerDropItemEvent event) {
+            if (isKitNavigator(event.item())) {
+                event.setCancelled(true);
+                event.player().sendMessage(Component.text("The kit navigator stays with you.", NamedTextColor.YELLOW));
+                return;
+            }
+            if (context.config().getBoolean("features.log-item-events", false)) {
+                logger.info("{} dropped {} hand={}", event.player().name(), stackName(event.item()), event.thrownFromHand());
+            }
+        }
+
+        @Subscribe
+        public void onPickup(PlayerPickupItemEvent event) {
+            if (context.config().getBoolean("features.log-item-events", false)) {
+                logger.info("{} picked up {}", event.player().name(), stackName(event.item()));
+            }
+        }
+
+        @Subscribe
+        public void onTeleport(PlayerTeleportEvent event) {
+            if (context.config().getBoolean("protections.block-low-teleport", true)
+                    && event.to().y() < -64.0) {
+                event.setCancelled(true);
+                event.player().sendMessage(Component.text("Teleport below world min height was cancelled.", NamedTextColor.RED));
+                return;
+            }
+            if (context.config().getBoolean("features.log-teleports", false)) {
+                logger.info("{} teleport {} {} -> {}", event.player().name(), event.cause(),
+                        compactLocation(event.from()), compactLocation(event.to()));
+            }
+        }
+
+        @Subscribe
+        public void onRespawn(PlayerRespawnEvent event) {
+            event.player().sendMessage(Component.text("Respawned by " + event.cause()
+                    + " at " + compactLocation(event.respawnLocation()), NamedTextColor.AQUA));
+        }
+
+        @Subscribe
+        public void onEntityDeath(EntityDeathEvent event) {
+            if (context.config().getBoolean("features.log-entity-deaths", false)) {
+                logger.info("{} died from {}", event.entity().type().asString(), event.cause());
             }
         }
 
@@ -1060,8 +1134,8 @@ public final class TestPlugin implements Plugin {
                         NamedTextColor.RED));
             }
             if (context.config().getBoolean("features.log-inventory-clicks", false)) {
-                logger.info("{} clicked {} slot={} current={} cursor={}",
-                        event.player().name(), event.clickType(), event.slot(),
+                logger.info("{} clicked {} action={} slot={} current={} cursor={}",
+                        event.player().name(), event.clickType(), event.action(), event.slot(),
                         stackName(event.currentItem()), stackName(event.cursorItem()));
             }
         }
@@ -1360,6 +1434,10 @@ public final class TestPlugin implements Plugin {
         return text.trim().equalsIgnoreCase(SHOW_MODE);
     }
 
+    static boolean isCommandAliasDemo(String command) {
+        return command.trim().equalsIgnoreCase(COMMAND_ALIAS_DEMO);
+    }
+
     static Sidebar demoSidebar(Player player) {
         var loc = player.location();
         return Sidebar.of(
@@ -1474,6 +1552,11 @@ public final class TestPlugin implements Plugin {
 
     private static String stackName(ItemStack stack) {
         return stack.isEmpty() ? "empty" : stack.amount() + "x " + itemName(stack.type());
+    }
+
+    private static String compactLocation(io.fand.api.world.Location location) {
+        return location.world().name() + " "
+                + location.blockX() + "," + location.blockY() + "," + location.blockZ();
     }
 
     private static String trim(double value) {

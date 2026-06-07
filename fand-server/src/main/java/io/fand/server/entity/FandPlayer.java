@@ -157,15 +157,18 @@ public final class FandPlayer implements Player {
                 return;
             }
             try {
-                var ok = handle.teleportTo(
-                        target,
-                        destination.x(),
-                        destination.y(),
-                        destination.z(),
-                        Set.of(),
-                        destination.yaw(),
-                        destination.pitch(),
-                        true
+                var ok = io.fand.server.event.PlayerEvents.withTeleportCause(
+                        io.fand.api.event.player.PlayerTeleportEvent.Cause.PLUGIN,
+                        () -> handle.teleportTo(
+                                target,
+                                destination.x(),
+                                destination.y(),
+                                destination.z(),
+                                Set.of(),
+                                destination.yaw(),
+                                destination.pitch(),
+                                true
+                        )
                 );
                 if (ok) {
                     registry.refreshSnapshots();

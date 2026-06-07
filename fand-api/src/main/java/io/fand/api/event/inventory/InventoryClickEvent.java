@@ -28,6 +28,7 @@ public final class InventoryClickEvent implements Event, Cancellable {
     private final int containerSlot;
     private final int playerInventorySlot;
     private final ClickType clickType;
+    private final InventoryAction action;
     private final int button;
     private final ItemStack currentItem;
     private final ItemStack cursorItem;
@@ -41,7 +42,32 @@ public final class InventoryClickEvent implements Event, Cancellable {
             int button,
             ItemStack currentItem,
             ItemStack cursorItem) {
-        this(player, inventory, slot, slot, -1, -1, clickType, button, currentItem, cursorItem);
+        this(player, inventory, slot, slot, -1, -1, clickType, InventoryAction.UNKNOWN, button, currentItem, cursorItem);
+    }
+
+    public InventoryClickEvent(
+            Player player,
+            Inventory inventory,
+            int slot,
+            int rawSlot,
+            int containerSlot,
+            int playerInventorySlot,
+            ClickType clickType,
+            InventoryAction action,
+            int button,
+            ItemStack currentItem,
+            ItemStack cursorItem) {
+        this.player = Objects.requireNonNull(player, "player");
+        this.inventory = Objects.requireNonNull(inventory, "inventory");
+        this.slot = slot;
+        this.rawSlot = rawSlot;
+        this.containerSlot = containerSlot;
+        this.playerInventorySlot = playerInventorySlot;
+        this.clickType = Objects.requireNonNull(clickType, "clickType");
+        this.action = Objects.requireNonNull(action, "action");
+        this.button = button;
+        this.currentItem = Objects.requireNonNull(currentItem, "currentItem");
+        this.cursorItem = Objects.requireNonNull(cursorItem, "cursorItem");
     }
 
     public InventoryClickEvent(
@@ -55,16 +81,8 @@ public final class InventoryClickEvent implements Event, Cancellable {
             int button,
             ItemStack currentItem,
             ItemStack cursorItem) {
-        this.player = Objects.requireNonNull(player, "player");
-        this.inventory = Objects.requireNonNull(inventory, "inventory");
-        this.slot = slot;
-        this.rawSlot = rawSlot;
-        this.containerSlot = containerSlot;
-        this.playerInventorySlot = playerInventorySlot;
-        this.clickType = Objects.requireNonNull(clickType, "clickType");
-        this.button = button;
-        this.currentItem = Objects.requireNonNull(currentItem, "currentItem");
-        this.cursorItem = Objects.requireNonNull(cursorItem, "cursorItem");
+        this(player, inventory, slot, rawSlot, containerSlot, playerInventorySlot,
+                clickType, InventoryAction.UNKNOWN, button, currentItem, cursorItem);
     }
 
     public Player player() {
@@ -115,6 +133,11 @@ public final class InventoryClickEvent implements Event, Cancellable {
 
     public ClickType clickType() {
         return clickType;
+    }
+
+    /** Resulting inventory action vanilla intends for this click. */
+    public InventoryAction action() {
+        return action;
     }
 
     /**

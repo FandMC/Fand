@@ -101,21 +101,14 @@ public final class CommandManager implements CommandRegistry {
         var first = normalizedTokens.getFirst();
         var current = snapshot;
         if (first.contains(":")) {
-            for (var key : current.namespacedPaths.keySet()) {
-                if (key.startsWith(first)) {
-                    return true;
-                }
-            }
-            return false;
+            return claimsNamespacedRoot(current, first);
         }
-        for (var root : current.uniqueLocalRoots.keySet()) {
-            if (root.startsWith(first) || first.equals(root)) {
-                return true;
-            }
-        }
+        return current.uniqueLocalRoots.containsKey(first);
+    }
+
+    private boolean claimsNamespacedRoot(Snapshot current, String root) {
         for (var key : current.namespacedPaths.keySet()) {
-            var local = localRoot(key);
-            if (local.startsWith(first) || first.equals(local)) {
+            if (root.equals(pathRoot(key))) {
                 return true;
             }
         }
@@ -369,6 +362,11 @@ public final class CommandManager implements CommandRegistry {
     private static String localRoot(String usedRoot) {
         var separator = usedRoot.indexOf(':');
         return separator >= 0 ? usedRoot.substring(separator + 1) : usedRoot;
+    }
+
+    private static String pathRoot(String pathKey) {
+        var separator = pathKey.indexOf(' ');
+        return separator < 0 ? pathKey : pathKey.substring(0, separator);
     }
 
     private static CommandDescriptor normalize(CommandDescriptor descriptor) {
