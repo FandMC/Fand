@@ -2,8 +2,10 @@ package io.fand.server.world;
 
 import io.fand.api.block.Block;
 import io.fand.api.entity.Player;
+import io.fand.api.world.Difficulty;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
+import io.fand.api.world.WorldBorder;
 import io.fand.api.world.particle.ParticleEffect;
 import io.fand.api.world.particle.ParticleEmission;
 import io.fand.api.world.sound.SoundEffect;
@@ -12,9 +14,12 @@ import io.fand.server.entity.PlayerRegistry;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.key.Key;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.clock.WorldClocks;
+import net.minecraft.world.level.storage.ServerLevelData;
 import org.jspecify.annotations.Nullable;
 
 public final class FandWorld implements World {
@@ -22,6 +27,7 @@ public final class FandWorld implements World {
     private final ServerLevel handle;
     private final Key key;
     private final @Nullable PlayerRegistry players;
+    private final WorldBorder worldBorder;
 
     public FandWorld(ServerLevel handle) {
         this(handle, null);
@@ -30,6 +36,7 @@ public final class FandWorld implements World {
     public FandWorld(ServerLevel handle, @Nullable PlayerRegistry players) {
         this.handle = handle;
         this.players = players;
+        this.worldBorder = new FandWorldBorder(handle);
         var identifier = handle.dimension().identifier();
         this.key = Key.key(identifier.getNamespace(), identifier.getPath());
     }
@@ -46,6 +53,93 @@ public final class FandWorld implements World {
     @Override
     public long seed() {
         return handle.getSeed();
+    }
+
+    @Override
+    public long gameTime() {
+        return handle.getGameTime();
+    }
+
+    @Override
+    public CompletableFuture<Void> setGameTime(long ticks) {
+        return runOnServerThreadFuture(() -> {
+            if (handle.getLevelData() instanceof ServerLevelData data) {
+                data.setGameTime(ticks);
+            }
+        });
+    }
+
+    @Override
+    public long time() {
+        var clock = handle.dimensionType().defaultClock()
+                .orElseGet(() -> handle.registryAccess().getOrThrow(WorldClocks.OVERWORLD));
+        return handle.getServer().clockManager().getTotalTicks(clock);
+    }
+
+    @Override
+    public CompletableFuture<Void> setTime(long ticks) {
+        return runOnServerThreadFuture(() -> {
+            var clock = handle.dimensionType().defaultClock()
+                    .orElseGet(() -> handle.registryAccess().getOrThrow(WorldClocks.OVERWORLD));
+            handle.getServer().clockManager().setTotalTicks(clock, ticks);
+        });
+    }
+
+    @Override
+    public Difficulty difficulty() {
+        return Difficulties.toApi(handle.getDifficulty());
+    }
+
+    @Override
+    public CompletableFuture<Void> setDifficulty(Difficulty difficulty) {
+        Objects.requireNonNull(difficulty, "difficulty");
+        return runOnServerThreadFuture(() -> handle.getServer().setDifficulty(Difficulties.toVanilla(difficulty), false));
+    }
+
+    @Override
+    public boolean storm() {
+        return handle.isRaining();
+    }
+
+    @Override
+    public CompletableFuture<Void> setStorm(boolean storm) {
+        return runOnServerThreadFuture(() -> {
+            var server = handle.getServer();
+            server.setWeatherParameters(storm ? 0 : 6000, storm ? 12000 : 0, storm, storm && handle.isThundering());
+        });
+    }
+
+    @Override
+    public boolean thundering() {
+        return handle.isThundering();
+    }
+
+    @Override
+    public CompletableFuture<Void> setThundering(boolean thundering) {
+        return runOnServerThreadFuture(() -> {
+            var server = handle.getServer();
+            boolean raining = thundering || handle.isRaining();
+            server.setWeatherParameters(0, raining ? 12000 : 0, raining, thundering);
+        });
+    }
+
+    @Override
+    public WorldBorder worldBorder() {
+        return worldBorder;
+    }
+
+    @Override
+    public CompletableFuture<Boolean> save() {
+        var future = new CompletableFuture<Boolean>();
+        runOnServerThread(() -> {
+            try {
+                handle.save(null, true, handle.noSave());
+                future.complete(true);
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        });
+        return future;
     }
 
     @Override
@@ -112,5 +206,18 @@ public final class FandWorld implements World {
         } else {
             server.executeIfPossible(task);
         }
+    }
+
+    private CompletableFuture<Void> runOnServerThreadFuture(Runnable task) {
+        var future = new CompletableFuture<Void>();
+        runOnServerThread(() -> {
+            try {
+                task.run();
+                future.complete(null);
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        });
+        return future;
     }
 }

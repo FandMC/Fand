@@ -34,6 +34,8 @@ import io.fand.api.event.player.PlayerPickupItemEvent;
 import io.fand.api.event.player.PlayerQuitEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
+import io.fand.api.event.world.WorldLoadEvent;
+import io.fand.api.event.world.WorldUnloadEvent;
 import io.fand.api.inventory.Inventory;
 import io.fand.api.inventory.InventoryType;
 import io.fand.api.inventory.Inventories;
@@ -66,7 +68,9 @@ import io.fand.api.recipe.ShapedRecipe;
 import io.fand.api.recipe.ShapelessRecipe;
 import io.fand.api.recipe.StonecuttingRecipe;
 import io.fand.api.scoreboard.Sidebar;
+import io.fand.api.world.Difficulty;
 import io.fand.api.world.World;
+import io.fand.api.world.WorldBorder;
 import io.fand.api.world.particle.ParticleColor;
 import io.fand.api.world.particle.ParticleEmission;
 import io.fand.api.world.particle.ParticleKey;
@@ -83,6 +87,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.key.InvalidKeyException;
@@ -141,11 +146,26 @@ public final class TestPlugin implements Plugin {
             "toast",
             "world"
     );
+    private static final List<String> WORLD_MODES = List.of(
+            "info",
+            "day",
+            "night",
+            "storm",
+            "clear",
+            "thunder",
+            "peaceful",
+            "easy",
+            "normal",
+            "hard",
+            "border",
+            "save"
+    );
     private static final List<String> PERMISSIONS = List.of(
             "fand.testplugin.use",
             "fand.testplugin.demo",
             "fand.testplugin.kit",
             "fand.testplugin.performance",
+            "fand.testplugin.world",
             "fand.testplugin.tp",
             "fand.testplugin.setblock",
             "fand.testplugin.give",
@@ -187,6 +207,7 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new DemoCommand(context));
         context.commands().register(new KitCommand(context, demoGuiViewers));
         context.commands().register(new PerformanceCommand());
+        context.commands().register(new WorldCommand(context));
         context.commands().register(new TeleportCommand(context));
         context.commands().register(new SetBlockCommand(context));
         context.commands().register(new GiveCommand(context));
@@ -209,6 +230,10 @@ public final class TestPlugin implements Plugin {
         context.events().subscribe(ServerStartedEvent.class, event ->
                 context.logger().info("Server started; Fand brand={} version={} minecraft={}",
                         event.server().brand(), event.server().version(), event.server().minecraftVersion()));
+        context.events().subscribe(WorldLoadEvent.class, event ->
+                context.logger().info("World loaded: {}", event.world().key().asString()));
+        context.events().subscribe(WorldUnloadEvent.class, event ->
+                context.logger().info("World unloading: {}", event.world().key().asString()));
         context.events().subscribe(PlayerJoinEvent.class, event -> {
             context.logger().info("{} joined ({} online players)", event.player().name(), Fand.server().onlinePlayers());
             var welcome = message(context.config(), "messages.welcome", "Welcome from test-plugin, {player}!");
@@ -355,6 +380,145 @@ public final class TestPlugin implements Plugin {
                     + ", samples=" + performance.fiveSeconds().sampleCount(), NamedTextColor.AQUA));
             sender.sendMessage(Component.text("Utilization 5s: "
                     + String.format(Locale.ROOT, "%.1f%%", performance.fiveSeconds().utilization() * 100.0), NamedTextColor.GRAY));
+        }
+    }
+
+    @CommandSpec(label = "fandworld", arguments = {"player", "mode"}, aliases = {"fworld"}, permission = "fand.testplugin.world")
+    static final class WorldCommand implements CommandExecutor, CommandCompleter {
+
+        private final PluginContext context;
+
+        WorldCommand(PluginContext context) {
+            this.context = context;
+        }
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            Player target = null;
+            List<String> modeArgs = args;
+            if (!args.isEmpty()) {
+                var namedTarget = Fand.server().player(args.getFirst());
+                if (namedTarget.isPresent()) {
+                    target = namedTarget.get();
+                    modeArgs = args.subList(1, args.size());
+                }
+            }
+            if (target == null && sender instanceof Player player) {
+                target = player;
+            }
+            if (modeArgs.size() > 1) {
+                sender.sendMessage(Component.text("Usage: /fandworld [player] [info|day|night|storm|clear|thunder|peaceful|easy|normal|hard|border|save]", NamedTextColor.RED));
+                return;
+            }
+            World world = target == null ? world(sender, null, null) : target.world();
+            if (world == null) {
+                return;
+            }
+
+            String mode = modeArgs.isEmpty() ? "info" : modeArgs.getFirst().toLowerCase(Locale.ROOT);
+            switch (mode) {
+                case "info" -> sendWorldInfo(sender, world);
+                case "day" -> completeWorldChange(sender, world.setTime(1000), "Set " + world.name() + " time to day.");
+                case "night" -> completeWorldChange(sender, world.setTime(13000), "Set " + world.name() + " time to night.");
+                case "storm" -> completeWorldChange(sender,
+                        world.setThundering(false).thenCompose(ignored -> world.setStorm(true)),
+                        "Started rain in " + world.name() + ".");
+                case "clear" -> completeWorldChange(sender,
+                        world.setThundering(false).thenCompose(ignored -> world.setStorm(false)),
+                        "Cleared weather in " + world.name() + ".");
+                case "thunder" -> completeWorldChange(sender,
+                        world.setThundering(true),
+                        "Started thunder in " + world.name() + ".");
+                case "peaceful" -> setDifficulty(sender, world, Difficulty.PEACEFUL);
+                case "easy" -> setDifficulty(sender, world, Difficulty.EASY);
+                case "normal" -> setDifficulty(sender, world, Difficulty.NORMAL);
+                case "hard" -> setDifficulty(sender, world, Difficulty.HARD);
+                case "border" -> applyBorderDemo(sender, world, target);
+                case "save" -> completeWorldSave(sender, world.save(), world);
+                default -> sender.sendMessage(Component.text("Usage: /fandworld [player] [info|day|night|storm|clear|thunder|peaceful|easy|normal|hard|border|save]", NamedTextColor.RED));
+            }
+        }
+
+        @Override
+        public List<String> complete(CommandSender sender, String label, List<String> args) {
+            if (args.size() <= 1) {
+                var values = new ArrayList<>(playerNames());
+                values.addAll(WORLD_MODES);
+                return matching(values, args.isEmpty() ? "" : args.getLast());
+            }
+            if (args.size() == 2 && Fand.server().player(args.getFirst()).isPresent()) {
+                return matching(WORLD_MODES, args.getLast());
+            }
+            return List.of();
+        }
+
+        private void setDifficulty(CommandSender sender, World world, Difficulty difficulty) {
+            completeWorldChange(sender,
+                    world.setDifficulty(difficulty),
+                    "Set server difficulty to " + difficulty.name().toLowerCase(Locale.ROOT) + ".");
+        }
+
+        private void applyBorderDemo(CommandSender sender, World world, Player target) {
+            WorldBorder border = world.worldBorder();
+            String center;
+            if (target != null) {
+                var location = target.location();
+                border.setCenter(location.x(), location.z());
+                center = trim(location.x()) + ", " + trim(location.z());
+            } else {
+                center = trim(border.centerX()) + ", " + trim(border.centerZ());
+            }
+            border.setSize(64.0, Duration.ofSeconds(5));
+            border.setWarningDistance(5);
+            border.setWarningTime(10);
+            sender.sendMessage(Component.text(
+                    "Applied border demo to " + world.name() + ": center=" + center + ", targetSize=64 over 5s.",
+                    NamedTextColor.GREEN));
+        }
+
+        private void sendWorldInfo(CommandSender sender, World world) {
+            WorldBorder border = world.worldBorder();
+            sender.sendMessage(Component.text("World " + world.name(), NamedTextColor.GOLD));
+            sender.sendMessage(Component.text(
+                    "time=" + world.time()
+                            + ", gameTime=" + world.gameTime()
+                            + ", difficulty=" + world.difficulty().name().toLowerCase(Locale.ROOT)
+                            + ", players=" + world.players().size(),
+                    NamedTextColor.GRAY));
+            sender.sendMessage(Component.text(
+                    "weather: storm=" + world.storm() + ", thunder=" + world.thundering(),
+                    NamedTextColor.AQUA));
+            sender.sendMessage(Component.text(
+                    "border: center=" + trim(border.centerX()) + "," + trim(border.centerZ())
+                            + ", size=" + trim(border.size())
+                            + ", target=" + trim(border.targetSize())
+                            + ", warning=" + border.warningDistance() + " blocks/" + border.warningTime() + "s"
+                            + ", damage=" + trim(border.damageAmount()) + " after " + trim(border.damageBuffer()) + " blocks",
+                    NamedTextColor.LIGHT_PURPLE));
+        }
+
+        private void completeWorldChange(CommandSender sender, CompletableFuture<Void> future, String successMessage) {
+            future.whenComplete((ignored, failure) -> {
+                if (failure != null) {
+                    context.logger().warn("World API demo command failed", failure);
+                    sender.sendMessage(Component.text("World change failed: " + failure.getMessage(), NamedTextColor.RED));
+                    return;
+                }
+                sender.sendMessage(Component.text(successMessage, NamedTextColor.GREEN));
+            });
+        }
+
+        private void completeWorldSave(CommandSender sender, CompletableFuture<Boolean> future, World world) {
+            future.whenComplete((saved, failure) -> {
+                if (failure != null) {
+                    context.logger().warn("World save failed for {}", world.name(), failure);
+                    sender.sendMessage(Component.text("World save failed: " + failure.getMessage(), NamedTextColor.RED));
+                    return;
+                }
+                sender.sendMessage(Component.text(
+                        Boolean.TRUE.equals(saved) ? "Saved " + world.name() + "." : "Save was skipped for " + world.name() + ".",
+                        Boolean.TRUE.equals(saved) ? NamedTextColor.GREEN : NamedTextColor.YELLOW));
+            });
         }
     }
 

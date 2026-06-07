@@ -4,6 +4,8 @@ import io.fand.api.Fand;
 import io.fand.api.Server;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.event.EventBus;
+import io.fand.api.event.world.WorldLoadEvent;
+import io.fand.api.event.world.WorldUnloadEvent;
 import io.fand.api.lifecycle.LifecyclePhase;
 import io.fand.api.lifecycle.ServerStartedEvent;
 import io.fand.api.lifecycle.ServerStartingEvent;
@@ -125,6 +127,7 @@ public final class FandServer implements Server, AutoCloseable {
         try {
             events.fire(new ServerStartingEvent(this));
             plugins.enablePlugins();
+            fireWorldLoadEvents();
             recipes.applyLoadedRecipes();
             phase.set(LifecyclePhase.RUNNING);
             events.fire(new ServerStartedEvent(this));
@@ -386,6 +389,7 @@ public final class FandServer implements Server, AutoCloseable {
             } catch (RuntimeException failure) {
                 LOGGER.warn("ServerStoppingEvent listener failed", failure);
             }
+            fireWorldUnloadEvents();
         }
         plugins.disablePlugins();
         plugins.close();
@@ -400,5 +404,21 @@ public final class FandServer implements Server, AutoCloseable {
 
     private void registerBuiltinCommands() {
         BuiltinCommands.registerAll(commands, this);
+    }
+
+    private void fireWorldLoadEvents() {
+        for (var world : worlds()) {
+            events.fire(new WorldLoadEvent(world));
+        }
+    }
+
+    private void fireWorldUnloadEvents() {
+        for (var world : worlds()) {
+            try {
+                events.fire(new WorldUnloadEvent(world));
+            } catch (RuntimeException failure) {
+                LOGGER.warn("WorldUnloadEvent listener failed for {}", world.key().asString(), failure);
+            }
+        }
     }
 }

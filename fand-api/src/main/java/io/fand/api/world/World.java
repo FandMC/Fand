@@ -5,6 +5,7 @@ import io.fand.api.world.particle.ParticleEffect;
 import io.fand.api.world.particle.ParticleEmission;
 import io.fand.api.world.sound.SoundEffect;
 import java.util.Collection;
+import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.audience.ForwardingAudience;
 import net.kyori.adventure.key.Key;
 
@@ -31,6 +32,42 @@ public interface World extends ForwardingAudience {
 
     /** World seed. */
     long seed();
+
+    /** Total game ticks elapsed for this world. */
+    long gameTime();
+
+    /** Sets total game ticks for this world. Marshals to the server thread. */
+    CompletableFuture<Void> setGameTime(long ticks);
+
+    /** Current default clock ticks for this world. */
+    long time();
+
+    /** Sets default clock ticks for this world. Marshals to the server thread. */
+    CompletableFuture<Void> setTime(long ticks);
+
+    /** Current server difficulty. */
+    Difficulty difficulty();
+
+    /** Sets server difficulty. Marshals to the server thread. */
+    CompletableFuture<Void> setDifficulty(Difficulty difficulty);
+
+    /** Whether rain is active. */
+    boolean storm();
+
+    /** Sets rain state. Marshals to the server thread. */
+    CompletableFuture<Void> setStorm(boolean storm);
+
+    /** Whether thunder is active. */
+    boolean thundering();
+
+    /** Sets thunder state. Marshals to the server thread. */
+    CompletableFuture<Void> setThundering(boolean thundering);
+
+    /** Live world border controls. */
+    WorldBorder worldBorder();
+
+    /** Saves this world. Marshals to the server thread. */
+    CompletableFuture<Boolean> save();
 
     /** Snapshot of all players currently in this world. */
     Collection<? extends Player> players();

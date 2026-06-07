@@ -16,13 +16,19 @@ import io.fand.api.event.player.PlayerInteractEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
+import io.fand.api.event.world.WorldLoadEvent;
+import io.fand.api.event.world.WorldUnloadEvent;
 import io.fand.api.inventory.Inventory;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
+import io.fand.api.world.Difficulty;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
+import io.fand.api.world.WorldBorder;
 import java.lang.reflect.Proxy;
+import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
 
@@ -235,6 +241,14 @@ final class EventPayloadTest {
         assertThat(event.attacker()).contains(attacker);
     }
 
+    @Test
+    void worldLifecycleEventsCarryWorld() {
+        var world = new TestWorld(Key.key("minecraft:overworld"));
+
+        assertThat(new WorldLoadEvent(world).world()).isSameAs(world);
+        assertThat(new WorldUnloadEvent(world).world()).isSameAs(world);
+    }
+
     private static <T> T proxy(Class<T> type) {
         Object instance = Proxy.newProxyInstance(
                 type.getClassLoader(),
@@ -266,6 +280,66 @@ final class EventPayloadTest {
         }
 
         @Override
+        public long gameTime() {
+            return 0;
+        }
+
+        @Override
+        public CompletableFuture<Void> setGameTime(long ticks) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public long time() {
+            return 0;
+        }
+
+        @Override
+        public CompletableFuture<Void> setTime(long ticks) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public Difficulty difficulty() {
+            return Difficulty.NORMAL;
+        }
+
+        @Override
+        public CompletableFuture<Void> setDifficulty(Difficulty difficulty) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public boolean storm() {
+            return false;
+        }
+
+        @Override
+        public CompletableFuture<Void> setStorm(boolean storm) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public boolean thundering() {
+            return false;
+        }
+
+        @Override
+        public CompletableFuture<Void> setThundering(boolean thundering) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public WorldBorder worldBorder() {
+            return TestWorldBorder.INSTANCE;
+        }
+
+        @Override
+        public CompletableFuture<Boolean> save() {
+            return CompletableFuture.completedFuture(true);
+        }
+
+        @Override
         public java.util.Collection<? extends Player> players() {
             return java.util.List.of();
         }
@@ -289,6 +363,88 @@ final class EventPayloadTest {
         @Override
         public io.fand.api.block.Block blockAt(int x, int y, int z) {
             throw new UnsupportedOperationException();
+        }
+    }
+
+    private enum TestWorldBorder implements WorldBorder {
+        INSTANCE;
+
+        @Override
+        public double centerX() {
+            return 0;
+        }
+
+        @Override
+        public double centerZ() {
+            return 0;
+        }
+
+        @Override
+        public void setCenter(double x, double z) {
+        }
+
+        @Override
+        public double size() {
+            return 0;
+        }
+
+        @Override
+        public double targetSize() {
+            return 0;
+        }
+
+        @Override
+        public long remainingTransitionTicks() {
+            return 0;
+        }
+
+        @Override
+        public void setSize(double size) {
+        }
+
+        @Override
+        public void setSize(double size, Duration transition) {
+        }
+
+        @Override
+        public int warningDistance() {
+            return 0;
+        }
+
+        @Override
+        public void setWarningDistance(int blocks) {
+        }
+
+        @Override
+        public int warningTime() {
+            return 0;
+        }
+
+        @Override
+        public void setWarningTime(int seconds) {
+        }
+
+        @Override
+        public double damageBuffer() {
+            return 0;
+        }
+
+        @Override
+        public void setDamageBuffer(double blocks) {
+        }
+
+        @Override
+        public double damageAmount() {
+            return 0;
+        }
+
+        @Override
+        public void setDamageAmount(double damagePerBlock) {
+        }
+
+        @Override
+        public boolean contains(double x, double z) {
+            return true;
         }
     }
 }
