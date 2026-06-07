@@ -5,7 +5,7 @@ import io.fand.api.command.CommandSender;
 import io.fand.api.command.CommandSpec;
 import java.util.List;
 
-@CommandSpec(label = "fand", namespace = "fand", subcommands = {"reload"}, permission = "fand.command.reload")
+@CommandSpec(label = "fand", namespace = "fand", subcommands = {"reload"}, arguments = {}, permission = "fand.command.reload")
 public final class FandCommand implements CommandExecutor {
 
     private final io.fand.server.FandServer server;

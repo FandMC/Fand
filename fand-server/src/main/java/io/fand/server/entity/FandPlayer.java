@@ -3,12 +3,14 @@ package io.fand.server.entity;
 import io.fand.api.entity.GameMode;
 import io.fand.api.entity.Player;
 import io.fand.api.permission.PermissionService;
+import io.fand.api.scoreboard.Sidebar;
 import io.fand.api.world.Location;
 import io.fand.api.world.ParticlePlayback;
 import io.fand.api.world.SoundPlayback;
 import io.fand.api.world.World;
 import io.fand.server.audience.BossBarTracker;
 import io.fand.server.audience.PacketAudience;
+import io.fand.server.audience.SidebarTracker;
 import io.fand.server.command.AdventureBridge;
 import io.fand.server.inventory.FandPlayerInventory;
 import io.fand.server.world.FandWorld;
@@ -35,12 +37,14 @@ public final class FandPlayer implements Player {
     private final PermissionService permissions;
     private final PlayerRegistry registry;
     private final BossBarTracker bossBars;
+    private final SidebarTracker sidebar;
 
     public FandPlayer(ServerPlayer handle, PermissionService permissions, PlayerRegistry registry) {
         this.bound = new Bound(handle, new FandPlayerInventory(handle.getInventory()));
         this.permissions = permissions;
         this.registry = registry;
         this.bossBars = new BossBarTracker(handle);
+        this.sidebar = new SidebarTracker(handle);
     }
 
     public ServerPlayer handle() {
@@ -50,10 +54,12 @@ public final class FandPlayer implements Player {
     void refreshHandle(ServerPlayer newHandle) {
         this.bound = new Bound(newHandle, new FandPlayerInventory(newHandle.getInventory()));
         bossBars.rebind(newHandle);
+        sidebar.rebind(newHandle);
     }
 
     public void clearTransientState() {
         bossBars.clear();
+        sidebar.clear();
     }
 
     private record Bound(ServerPlayer handle, FandPlayerInventory inventory) {
@@ -210,6 +216,31 @@ public final class FandPlayer implements Player {
     }
 
     @Override
+    public void sendTabList(Component header, Component footer) {
+        PacketAudience.sendTabList(bound.handle, header, footer);
+    }
+
+    @Override
+    public void clearTabList() {
+        PacketAudience.clearTabList(bound.handle);
+    }
+
+    @Override
+    public void sendPlayerListHeader(Component header) {
+        sendTabList(header, Component.empty());
+    }
+
+    @Override
+    public void sendPlayerListFooter(Component footer) {
+        sendTabList(Component.empty(), footer);
+    }
+
+    @Override
+    public void sendPlayerListHeaderAndFooter(Component header, Component footer) {
+        sendTabList(header, footer);
+    }
+
+    @Override
     public void showTitle(Title title) {
         PacketAudience.showTitle(bound.handle, title);
     }
@@ -262,6 +293,17 @@ public final class FandPlayer implements Player {
     @Override
     public void hideBossBar(BossBar bar) {
         runOnMain(() -> bossBars.hide(bar));
+    }
+
+    @Override
+    public void showSidebar(Sidebar view) {
+        Objects.requireNonNull(view, "view");
+        runOnMain(() -> sidebar.show(view));
+    }
+
+    @Override
+    public void clearSidebar() {
+        runOnMain(sidebar::clear);
     }
 
     private void runOnMain(Runnable task) {

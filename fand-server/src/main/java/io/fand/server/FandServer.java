@@ -139,6 +139,7 @@ public final class FandServer implements Server, AutoCloseable {
         worlds.set(registry);
         entities.set(new EntityRegistry(registry, players));
         players.bindWorldResolver(registry::wrap);
+        io.fand.server.item.FandItemStacks.useRegistries(server.registryAccess());
     }
 
     /**

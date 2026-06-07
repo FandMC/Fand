@@ -10,6 +10,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.title.Title;
 import net.kyori.adventure.title.TitlePart;
 import net.minecraft.core.Holder;
+import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundClearTitlesPacket;
 import net.minecraft.network.protocol.game.ClientboundSetActionBarTextPacket;
@@ -18,6 +19,7 @@ import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
 import net.minecraft.network.protocol.game.ClientboundStopSoundPacket;
+import net.minecraft.network.protocol.game.ClientboundTabListPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
@@ -44,6 +46,14 @@ public final class PacketAudience {
 
     public static void sendActionBar(ServerPlayer player, Component message) {
         send(player, new ClientboundSetActionBarTextPacket(toVanilla(player, message)));
+    }
+
+    public static void sendTabList(ServerPlayer player, Component header, Component footer) {
+        send(player, new ClientboundTabListPacket(toVanilla(player, header), toVanilla(player, footer)));
+    }
+
+    public static void clearTabList(ServerPlayer player) {
+        send(player, new ClientboundTabListPacket(CommonComponents.EMPTY, CommonComponents.EMPTY));
     }
 
     public static void showTitle(ServerPlayer player, Title title) {
@@ -106,7 +116,7 @@ public final class PacketAudience {
         send(player, new ClientboundStopSoundPacket(name, source));
     }
 
-    private static net.minecraft.network.chat.Component toVanilla(ServerPlayer player, Component message) {
+    static net.minecraft.network.chat.Component toVanilla(ServerPlayer player, Component message) {
         return AdventureBridge.toVanilla(message, player.registryAccess());
     }
 
@@ -139,7 +149,7 @@ public final class PacketAudience {
         return (int) Math.max(0, millis / 50L);
     }
 
-    private static void send(ServerPlayer player, Packet<?> packet) {
+    static void send(ServerPlayer player, Packet<?> packet) {
         var connection = player.connection;
         if (connection != null) {
             connection.send(packet);

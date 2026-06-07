@@ -20,6 +20,7 @@ final class AnnotatedCommandsTest {
         var resolved = manager.resolve(new Sender(), List.of("hello", "world")).orElseThrow();
         assertThat(resolved.command().descriptor().namespace()).isEqualTo("demo");
         assertThat(resolved.command().descriptor().subcommands()).containsExactly("world");
+        assertThat(resolved.command().descriptor().arguments()).containsExactly("target");
     }
 
     @Test
@@ -41,7 +42,7 @@ final class AnnotatedCommandsTest {
                 .hasMessageContaining("@CommandSpec");
     }
 
-    @CommandSpec(label = "hello", subcommands = {"world"}, permission = "demo.hello")
+    @CommandSpec(label = "hello", subcommands = {"world"}, arguments = {"target"}, permission = "demo.hello")
     private static final class DemoCommand implements CommandExecutor {
         @Override
         public void execute(CommandSender sender, String label, List<String> args) {
