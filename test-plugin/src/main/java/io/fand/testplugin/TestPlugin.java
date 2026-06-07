@@ -11,6 +11,7 @@ import io.fand.api.command.CommandCompleter;
 import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
 import io.fand.api.command.CommandSpec;
+import io.fand.api.component.DataComponentKey;
 import io.fand.api.config.Configuration;
 import io.fand.api.entity.GameMode;
 import io.fand.api.entity.Player;
@@ -161,8 +162,17 @@ public final class TestPlugin implements Plugin {
             "fand.testplugin.kick",
             "fand.testplugin.tab",
             "fand.testplugin.sidebar",
-            "fand.testplugin.recipe"
+            "fand.testplugin.recipe",
+            "fand.testplugin.components"
     );
+    private static final DataComponentKey<String> DEMO_BLOCK_LABEL =
+            DataComponentKey.string(Key.key("fand-test-plugin:block_label"));
+    private static final DataComponentKey<Integer> DEMO_BLOCK_USES =
+            DataComponentKey.integer(Key.key("fand-test-plugin:block_uses"));
+    private static final DataComponentKey<String> DEMO_ENTITY_LABEL =
+            DataComponentKey.string(Key.key("fand-test-plugin:entity_label"));
+    private static final DataComponentKey<Integer> DEMO_ENTITY_USES =
+            DataComponentKey.integer(Key.key("fand-test-plugin:entity_uses"));
 
     @Override
     public void onLoad(PluginContext context) {
@@ -193,6 +203,7 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new TabCommand(context));
         context.commands().register(new SidebarCommand());
         context.commands().register(new RecipeCommand(context));
+        context.commands().register(new ComponentsCommand());
         context.commands().register(new GuiCommand(context, demoGuiViewers));
         registerDemoRecipes(context);
         context.events().subscribe(ServerStartedEvent.class, event ->
@@ -1133,6 +1144,66 @@ public final class TestPlugin implements Plugin {
         @Override
         public List<String> complete(CommandSender sender, String label, List<String> args) {
             return args.size() <= 1 ? matching(demoRecipeKeySuggestions(), args.isEmpty() ? "" : args.getLast()) : List.of();
+        }
+    }
+
+    @CommandSpec(label = "fandcomponents", arguments = {"player", "mode"}, aliases = {"fcomponents"}, permission = "fand.testplugin.components")
+    static final class ComponentsCommand implements CommandExecutor, CommandCompleter {
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            TargetedArgs targeted = targetedArgs(sender, args, "/fandcomponents <player> [set|show|clear]");
+            if (targeted == null) {
+                return;
+            }
+            var player = targeted.player();
+            var mode = targeted.args().isEmpty() ? "show" : targeted.args().getFirst().toLowerCase(Locale.ROOT);
+            var location = player.location();
+            Block block = location.world().blockAt(location.blockX(), location.blockY() - 1, location.blockZ());
+            switch (mode) {
+                case "set" -> {
+                    int blockUses = block.components().get(DEMO_BLOCK_USES).orElse(0) + 1;
+                    int entityUses = player.components().get(DEMO_ENTITY_USES).orElse(0) + 1;
+                    block.components().set(DEMO_BLOCK_LABEL, "demo machine owned by " + player.name());
+                    block.components().set(DEMO_BLOCK_USES, blockUses);
+                    player.components().set(DEMO_ENTITY_LABEL, "demo tagged player");
+                    player.components().set(DEMO_ENTITY_USES, entityUses);
+                    sender.sendMessage(Component.text(
+                            "Stored block/entity components for " + player.name()
+                                    + " at " + block.x() + "," + block.y() + "," + block.z(),
+                            NamedTextColor.GREEN));
+                }
+                case "clear" -> {
+                    block.components().clear();
+                    player.components().remove(DEMO_ENTITY_LABEL);
+                    player.components().remove(DEMO_ENTITY_USES);
+                    sender.sendMessage(Component.text("Cleared demo components for " + player.name() + ".", NamedTextColor.YELLOW));
+                }
+                case "show" -> {
+                    var blockLabel = block.components().get(DEMO_BLOCK_LABEL).orElse("<none>");
+                    var blockUses = block.components().get(DEMO_BLOCK_USES).orElse(0);
+                    var entityLabel = player.components().get(DEMO_ENTITY_LABEL).orElse("<none>");
+                    var entityUses = player.components().get(DEMO_ENTITY_USES).orElse(0);
+                    sender.sendMessage(Component.text(
+                            "Block components: " + blockLabel + " uses=" + blockUses,
+                            NamedTextColor.AQUA));
+                    sender.sendMessage(Component.text(
+                            "Entity components: " + entityLabel + " uses=" + entityUses,
+                            NamedTextColor.LIGHT_PURPLE));
+                }
+                default -> sender.sendMessage(Component.text("Usage: /fandcomponents <player> [set|show|clear]", NamedTextColor.RED));
+            }
+        }
+
+        @Override
+        public List<String> complete(CommandSender sender, String label, List<String> args) {
+            if (args.size() == 1) {
+                return matching(playerNames(), args.getFirst());
+            }
+            if (args.size() == 2) {
+                return matching(List.of("set", "show", "clear"), args.get(1));
+            }
+            return List.of();
         }
     }
 

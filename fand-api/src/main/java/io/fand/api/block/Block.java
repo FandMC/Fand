@@ -1,5 +1,7 @@
 package io.fand.api.block;
 
+import io.fand.api.component.DataComponentContainer;
+import io.fand.api.component.DataComponentMap;
 import io.fand.api.world.World;
 
 /**
@@ -29,4 +31,23 @@ public interface Block {
      * {@code true} if the world accepted the change.
      */
     boolean setType(BlockType type);
+
+    /**
+     * Replaces this block and stores persistent Fand components for the new
+     * block state as one operation.
+     *
+     * <p>Off-thread calls marshal to the server thread like
+     * {@link #setType(BlockType)}.
+     */
+    boolean setType(BlockType type, DataComponentMap components);
+
+    /**
+     * Persistent Fand components attached to this block position.
+     *
+     * <p>The returned container is live and backed by world save data. Component
+     * reads and writes must happen on the server thread. Data is cleared when
+     * the block is replaced through Fand APIs or player-driven break/place
+     * events.
+     */
+    DataComponentContainer components();
 }

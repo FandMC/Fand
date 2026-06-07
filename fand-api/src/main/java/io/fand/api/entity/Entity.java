@@ -1,5 +1,6 @@
 package io.fand.api.entity;
 
+import io.fand.api.component.DataComponentContainer;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
 import java.util.UUID;
@@ -36,4 +37,13 @@ public interface Entity {
 
     /** World currently containing the entity. */
     World world();
+
+    /**
+     * Persistent Fand components attached to this entity UUID.
+     *
+     * <p>The returned container is live and backed by server save data. Component
+     * reads and writes must happen on the server thread. Values survive entity
+     * wrapper recreation and dimension changes as long as the same UUID is used.
+     */
+    DataComponentContainer components();
 }

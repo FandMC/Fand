@@ -1,5 +1,6 @@
 package io.fand.server.entity;
 
+import io.fand.api.component.DataComponentContainer;
 import io.fand.api.entity.ClientSettings;
 import io.fand.api.entity.GameMode;
 import io.fand.api.entity.Player;
@@ -14,6 +15,7 @@ import io.fand.server.audience.BossBarTracker;
 import io.fand.server.audience.PacketAudience;
 import io.fand.server.audience.SidebarTracker;
 import io.fand.server.command.AdventureBridge;
+import io.fand.server.component.EntityComponentStorage;
 import io.fand.server.inventory.FandPlayerInventory;
 import io.fand.server.world.ParticleEffects;
 import io.fand.server.world.FandWorld;
@@ -192,6 +194,19 @@ public final class FandPlayer implements Player {
     @Override
     public World world() {
         return registry.wrapLevel(bound.handle.level());
+    }
+
+    @Override
+    public DataComponentContainer components() {
+        var handle = bound.handle;
+        var server = handle.level().getServer();
+        if (server == null) {
+            throw new IllegalStateException("Player is not attached to a server: " + handle);
+        }
+        if (!server.isSameThread()) {
+            throw new IllegalStateException("Player.components() must be accessed on the server thread");
+        }
+        return EntityComponentStorage.container(server, handle.getUUID());
     }
 
     @Override

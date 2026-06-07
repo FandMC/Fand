@@ -2,7 +2,10 @@ package io.fand.server.block;
 
 import io.fand.api.block.Block;
 import io.fand.api.block.BlockType;
+import io.fand.api.component.DataComponentContainer;
+import io.fand.api.component.DataComponentMap;
 import io.fand.api.world.World;
+import io.fand.server.component.BlockComponentStorage;
 import io.fand.server.world.FandWorld;
 import java.util.Objects;
 import net.minecraft.core.BlockPos;
@@ -16,6 +19,14 @@ public final class FandBlock implements Block {
     public FandBlock(FandWorld world, int x, int y, int z) {
         this.world = world;
         this.pos = new BlockPos(x, y, z);
+    }
+
+    public ServerLevel worldHandle() {
+        return world.handle();
+    }
+
+    public BlockPos position() {
+        return pos;
     }
 
     @Override
@@ -48,19 +59,41 @@ public final class FandBlock implements Block {
 
     @Override
     public boolean setType(BlockType type) {
+        return setType(type, DataComponentMap.EMPTY);
+    }
+
+    @Override
+    public boolean setType(BlockType type, DataComponentMap components) {
         Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(components, "components");
         if (!(type instanceof FandBlockType fandType)) {
             throw new IllegalArgumentException("Block type must be obtained from BlockTypes / Server.blockType");
         }
         ServerLevel level = world.handle();
         var server = level.getServer();
-        Runnable run = () -> level.setBlockAndUpdate(pos, fandType.handle().defaultBlockState());
+        Runnable run = () -> {
+            if (!level.setBlockAndUpdate(pos, fandType.handle().defaultBlockState())) {
+                return;
+            }
+            if (components.isEmpty()) {
+                BlockComponentStorage.clear(level, pos);
+            } else {
+                BlockComponentStorage.put(level, pos, components);
+            }
+        };
         if (server == null || server.isSameThread()) {
             run.run();
         } else {
             server.executeIfPossible(run);
         }
         return true;
+    }
+
+    @Override
+    public DataComponentContainer components() {
+        ServerLevel level = world.handle();
+        requireMainThread(level, "Block.components() must be accessed on the server thread");
+        return BlockComponentStorage.container(level, pos);
     }
 
     @Override
