@@ -13,7 +13,7 @@ public final class CommandBridge {
     }
 
     public static boolean tryExecute(CommandSourceStack source, String rawCommand) {
-        var sender = sender(source);
+        var sender = sender(source); // 保留您自己的逻辑：支持玩家识别
         var tokens = tokenize(rawCommand, false);
         if (tokens.isEmpty()) {
             return false;
@@ -40,16 +40,24 @@ public final class CommandBridge {
         return true;
     }
 
-    public static Optional<List<String>> suggestions(CommandSourceStack source, String rawCommand) {
-        var sender = sender(source);
-        var tokens = tokenize(rawCommand, true);
-        var registry = io.fand.server.Main.runtime().commands();
+    // 融合：使用官方新版的返回值 SuggestionResult，但将 sender 替换为您自己的 sender(source)，确保补全也能正确识别玩家
+    public static Optional<SuggestionResult> suggestions(CommandSourceStack source, String rawCommand) {
+        var runtime = io.fand.server.Main.runtime();
+        var sender = sender(source); // 保留：支持玩家识别
+        var normalized = stripCommandPrefix(rawCommand);
+        var tokens = tokenize(normalized.command(), true);
+        var registry = runtime.commands();
         if (!registry.claims(tokens)) {
             return Optional.empty();
         }
-        return Optional.of(registry.suggestions(sender, tokens));
+        return Optional.of(new SuggestionResult(
+                registry.suggestions(sender, tokens),
+                normalized.prefixLength() + currentTokenStart(normalized.command()),
+                rawCommand.length()
+        ));
     }
 
+    // 完全保留：您自己新写的核心方法（识别是玩家还是控制台）
     public static io.fand.api.command.CommandSender sender(CommandSourceStack source) {
         var runtime = io.fand.server.Main.runtime();
         ServerPlayer player = source.getPlayer();
@@ -72,5 +80,31 @@ public final class CommandBridge {
             base.add("");
         }
         return List.copyOf(base);
+    }
+
+    // 保留：官方新增的前缀去除方法
+    private static NormalizedCommand stripCommandPrefix(String rawCommand) {
+        var leading = rawCommand.length() - rawCommand.stripLeading().length();
+        return rawCommand.regionMatches(leading, "/", 0, 1)
+                ? new NormalizedCommand(rawCommand.substring(0, leading + 1).length(), rawCommand.substring(leading + 1))
+                : new NormalizedCommand(leading, rawCommand.substring(leading));
+    }
+
+    // 保留：官方新增的 Token 计算方法
+    private static int currentTokenStart(String command) {
+        var trimmed = command.stripTrailing();
+        if (trimmed.length() != command.length()) {
+            return command.length();
+        }
+        var separator = Math.max(command.lastIndexOf(' '), command.lastIndexOf('\t'));
+        return separator < 0 ? 0 : separator + 1;
+    }
+
+    // 保留：官方新增的 Record
+    public record SuggestionResult(List<String> values, int replaceStart, int replaceEnd) {
+    }
+
+    // 保留：官方新增的 Record
+    private record NormalizedCommand(int prefixLength, String command) {
     }
 }
