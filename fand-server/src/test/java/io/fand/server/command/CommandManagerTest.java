@@ -75,6 +75,19 @@ final class CommandManagerTest {
     }
 
     @Test
+    void claimsOnlyCompleteRootsForExecution() {
+        var manager = new CommandManager(new PermissionManager());
+        manager.register(descriptor("fand", "tps"), noop(), completer());
+        manager.register(new CommandDescriptor("fand", "config", List.of("reload"), List.of(), null), noop(), completer());
+
+        assertThat(manager.claims(List.of("tp"))).isFalse();
+        assertThat(manager.claims(List.of("tps"))).isTrue();
+        assertThat(manager.claims(List.of("fand:t"))).isFalse();
+        assertThat(manager.claims(List.of("fand:tps"))).isTrue();
+        assertThat(manager.claims(List.of("fand:config", "missing"))).isTrue();
+    }
+
+    @Test
     void rejectsInvalidNames() {
         var manager = new CommandManager(new PermissionManager());
         assertThatThrownBy(() -> manager.register(descriptor("Bad Ns", "reload"), noop(), completer()))

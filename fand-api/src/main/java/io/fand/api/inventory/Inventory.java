@@ -2,6 +2,7 @@ package io.fand.api.inventory;
 
 import io.fand.api.item.ItemStack;
 import net.kyori.adventure.text.Component;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A slot-based view over a container. Slot indices are zero-based and contiguous;
@@ -38,7 +39,7 @@ public interface Inventory {
      * dedicated title (e.g. the player's own inventory or a vanilla menu
      * surfaced through events).
      */
-    default Component title() {
+    default @Nullable Component title() {
         return null;
     }
 

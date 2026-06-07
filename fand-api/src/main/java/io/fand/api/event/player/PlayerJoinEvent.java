@@ -6,7 +6,7 @@ import net.kyori.adventure.text.Component;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Fired on the main thread after a player successfully joins the server.
+ * Fired on the server thread after a player successfully joins the server.
  *
  * <p>Listeners may replace the broadcast join message; setting it to {@code null}
  * suppresses the broadcast entirely.

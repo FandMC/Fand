@@ -224,6 +224,53 @@ final class PluginRuntimeTest {
         }
     }
 
+    @Test
+    void closesResourcesRegisteredDuringLoadWhenEnableFailsAndBootContinues() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        var logFile = tempDir.resolve("enable-failure-cleanup.log");
+        var previousLog = System.getProperty("fand.plugin.test.log");
+        System.setProperty("fand.plugin.test.log", logFile.toString());
+        try {
+            PluginRuntimeTestSupport.createPluginJar(
+                    tempDir,
+                    pluginsDir.resolve("broken.jar"),
+                    PluginRuntimeTestSupport.descriptorJson("broken", "testplugins.broken.BrokenPlugin", List.of()),
+                    Map.of("testplugins/broken/BrokenPlugin.java", loadResourceThenFailEnablePluginSource()),
+                    List.of()
+            );
+
+            var dispatcher = new EventDispatcher();
+            var scheduler = new TaskScheduler();
+            var manager = new PluginRuntime(
+                    pluginsDir,
+                    pluginsDir,
+                    getClass().getClassLoader(),
+                    new CommandManager(),
+                    dispatcher,
+                    new PermissionManager(),
+                    scheduler,
+                    new PluginRuntime.Options(false, true, false)
+            );
+            try {
+                manager.loadPlugins();
+                manager.enablePlugins();
+
+                dispatcher.fire(new CleanupTestEvent());
+                scheduler.tick();
+
+                assertThat(manager.byId("broken")).isPresent();
+                assertThat(manager.isEnabled("broken")).isFalse();
+                assertThat(Files.exists(logFile)).isFalse();
+            } finally {
+                manager.close();
+                scheduler.close();
+            }
+        } finally {
+            PluginRuntimeTestSupport.restoreProperty("fand.plugin.test.log", previousLog);
+        }
+    }
+
     private static String pluginSource(String packageName, String className, String loadLine, String enableLine, String disableLine) {
         var lines = new java.util.LinkedHashMap<String, String>();
         if (loadLine != null) {
@@ -306,6 +353,47 @@ final class PluginRuntimeTest {
                     @Override
                     public void onDisable(PluginContext context) {
                         log("dependent-disable");
+                    }
+
+                    private static void log(String value) {
+                        try {
+                            Files.writeString(
+                                    Path.of(System.getProperty("fand.plugin.test.log")),
+                                    value + System.lineSeparator(),
+                                    StandardOpenOption.CREATE,
+                                    StandardOpenOption.APPEND
+                            );
+                        } catch (IOException ex) {
+                            throw new RuntimeException(ex);
+                        }
+                    }
+                }
+                """;
+    }
+
+    private static String loadResourceThenFailEnablePluginSource() {
+        return """
+                package testplugins.broken;
+
+                import io.fand.api.plugin.Plugin;
+                import io.fand.api.plugin.PluginContext;
+                import io.fand.server.plugin.CleanupTestEvent;
+                import java.io.IOException;
+                import java.nio.file.Files;
+                import java.nio.file.Path;
+                import java.nio.file.StandardOpenOption;
+                import java.time.Duration;
+
+                public final class BrokenPlugin implements Plugin {
+                    @Override
+                    public void onLoad(PluginContext context) {
+                        context.events().subscribe(CleanupTestEvent.class, event -> log("event"));
+                        context.scheduler().runMainRepeating(() -> log("task"), Duration.ZERO, Duration.ofDays(1));
+                    }
+
+                    @Override
+                    public void onEnable(PluginContext context) {
+                        throw new RuntimeException("enable");
                     }
 
                     private static void log(String value) {

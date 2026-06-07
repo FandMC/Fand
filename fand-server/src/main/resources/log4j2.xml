@@ -34,6 +34,7 @@
             <AppenderRef ref="File"/>
             <AppenderRef ref="ServerGuiConsole"/>
             <AppenderRef ref="TerminalConsole" level="info"/>
+            <AppenderRef ref="ServerGuiConsole" level="info"/>
         </Async>
     </Appenders>
     <Loggers>

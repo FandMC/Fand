@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.fand.api.inventory.InventoryType;
 import net.minecraft.SharedConstants;
 import net.minecraft.server.Bootstrap;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.item.ItemStack;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -36,11 +39,35 @@ class InventoryTypesTest {
     }
 
     @Test
+    void handlesMenusWithoutConstructableMenuType() {
+        var menu = new UnknownMenu();
+
+        assertThat(InventoryTypes.resolve(menu)).isEqualTo(InventoryType.UNKNOWN);
+    }
+
+    @Test
     void hasMappingForEveryRegisteredMenuType() {
         for (var type : net.minecraft.core.registries.BuiltInRegistries.MENU) {
             assertThat(InventoryTypes.resolve(type))
                     .as("MenuType %s maps to a non-UNKNOWN InventoryType", type)
                     .isNotEqualTo(InventoryType.UNKNOWN);
+        }
+    }
+
+    private static final class UnknownMenu extends AbstractContainerMenu {
+
+        private UnknownMenu() {
+            super(null, 1);
+        }
+
+        @Override
+        public ItemStack quickMoveStack(Player player, int slotIndex) {
+            return ItemStack.EMPTY;
+        }
+
+        @Override
+        public boolean stillValid(Player player) {
+            return true;
         }
     }
 }

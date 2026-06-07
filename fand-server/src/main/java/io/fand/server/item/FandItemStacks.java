@@ -2,6 +2,7 @@ package io.fand.server.item;
 
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
@@ -11,6 +12,10 @@ public final class FandItemStacks {
     private FandItemStacks() {}
 
     public static void useRegistries(RegistryAccess access) {
+        useRegistries((HolderLookup.Provider) access);
+    }
+
+    public static void useRegistries(HolderLookup.Provider access) {
         ItemComponentBridge.useRegistries(access);
     }
 

@@ -2,6 +2,8 @@ package io.fand.server.hooks;
 
 import io.fand.api.event.Event;
 import io.fand.api.event.EventBus;
+import io.fand.api.entity.LivingEntity;
+import io.fand.api.performance.ServerPerformance;
 import io.fand.server.FandServer;
 import io.fand.server.Main;
 import io.fand.server.entity.EntityRegistry;
@@ -45,6 +47,14 @@ public final class FandHooks {
         return Main.runtime().events();
     }
 
+    public static ServerPerformance performance() {
+        return Main.runtime().performance();
+    }
+
+    public static void recordTickPerformance(long tickStartNanos, long tickDurationNanos, long taskExecutionNanos) {
+        Main.runtime().recordTick(tickStartNanos, tickDurationNanos, taskExecutionNanos);
+    }
+
     public static boolean hasListeners(Class<? extends Event> type) {
         return events().hasListeners(type);
     }
@@ -54,7 +64,10 @@ public final class FandHooks {
      * Returns {@code event} so callers can chain {@code .cancelled()} reads.
      */
     public static <E extends Event> E fireOrLog(E event, String description) {
-        var bus = events();
+        return fireOrLog(events(), event, description);
+    }
+
+    public static <E extends Event> E fireOrLog(EventBus bus, E event, String description) {
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {
@@ -78,6 +91,16 @@ public final class FandHooks {
     public static @Nullable FandWorld wrapWorld(ServerLevel level) {
         var registry = Main.runtime().worldRegistryOrNull();
         return registry == null ? null : registry.wrap(level);
+    }
+
+    public static @Nullable LivingEntity wrapLivingEntity(
+            net.minecraft.world.entity.LivingEntity entity
+    ) {
+        if (entity instanceof net.minecraft.server.level.ServerPlayer player) {
+            return findPlayer(player.getUUID());
+        }
+        var registry = Main.runtime().entityRegistryOrNull();
+        return registry == null ? null : registry.wrap(entity);
     }
 
     public static Optional<EntityRegistry> entities() {

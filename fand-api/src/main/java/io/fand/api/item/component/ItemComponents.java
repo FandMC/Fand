@@ -1,9 +1,12 @@
 package io.fand.api.item.component;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
 import java.util.Collections;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -46,6 +49,13 @@ public record ItemComponents(Map<Key, JsonElement> values, Set<Key> removals) {
         return EMPTY;
     }
 
+    @Override
+    public Map<Key, JsonElement> values() {
+        var copied = new LinkedHashMap<Key, JsonElement>();
+        values.forEach((key, value) -> copied.put(key, value.deepCopy()));
+        return Collections.unmodifiableMap(copied);
+    }
+
     public static ItemComponents of(Key key, JsonElement value) {
         return EMPTY.with(key, value);
     }
@@ -77,6 +87,17 @@ public record ItemComponents(Map<Key, JsonElement> values, Set<Key> removals) {
         return values.isEmpty() && removals.isEmpty();
     }
 
+    public Set<Key> keys() {
+        return values.keySet();
+    }
+
+    public Set<Key> touchedKeys() {
+        var keys = new LinkedHashSet<Key>();
+        keys.addAll(values.keySet());
+        keys.addAll(removals);
+        return Collections.unmodifiableSet(keys);
+    }
+
     public boolean has(Key key) {
         return values.containsKey(key);
     }
@@ -100,6 +121,40 @@ public record ItemComponents(Map<Key, JsonElement> values, Set<Key> removals) {
         return new ItemComponents(nextValues, nextRemovals);
     }
 
+    public ItemComponents withUnit(Key key) {
+        return with(key, new JsonObject());
+    }
+
+    public ItemComponents withBoolean(Key key, boolean value) {
+        return with(key, new JsonPrimitive(value));
+    }
+
+    public ItemComponents withInt(Key key, int value) {
+        return with(key, new JsonPrimitive(value));
+    }
+
+    public ItemComponents withFloat(Key key, float value) {
+        return with(key, new JsonPrimitive(value));
+    }
+
+    public ItemComponents withString(Key key, String value) {
+        Objects.requireNonNull(value, "value");
+        return with(key, new JsonPrimitive(value));
+    }
+
+    public ItemComponents withKey(Key key, Key value) {
+        Objects.requireNonNull(value, "value");
+        return withString(key, value.asString());
+    }
+
+    public ItemComponents withObject(Key key, JsonObject value) {
+        return with(key, value);
+    }
+
+    public ItemComponents withArray(Key key, JsonArray value) {
+        return with(key, value);
+    }
+
     public ItemComponents without(Key key) {
         Objects.requireNonNull(key, "key");
         if (!values.containsKey(key) && !removals.contains(key)) {
@@ -119,6 +174,15 @@ public record ItemComponents(Map<Key, JsonElement> values, Set<Key> removals) {
         nextValues.remove(key);
         nextRemovals.add(key);
         return new ItemComponents(nextValues, nextRemovals);
+    }
+
+    public ItemComponents removeAll(Collection<Key> keys) {
+        Objects.requireNonNull(keys, "keys");
+        var next = this;
+        for (var key : keys) {
+            next = next.remove(key);
+        }
+        return next;
     }
 
     public ItemComponents apply(ItemComponents patch) {

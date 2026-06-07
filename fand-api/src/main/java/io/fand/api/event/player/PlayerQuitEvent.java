@@ -6,7 +6,7 @@ import net.kyori.adventure.text.Component;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Fired on the main thread after a player disconnects but before their handle
+ * Fired on the server thread after a player disconnects but before their handle
  * is invalidated, allowing listeners to read final state.
  *
  * <p>Listeners may replace the broadcast quit message; setting it to {@code null}

@@ -91,15 +91,28 @@ public final class InventoryEvents {
         ClickType clickType = ClickTypes.resolve(input, button, slot);
         int normalisedSlot = slot == ClickTypes.OUTSIDE_SLOT ? InventoryClickEvent.OUTSIDE : slot;
         ItemStack currentItem = ItemStack.EMPTY;
+        int containerSlot = -1;
+        int playerInventorySlot = -1;
         if (normalisedSlot >= 0 && normalisedSlot < menu.slots.size()) {
-            currentItem = FandItemStacks.fromVanilla(menu.slots.get(normalisedSlot).getItem());
+            var clickedSlot = menu.slots.get(normalisedSlot);
+            currentItem = FandItemStacks.fromVanilla(clickedSlot.getItem());
+            if (clickedSlot.container == player.getInventory()) {
+                playerInventorySlot = clickedSlot.getContainerSlot();
+            } else {
+                containerSlot = clickedSlot.getContainerSlot();
+            }
         }
         ItemStack cursorItem = FandItemStacks.fromVanilla(menu.getCarried());
+        var action = ClickTypes.action(clickType, slot, currentItem, cursorItem);
         var event = new InventoryClickEvent(
                 fandPlayer,
                 new ContainerMenuView(menu),
                 normalisedSlot,
+                slot,
+                containerSlot,
+                playerInventorySlot,
                 clickType,
+                action,
                 button,
                 currentItem,
                 cursorItem);

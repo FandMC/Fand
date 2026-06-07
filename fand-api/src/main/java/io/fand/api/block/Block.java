@@ -6,8 +6,8 @@ import io.fand.api.world.World;
  * A positional block handle within a {@link World}. Instances are thin handles —
  * {@link #type()} and {@link #setType(BlockType)} read or mutate the live world.
  *
- * <p>Reads must be performed on the main thread; writes always run on the main
- * thread (a write off-thread is silently rescheduled). Equality is by world key
+ * <p>Reads must be performed on the server thread; writes always run on the
+ * server thread (a write off-thread is silently rescheduled). Equality is by world key
  * plus integer block coordinates.
  */
 public interface Block {

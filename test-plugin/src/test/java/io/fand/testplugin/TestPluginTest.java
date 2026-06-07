@@ -3,8 +3,11 @@ package io.fand.testplugin;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.fand.api.inventory.InventoryType;
+import io.fand.api.item.component.EnchantmentKeys;
 import io.fand.api.item.component.ItemComponentKeys;
 import io.fand.api.item.component.ItemRarity;
+import io.fand.api.performance.MetricStatistics;
+import io.fand.api.performance.TickAverages;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
 import java.util.List;
@@ -33,6 +36,12 @@ final class TestPluginTest {
         assertThat(TestPlugin.isMuteNextCommand("!mute-next")).isTrue();
         assertThat(TestPlugin.isMuteNextCommand("  !MUTE-NEXT  ")).isTrue();
         assertThat(TestPlugin.isMuteNextCommand("!where")).isFalse();
+    }
+
+    @Test
+    void recognisesCommandAliasDemo() {
+        assertThat(TestPlugin.isCommandAliasDemo(" fwhere ")).isTrue();
+        assertThat(TestPlugin.isCommandAliasDemo("fanddemo")).isFalse();
     }
 
     @Test
@@ -115,9 +124,46 @@ final class TestPluginTest {
         assertThat(item.customName()).contains(net.kyori.adventure.text.Component.text("Fand Component Item", net.kyori.adventure.text.format.NamedTextColor.GOLD));
         assertThat(item.lore()).hasSize(2);
         assertThat(item.enchantmentGlintOverride()).contains(true);
+        assertThat(item.enchantments().level(EnchantmentKeys.UNBREAKING)).isEqualTo(3);
+        assertThat(item.storedEnchantments().level(EnchantmentKeys.MENDING)).isEqualTo(1);
+        assertThat(item.enchantable()).contains(30);
+        assertThat(item.tooltipDisplay().hides(ItemComponentKeys.STORED_ENCHANTMENTS)).isTrue();
         assertThat(item.rarity()).contains(ItemRarity.RARE);
         assertThat(item.components().has(ItemComponentKeys.CUSTOM_MODEL_DATA)).isTrue();
         assertThat(item.customData()).get().extracting(json -> json.get("source").getAsString()).isEqualTo("tester");
+    }
+
+    @Test
+    void buildsKitNavigatorWithCustomDataMarker() {
+        var item = TestPlugin.demoKitNavigator(new TestItemType(Key.key("minecraft:compass"), 64), "tester");
+
+        assertThat(item.customName()).contains(net.kyori.adventure.text.Component.text("Fand Kit Navigator", net.kyori.adventure.text.format.NamedTextColor.AQUA));
+        assertThat(item.lore()).hasSize(2);
+        assertThat(item.rarity()).contains(ItemRarity.UNCOMMON);
+        assertThat(item.enchantmentGlintOverride()).contains(true);
+        assertThat(item.useCooldown()).get().extracting(cooldown -> cooldown.seconds()).isEqualTo(1.5F);
+        assertThat(TestPlugin.isKitNavigator(item)).isTrue();
+        assertThat(TestPlugin.isKitNavigator(stack("minecraft:compass"))).isFalse();
+    }
+
+    @Test
+    void buildsKitBookAndSnackComponents() {
+        var book = TestPlugin.demoKitBook(new TestItemType(Key.key("minecraft:written_book"), 64), "tester");
+        var snack = TestPlugin.demoKitSnack(new TestItemType(Key.key("minecraft:golden_apple"), 64));
+
+        assertThat(book.writtenBookContent()).isPresent();
+        assertThat(book.customData()).get().extracting(json -> json.get("demo_role").getAsString()).isEqualTo("fand_kit_guide");
+        assertThat(snack.food()).get().extracting(food -> food.nutrition()).isEqualTo(6);
+        assertThat(snack.consumable()).isPresent();
+        assertThat(snack.customData()).get().extracting(json -> json.get("demo_role").getAsString()).isEqualTo("fand_kit_snack");
+    }
+
+    @Test
+    void formatsPerformanceSnapshots() {
+        assertThat(TestPlugin.formatTickAverages(new TickAverages(20.0, 19.5, 18.25)))
+                .isEqualTo("20.00, 19.50, 18.25 (1m, 5m, 15m)");
+        assertThat(TestPlugin.formatMetricStatistics(new MetricStatistics(4.0, 1.0, 12.5, 3.0)))
+                .isEqualTo("avg 4.00 / min 1.00 / max 12.50 / median 3.00");
     }
 
     private static ItemStack stack(String key) {

@@ -12,7 +12,7 @@ import net.kyori.adventure.key.Key;
  * the underlying Minecraft dimension key (e.g. {@code minecraft:overworld}).
  *
  * <p>World handles are stable for as long as the dimension stays loaded; equality
- * is by {@link #key()}. Methods that touch world state must be called on the main
+ * is by {@link #key()}. Methods that touch world state must be called on the server
  * thread unless explicitly documented as thread-safe.
  *
  * <p>{@code World} is an Adventure {@link ForwardingAudience} that forwards to

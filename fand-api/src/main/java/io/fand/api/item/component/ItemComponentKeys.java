@@ -1,5 +1,9 @@
 package io.fand.api.item.component;
 
+import java.lang.reflect.Modifier;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import net.kyori.adventure.key.Key;
 
 /**
@@ -118,6 +122,31 @@ public final class ItemComponentKeys {
     public static final Key SHEEP_COLOR = Key.key("minecraft:sheep/color");
     public static final Key SHULKER_COLOR = Key.key("minecraft:shulker/color");
 
+    private static final Set<Key> ALL = collectAll();
+
     private ItemComponentKeys() {
+    }
+
+    public static Set<Key> all() {
+        return ALL;
+    }
+
+    public static boolean isKnown(Key key) {
+        return ALL.contains(key);
+    }
+
+    private static Set<Key> collectAll() {
+        var keys = new LinkedHashSet<Key>();
+        for (var field : ItemComponentKeys.class.getDeclaredFields()) {
+            int modifiers = field.getModifiers();
+            if (field.getType() == Key.class && Modifier.isPublic(modifiers) && Modifier.isStatic(modifiers)) {
+                try {
+                    keys.add((Key) field.get(null));
+                } catch (IllegalAccessException ex) {
+                    throw new ExceptionInInitializerError(ex);
+                }
+            }
+        }
+        return Collections.unmodifiableSet(keys);
     }
 }

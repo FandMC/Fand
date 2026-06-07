@@ -3,12 +3,12 @@ package io.fand.api.scheduler;
 import java.time.Duration;
 
 /**
- * Submits tasks to either the main game thread or background workers.
+ * Submits tasks to either the server thread or background workers.
  *
- * <p>Main-thread tasks observe tick boundaries: {@link #runMain(Runnable)} schedules
+ * <p>Server-thread tasks observe tick boundaries: {@link #runMain(Runnable)} schedules
  * for the next tick, while {@link #runMainAfter(Runnable, Duration)} delays by at
  * least the given duration. Async tasks have no ordering guarantees relative to
- * the main thread.
+ * the server thread.
  */
 public interface Scheduler {
 

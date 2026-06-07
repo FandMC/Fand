@@ -7,7 +7,7 @@ import java.util.Objects;
 import net.kyori.adventure.text.Component;
 
 /**
- * Fired on the main thread when a player sends a chat message, before the
+ * Fired on the server thread when a player sends a chat message, before the
  * message is broadcast to recipients.
  *
  * <p>Listeners may replace the broadcast message via {@link #setMessage(Component)}

@@ -1,0 +1,111 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 7 Jun 2026 11:42:18 +0800
+Subject: [PATCH] Add Fand performance metrics
+
+
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index 3c3e8dc90d58a62a5304bec86d4c2bedaec529fa..556f87c3abe5d0d738a1743ab0feb6b87514e4e5 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -261,6 +261,9 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     private long lastTickNanos = Util.getNanos();
+     private long taskExecutionStartNanos = Util.getNanos();
+     private long idleTimeNanos;
++    private long fandTickStartNanos = -1L;
++    private long fandTickDurationNanos;
++    private long fandTickTaskExecutionNanos;
+     private long nextTickTimeNanos = Util.getNanos();
+     private boolean waitingForNextTick = false;
+     private long delayedTasksMaxNextTickTimeNanos;
+@@ -784,6 +787,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+                     this.startMeasuringTaskExecutionTime();
+                     this.waitUntilNextTick();
+                     this.finishMeasuringTaskExecutionTime();
++                    this.recordFandTickPerformance();
+                     if (sprinting) {
+                         this.tickRateManager.endTickWork();
+                     }
+@@ -845,6 +849,15 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         }
+     }
+ 
++    private void recordFandTickPerformance() {
++        if (this.fandTickStartNanos >= 0L) {
++            io.fand.server.hooks.FandHooks.recordTickPerformance(this.fandTickStartNanos, this.fandTickDurationNanos, this.fandTickTaskExecutionNanos);
++            this.fandTickStartNanos = -1L;
++            this.fandTickDurationNanos = 0L;
++            this.fandTickTaskExecutionNanos = 0L;
++        }
++    }
++
+     private static CrashReport constructOrExtractCrashReport(final Throwable t) {
+         ReportedException firstReported = null;
+ 
+@@ -933,7 +946,12 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     @Override
+     protected void doRunTask(final TickTask task) {
+         Profiler.get().incrementCounter("runTask");
++        boolean measureFandTaskTime = this.fandTickStartNanos >= 0L && this.waitingForNextTick;
++        long fandTaskStartNanos = measureFandTaskTime ? Util.getNanos() : 0L;
+         super.doRunTask(task);
++        if (measureFandTaskTime) {
++            this.fandTickTaskExecutionNanos += Util.getNanos() - fandTaskStartNanos;
++        }
+     }
+ 
+     private Optional<ServerStatus.Favicon> loadStatusIcon() {
+@@ -1027,12 +1045,14 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     protected void processPacketsAndTick(final boolean sprinting) {
+         ProfilerFiller profiler = Profiler.get();
+         profiler.push("tick");
++        this.fandTickStartNanos = Util.getNanos();
+         this.tickFrame.start();
+         profiler.push("scheduledPacketProcessing");
+         this.packetProcessor.processQueuedPackets();
+         profiler.pop();
+         io.fand.server.Main.runtime().tickScheduler();
+         this.tickServer(sprinting ? () -> false : this::haveTime);
++        this.fandTickDurationNanos = Util.getNanos() - this.fandTickStartNanos;
+         this.tickFrame.end();
+         profiler.pop();
+     }
+diff --git a/net/minecraft/server/gui/StatsComponent.java b/net/minecraft/server/gui/StatsComponent.java
+index e81029f5b07712507e0fafe15fe661aaa4243fec..60c7378400ee9bdd90a74187b141fb466a67eb31 100644
+--- a/net/minecraft/server/gui/StatsComponent.java
++++ b/net/minecraft/server/gui/StatsComponent.java
+@@ -32,12 +32,34 @@ public class StatsComponent extends JComponent {
+ 
+     private void tick() {
+         long usedRam = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
++        var performance = io.fand.server.hooks.FandHooks.performance();
++        var tps = performance.ticksPerSecond();
++        var recent = performance.fiveSeconds();
++        var mspt = recent.millisecondsPerTick();
++        var interval = recent.tickIntervalMilliseconds();
+         this.msgs[0] = "Memory use: "
+             + usedRam / 1024L / 1024L
+             + " mb ("
+             + Runtime.getRuntime().freeMemory() * 100L / Runtime.getRuntime().maxMemory()
+             + "% free)";
+         this.msgs[1] = "Avg tick: " + DECIMAL_FORMAT.format((double)this.server.getAverageTickTimeNanos() / TimeUtil.NANOSECONDS_PER_MILLISECOND) + " ms";
++        this.msgs[2] = "TPS: "
++            + DECIMAL_FORMAT.format(tps.oneMinute())
++            + ", "
++            + DECIMAL_FORMAT.format(tps.fiveMinutes())
++            + ", "
++            + DECIMAL_FORMAT.format(tps.fifteenMinutes())
++            + " (1m, 5m, 15m)";
++        this.msgs[3] = "MSPT: "
++            + DECIMAL_FORMAT.format(mspt.average())
++            + ", "
++            + DECIMAL_FORMAT.format(mspt.minimum())
++            + ", "
++            + DECIMAL_FORMAT.format(mspt.maximum())
++            + " (avg, min, max / 5s)";
++        this.msgs[4] = "Tick interval: "
++            + DECIMAL_FORMAT.format(interval.average())
++            + " ms avg / 5s";
+         this.values[this.vp++ & 0xFF] = (int)(usedRam * 100L / Runtime.getRuntime().maxMemory());
+         this.repaint();
+     }

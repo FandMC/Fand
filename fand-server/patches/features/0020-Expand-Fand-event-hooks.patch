@@ -1,0 +1,417 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 7 Jun 2026 14:27:59 +0800
+Subject: [PATCH] Expand Fand event hooks
+
+
+diff --git a/net/minecraft/commands/Commands.java b/net/minecraft/commands/Commands.java
+index da77a0d4832804ee470cb5decdf64be60468e7c7..5f88aabe28454ce7c80254f01242d99d87f63963 100644
+--- a/net/minecraft/commands/Commands.java
++++ b/net/minecraft/commands/Commands.java
+@@ -13,6 +13,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
+ import com.mojang.brigadier.suggestion.SuggestionProvider;
+ import com.mojang.brigadier.tree.ArgumentCommandNode;
+ import com.mojang.brigadier.tree.CommandNode;
++import com.mojang.brigadier.tree.LiteralCommandNode;
+ import com.mojang.brigadier.tree.RootCommandNode;
+ import com.mojang.logging.LogUtils;
+ import java.util.HashMap;
+@@ -299,9 +300,43 @@ public class Commands {
+             PublishCommand.register(this.dispatcher);
+         }
+ 
++        registerMinecraftNamespaceAliases(this.dispatcher);
+         this.dispatcher.setConsumer(ExecutionCommandSource.resultConsumer());
+     }
+ 
++    private static void registerMinecraftNamespaceAliases(final CommandDispatcher<CommandSourceStack> dispatcher) {
++        RootCommandNode<CommandSourceStack> root = dispatcher.getRoot();
++        for (CommandNode<CommandSourceStack> child : java.util.List.copyOf(root.getChildren())) {
++            if (!(child instanceof LiteralCommandNode<?>)) {
++                continue;
++            }
++            @SuppressWarnings("unchecked")
++            LiteralCommandNode<CommandSourceStack> literal = (LiteralCommandNode<CommandSourceStack>) child;
++            String name = literal.getLiteral();
++            if (name.indexOf(':') >= 0) {
++                continue;
++            }
++            String namespaced = "minecraft:" + name;
++            if (root.getChild(namespaced) != null) {
++                continue;
++            }
++            root.addChild(copyLiteral(namespaced, literal));
++        }
++    }
++
++    private static <S> LiteralCommandNode<S> copyLiteral(final String name, final LiteralCommandNode<S> source) {
++        LiteralArgumentBuilder<S> builder = LiteralArgumentBuilder.<S>literal(name)
++            .requires(source.getRequirement())
++            .forward(source.getRedirect(), source.getRedirectModifier(), source.isFork());
++        if (source.getCommand() != null) {
++            builder.executes(source.getCommand());
++        }
++        for (CommandNode<S> child : source.getChildren()) {
++            builder.then(child);
++        }
++        return builder.build();
++    }
++
+     public static <S> ParseResults<S> mapSource(final ParseResults<S> parse, final UnaryOperator<S> sourceOperator) {
+         CommandContextBuilder<S> context = parse.getContext();
+         CommandContextBuilder<S> source = context.withSource(sourceOperator.apply(context.getSource()));
+@@ -310,10 +345,18 @@ public class Commands {
+ 
+     public void performPrefixedCommand(final CommandSourceStack sender, String command) {
+         command = trimOptionalPrefix(command);
++        var fandCommand = io.fand.server.command.CommandEvents.fireCommandExecute(sender, command);
++        if (fandCommand.isEmpty()) {
++            return;
++        }
++        command = fandCommand.get();
+         if (io.fand.server.command.CommandBridge.tryExecute(sender, command)) {
+             return;
+         }
+-        this.performCommand(this.dispatcher.parse(command, sender), command);
++        final String finalCommand = command;
++        io.fand.server.command.CommandEvents.runWithoutCommandExecuteEvent(() ->
++            this.performCommand(this.dispatcher.parse(finalCommand, sender), finalCommand)
++        );
+     }
+ 
+     public static String trimOptionalPrefix(final String command) {
+@@ -322,15 +365,28 @@ public class Commands {
+ 
+     public void performCommand(final ParseResults<CommandSourceStack> command, final String commandString) {
+         CommandSourceStack sender = command.getContext().getSource();
++        var fandCommand = io.fand.server.command.CommandEvents.fireCommandExecute(sender, commandString);
++        if (fandCommand.isEmpty()) {
++            return;
++        }
++        if (!fandCommand.get().equals(commandString)) {
++            final String finalCommand = fandCommand.get();
++            io.fand.server.command.CommandEvents.runWithoutCommandExecuteEvent(() ->
++                this.performPrefixedCommand(sender, finalCommand)
++            );
++            return;
++        }
+         Profiler.get().push(() -> "/" + commandString);
+         ContextChain<CommandSourceStack> commandChain = finishParsing(command, commandString, sender);
+ 
+         try {
+             if (commandChain != null) {
+-                executeCommandInContext(
+-                    sender,
+-                    executionContext -> ExecutionContext.queueInitialCommandExecution(
+-                        executionContext, commandString, commandChain, sender, CommandResultCallback.EMPTY
++                io.fand.server.command.CommandEvents.runInCommandContext(() ->
++                    executeCommandInContext(
++                        sender,
++                        executionContext -> ExecutionContext.queueInitialCommandExecution(
++                            executionContext, commandString, commandChain, sender, CommandResultCallback.EMPTY
++                        )
+                     )
+                 );
+             }
+diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
+index a79b2dcb8dabe0923f2b0e6bd978fe75378901b7..7d1d6831d9569bc6d02bc92132257540ded786d0 100644
+--- a/net/minecraft/server/level/ServerPlayer.java
++++ b/net/minecraft/server/level/ServerPlayer.java
+@@ -893,6 +893,7 @@ public class ServerPlayer extends Player {
+     @Override
+     public void die(final DamageSource source) {
+         this.gameEvent(GameEvent.ENTITY_DIE);
++        io.fand.server.event.EntityEvents.fireDeath(this, source);
+         boolean showDeathMessage = this.level().getGameRules().get(GameRules.SHOW_DEATH_MESSAGES);
+         Component deathMessage = showDeathMessage ? this.getCombatTracker().getDeathMessage() : null;
+         var fandBus = io.fand.server.hooks.FandHooks.events();
+@@ -1125,21 +1126,25 @@ public class ServerPlayer extends Player {
+         if (this.isRemoved()) {
+             return null;
+         } else {
+-            if (transition.missingRespawnBlock()) {
++            TeleportTransition fandTransition = io.fand.server.event.PlayerEvents.fireTeleport(this, transition);
++            if (fandTransition == null) {
++                return null;
++            }
++            if (fandTransition.missingRespawnBlock()) {
+                 this.connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.NO_RESPAWN_BLOCK_AVAILABLE, 0.0F));
+             }
+ 
+-            ServerLevel newLevel = transition.newLevel();
++            ServerLevel newLevel = fandTransition.newLevel();
+             ServerLevel oldLevel = this.level();
+             ResourceKey<Level> lastDimension = oldLevel.dimension();
+-            if (!transition.asPassenger()) {
++            if (!fandTransition.asPassenger()) {
+                 this.removeVehicle();
+             }
+ 
+             if (newLevel.dimension() == lastDimension) {
+-                this.connection.teleport(PositionMoveRotation.of(transition), transition.relatives());
++                this.connection.teleport(PositionMoveRotation.of(fandTransition), fandTransition.relatives());
+                 this.connection.resetPosition();
+-                transition.postTeleportTransition().onTransition(this);
++                fandTransition.postTeleportTransition().onTransition(this);
+                 return this;
+             } else {
+                 this.isChangingDimension = true;
+@@ -1159,7 +1164,7 @@ public class ServerPlayer extends Player {
+                 profiler.pop();
+                 profiler.push("placing");
+                 this.setServerLevel(newLevel);
+-                this.connection.teleport(PositionMoveRotation.of(transition), transition.relatives());
++                this.connection.teleport(PositionMoveRotation.of(fandTransition), fandTransition.relatives());
+                 this.connection.resetPosition();
+                 newLevel.addDuringTeleport(this);
+                 profiler.pop();
+@@ -1169,11 +1174,11 @@ public class ServerPlayer extends Player {
+                 playerList.sendLevelInfo(this, newLevel);
+                 playerList.sendAllPlayerInfo(this);
+                 playerList.sendActivePlayerEffects(this);
+-                transition.postTeleportTransition().onTransition(this);
++                fandTransition.postTeleportTransition().onTransition(this);
+                 this.lastSentExp = -1;
+                 this.lastSentHealth = -1.0F;
+                 this.lastSentFood = -1;
+-                this.teleportSpectators(transition, oldLevel);
++                this.teleportSpectators(fandTransition, oldLevel);
+                 return this;
+             }
+         }
+@@ -1736,6 +1741,13 @@ public class ServerPlayer extends Player {
+         final float newXRot,
+         final boolean resetCamera
+     ) {
++        TeleportTransition fandTransition = io.fand.server.event.PlayerEvents.fireTeleport(
++            this,
++            new TeleportTransition(level, new Vec3(x, y, z), Vec3.ZERO, newYRot, newXRot, relatives, TeleportTransition.DO_NOTHING)
++        );
++        if (fandTransition == null) {
++            return false;
++        }
+         if (this.isSleeping()) {
+             this.stopSleepInBed(true, true);
+         }
+@@ -1744,9 +1756,25 @@ public class ServerPlayer extends Player {
+             this.setCamera(this);
+         }
+ 
+-        boolean success = super.teleportTo(level, x, y, z, relatives, newYRot, newXRot, resetCamera);
++        boolean success;
++        try {
++            success = io.fand.server.event.PlayerEvents.withoutTeleportEvent(() ->
++                super.teleportTo(
++                    fandTransition.newLevel(),
++                    fandTransition.position().x,
++                    fandTransition.position().y,
++                    fandTransition.position().z,
++                    fandTransition.relatives(),
++                    fandTransition.yRot(),
++                    fandTransition.xRot(),
++                    resetCamera
++                )
++            );
++        } catch (Exception failure) {
++            throw new RuntimeException(failure);
++        }
+         if (success) {
+-            this.setYHeadRot(relatives.contains(Relative.Y_ROT) ? this.getYHeadRot() + newYRot : newYRot);
++            this.setYHeadRot(fandTransition.relatives().contains(Relative.Y_ROT) ? this.getYHeadRot() + fandTransition.yRot() : fandTransition.yRot());
+             this.connection.resetFlyingTicks();
+         }
+ 
+@@ -2052,7 +2080,11 @@ public class ServerPlayer extends Player {
+ 
+     @Override
+     public ItemEntity drop(final ItemStack itemStack, final boolean randomly, final boolean thrownFromHand) {
+-        ItemEntity entity = super.drop(itemStack, randomly, thrownFromHand);
++        ItemStack fandStack = io.fand.server.event.PlayerEvents.fireDrop(this, itemStack, randomly, thrownFromHand);
++        if (fandStack == null) {
++            return null;
++        }
++        ItemEntity entity = super.drop(fandStack, randomly, thrownFromHand);
+         if (thrownFromHand) {
+             ItemStack droppedItemStack = entity != null ? entity.getItem() : ItemStack.EMPTY;
+             if (!droppedItemStack.isEmpty()) {
+@@ -2115,6 +2147,9 @@ public class ServerPlayer extends Player {
+     public void drop(final boolean all) {
+         Inventory inventory = this.getInventory();
+         ItemStack removed = inventory.removeFromSelected(all);
++        if (removed.isEmpty()) {
++            return;
++        }
+         this.containerMenu
+             .findSlot(inventory, inventory.getSelectedSlot())
+             .ifPresent(slotIndex -> this.containerMenu.setRemoteSlot(slotIndex, inventory.getSelectedItem()));
+@@ -2122,7 +2157,11 @@ public class ServerPlayer extends Player {
+             this.stopUsingItem();
+         }
+ 
+-        this.drop(removed, false, true);
++        if (this.drop(removed, false, true) == null) {
++            this.containerMenu
++                .findSlot(inventory, inventory.getSelectedSlot())
++                .ifPresent(slotIndex -> this.containerMenu.setRemoteSlot(slotIndex, inventory.getSelectedItem()));
++        }
+     }
+ 
+     @Override
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 3ab23f47f7b588711bc6cc57f1a694c57f65a4fb..bdf961c914a610f8e2c4ab6835a77a99be0fc39b 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -1518,7 +1518,12 @@ public class ServerGamePacketListenerImpl
+             for (ServerLevel level : this.server.getAllLevels()) {
+                 Entity entity = packet.getEntity(level);
+                 if (entity != null) {
+-                    this.player.teleportTo(level, entity.getX(), entity.getY(), entity.getZ(), Set.of(), entity.getYRot(), entity.getXRot(), true);
++                    io.fand.server.event.PlayerEvents.withTeleportCause(
++                        io.fand.api.event.player.PlayerTeleportEvent.Cause.SPECTATE,
++                        () -> {
++                            this.player.teleportTo(level, entity.getX(), entity.getY(), entity.getZ(), Set.of(), entity.getYRot(), entity.getXRot(), true);
++                        }
++                    );
+                     return;
+                 }
+             }
+@@ -1626,17 +1631,28 @@ public class ServerGamePacketListenerImpl
+     }
+ 
+     private void performUnsignedChatCommand(final String command) {
+-        if (io.fand.server.command.CommandBridge.tryExecute(this.player.createCommandSourceStack(), command)) {
++        var fandCommand = io.fand.server.command.CommandEvents.firePlayerCommandPreprocess(this.player, command);
++        if (fandCommand.isEmpty()) {
++            return;
++        }
++        var commandSource = this.player.createCommandSourceStack();
++        var fandExecuteCommand = io.fand.server.command.CommandEvents.fireCommandExecute(commandSource, fandCommand.get());
++        if (fandExecuteCommand.isEmpty()) {
++            return;
++        }
++        if (io.fand.server.command.CommandBridge.tryExecute(commandSource, fandExecuteCommand.get())) {
+             return;
+         }
+-        ParseResults<CommandSourceStack> parsed = this.parseCommand(command);
++        ParseResults<CommandSourceStack> parsed = this.parseCommand(fandExecuteCommand.get());
+         if (this.server.enforceSecureProfile() && SignableCommand.hasSignableArguments(parsed)) {
+             LOGGER.error(
+-                "Received unsigned command packet from {}, but the command requires signable arguments: {}", this.player.getGameProfile().name(), command
++                "Received unsigned command packet from {}, but the command requires signable arguments: {}", this.player.getGameProfile().name(), fandExecuteCommand.get()
+             );
+             this.player.sendSystemMessage(INVALID_COMMAND_SIGNATURE);
+         } else {
+-            this.server.getCommands().performCommand(parsed, command);
++            io.fand.server.command.CommandEvents.runWithoutCommandExecuteEvent(() ->
++                this.server.getCommands().performCommand(parsed, fandExecuteCommand.get())
++            );
+         }
+     }
+ 
+@@ -1652,10 +1668,19 @@ public class ServerGamePacketListenerImpl
+     }
+ 
+     private void performSignedChatCommand(final ServerboundChatCommandSignedPacket packet, final LastSeenMessages lastSeenMessages) {
+-        if (io.fand.server.command.CommandBridge.tryExecute(this.player.createCommandSourceStack(), packet.command())) {
++        var fandCommand = io.fand.server.command.CommandEvents.firePlayerCommandPreprocess(this.player, packet.command());
++        if (fandCommand.isEmpty()) {
++            return;
++        }
++        var commandSource = this.player.createCommandSourceStack();
++        var fandExecuteCommand = io.fand.server.command.CommandEvents.fireCommandExecute(commandSource, fandCommand.get());
++        if (fandExecuteCommand.isEmpty()) {
+             return;
+         }
+-        ParseResults<CommandSourceStack> command = this.parseCommand(packet.command());
++        if (io.fand.server.command.CommandBridge.tryExecute(commandSource, fandExecuteCommand.get())) {
++            return;
++        }
++        ParseResults<CommandSourceStack> command = this.parseCommand(fandExecuteCommand.get());
+ 
+         Map<String, PlayerChatMessage> signedArguments;
+         try {
+@@ -1667,7 +1692,10 @@ public class ServerGamePacketListenerImpl
+ 
+         CommandSigningContext signingContext = new CommandSigningContext.SignedArguments(signedArguments);
+         command = Commands.mapSource(command, source -> source.withSigningContext(signingContext, this.chatMessageChain));
+-        this.server.getCommands().performCommand(command, packet.command());
++        ParseResults<CommandSourceStack> finalCommand = command;
++        io.fand.server.command.CommandEvents.runWithoutCommandExecuteEvent(() ->
++            this.server.getCommands().performCommand(finalCommand, fandExecuteCommand.get())
++        );
+     }
+ 
+     private void handleMessageDecodeFailure(final SignedMessageChain.DecodeException e) {
+diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
+index 10f39f76e83482f07d4bf129f34f28f6c51df2a9..e9bcb5c4bbb4692b38a7cad220f40227a591e518 100644
+--- a/net/minecraft/server/players/PlayerList.java
++++ b/net/minecraft/server/players/PlayerList.java
+@@ -450,10 +450,11 @@ public abstract class PlayerList {
+         this.sendActivePlayerEffects(player);
+         this.sendLevelInfo(player, level);
+         this.sendPlayerPermissionLevel(player);
+-        level.addRespawnedPlayer(player);
+         this.players.add(player);
+         this.playersByUUID.put(player.getUUID(), player);
+         io.fand.server.hooks.FandHooks.players().onRespawn(player);
++        level = io.fand.server.event.PlayerEvents.fireRespawn(player, level, keepAllPlayerData, removalReason);
++        level.addRespawnedPlayer(player);
+         player.initInventoryMenu();
+         player.setHealth(player.getHealth());
+         ServerPlayer.RespawnConfig respawnConfig = player.getRespawnConfig();
+diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
+index ba0fb195576619e8d29114b903ad219562321276..3c6c44b3e23fb1e4308a84e0fff08a38932530ab 100644
+--- a/net/minecraft/world/entity/LivingEntity.java
++++ b/net/minecraft/world/entity/LivingEntity.java
+@@ -1466,6 +1466,7 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+             this.dead = true;
+             this.getCombatTracker().recheckStatus();
+             if (this.level() instanceof ServerLevel serverLevel) {
++                io.fand.server.event.EntityEvents.fireDeath(this, source);
+                 if (sourceEntity == null || sourceEntity.killedEntity(serverLevel, this, source)) {
+                     this.gameEvent(GameEvent.ENTITY_DIE);
+                     this.dropAllDeathLoot(serverLevel, source);
+diff --git a/net/minecraft/world/entity/item/ItemEntity.java b/net/minecraft/world/entity/item/ItemEntity.java
+index 82ed5c0c014b94eabcc11801bd1673c42045f20d..37199032b24e7c478d3c145e7d41de55385dac6e 100644
+--- a/net/minecraft/world/entity/item/ItemEntity.java
++++ b/net/minecraft/world/entity/item/ItemEntity.java
+@@ -23,6 +23,7 @@ import net.minecraft.world.entity.MoverType;
+ import net.minecraft.world.entity.SlotAccess;
+ import net.minecraft.world.entity.TraceableEntity;
+ import net.minecraft.world.entity.player.Player;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.item.Item;
+ import net.minecraft.world.item.ItemStack;
+ import net.minecraft.world.level.Explosion;
+@@ -334,6 +335,11 @@ public class ItemEntity extends Entity implements TraceableEntity {
+     public void playerTouch(final Player player) {
+         if (!this.level().isClientSide()) {
+             ItemStack itemStack = this.getItem();
++            if (player instanceof ServerPlayer serverPlayer
++                && !io.fand.server.event.PlayerEvents.firePickup(serverPlayer, this)) {
++                return;
++            }
++            itemStack = this.getItem();
+             Item item = itemStack.getItem();
+             int orgCount = itemStack.getCount();
+             if (this.pickupDelay == 0 && (this.target == null || this.target.equals(player.getUUID())) && player.getInventory().add(itemStack)) {
+diff --git a/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl.java b/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl.java
+index f91d9cdd8303d64af4e3d64d3ed75931a334c98d..86f9c623f39488474ed34f595c04b95f66f40eb8 100644
+--- a/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl.java
++++ b/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl.java
+@@ -114,9 +114,12 @@ public class ThrownEnderpearl extends ThrowableItemProjectile {
+                             owner.setPortalCooldown();
+                         }
+ 
+-                        ServerPlayer newOwner = player.teleport(
+-                            new TeleportTransition(
+-                                level, teleportPos, Vec3.ZERO, 0.0F, 0.0F, Relative.union(Relative.ROTATION, Relative.DELTA), TeleportTransition.DO_NOTHING
++                        ServerPlayer newOwner = io.fand.server.event.PlayerEvents.withTeleportCause(
++                            io.fand.api.event.player.PlayerTeleportEvent.Cause.ENDER_PEARL,
++                            () -> player.teleport(
++                                new TeleportTransition(
++                                    level, teleportPos, Vec3.ZERO, 0.0F, 0.0F, Relative.union(Relative.ROTATION, Relative.DELTA), TeleportTransition.DO_NOTHING
++                                )
+                             )
+                         );
+                         if (newOwner != null) {
