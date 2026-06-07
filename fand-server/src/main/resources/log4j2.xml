@@ -22,8 +22,17 @@
             </Policies>
             <DefaultRolloverStrategy max="1000"/>
         </RollingRandomAccessFile>
+        <Queue name="ServerGuiConsole" target="ServerGuiConsole">
+            <PatternLayout>
+                <LoggerNamePatternSelector defaultPattern="[%d{HH:mm:ss} %level]: [%logger] %stripAnsi{%msg}%n%xEx{full}">
+                    <PatternMatch key=",net.minecraft.,Minecraft,com.mojang.,io.fand."
+                                  pattern="[%d{HH:mm:ss} %level]: %stripAnsi{%msg}%n%xEx{full}" />
+                </LoggerNamePatternSelector>
+            </PatternLayout>
+        </Queue>
         <Async name="Async">
             <AppenderRef ref="File"/>
+            <AppenderRef ref="ServerGuiConsole"/>
             <AppenderRef ref="TerminalConsole" level="info"/>
         </Async>
     </Appenders>
