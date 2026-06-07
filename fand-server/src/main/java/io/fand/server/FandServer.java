@@ -14,6 +14,8 @@ import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
+import io.fand.api.world.World;
+import io.fand.api.world.WorldTemplate;
 import io.fand.server.command.BuiltinCommands;
 import io.fand.server.command.CommandManager;
 import io.fand.server.config.ConfigReloadResult;
@@ -35,9 +37,15 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
-import net.kyori.adventure.key.Key;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.dimension.LevelStem;
+import net.kyori.adventure.key.Key;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -305,6 +313,51 @@ public final class FandServer implements Server, AutoCloseable {
         return registry == null ? Optional.empty() : registry.defaultWorld();
     }
 
+    @Override
+    public CompletableFuture<World> createWorld(Key key, WorldTemplate template) {
+        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(template, "template");
+        var server = minecraftServer.get();
+        var registry = worlds.get();
+        if (server == null || registry == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is not attached"));
+        }
+        if (server.isStopped()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is stopping"));
+        }
+        return server.submit(() -> {
+            var level = server.fand$createDynamicLevel(dimensionKey(key), templateKey(template));
+            World world = registry.wrap(level);
+            events.fire(new WorldLoadEvent(world));
+            return world;
+        });
+    }
+
+    @Override
+    public CompletableFuture<Boolean> unloadWorld(Key key) {
+        Objects.requireNonNull(key, "key");
+        var server = minecraftServer.get();
+        var registry = worlds.get();
+        if (server == null || registry == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is not attached"));
+        }
+        if (server.isStopped()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is stopping"));
+        }
+        return server.submit(() -> {
+            var world = registry.find(key).map(FandServer::requireFandWorld).orElse(null);
+            if (world == null) {
+                return false;
+            }
+            events.fire(new WorldUnloadEvent(world));
+            boolean unloaded = server.fand$unloadDynamicLevel(dimensionKey(key));
+            if (unloaded) {
+                registry.forget(world);
+            }
+            return unloaded;
+        });
+    }
+
     public Optional<WorldRegistry> worldRegistry() {
         return Optional.ofNullable(worldRegistryOrNull());
     }
@@ -404,6 +457,25 @@ public final class FandServer implements Server, AutoCloseable {
 
     private void registerBuiltinCommands() {
         BuiltinCommands.registerAll(commands, this);
+    }
+
+    private static ResourceKey<Level> dimensionKey(Key key) {
+        return ResourceKey.create(Registries.DIMENSION, identifier(key));
+    }
+
+    private static ResourceKey<LevelStem> templateKey(WorldTemplate template) {
+        return ResourceKey.create(Registries.LEVEL_STEM, identifier(template.key()));
+    }
+
+    private static Identifier identifier(Key key) {
+        return Identifier.fromNamespaceAndPath(key.namespace(), key.value());
+    }
+
+    private static io.fand.server.world.FandWorld requireFandWorld(io.fand.api.world.World world) {
+        if (world instanceof io.fand.server.world.FandWorld fandWorld) {
+            return fandWorld;
+        }
+        throw new IllegalArgumentException("World is not owned by this server: " + world.key().asString());
     }
 
     private void fireWorldLoadEvents() {

@@ -1,0 +1,79 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 7 Jun 2026 23:03:23 +0800
+Subject: [PATCH] Add Fand dynamic world hooks
+
+
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index 556f87c3abe5d0d738a1743ab0feb6b87514e4e5..a826cfce5f127d347aaa8f0b1262d119b661713f 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -1242,6 +1242,68 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         return this.levels.values();
+     }
+ 
++    public ServerLevel fand$createDynamicLevel(final ResourceKey<Level> dimension, final ResourceKey<LevelStem> template) {
++        if (!this.isSameThread()) {
++            throw new IllegalStateException("Dynamic worlds must be created on the server thread");
++        }
++        if (this.levels.containsKey(dimension)) {
++            throw new IllegalArgumentException("World is already loaded: " + dimension.identifier());
++        }
++
++        Registry<LevelStem> dimensions = this.registries.compositeAccess().lookupOrThrow(Registries.LEVEL_STEM);
++        LevelStem levelStem = dimensions.getValue(template);
++        if (levelStem == null) {
++            throw new IllegalArgumentException("World template is not available: " + template.identifier());
++        }
++
++        ServerLevelData levelData = new DerivedLevelData(this.worldData, this.worldData.overworldData());
++        boolean isDebug = this.worldData.isDebugWorld();
++        long biomeZoomSeed = BiomeManager.obfuscateSeed(this.worldGenSettings.options().seed());
++        ServerLevel level = new ServerLevel(
++            this,
++            this.executor,
++            this.storageSource,
++            levelData,
++            dimension,
++            levelStem,
++            isDebug,
++            biomeZoomSeed,
++            ImmutableList.of(),
++            false
++        );
++        level.getWorldBorder().setAbsoluteMaxSize(this.getAbsoluteMaxWorldSize());
++        this.getPlayerList().addWorldborderListener(level);
++        this.levels.put(dimension, level);
++        return level;
++    }
++
++    public boolean fand$unloadDynamicLevel(final ResourceKey<Level> dimension) {
++        if (!this.isSameThread()) {
++            throw new IllegalStateException("Dynamic worlds must be unloaded on the server thread");
++        }
++        if (dimension == Level.OVERWORLD || dimension == Level.NETHER || dimension == Level.END) {
++            throw new IllegalArgumentException("Cannot unload vanilla base dimension: " + dimension.identifier());
++        }
++
++        ServerLevel level = this.levels.get(dimension);
++        if (level == null) {
++            return false;
++        }
++        if (!level.players().isEmpty()) {
++            throw new IllegalStateException("Cannot unload world with players: " + dimension.identifier());
++        }
++
++        level.noSave = false;
++        level.save(null, true, false);
++        try {
++            level.close();
++        } catch (IOException failure) {
++            throw new IllegalStateException("Failed to close world: " + dimension.identifier(), failure);
++        }
++        this.levels.remove(dimension);
++        return true;
++    }
++
+     @Override
+     public String getServerVersion() {
+         return SharedConstants.getCurrentVersion().name();

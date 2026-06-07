@@ -10,9 +10,11 @@ import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.world.World;
+import io.fand.api.world.WorldTemplate;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.audience.ForwardingAudience;
 import net.kyori.adventure.key.Key;
 import org.jspecify.annotations.Nullable;
@@ -82,6 +84,30 @@ public interface Server extends ForwardingAudience {
 
     /** The default (overworld) world. Present once the server has finished loading. */
     Optional<? extends World> defaultWorld();
+
+    /**
+     * Creates and loads a dynamic world from a vanilla generation template.
+     *
+     * <p>The operation marshals to the server thread. The returned future fails
+     * when the key is already loaded, the server is not running, or the selected
+     * template is unavailable in the active dimension registry.
+     */
+    CompletableFuture<? extends World> createWorld(Key key, WorldTemplate template);
+
+    /**
+     * Saves and unloads a dynamic world. Vanilla base dimensions cannot be
+     * unloaded, and worlds with players are rejected.
+     *
+     * <p>The operation marshals to the server thread and fires
+     * {@link io.fand.api.event.world.WorldUnloadEvent} before the level is
+     * removed.
+     */
+    CompletableFuture<Boolean> unloadWorld(Key key);
+
+    /** Convenience for {@code unloadWorld(world.key())}. */
+    default CompletableFuture<Boolean> unloadWorld(World world) {
+        return unloadWorld(world.key());
+    }
 
     /** Looks up a block type by its registry key. */
     Optional<? extends io.fand.api.block.BlockType> blockType(Key key);

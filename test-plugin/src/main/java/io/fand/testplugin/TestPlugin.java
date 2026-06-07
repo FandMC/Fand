@@ -71,6 +71,7 @@ import io.fand.api.scoreboard.Sidebar;
 import io.fand.api.world.Difficulty;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldBorder;
+import io.fand.api.world.WorldTemplate;
 import io.fand.api.world.particle.ParticleColor;
 import io.fand.api.world.particle.ParticleEmission;
 import io.fand.api.world.particle.ParticleKey;
@@ -147,7 +148,10 @@ public final class TestPlugin implements Plugin {
             "world"
     );
     private static final List<String> WORLD_MODES = List.of(
+            "list",
             "info",
+            "create",
+            "unload",
             "day",
             "night",
             "storm",
@@ -394,6 +398,10 @@ public final class TestPlugin implements Plugin {
 
         @Override
         public void execute(CommandSender sender, String label, List<String> args) {
+            if (!args.isEmpty() && handleWorldRegistryCommand(sender, args)) {
+                return;
+            }
+
             Player target = null;
             List<String> modeArgs = args;
             if (!args.isEmpty()) {
@@ -407,7 +415,7 @@ public final class TestPlugin implements Plugin {
                 target = player;
             }
             if (modeArgs.size() > 1) {
-                sender.sendMessage(Component.text("Usage: /fandworld [player] [info|day|night|storm|clear|thunder|peaceful|easy|normal|hard|border|save]", NamedTextColor.RED));
+                sender.sendMessage(Component.text(worldUsage(), NamedTextColor.RED));
                 return;
             }
             World world = target == null ? world(sender, null, null) : target.world();
@@ -417,6 +425,7 @@ public final class TestPlugin implements Plugin {
 
             String mode = modeArgs.isEmpty() ? "info" : modeArgs.getFirst().toLowerCase(Locale.ROOT);
             switch (mode) {
+                case "list" -> sendWorldList(sender);
                 case "info" -> sendWorldInfo(sender, world);
                 case "day" -> completeWorldChange(sender, world.setTime(1000), "Set " + world.name() + " time to day.");
                 case "night" -> completeWorldChange(sender, world.setTime(13000), "Set " + world.name() + " time to night.");
@@ -435,12 +444,24 @@ public final class TestPlugin implements Plugin {
                 case "hard" -> setDifficulty(sender, world, Difficulty.HARD);
                 case "border" -> applyBorderDemo(sender, world, target);
                 case "save" -> completeWorldSave(sender, world.save(), world);
-                default -> sender.sendMessage(Component.text("Usage: /fandworld [player] [info|day|night|storm|clear|thunder|peaceful|easy|normal|hard|border|save]", NamedTextColor.RED));
+                default -> sender.sendMessage(Component.text(worldUsage(), NamedTextColor.RED));
             }
         }
 
         @Override
         public List<String> complete(CommandSender sender, String label, List<String> args) {
+            if (!args.isEmpty() && args.getFirst().equalsIgnoreCase("create")) {
+                if (args.size() == 2) {
+                    return matching(List.of("fand-test-plugin:demo_world"), args.getLast());
+                }
+                if (args.size() == 3) {
+                    return matching(worldTemplateNames(), args.getLast());
+                }
+                return List.of();
+            }
+            if (!args.isEmpty() && args.getFirst().equalsIgnoreCase("unload")) {
+                return args.size() == 2 ? matching(dynamicWorldKeys(), args.getLast()) : List.of();
+            }
             if (args.size() <= 1) {
                 var values = new ArrayList<>(playerNames());
                 values.addAll(WORLD_MODES);
@@ -450,6 +471,79 @@ public final class TestPlugin implements Plugin {
                 return matching(WORLD_MODES, args.getLast());
             }
             return List.of();
+        }
+
+        private boolean handleWorldRegistryCommand(CommandSender sender, List<String> args) {
+            String mode = args.getFirst().toLowerCase(Locale.ROOT);
+            switch (mode) {
+                case "list" -> {
+                    sendWorldList(sender);
+                    return true;
+                }
+                case "create" -> {
+                    createWorld(sender, args);
+                    return true;
+                }
+                case "unload" -> {
+                    unloadWorld(sender, args);
+                    return true;
+                }
+                default -> {
+                    return false;
+                }
+            }
+        }
+
+        private void createWorld(CommandSender sender, List<String> args) {
+            if (args.size() < 2 || args.size() > 3) {
+                sender.sendMessage(Component.text("Usage: /fandworld create <world> [overworld|nether|end]", NamedTextColor.RED));
+                return;
+            }
+            Key key;
+            try {
+                key = Key.key(keyString(args.get(1)));
+            } catch (InvalidKeyException ex) {
+                sender.sendMessage(Component.text("Invalid world key: " + args.get(1), NamedTextColor.RED));
+                return;
+            }
+            WorldTemplate template = args.size() == 3 ? worldTemplate(sender, args.get(2)) : WorldTemplate.OVERWORLD;
+            if (template == null) {
+                return;
+            }
+            Fand.server().createWorld(key, template).whenComplete((world, failure) -> {
+                if (failure != null) {
+                    context.logger().warn("World create failed for {}", key.asString(), failure);
+                    sender.sendMessage(Component.text("World create failed: " + failure.getMessage(), NamedTextColor.RED));
+                    return;
+                }
+                sender.sendMessage(Component.text(
+                        "Created world " + world.name() + " from " + template.name().toLowerCase(Locale.ROOT) + ".",
+                        NamedTextColor.GREEN));
+            });
+        }
+
+        private void unloadWorld(CommandSender sender, List<String> args) {
+            if (args.size() != 2) {
+                sender.sendMessage(Component.text("Usage: /fandworld unload <world>", NamedTextColor.RED));
+                return;
+            }
+            Key key;
+            try {
+                key = Key.key(keyString(args.get(1)));
+            } catch (InvalidKeyException ex) {
+                sender.sendMessage(Component.text("Invalid world key: " + args.get(1), NamedTextColor.RED));
+                return;
+            }
+            Fand.server().unloadWorld(key).whenComplete((unloaded, failure) -> {
+                if (failure != null) {
+                    context.logger().warn("World unload failed for {}", key.asString(), failure);
+                    sender.sendMessage(Component.text("World unload failed: " + failure.getMessage(), NamedTextColor.RED));
+                    return;
+                }
+                sender.sendMessage(Component.text(
+                        Boolean.TRUE.equals(unloaded) ? "Unloaded world " + key.asString() + "." : "World was not loaded: " + key.asString(),
+                        Boolean.TRUE.equals(unloaded) ? NamedTextColor.GREEN : NamedTextColor.YELLOW));
+            });
         }
 
         private void setDifficulty(CommandSender sender, World world, Difficulty difficulty) {
@@ -497,6 +591,10 @@ public final class TestPlugin implements Plugin {
                     NamedTextColor.LIGHT_PURPLE));
         }
 
+        private void sendWorldList(CommandSender sender) {
+            sender.sendMessage(Component.text("Loaded worlds: " + String.join(", ", worldKeys()), NamedTextColor.GOLD));
+        }
+
         private void completeWorldChange(CommandSender sender, CompletableFuture<Void> future, String successMessage) {
             future.whenComplete((ignored, failure) -> {
                 if (failure != null) {
@@ -519,6 +617,31 @@ public final class TestPlugin implements Plugin {
                         Boolean.TRUE.equals(saved) ? "Saved " + world.name() + "." : "Save was skipped for " + world.name() + ".",
                         Boolean.TRUE.equals(saved) ? NamedTextColor.GREEN : NamedTextColor.YELLOW));
             });
+        }
+
+        private WorldTemplate worldTemplate(CommandSender sender, String raw) {
+            try {
+                return WorldTemplate.valueOf(raw.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException ex) {
+                sender.sendMessage(Component.text("Unknown world template: " + raw, NamedTextColor.RED));
+                return null;
+            }
+        }
+
+        private List<String> worldTemplateNames() {
+            return List.of("overworld", "nether", "end");
+        }
+
+        private List<String> dynamicWorldKeys() {
+            return worldKeys().stream()
+                    .filter(key -> !key.equals("minecraft:overworld")
+                            && !key.equals("minecraft:the_nether")
+                            && !key.equals("minecraft:the_end"))
+                    .toList();
+        }
+
+        private String worldUsage() {
+            return "Usage: /fandworld [player] [list|info|day|night|storm|clear|thunder|peaceful|easy|normal|hard|border|save] or /fandworld create <world> [overworld|nether|end] or /fandworld unload <world>";
         }
     }
 

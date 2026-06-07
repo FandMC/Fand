@@ -38,8 +38,11 @@ public final class WorldRegistry {
 
     public Optional<World> find(Key key) {
         var cached = byKey.get(key);
-        if (cached != null) {
+        if (cached != null && server.getLevel(cached.handle().dimension()) == cached.handle()) {
             return Optional.of(cached);
+        } else if (cached != null) {
+            byKey.remove(key, cached);
+            byLevel.remove(cached.handle(), cached);
         }
         for (var level : server.getAllLevels()) {
             var identifier = level.dimension().identifier();
@@ -67,5 +70,10 @@ public final class WorldRegistry {
             byKey.put(world.key(), world);
             return world;
         });
+    }
+
+    public void forget(FandWorld world) {
+        byLevel.remove(world.handle(), world);
+        byKey.remove(world.key(), world);
     }
 }
