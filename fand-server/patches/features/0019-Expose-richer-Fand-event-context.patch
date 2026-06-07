@@ -1,0 +1,56 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 7 Jun 2026 12:49:46 +0800
+Subject: [PATCH] Expose richer Fand event context
+
+
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index b4e433569c81c1ffa80718d491c876724467ffea..3ab23f47f7b588711bc6cc57f1a694c57f65a4fb 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -1410,7 +1410,8 @@ public class ServerGamePacketListenerImpl
+                                                         fandPlayer,
+                                                         io.fand.api.event.player.PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK,
+                                                         fandHand,
+-                                                        fandBlock),
++                                                        fandBlock,
++                                                        io.fand.server.item.FandItemStacks.fromVanilla(itemStack)),
+                                                 "PlayerInteractEvent");
+                                         if (fandInteractEvent.cancelled()) {
+                                             this.send(new ClientboundBlockUpdatePacket(level, pos));
+@@ -1493,7 +1494,8 @@ public class ServerGamePacketListenerImpl
+                                         fandPlayer,
+                                         io.fand.api.event.player.PlayerInteractEvent.Action.RIGHT_CLICK_AIR,
+                                         fandHand,
+-                                        java.util.Optional.empty()),
++                                        java.util.Optional.empty(),
++                                        io.fand.server.item.FandItemStacks.fromVanilla(itemStack)),
+                                 "PlayerInteractEvent");
+                         if (fandInteractEvent.cancelled()) {
+                             return;
+diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
+index bdb292a1f0255a3c60c9b19ab6d05e8d0d81f678..ba0fb195576619e8d29114b903ad219562321276 100644
+--- a/net/minecraft/world/entity/LivingEntity.java
++++ b/net/minecraft/world/entity/LivingEntity.java
+@@ -1162,9 +1162,20 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+                 io.fand.api.entity.LivingEntity fandVictim = io.fand.server.hooks.FandHooks.wrapLivingEntity(this);
+                 if (fandVictim != null) {
+                     var fandDamageType = source.typeHolder().unwrapKey().map(k -> k.identifier().toString()).orElse("minecraft:generic");
++                    var fandDirectEntity = java.util.Optional.ofNullable(source.getDirectEntity())
++                            .filter(entity -> entity instanceof net.minecraft.world.entity.LivingEntity)
++                            .map(entity -> io.fand.server.hooks.FandHooks.wrapLivingEntity((net.minecraft.world.entity.LivingEntity) entity));
++                    var fandAttacker = java.util.Optional.ofNullable(source.getEntity())
++                            .filter(entity -> entity instanceof net.minecraft.world.entity.LivingEntity)
++                            .map(entity -> io.fand.server.hooks.FandHooks.wrapLivingEntity((net.minecraft.world.entity.LivingEntity) entity));
+                     var fandDamageEvent = io.fand.server.hooks.FandHooks.fireOrLog(
+                             fandBus,
+-                            new io.fand.api.event.entity.EntityDamageEvent(fandVictim, fandDamageType, damage),
++                            new io.fand.api.event.entity.EntityDamageEvent(
++                                    fandVictim,
++                                    fandDamageType,
++                                    damage,
++                                    fandDirectEntity,
++                                    fandAttacker),
+                             "EntityDamageEvent");
+                     if (fandDamageEvent.cancelled()) {
+                         return false;

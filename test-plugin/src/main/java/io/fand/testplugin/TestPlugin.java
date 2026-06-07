@@ -989,7 +989,7 @@ public final class TestPlugin implements Plugin {
         @Subscribe
         public void onInteract(PlayerInteractEvent event) {
             if (event.hand() == PlayerInteractEvent.Hand.MAIN_HAND
-                    && isKitNavigator(event.player().inventory().heldItem())) {
+                    && isKitNavigator(event.item())) {
                 event.setCancelled(true);
                 openDemoInventory(
                         context,

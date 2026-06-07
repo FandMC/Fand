@@ -4,6 +4,7 @@ import io.fand.api.entity.LivingEntity;
 import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Fired on the server thread before vanilla applies damage to a
@@ -19,12 +20,25 @@ public final class EntityDamageEvent implements Event, Cancellable {
 
     private final LivingEntity entity;
     private final String cause;
+    private final Optional<LivingEntity> directEntity;
+    private final Optional<LivingEntity> attacker;
     private double amount;
     private boolean cancelled;
 
     public EntityDamageEvent(LivingEntity entity, String cause, double amount) {
+        this(entity, cause, amount, Optional.empty(), Optional.empty());
+    }
+
+    public EntityDamageEvent(
+            LivingEntity entity,
+            String cause,
+            double amount,
+            Optional<LivingEntity> directEntity,
+            Optional<LivingEntity> attacker) {
         this.entity = Objects.requireNonNull(entity, "entity");
         this.cause = Objects.requireNonNull(cause, "cause");
+        this.directEntity = Objects.requireNonNull(directEntity, "directEntity");
+        this.attacker = Objects.requireNonNull(attacker, "attacker");
         this.amount = amount;
     }
 
@@ -35,6 +49,20 @@ public final class EntityDamageEvent implements Event, Cancellable {
     /** Vanilla damage-type identifier (e.g. {@code minecraft:fall}, {@code minecraft:player_attack}). */
     public String cause() {
         return cause;
+    }
+
+    /**
+     * Direct living entity involved in the damage, if any. For melee attacks
+     * this is usually the attacker; for projectiles it is empty because the
+     * direct source is an arrow/fireball rather than a living entity.
+     */
+    public Optional<LivingEntity> directEntity() {
+        return directEntity;
+    }
+
+    /** Living entity credited as causing the damage, if vanilla exposes one. */
+    public Optional<LivingEntity> attacker() {
+        return attacker;
     }
 
     public double amount() {
