@@ -21,6 +21,7 @@ import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.event.EventDispatcher;
 import io.fand.server.network.ProxyForwardingSettings;
 import io.fand.server.permission.PermissionManager;
+import io.fand.server.performance.ServerPerformanceTracker;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.scheduler.TaskScheduler;
 import io.fand.server.world.WorldRegistry;
@@ -48,6 +49,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final TaskScheduler scheduler;
     private final PluginRuntime plugins;
     private final PlayerRegistry players;
+    private final ServerPerformanceTracker performance;
     private final ConfigReloader configReloader;
     private final ProxyForwardingSettings proxyForwarding;
     private final AtomicReference<WorldRegistry> worlds = new AtomicReference<>();
@@ -74,6 +76,7 @@ public final class FandServer implements Server, AutoCloseable {
         registerBuiltinCommands();
         this.scheduler = new TaskScheduler(initialConfig.scheduler.asyncThreads);
         this.players = new PlayerRegistry(permissions);
+        this.performance = new ServerPerformanceTracker();
         var pluginDirectory = Path.of(initialConfig.plugins.directory);
         this.plugins = new PluginRuntime(
                 pluginDirectory,
@@ -164,6 +167,14 @@ public final class FandServer implements Server, AutoCloseable {
         scheduler.tick();
     }
 
+    public void recordTick(long tickStartNanos, long tickDurationNanos) {
+        performance.recordTick(tickStartNanos, tickDurationNanos);
+    }
+
+    public void recordTick(long tickStartNanos, long tickDurationNanos, long taskExecutionNanos) {
+        performance.recordTick(tickStartNanos, tickDurationNanos, taskExecutionNanos);
+    }
+
     @Override
     public String brand() {
         return config.get().identity.brand;
@@ -218,6 +229,11 @@ public final class FandServer implements Server, AutoCloseable {
     public int maxPlayers() {
         var server = minecraftServer.get();
         return server == null ? -1 : server.getMaxPlayers();
+    }
+
+    @Override
+    public io.fand.api.performance.ServerPerformance performance() {
+        return performance.snapshot();
     }
 
     @Override

@@ -4,6 +4,7 @@ import io.fand.api.command.CommandRegistry;
 import io.fand.api.entity.Player;
 import io.fand.api.event.EventBus;
 import io.fand.api.lifecycle.LifecyclePhase;
+import io.fand.api.performance.ServerPerformance;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.scheduler.Scheduler;
@@ -56,6 +57,9 @@ public interface Server extends ForwardingAudience {
 
     /** Configured maximum simultaneous players, or {@code -1} for uncapped. */
     int maxPlayers();
+
+    /** Current server tick performance snapshot. */
+    ServerPerformance performance();
 
     /** Snapshot of all currently online players. The returned collection is a copy. */
     Collection<? extends Player> players();

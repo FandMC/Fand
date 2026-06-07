@@ -22,9 +22,13 @@
             </Policies>
             <DefaultRolloverStrategy max="1000"/>
         </RollingRandomAccessFile>
+        <Queue name="ServerGuiConsole" target="ServerGuiConsole">
+            <PatternLayout pattern="[%d{HH:mm:ss} %level]: %stripAnsi{%msg}%n%xEx{full}" />
+        </Queue>
         <Async name="Async">
             <AppenderRef ref="File"/>
             <AppenderRef ref="TerminalConsole" level="info"/>
+            <AppenderRef ref="ServerGuiConsole" level="info"/>
         </Async>
     </Appenders>
     <Loggers>

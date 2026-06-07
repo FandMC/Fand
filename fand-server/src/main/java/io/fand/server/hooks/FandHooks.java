@@ -3,6 +3,7 @@ package io.fand.server.hooks;
 import io.fand.api.event.Event;
 import io.fand.api.event.EventBus;
 import io.fand.api.entity.LivingEntity;
+import io.fand.api.performance.ServerPerformance;
 import io.fand.server.FandServer;
 import io.fand.server.Main;
 import io.fand.server.entity.EntityRegistry;
@@ -44,6 +45,14 @@ public final class FandHooks {
 
     public static EventBus events() {
         return Main.runtime().events();
+    }
+
+    public static ServerPerformance performance() {
+        return Main.runtime().performance();
+    }
+
+    public static void recordTickPerformance(long tickStartNanos, long tickDurationNanos, long taskExecutionNanos) {
+        Main.runtime().recordTick(tickStartNanos, tickDurationNanos, taskExecutionNanos);
     }
 
     public static boolean hasListeners(Class<? extends Event> type) {

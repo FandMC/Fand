@@ -9,5 +9,7 @@ public final class BuiltinCommands {
 
     public static void registerAll(CommandRegistry commands, io.fand.server.FandServer server) {
         commands.register(new FandCommand(server));
+        commands.register(new TpsCommand(server));
+        commands.register(new MsptCommand(server));
     }
 }
