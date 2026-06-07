@@ -2,6 +2,7 @@ package io.fand.server.config;
 
 import io.fand.server.console.gui.GuiTheme;
 import io.fand.server.console.gui.GuiThemeService;
+import io.fand.server.chunk.ChunkSendScheduler;
 import io.fand.server.network.ProxyForwardingMode;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.scheduler.TaskScheduler;
@@ -22,6 +23,7 @@ public final class ConfigReloader {
     private final AtomicReference<FandConfig> current;
     private final PluginRuntime plugins;
     private final TaskScheduler scheduler;
+    private final ChunkSendScheduler chunks;
     private final GuiThemeService guiThemes;
 
     public ConfigReloader(
@@ -29,12 +31,14 @@ public final class ConfigReloader {
             AtomicReference<FandConfig> current,
             PluginRuntime plugins,
             TaskScheduler scheduler,
+            ChunkSendScheduler chunks,
             GuiThemeService guiThemes
     ) {
         this.configPath = configPath;
         this.current = current;
         this.plugins = plugins;
         this.scheduler = scheduler;
+        this.chunks = chunks;
         this.guiThemes = guiThemes;
     }
 
@@ -62,6 +66,16 @@ public final class ConfigReloader {
         if (previous.scheduler.asyncThreads != reloaded.scheduler.asyncThreads) {
             scheduler.reconfigureAsyncThreads(reloaded.scheduler.asyncThreads);
             hotApplied.add("scheduler.asyncThreads");
+        }
+        if (previous.chunks.workerThreads != reloaded.chunks.workerThreads) {
+            hotApplied.add("chunks.workerThreads");
+        }
+        if (previous.chunks.trackingDiffApplyBudget != reloaded.chunks.trackingDiffApplyBudget) {
+            hotApplied.add("chunks.trackingDiffApplyBudget");
+        }
+        if (previous.chunks.workerThreads != reloaded.chunks.workerThreads
+                || previous.chunks.trackingDiffApplyBudget != reloaded.chunks.trackingDiffApplyBudget) {
+            chunks.reconfigure(reloaded.chunks);
         }
         if (ProxyForwardingMode.fromConfig(previous.network.forwarding.mode)
                 != ProxyForwardingMode.fromConfig(reloaded.network.forwarding.mode)) {

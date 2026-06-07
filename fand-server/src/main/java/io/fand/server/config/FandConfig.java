@@ -20,6 +20,9 @@ public final class FandConfig {
     @ConfigComment("Network and proxy settings.")
     public final Network network = new Network();
 
+    @ConfigComment("Chunk loading and player chunk-send scheduling settings.")
+    public final Chunks chunks = new Chunks();
+
     public static FandConfig load(Path path) {
         var config = new YamlConfigLoader<>(FandConfig.class).load(path);
         validate(config);
@@ -63,6 +66,23 @@ public final class FandConfig {
         })
         @ConfigRange(min = 0, max = 1024)
         public int asyncThreads = 0;
+    }
+
+    public static final class Chunks {
+
+        @ConfigComment({
+                "Worker threads used for safe chunk tracking diff calculations.",
+                "Set to 0 to derive the value from available processors."
+        })
+        @ConfigRange(min = 0, max = 64)
+        public int workerThreads = 0;
+
+        @ConfigComment({
+                "Maximum player chunk tracking diff jobs completed per server tick.",
+                "Set to 0 to apply every completed job in the same tick."
+        })
+        @ConfigRange(min = 0, max = 4096)
+        public int trackingDiffApplyBudget = 256;
     }
 
     public static final class Console {

@@ -5,6 +5,8 @@ import io.fand.api.event.EventBus;
 import io.fand.api.entity.Entity;
 import io.fand.api.entity.LivingEntity;
 import io.fand.api.performance.ServerPerformance;
+import io.fand.server.chunk.ChunkSendScheduler;
+import io.fand.server.chunk.ChunkTrackingSnapshot;
 import io.fand.server.FandServer;
 import io.fand.server.Main;
 import io.fand.server.entity.EntityRegistry;
@@ -54,6 +56,14 @@ public final class FandHooks {
 
     public static void recordTickPerformance(long tickStartNanos, long tickDurationNanos, long taskExecutionNanos) {
         Main.runtime().recordTick(tickStartNanos, tickDurationNanos, taskExecutionNanos);
+    }
+
+    public static boolean submitChunkTrackingDiff(ChunkTrackingSnapshot snapshot) {
+        return Main.runtime().chunkSendScheduler().submitTrackingDiff(snapshot);
+    }
+
+    public static int applyChunkTrackingDiffs(ChunkSendScheduler.TrackingDiffApplier applier) {
+        return Main.runtime().chunkSendScheduler().applyCompleted(applier);
     }
 
     public static boolean hasListeners(Class<? extends Event> type) {

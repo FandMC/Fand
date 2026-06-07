@@ -29,6 +29,10 @@ final class ConfigReloadResultTest {
                 scheduler:
                   asyncThreads: 0
 
+                chunks:
+                  workerThreads: 0
+                  trackingDiffApplyBudget: 256
+
                 network:
                   forwarding:
                     mode: none
@@ -51,6 +55,10 @@ final class ConfigReloadResultTest {
                 scheduler:
                   asyncThreads: 8
 
+                chunks:
+                  workerThreads: 2
+                  trackingDiffApplyBudget: 32
+
                 network:
                   forwarding:
                     mode: velocity-modern
@@ -65,7 +73,9 @@ final class ConfigReloadResultTest {
                 "plugins.continueOnLoadFailure",
                 "plugins.continueOnEnableFailure",
                 "plugins.logSummary",
-                "scheduler.asyncThreads"
+                "scheduler.asyncThreads",
+                "chunks.workerThreads",
+                "chunks.trackingDiffApplyBudget"
         );
         assertThat(result.requiresRestart()).containsExactlyInAnyOrder(
                 "plugins.directory",

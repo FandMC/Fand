@@ -17,6 +17,8 @@ import io.fand.api.scheduler.Scheduler;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldTemplate;
 import io.fand.server.command.BuiltinCommands;
+import io.fand.server.chunk.ChunkSendScheduler;
+import io.fand.server.chunk.ChunkTrackingMetrics;
 import io.fand.server.command.CommandManager;
 import io.fand.server.config.ConfigReloadResult;
 import io.fand.server.config.ConfigReloader;
@@ -59,6 +61,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final PermissionManager permissions;
     private final CommandManager commands;
     private final TaskScheduler scheduler;
+    private final ChunkSendScheduler chunks;
     private final FandRecipeRegistry recipes;
     private final PluginRuntime plugins;
     private final PlayerRegistry players;
@@ -91,6 +94,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.commands = new CommandManager(permissions);
         registerBuiltinCommands();
         this.scheduler = new TaskScheduler(initialConfig.scheduler.asyncThreads);
+        this.chunks = new ChunkSendScheduler(initialConfig.chunks);
         this.recipes = new FandRecipeRegistry();
         this.players = new PlayerRegistry(permissions);
         this.performance = new ServerPerformanceTracker();
@@ -106,7 +110,7 @@ public final class FandServer implements Server, AutoCloseable {
                 recipes,
                 ConfigReloader.toPluginOptions(initialConfig)
         );
-        this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, guiThemes);
+        this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, chunks, guiThemes);
     }
 
     /**
@@ -195,6 +199,14 @@ public final class FandServer implements Server, AutoCloseable {
     public void tickScheduler() {
         scheduler.tick();
         recipes.tick();
+    }
+
+    public ChunkSendScheduler chunkSendScheduler() {
+        return chunks;
+    }
+
+    public ChunkTrackingMetrics chunkTrackingMetrics() {
+        return chunks.metrics();
     }
 
     public void recordTick(long tickStartNanos, long tickDurationNanos) {
@@ -446,6 +458,7 @@ public final class FandServer implements Server, AutoCloseable {
         }
         plugins.disablePlugins();
         plugins.close();
+        chunks.close();
         scheduler.close();
         guiThemes.close();
         if (current != LifecyclePhase.BOOTSTRAP) {

@@ -1,0 +1,152 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: bedkillerspacex-boop <bedkillerspacex@gmail.com>
+Date: Sun, 7 Jun 2026 22:39:49 +0800
+Subject: [PATCH] Parallelize Fand chunk tracking diffs
+
+
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index ac08b0343d22885cceea56092d6e7e9e8410da3c..44d5a2c7900cc6774f535d38c5948902194d0362 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -31,12 +31,14 @@ import java.util.Objects;
+ import java.util.Optional;
+ import java.util.Queue;
+ import java.util.Set;
++import java.util.UUID;
+ import java.util.concurrent.CancellationException;
+ import java.util.concurrent.CompletableFuture;
+ import java.util.concurrent.CompletionException;
+ import java.util.concurrent.CompletionStage;
+ import java.util.concurrent.Executor;
+ import java.util.concurrent.atomic.AtomicInteger;
++import java.util.concurrent.atomic.AtomicLong;
+ import java.util.function.BooleanSupplier;
+ import java.util.function.Consumer;
+ import java.util.function.IntConsumer;
+@@ -121,6 +123,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     private static final int CHUNK_SAVED_EAGERLY_PER_TICK = 20;
+     private static final int EAGER_CHUNK_SAVE_COOLDOWN_IN_MILLIS = 10000;
+     private static final int MAX_ACTIVE_CHUNK_WRITES = 128;
++    private static final AtomicLong FAND_CHUNK_TRACKING_SEQUENCE = new AtomicLong();
+     public static final int MIN_VIEW_DISTANCE = 2;
+     public static final int MAX_VIEW_DISTANCE = 32;
+     public static final int FORCED_TICKET_LEVEL = ChunkLevel.byStatus(FullChunkStatus.ENTITY_TICKING);
+@@ -128,6 +131,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     private volatile Long2ObjectLinkedOpenHashMap<ChunkHolder> visibleChunkMap = this.updatingChunkMap.clone();
+     private final Long2ObjectLinkedOpenHashMap<ChunkHolder> pendingUnloads = new Long2ObjectLinkedOpenHashMap<>();
+     private final List<ChunkGenerationTask> pendingGenerationTasks = new ArrayList<>();
++    private final Map<UUID, Long> fandChunkTrackingSequences = new HashMap<>();
+     private final ServerLevel level;
+     private final ThreadedLevelLightEngine lightEngine;
+     private final BlockableEventLoop<Runnable> mainThreadExecutor;
+@@ -448,7 +452,9 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+ 
+     protected void tick(final BooleanSupplier haveTime) {
+         ProfilerFiller profiler = Profiler.get();
+-        profiler.push("poi");
++        profiler.push("fand_chunk_tracking");
++        io.fand.server.hooks.FandHooks.applyChunkTrackingDiffs(this::applyFandChunkTrackingDiff);
++        profiler.popPush("poi");
+         this.poiManager.tick(haveTime);
+         profiler.popPush("chunk_unload");
+         if (!this.level.noSave()) {
+@@ -1111,16 +1117,98 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     private void applyChunkTrackingView(final ServerPlayer player, final ChunkTrackingView next) {
+         if (player.level() == this.level) {
+             ChunkTrackingView previous = player.getChunkTrackingView();
++            if (this.submitFandChunkTrackingDiff(player, previous, next)) {
++                return;
++            }
+             if (next instanceof ChunkTrackingView.Positioned to
+                 && !(previous instanceof ChunkTrackingView.Positioned from && from.center().equals(to.center()))) {
+                 player.connection.send(new ClientboundSetChunkCacheCenterPacket(to.center().x(), to.center().z()));
+             }
+-
+             ChunkTrackingView.difference(previous, next, pos -> this.markChunkPendingToSend(player, pos), pos -> dropChunk(player, pos));
+             player.setChunkTrackingView(next);
+         }
+     }
+ 
++    private boolean submitFandChunkTrackingDiff(final ServerPlayer player, final ChunkTrackingView previous, final ChunkTrackingView next) {
++        if (!(next instanceof ChunkTrackingView.Positioned)) {
++            this.fandChunkTrackingSequences.remove(player.getUUID());
++            return false;
++        }
++        long sequence = FAND_CHUNK_TRACKING_SEQUENCE.incrementAndGet();
++        this.fandChunkTrackingSequences.put(player.getUUID(), sequence);
++        var snapshot = new io.fand.server.chunk.ChunkTrackingSnapshot(
++            player.getUUID(),
++            sequence,
++            fandCenter(previous),
++            fandViewDistance(previous),
++            previous instanceof ChunkTrackingView.Positioned,
++            fandCenter(next),
++            fandViewDistance(next),
++            next instanceof ChunkTrackingView.Positioned,
++            fandChunks(previous),
++            fandChunks(next)
++        );
++        if (io.fand.server.hooks.FandHooks.submitChunkTrackingDiff(snapshot)) {
++            return true;
++        }
++        this.fandChunkTrackingSequences.remove(player.getUUID());
++        return false;
++    }
++
++    private boolean applyFandChunkTrackingDiff(final io.fand.server.chunk.ChunkTrackingDiff diff) {
++        ServerPlayer player = this.level.getServer().getPlayerList().getPlayer(diff.snapshot().playerId());
++        if (player == null || player.level() != this.level) {
++            return false;
++        }
++        Long currentSequence = this.fandChunkTrackingSequences.get(diff.snapshot().playerId());
++        if (currentSequence == null || currentSequence.longValue() != diff.snapshot().sequence()) {
++            return false;
++        }
++        ChunkTrackingView current = player.getChunkTrackingView();
++        if (!fandSameView(current, diff.snapshot().previousPositioned(), diff.snapshot().previousCenter(), diff.snapshot().previousViewDistance())) {
++            return false;
++        }
++
++        ChunkPos nextCenter = ChunkPos.unpack(diff.snapshot().nextCenter());
++        ChunkTrackingView next = ChunkTrackingView.of(nextCenter, diff.snapshot().nextViewDistance());
++        if (!(current instanceof ChunkTrackingView.Positioned from && from.center().equals(nextCenter))) {
++            player.connection.send(new ClientboundSetChunkCacheCenterPacket(nextCenter.x(), nextCenter.z()));
++        }
++        diff.leave().forEach(pos -> dropChunk(player, ChunkPos.unpack(pos)));
++        diff.enter().forEach(pos -> this.markChunkPendingToSend(player, ChunkPos.unpack(pos)));
++        player.setChunkTrackingView(next);
++        this.fandChunkTrackingSequences.remove(diff.snapshot().playerId());
++        return true;
++    }
++
++    private static boolean fandSameView(
++        final ChunkTrackingView view,
++        final boolean positioned,
++        final long center,
++        final int viewDistance
++    ) {
++        if (!positioned) {
++            return !(view instanceof ChunkTrackingView.Positioned);
++        }
++        return view instanceof ChunkTrackingView.Positioned current
++            && current.center().pack() == center
++            && current.viewDistance() == viewDistance;
++    }
++
++    private static long fandCenter(final ChunkTrackingView view) {
++        return view instanceof ChunkTrackingView.Positioned positioned ? positioned.center().pack() : 0L;
++    }
++
++    private static int fandViewDistance(final ChunkTrackingView view) {
++        return view instanceof ChunkTrackingView.Positioned positioned ? positioned.viewDistance() : 0;
++    }
++
++    private static it.unimi.dsi.fastutil.longs.LongList fandChunks(final ChunkTrackingView view) {
++        var chunks = new it.unimi.dsi.fastutil.longs.LongArrayList();
++        view.forEach(pos -> chunks.add(pos.pack()));
++        return chunks;
++    }
++
+     @Override
+     public List<ServerPlayer> getPlayers(final ChunkPos pos, final boolean borderOnly) {
+         Set<ServerPlayer> allPlayers = this.playerMap.getAllPlayers();
