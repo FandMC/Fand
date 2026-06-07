@@ -3,6 +3,7 @@ package io.fand.api.item.component;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import io.fand.api.item.ItemKey;
 import java.util.Objects;
 import net.kyori.adventure.key.Key;
 
@@ -21,7 +22,19 @@ public record ItemTemplate(Key item, int count, ItemComponents components) imple
         this(item, 1, ItemComponents.EMPTY);
     }
 
+    public ItemTemplate(ItemKey item) {
+        this(Objects.requireNonNull(item, "item").key());
+    }
+
+    public ItemTemplate(ItemKey item, int count, ItemComponents components) {
+        this(Objects.requireNonNull(item, "item").key(), count, components);
+    }
+
     public static ItemTemplate of(Key item) {
+        return new ItemTemplate(item);
+    }
+
+    public static ItemTemplate of(ItemKey item) {
         return new ItemTemplate(item);
     }
 

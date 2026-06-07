@@ -3,6 +3,7 @@ package io.fand.api.item.component;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.fand.api.entity.AttributeKey;
 import java.util.List;
 import java.util.Objects;
 import net.kyori.adventure.key.Key;
@@ -58,6 +59,20 @@ public record ItemAttributeModifiers(List<ItemAttributeModifiers.Entry> modifier
 
         public Entry(Key attribute, Key id, double amount, ItemAttributeModifierOperation operation) {
             this(attribute, id, amount, operation, ItemEquipmentSlotGroup.ANY, ItemAttributeModifierDisplay.DEFAULT);
+        }
+
+        public Entry(AttributeKey attribute, Key id, double amount, ItemAttributeModifierOperation operation) {
+            this(Objects.requireNonNull(attribute, "attribute").key(), id, amount, operation);
+        }
+
+        public Entry(
+                AttributeKey attribute,
+                Key id,
+                double amount,
+                ItemAttributeModifierOperation operation,
+                ItemEquipmentSlotGroup slot,
+                ItemAttributeModifierDisplay display) {
+            this(Objects.requireNonNull(attribute, "attribute").key(), id, amount, operation, slot, display);
         }
 
         public static Entry fromJson(JsonElement value) {

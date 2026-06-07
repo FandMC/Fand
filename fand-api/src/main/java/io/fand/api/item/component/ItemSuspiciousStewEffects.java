@@ -40,6 +40,10 @@ public record ItemSuspiciousStewEffects(List<ItemSuspiciousStewEffects.Entry> ef
             effect = Objects.requireNonNull(effect, "effect");
         }
 
+        public Entry(EffectKey effect, int duration) {
+            this(Objects.requireNonNull(effect, "effect").key(), duration);
+        }
+
         public static Entry fromJson(JsonElement value) {
             var object = ItemComponentJson.object(value, "suspicious stew effect");
             return new Entry(ItemComponentJson.key(object, "id"), ItemComponentJson.intOr(object, "duration", 160));

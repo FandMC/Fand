@@ -2,6 +2,8 @@ package io.fand.api.item.component;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.fand.api.entity.EntityKey;
+import io.fand.api.world.sound.SoundKey;
 import java.util.Objects;
 import java.util.Optional;
 import net.kyori.adventure.key.Key;
@@ -34,6 +36,111 @@ public record ItemEquippable(
 
     public ItemEquippable(ItemEquipmentSlot slot) {
         this(slot, DEFAULT_EQUIP_SOUND, Optional.empty(), Optional.empty(), Optional.empty(), true, true, true, false, false, DEFAULT_SHEARING_SOUND);
+    }
+
+    public ItemEquippable(ItemEquipmentSlot slot, SoundKey equipSound) {
+        this(
+                slot,
+                Objects.requireNonNull(equipSound, "equipSound").key(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                true,
+                true,
+                true,
+                false,
+                false,
+                DEFAULT_SHEARING_SOUND);
+    }
+
+    public ItemEquippable withEquipSound(SoundKey equipSound) {
+        return new ItemEquippable(
+                slot,
+                Objects.requireNonNull(equipSound, "equipSound").key(),
+                assetId,
+                cameraOverlay,
+                allowedEntities,
+                dispensable,
+                swappable,
+                damageOnHurt,
+                equipOnInteract,
+                canBeSheared,
+                shearingSound);
+    }
+
+    public ItemEquippable withAssetId(EquipmentAssetKey assetId) {
+        return new ItemEquippable(
+                slot,
+                equipSound,
+                Optional.of(Objects.requireNonNull(assetId, "assetId").key()),
+                cameraOverlay,
+                allowedEntities,
+                dispensable,
+                swappable,
+                damageOnHurt,
+                equipOnInteract,
+                canBeSheared,
+                shearingSound);
+    }
+
+    public ItemEquippable withoutAssetId() {
+        return new ItemEquippable(
+                slot,
+                equipSound,
+                Optional.empty(),
+                cameraOverlay,
+                allowedEntities,
+                dispensable,
+                swappable,
+                damageOnHurt,
+                equipOnInteract,
+                canBeSheared,
+                shearingSound);
+    }
+
+    public ItemEquippable withAllowedEntities(EntityKey first, EntityKey... rest) {
+        return new ItemEquippable(
+                slot,
+                equipSound,
+                assetId,
+                cameraOverlay,
+                Optional.of(ItemKeySet.of(first, rest)),
+                dispensable,
+                swappable,
+                damageOnHurt,
+                equipOnInteract,
+                canBeSheared,
+                shearingSound);
+    }
+
+    public ItemEquippable withoutAllowedEntities() {
+        return new ItemEquippable(
+                slot,
+                equipSound,
+                assetId,
+                cameraOverlay,
+                Optional.empty(),
+                dispensable,
+                swappable,
+                damageOnHurt,
+                equipOnInteract,
+                canBeSheared,
+                shearingSound);
+    }
+
+    public ItemEquippable withShearingSound(SoundKey shearingSound) {
+        return new ItemEquippable(
+                slot,
+                equipSound,
+                assetId,
+                cameraOverlay,
+                allowedEntities,
+                dispensable,
+                swappable,
+                damageOnHurt,
+                equipOnInteract,
+                canBeSheared,
+                Objects.requireNonNull(shearingSound, "shearingSound").key());
     }
 
     public static ItemEquippable fromJson(JsonElement value) {

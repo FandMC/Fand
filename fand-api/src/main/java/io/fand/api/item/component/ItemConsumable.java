@@ -3,6 +3,7 @@ package io.fand.api.item.component;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.fand.api.world.sound.SoundKey;
 import java.util.List;
 import java.util.Objects;
 import net.kyori.adventure.key.Key;
@@ -26,6 +27,15 @@ public record ItemConsumable(
         animation = Objects.requireNonNull(animation, "animation");
         sound = Objects.requireNonNull(sound, "sound");
         onConsumeEffects = List.copyOf(Objects.requireNonNull(onConsumeEffects, "onConsumeEffects"));
+    }
+
+    public ItemConsumable(
+            float consumeSeconds,
+            ItemUseAnimation animation,
+            SoundKey sound,
+            boolean hasConsumeParticles,
+            List<ItemConsumeEffect> onConsumeEffects) {
+        this(consumeSeconds, animation, Objects.requireNonNull(sound, "sound").key(), hasConsumeParticles, onConsumeEffects);
     }
 
     public static ItemConsumable fromJson(JsonElement value) {

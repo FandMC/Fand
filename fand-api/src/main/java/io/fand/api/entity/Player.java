@@ -6,6 +6,9 @@ import io.fand.api.inventory.InventoryType;
 import io.fand.api.permission.PermissionSubject;
 import io.fand.api.scoreboard.Sidebar;
 import io.fand.api.world.Location;
+import io.fand.api.world.particle.ParticleEffect;
+import io.fand.api.world.particle.ParticleEmission;
+import io.fand.api.world.sound.SoundEffect;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.text.Component;
@@ -27,6 +30,20 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
 
     /** Disconnects the player with the given reason. No-op if already offline. */
     void kick(Component reason);
+
+    /** Plays a sound at this player's current location. No-op if already offline. */
+    void playSound(SoundEffect sound);
+
+    /** Plays a sound at {@code location} for this player. No-op if already offline or in another world. */
+    void playSound(Location location, SoundEffect sound);
+
+    /** Spawns a single particle at {@code location} for this player. No-op if offline or in another world. */
+    default void spawnParticle(Location location, ParticleEffect effect) {
+        spawnParticle(location, effect, ParticleEmission.SINGLE);
+    }
+
+    /** Spawns particles at {@code location} for this player. No-op if offline or in another world. */
+    void spawnParticle(Location location, ParticleEffect effect, ParticleEmission emission);
 
     /** Sends a tab-list header and footer to this player. */
     void sendTabList(Component header, Component footer);

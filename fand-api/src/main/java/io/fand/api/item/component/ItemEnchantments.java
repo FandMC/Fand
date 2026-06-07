@@ -38,6 +38,10 @@ public record ItemEnchantments(Map<Key, Integer> levels) {
         return EMPTY.with(enchantment, level);
     }
 
+    public static ItemEnchantments of(EnchantmentKey enchantment, int level) {
+        return of(enchantment.key(), level);
+    }
+
     public boolean isEmpty() {
         return levels.isEmpty();
     }
@@ -46,8 +50,16 @@ public record ItemEnchantments(Map<Key, Integer> levels) {
         return levels.containsKey(enchantment);
     }
 
+    public boolean has(EnchantmentKey enchantment) {
+        return has(enchantment.key());
+    }
+
     public int level(Key enchantment) {
         return levels.getOrDefault(enchantment, 0);
+    }
+
+    public int level(EnchantmentKey enchantment) {
+        return level(enchantment.key());
     }
 
     public ItemEnchantments with(Key enchantment, int level) {
@@ -61,12 +73,20 @@ public record ItemEnchantments(Map<Key, Integer> levels) {
         return new ItemEnchantments(next);
     }
 
+    public ItemEnchantments with(EnchantmentKey enchantment, int level) {
+        return with(enchantment.key(), level);
+    }
+
     public ItemEnchantments upgrade(Key enchantment, int level) {
         Objects.requireNonNull(enchantment, "enchantment");
         if (level <= 0) {
             return this;
         }
         return with(enchantment, Math.max(level(enchantment), level));
+    }
+
+    public ItemEnchantments upgrade(EnchantmentKey enchantment, int level) {
+        return upgrade(enchantment.key(), level);
     }
 
     public ItemEnchantments without(Key enchantment) {
@@ -77,6 +97,10 @@ public record ItemEnchantments(Map<Key, Integer> levels) {
         var next = new LinkedHashMap<>(levels);
         next.remove(enchantment);
         return new ItemEnchantments(next);
+    }
+
+    public ItemEnchantments without(EnchantmentKey enchantment) {
+        return without(enchantment.key());
     }
 
     public JsonObject toJson() {

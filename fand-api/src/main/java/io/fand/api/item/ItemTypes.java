@@ -17,8 +17,16 @@ public final class ItemTypes {
         return Fand.server().itemType(key);
     }
 
+    public static Optional<? extends ItemType> find(ItemKey key) {
+        return find(key.key());
+    }
+
     public static ItemType of(Key key) {
         return find(key).orElseThrow(() -> new NoSuchElementException("Unknown item type: " + key.asString()));
+    }
+
+    public static ItemType of(ItemKey key) {
+        return of(key.key());
     }
 
     public static ItemType of(String key) {

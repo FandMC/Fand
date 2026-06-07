@@ -17,8 +17,16 @@ public final class BlockTypes {
         return Fand.server().blockType(key);
     }
 
+    public static Optional<? extends BlockType> find(BlockKey key) {
+        return find(key.key());
+    }
+
     public static BlockType of(Key key) {
         return find(key).orElseThrow(() -> new NoSuchElementException("Unknown block type: " + key.asString()));
+    }
+
+    public static BlockType of(BlockKey key) {
+        return of(key.key());
     }
 
     public static BlockType of(String key) {

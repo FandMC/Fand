@@ -4,8 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.gson.JsonObject;
+import io.fand.api.block.BlockEntityKey;
+import io.fand.api.entity.AttributeKey;
+import io.fand.api.entity.EntityKey;
 import io.fand.api.item.component.CustomModelData;
-import io.fand.api.item.component.EnchantmentKeys;
+import io.fand.api.item.component.EffectKey;
+import io.fand.api.item.component.EnchantmentKey;
+import io.fand.api.item.component.EquipmentAssetKey;
+import io.fand.api.item.component.InstrumentKey;
+import io.fand.api.item.component.ItemArmorTrim;
 import io.fand.api.item.component.ItemAttackRange;
 import io.fand.api.item.component.ItemAttributeModifierDisplay;
 import io.fand.api.item.component.ItemAttributeModifierOperation;
@@ -21,6 +28,8 @@ import io.fand.api.item.component.ItemContainerLoot;
 import io.fand.api.item.component.ItemDyeColor;
 import io.fand.api.item.component.ItemEffectInstance;
 import io.fand.api.item.component.ItemEntityVariant;
+import io.fand.api.item.component.ItemEquipmentSlot;
+import io.fand.api.item.component.ItemEquippable;
 import io.fand.api.item.component.ItemEquipmentSlotGroup;
 import io.fand.api.item.component.ItemFireworkExplosion;
 import io.fand.api.item.component.ItemFireworkShape;
@@ -36,10 +45,19 @@ import io.fand.api.item.component.ItemSwingAnimation;
 import io.fand.api.item.component.ItemSwingAnimationType;
 import io.fand.api.item.component.ItemTemplate;
 import io.fand.api.item.component.ItemTool;
+import io.fand.api.item.component.ItemTypedEntityData;
 import io.fand.api.item.component.ItemUseAnimation;
 import io.fand.api.item.component.ItemUseCooldown;
 import io.fand.api.item.component.ItemUseEffects;
 import io.fand.api.item.component.ItemWeapon;
+import io.fand.api.item.component.PotionKey;
+import io.fand.api.item.component.TrimMaterialKey;
+import io.fand.api.item.component.TrimPatternKey;
+import io.fand.api.item.component.VillagerVariantKey;
+import io.fand.api.item.component.WolfVariantKey;
+import io.fand.api.world.DamageTypeKey;
+import io.fand.api.world.sound.JukeboxSongKey;
+import io.fand.api.world.sound.SoundKey;
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.List;
@@ -82,9 +100,9 @@ class ItemStackTest {
                 .withMaxDamage(10)
                 .withRepairCost(2)
                 .withRarity(ItemRarity.RARE)
-                .withEnchantment(EnchantmentKeys.SHARPNESS, 4)
-                .upgradeEnchantment(EnchantmentKeys.SHARPNESS, 5)
-                .withStoredEnchantment(EnchantmentKeys.MENDING, 1)
+                .withEnchantment(EnchantmentKey.SHARPNESS, 4)
+                .upgradeEnchantment(EnchantmentKey.SHARPNESS, 5)
+                .withStoredEnchantment(EnchantmentKey.MENDING, 1)
                 .withEnchantable(30)
                 .withMinimumAttackCharge(0.75F)
                 .withTooltipHidden(false)
@@ -106,8 +124,8 @@ class ItemStackTest {
         assertThat(stack.maxDamage()).contains(10);
         assertThat(stack.repairCost()).contains(2);
         assertThat(stack.rarity()).contains(ItemRarity.RARE);
-        assertThat(stack.enchantments().level(EnchantmentKeys.SHARPNESS)).isEqualTo(5);
-        assertThat(stack.storedEnchantments().level(EnchantmentKeys.MENDING)).isEqualTo(1);
+        assertThat(stack.enchantments().level(EnchantmentKey.SHARPNESS)).isEqualTo(5);
+        assertThat(stack.storedEnchantments().level(EnchantmentKey.MENDING)).isEqualTo(1);
         assertThat(stack.enchantable()).contains(30);
         assertThat(stack.minimumAttackCharge()).contains(0.75F);
         assertThat(stack.tooltipDisplay().hides(ItemComponentKeys.ENCHANTMENTS)).isTrue();
@@ -234,6 +252,75 @@ class ItemStackTest {
         assertThat(stack.catCollar()).contains(ItemDyeColor.GREEN);
         assertThat(stack.sheepColor()).contains(ItemDyeColor.WHITE);
         assertThat(stack.shulkerColor()).contains(ItemDyeColor.BLACK);
+    }
+
+    @Test
+    void generatedVanillaKeysCanBuildItemComponents() {
+        var entityData = new JsonObject();
+        entityData.addProperty("powered", true);
+        var blockEntityData = new JsonObject();
+        blockEntityData.addProperty("LootTable", "minecraft:chests/simple_dungeon");
+        var speed = new ItemEffectInstance(EffectKey.SPEED, 200);
+        var consumeEffects = List.<ItemConsumeEffect>of(
+                new ItemConsumeEffect.ApplyEffects(List.of(speed)),
+                new ItemConsumeEffect.RemoveEffects(ItemKeySet.of(EffectKey.HASTE)),
+                new ItemConsumeEffect.PlaySound(SoundKey.AMETHYST_BLOCK_CHIME));
+        var attributeModifiers = ItemAttributeModifiers.EMPTY.with(new ItemAttributeModifiers.Entry(
+                AttributeKey.ATTACK_DAMAGE,
+                Key.key("fand:bonus_damage"),
+                3.0D,
+                ItemAttributeModifierOperation.ADD_VALUE,
+                ItemEquipmentSlotGroup.MAINHAND,
+                ItemAttributeModifierDisplay.DEFAULT));
+        var equippable = new ItemEquippable(ItemEquipmentSlot.CHEST, SoundKey.ARMOR_EQUIP_DIAMOND)
+                .withAssetId(EquipmentAssetKey.DIAMOND)
+                .withAllowedEntities(EntityKey.PLAYER, EntityKey.ZOMBIE);
+        var template = new ItemTemplate(ItemKey.ARROW, 3, ItemComponents.EMPTY);
+
+        var stack = new ItemStack(DIAMOND, 1)
+                .withConsumable(new ItemConsumable(
+                        0.8F,
+                        ItemUseAnimation.DRINK,
+                        SoundKey.GENERIC_DRINK,
+                        false,
+                        consumeEffects))
+                .withUseRemainder(template)
+                .withAttributeModifiers(attributeModifiers)
+                .withEquippable(equippable)
+                .withPotionContents(new ItemPotionContents(PotionKey.WATER))
+                .withTrim(new ItemArmorTrim(TrimMaterialKey.DIAMOND, TrimPatternKey.SENTRY))
+                .withEntityData(new ItemTypedEntityData(EntityKey.CREEPER, entityData))
+                .withBlockEntityData(new ItemTypedEntityData(BlockEntityKey.CHEST, blockEntityData))
+                .withDamageType(DamageTypeKey.FALL)
+                .withNoteBlockSound(SoundKey.NOTE_BLOCK_BELL)
+                .withInstrument(InstrumentKey.PONDER_GOAT_HORN)
+                .withProvidesTrimMaterial(TrimMaterialKey.DIAMOND)
+                .withJukeboxPlayable(JukeboxSongKey.PIGSTEP)
+                .withBreakSound(SoundKey.GLASS_BREAK)
+                .withVillagerVariant(VillagerVariantKey.PLAINS)
+                .withWolfVariant(WolfVariantKey.SNOWY);
+
+        assertThat(stack.consumable()).contains(new ItemConsumable(
+                0.8F,
+                ItemUseAnimation.DRINK,
+                SoundKey.GENERIC_DRINK.key(),
+                false,
+                consumeEffects));
+        assertThat(stack.useRemainder()).contains(template);
+        assertThat(stack.attributeModifiers()).contains(attributeModifiers);
+        assertThat(stack.equippable()).contains(equippable);
+        assertThat(stack.potionContents()).contains(new ItemPotionContents(PotionKey.WATER));
+        assertThat(stack.trim()).contains(new ItemArmorTrim(TrimMaterialKey.DIAMOND, TrimPatternKey.SENTRY));
+        assertThat(stack.entityData()).contains(new ItemTypedEntityData(EntityKey.CREEPER, entityData));
+        assertThat(stack.blockEntityData()).contains(new ItemTypedEntityData(BlockEntityKey.CHEST, blockEntityData));
+        assertThat(stack.damageType()).contains(DamageTypeKey.FALL.key());
+        assertThat(stack.noteBlockSound()).contains(SoundKey.NOTE_BLOCK_BELL.key());
+        assertThat(stack.instrument()).contains(InstrumentKey.PONDER_GOAT_HORN.key());
+        assertThat(stack.providesTrimMaterial()).contains(TrimMaterialKey.DIAMOND.key());
+        assertThat(stack.jukeboxPlayable()).contains(JukeboxSongKey.PIGSTEP.key());
+        assertThat(stack.breakSound()).contains(SoundKey.GLASS_BREAK.key());
+        assertThat(stack.villagerVariant()).contains(VillagerVariantKey.PLAINS.key());
+        assertThat(stack.wolfVariant()).contains(WolfVariantKey.SNOWY.key());
     }
 
     @Test

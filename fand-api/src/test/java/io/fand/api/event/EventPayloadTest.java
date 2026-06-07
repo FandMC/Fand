@@ -271,6 +271,17 @@ final class EventPayloadTest {
         }
 
         @Override
+        public void playSound(io.fand.api.world.Location location, io.fand.api.world.sound.SoundEffect sound) {
+        }
+
+        @Override
+        public void spawnParticle(
+                io.fand.api.world.Location location,
+                io.fand.api.world.particle.ParticleEffect effect,
+                io.fand.api.world.particle.ParticleEmission emission) {
+        }
+
+        @Override
         public Iterable<? extends net.kyori.adventure.audience.Audience> audiences() {
             return java.util.List.of();
         }

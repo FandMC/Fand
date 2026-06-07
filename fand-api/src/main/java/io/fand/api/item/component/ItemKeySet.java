@@ -3,6 +3,7 @@ package io.fand.api.item.component;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
+import io.fand.api.VanillaKey;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -23,6 +24,22 @@ public record ItemKeySet(Optional<Key> tag, List<Key> values) implements ItemCom
 
     public static ItemKeySet of(Key value) {
         return new ItemKeySet(Optional.empty(), List.of(Objects.requireNonNull(value, "value")));
+    }
+
+    public static ItemKeySet of(VanillaKey value) {
+        Objects.requireNonNull(value, "value");
+        return of(value.key());
+    }
+
+    public static ItemKeySet of(VanillaKey first, VanillaKey... rest) {
+        Objects.requireNonNull(first, "first");
+        Objects.requireNonNull(rest, "rest");
+        var values = new java.util.ArrayList<Key>(1 + rest.length);
+        values.add(first.key());
+        for (var value : rest) {
+            values.add(Objects.requireNonNull(value, "value").key());
+        }
+        return of(values);
     }
 
     public static ItemKeySet of(List<Key> values) {

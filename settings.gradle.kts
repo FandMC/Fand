@@ -8,6 +8,7 @@ pluginManagement {
 }
 
 include(
+    "fand-data-generator",
     "fand-api",
     "fand-server",
     "fandclip",

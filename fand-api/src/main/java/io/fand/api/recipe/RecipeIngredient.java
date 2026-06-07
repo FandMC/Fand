@@ -1,5 +1,6 @@
 package io.fand.api.recipe;
 
+import io.fand.api.item.ItemKey;
 import io.fand.api.item.ItemType;
 import java.util.List;
 import java.util.Objects;
@@ -48,6 +49,10 @@ public record RecipeIngredient(Optional<Key> tag, List<Key> items) {
 
     public static RecipeIngredient of(Key item) {
         return ofKeys(List.of(Objects.requireNonNull(item, "item")));
+    }
+
+    public static RecipeIngredient of(ItemKey item) {
+        return of(Objects.requireNonNull(item, "item").key());
     }
 
     public static RecipeIngredient of(String item) {

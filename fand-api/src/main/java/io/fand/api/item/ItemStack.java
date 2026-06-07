@@ -4,7 +4,17 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import io.fand.api.VanillaKey;
+import io.fand.api.item.component.CatSoundVariantKey;
+import io.fand.api.item.component.CatVariantKey;
+import io.fand.api.item.component.ChickenSoundVariantKey;
+import io.fand.api.item.component.ChickenVariantKey;
 import io.fand.api.item.component.CustomModelData;
+import io.fand.api.item.component.CowSoundVariantKey;
+import io.fand.api.item.component.CowVariantKey;
+import io.fand.api.item.component.EnchantmentKey;
+import io.fand.api.item.component.FrogVariantKey;
+import io.fand.api.item.component.InstrumentKey;
 import io.fand.api.item.component.ItemAdventureModePredicate;
 import io.fand.api.item.component.ItemArmorTrim;
 import io.fand.api.item.component.ItemAttackRange;
@@ -52,6 +62,17 @@ import io.fand.api.item.component.ItemUseEffects;
 import io.fand.api.item.component.ItemWeapon;
 import io.fand.api.item.component.ItemWritableBookContent;
 import io.fand.api.item.component.ItemWrittenBookContent;
+import io.fand.api.item.component.PaintingVariantKey;
+import io.fand.api.item.component.PigSoundVariantKey;
+import io.fand.api.item.component.PigVariantKey;
+import io.fand.api.item.component.TrimMaterialKey;
+import io.fand.api.item.component.VillagerVariantKey;
+import io.fand.api.item.component.WolfSoundVariantKey;
+import io.fand.api.item.component.WolfVariantKey;
+import io.fand.api.item.component.ZombieNautilusVariantKey;
+import io.fand.api.world.DamageTypeKey;
+import io.fand.api.world.sound.JukeboxSongKey;
+import io.fand.api.world.sound.SoundKey;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -385,11 +406,23 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
         return withEnchantments(enchantments().with(enchantment, level));
     }
 
+    public ItemStack withEnchantment(EnchantmentKey enchantment, int level) {
+        return withEnchantments(enchantments().with(enchantment, level));
+    }
+
     public ItemStack upgradeEnchantment(Key enchantment, int level) {
         return withEnchantments(enchantments().upgrade(enchantment, level));
     }
 
+    public ItemStack upgradeEnchantment(EnchantmentKey enchantment, int level) {
+        return withEnchantments(enchantments().upgrade(enchantment, level));
+    }
+
     public ItemStack withoutEnchantment(Key enchantment) {
+        return withEnchantments(enchantments().without(enchantment));
+    }
+
+    public ItemStack withoutEnchantment(EnchantmentKey enchantment) {
         return withEnchantments(enchantments().without(enchantment));
     }
 
@@ -412,11 +445,23 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
         return withStoredEnchantments(storedEnchantments().with(enchantment, level));
     }
 
+    public ItemStack withStoredEnchantment(EnchantmentKey enchantment, int level) {
+        return withStoredEnchantments(storedEnchantments().with(enchantment, level));
+    }
+
     public ItemStack upgradeStoredEnchantment(Key enchantment, int level) {
         return withStoredEnchantments(storedEnchantments().upgrade(enchantment, level));
     }
 
+    public ItemStack upgradeStoredEnchantment(EnchantmentKey enchantment, int level) {
+        return withStoredEnchantments(storedEnchantments().upgrade(enchantment, level));
+    }
+
     public ItemStack withoutStoredEnchantment(Key enchantment) {
+        return withStoredEnchantments(storedEnchantments().without(enchantment));
+    }
+
+    public ItemStack withoutStoredEnchantment(EnchantmentKey enchantment) {
         return withStoredEnchantments(storedEnchantments().without(enchantment));
     }
 
@@ -461,6 +506,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public ItemStack withDamageType(Key damageType) {
+        return withKeyComponent(ItemComponentKeys.DAMAGE_TYPE, damageType);
+    }
+
+    public ItemStack withDamageType(DamageTypeKey damageType) {
         return withKeyComponent(ItemComponentKeys.DAMAGE_TYPE, damageType);
     }
 
@@ -532,6 +581,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public ItemStack withNoteBlockSound(Key sound) {
+        return withKeyComponent(ItemComponentKeys.NOTE_BLOCK_SOUND, sound);
+    }
+
+    public ItemStack withNoteBlockSound(SoundKey sound) {
         return withKeyComponent(ItemComponentKeys.NOTE_BLOCK_SOUND, sound);
     }
 
@@ -1019,6 +1072,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
         return withKeyComponent(ItemComponentKeys.INSTRUMENT, instrument);
     }
 
+    public ItemStack withInstrument(InstrumentKey instrument) {
+        return withKeyComponent(ItemComponentKeys.INSTRUMENT, instrument);
+    }
+
     public ItemStack withoutInstrument() {
         return withoutComponent(ItemComponentKeys.INSTRUMENT);
     }
@@ -1028,6 +1085,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public ItemStack withProvidesTrimMaterial(Key material) {
+        return withKeyComponent(ItemComponentKeys.PROVIDES_TRIM_MATERIAL, material);
+    }
+
+    public ItemStack withProvidesTrimMaterial(TrimMaterialKey material) {
         return withKeyComponent(ItemComponentKeys.PROVIDES_TRIM_MATERIAL, material);
     }
 
@@ -1055,6 +1116,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public ItemStack withJukeboxPlayable(Key song) {
+        return withKeyComponent(ItemComponentKeys.JUKEBOX_PLAYABLE, song);
+    }
+
+    public ItemStack withJukeboxPlayable(JukeboxSongKey song) {
         return withKeyComponent(ItemComponentKeys.JUKEBOX_PLAYABLE, song);
     }
 
@@ -1238,6 +1303,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
         return withKeyComponent(ItemComponentKeys.BREAK_SOUND, sound);
     }
 
+    public ItemStack withBreakSound(SoundKey sound) {
+        return withKeyComponent(ItemComponentKeys.BREAK_SOUND, sound);
+    }
+
     public ItemStack withoutBreakSound() {
         return withoutComponent(ItemComponentKeys.BREAK_SOUND);
     }
@@ -1247,6 +1316,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public ItemStack withVillagerVariant(Key variant) {
+        return withKeyComponent(ItemComponentKeys.VILLAGER_VARIANT, variant);
+    }
+
+    public ItemStack withVillagerVariant(VillagerVariantKey variant) {
         return withKeyComponent(ItemComponentKeys.VILLAGER_VARIANT, variant);
     }
 
@@ -1262,6 +1335,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
         return withKeyComponent(ItemComponentKeys.WOLF_VARIANT, variant);
     }
 
+    public ItemStack withWolfVariant(WolfVariantKey variant) {
+        return withKeyComponent(ItemComponentKeys.WOLF_VARIANT, variant);
+    }
+
     public ItemStack withoutWolfVariant() {
         return withoutComponent(ItemComponentKeys.WOLF_VARIANT);
     }
@@ -1271,6 +1348,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public ItemStack withWolfSoundVariant(Key variant) {
+        return withKeyComponent(ItemComponentKeys.WOLF_SOUND_VARIANT, variant);
+    }
+
+    public ItemStack withWolfSoundVariant(WolfSoundVariantKey variant) {
         return withKeyComponent(ItemComponentKeys.WOLF_SOUND_VARIANT, variant);
     }
 
@@ -1400,6 +1481,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
         return withKeyComponent(ItemComponentKeys.PIG_VARIANT, variant);
     }
 
+    public ItemStack withPigVariant(PigVariantKey variant) {
+        return withKeyComponent(ItemComponentKeys.PIG_VARIANT, variant);
+    }
+
     public ItemStack withoutPigVariant() {
         return withoutComponent(ItemComponentKeys.PIG_VARIANT);
     }
@@ -1409,6 +1494,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public ItemStack withPigSoundVariant(Key variant) {
+        return withKeyComponent(ItemComponentKeys.PIG_SOUND_VARIANT, variant);
+    }
+
+    public ItemStack withPigSoundVariant(PigSoundVariantKey variant) {
         return withKeyComponent(ItemComponentKeys.PIG_SOUND_VARIANT, variant);
     }
 
@@ -1424,6 +1513,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
         return withKeyComponent(ItemComponentKeys.COW_VARIANT, variant);
     }
 
+    public ItemStack withCowVariant(CowVariantKey variant) {
+        return withKeyComponent(ItemComponentKeys.COW_VARIANT, variant);
+    }
+
     public ItemStack withoutCowVariant() {
         return withoutComponent(ItemComponentKeys.COW_VARIANT);
     }
@@ -1433,6 +1526,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public ItemStack withCowSoundVariant(Key variant) {
+        return withKeyComponent(ItemComponentKeys.COW_SOUND_VARIANT, variant);
+    }
+
+    public ItemStack withCowSoundVariant(CowSoundVariantKey variant) {
         return withKeyComponent(ItemComponentKeys.COW_SOUND_VARIANT, variant);
     }
 
@@ -1448,6 +1545,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
         return withKeyComponent(ItemComponentKeys.CHICKEN_VARIANT, variant);
     }
 
+    public ItemStack withChickenVariant(ChickenVariantKey variant) {
+        return withKeyComponent(ItemComponentKeys.CHICKEN_VARIANT, variant);
+    }
+
     public ItemStack withoutChickenVariant() {
         return withoutComponent(ItemComponentKeys.CHICKEN_VARIANT);
     }
@@ -1457,6 +1558,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public ItemStack withChickenSoundVariant(Key variant) {
+        return withKeyComponent(ItemComponentKeys.CHICKEN_SOUND_VARIANT, variant);
+    }
+
+    public ItemStack withChickenSoundVariant(ChickenSoundVariantKey variant) {
         return withKeyComponent(ItemComponentKeys.CHICKEN_SOUND_VARIANT, variant);
     }
 
@@ -1472,6 +1577,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
         return withKeyComponent(ItemComponentKeys.ZOMBIE_NAUTILUS_VARIANT, variant);
     }
 
+    public ItemStack withZombieNautilusVariant(ZombieNautilusVariantKey variant) {
+        return withKeyComponent(ItemComponentKeys.ZOMBIE_NAUTILUS_VARIANT, variant);
+    }
+
     public ItemStack withoutZombieNautilusVariant() {
         return withoutComponent(ItemComponentKeys.ZOMBIE_NAUTILUS_VARIANT);
     }
@@ -1481,6 +1590,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public ItemStack withFrogVariant(Key variant) {
+        return withKeyComponent(ItemComponentKeys.FROG_VARIANT, variant);
+    }
+
+    public ItemStack withFrogVariant(FrogVariantKey variant) {
         return withKeyComponent(ItemComponentKeys.FROG_VARIANT, variant);
     }
 
@@ -1506,6 +1619,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public ItemStack withPaintingVariant(Key variant) {
+        return withKeyComponent(ItemComponentKeys.PAINTING_VARIANT, variant);
+    }
+
+    public ItemStack withPaintingVariant(PaintingVariantKey variant) {
         return withKeyComponent(ItemComponentKeys.PAINTING_VARIANT, variant);
     }
 
@@ -1547,6 +1664,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
         return withKeyComponent(ItemComponentKeys.CAT_VARIANT, variant);
     }
 
+    public ItemStack withCatVariant(CatVariantKey variant) {
+        return withKeyComponent(ItemComponentKeys.CAT_VARIANT, variant);
+    }
+
     public ItemStack withoutCatVariant() {
         return withoutComponent(ItemComponentKeys.CAT_VARIANT);
     }
@@ -1556,6 +1677,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public ItemStack withCatSoundVariant(Key variant) {
+        return withKeyComponent(ItemComponentKeys.CAT_SOUND_VARIANT, variant);
+    }
+
+    public ItemStack withCatSoundVariant(CatSoundVariantKey variant) {
         return withKeyComponent(ItemComponentKeys.CAT_SOUND_VARIANT, variant);
     }
 
@@ -1721,6 +1846,11 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     private ItemStack withKeyComponent(Key componentKey, Key value) {
         Objects.requireNonNull(value, "value");
         return withComponent(componentKey, new JsonPrimitive(value.asString()));
+    }
+
+    private ItemStack withKeyComponent(Key componentKey, VanillaKey value) {
+        Objects.requireNonNull(value, "value");
+        return withKeyComponent(componentKey, value.key());
     }
 
     private ItemStack withNonNegativeInt(Key key, int value, String name) {

@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import io.fand.api.Fand;
 import io.fand.api.Server;
 import io.fand.api.block.Block;
+import io.fand.api.block.BlockKey;
 import io.fand.api.block.BlockType;
 import io.fand.api.block.BlockTypes;
 import io.fand.api.command.CommandCompleter;
@@ -35,11 +36,12 @@ import io.fand.api.event.player.PlayerTeleportEvent;
 import io.fand.api.inventory.Inventory;
 import io.fand.api.inventory.InventoryType;
 import io.fand.api.inventory.Inventories;
+import io.fand.api.item.ItemKey;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
 import io.fand.api.item.ItemTypes;
 import io.fand.api.item.component.CustomModelData;
-import io.fand.api.item.component.EnchantmentKeys;
+import io.fand.api.item.component.EnchantmentKey;
 import io.fand.api.item.component.ItemConsumable;
 import io.fand.api.item.component.ItemComponentKeys;
 import io.fand.api.item.component.ItemFood;
@@ -64,6 +66,13 @@ import io.fand.api.recipe.ShapelessRecipe;
 import io.fand.api.recipe.StonecuttingRecipe;
 import io.fand.api.scoreboard.Sidebar;
 import io.fand.api.world.World;
+import io.fand.api.world.particle.ParticleColor;
+import io.fand.api.world.particle.ParticleEmission;
+import io.fand.api.world.particle.ParticleKey;
+import io.fand.api.world.particle.Particles;
+import io.fand.api.world.sound.SoundCategory;
+import io.fand.api.world.sound.SoundKey;
+import io.fand.api.world.sound.Sounds;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -115,6 +124,22 @@ public final class TestPlugin implements Plugin {
             "minecraft:bread",
             "minecraft:compass"
     );
+    private static final List<String> PARTICLE_MODES = List.of(
+            "all",
+            "simple",
+            "dust",
+            "block",
+            "item",
+            "trail",
+            "vibration"
+    );
+    private static final List<String> SOUND_MODES = List.of(
+            "orb",
+            "levelup",
+            "anvil",
+            "toast",
+            "world"
+    );
     private static final List<String> PERMISSIONS = List.of(
             "fand.testplugin.use",
             "fand.testplugin.demo",
@@ -131,6 +156,8 @@ public final class TestPlugin implements Plugin {
             "fand.testplugin.actionbar",
             "fand.testplugin.title",
             "fand.testplugin.bossbar",
+            "fand.testplugin.particle",
+            "fand.testplugin.sound",
             "fand.testplugin.kick",
             "fand.testplugin.tab",
             "fand.testplugin.sidebar",
@@ -160,6 +187,8 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new ActionBarCommand(context));
         context.commands().register(new TitleCommand(context));
         context.commands().register(new BossBarCommand(context));
+        context.commands().register(new ParticleCommand());
+        context.commands().register(new SoundCommand());
         context.commands().register(new KickCommand(context));
         context.commands().register(new TabCommand(context));
         context.commands().register(new SidebarCommand());
@@ -198,10 +227,10 @@ public final class TestPlugin implements Plugin {
 
     private static void registerDemoRecipes(PluginContext context) {
         var recipes = demoRecipes(
-                ItemTypes.of("minecraft:diamond"),
-                ItemTypes.of("minecraft:compass"),
-                ItemTypes.of("minecraft:golden_apple"),
-                ItemTypes.of("minecraft:glass"));
+                ItemTypes.of(ItemKey.DIAMOND),
+                ItemTypes.of(ItemKey.COMPASS),
+                ItemTypes.of(ItemKey.GOLDEN_APPLE),
+                ItemTypes.of(ItemKey.GLASS));
         recipes.forEach(recipe -> context.recipes().register(recipe));
         context.logger().info("Registered {} demo recipes", recipes.size());
     }
@@ -281,10 +310,10 @@ public final class TestPlugin implements Plugin {
                 return;
             }
 
-            int accepted = give(target, demoComponentItem(ItemTypes.of("minecraft:diamond"), sender.name()), 1);
-            accepted += give(target, demoKitNavigator(ItemTypes.of("minecraft:compass"), target.name()), 1);
-            accepted += give(target, demoKitBook(ItemTypes.of("minecraft:written_book"), target.name()), 1);
-            accepted += give(target, demoKitSnack(ItemTypes.of("minecraft:golden_apple")), 8);
+            int accepted = give(target, demoComponentItem(ItemTypes.of(ItemKey.DIAMOND), sender.name()), 1);
+            accepted += give(target, demoKitNavigator(ItemTypes.of(ItemKey.COMPASS), target.name()), 1);
+            accepted += give(target, demoKitBook(ItemTypes.of(ItemKey.WRITTEN_BOOK), target.name()), 1);
+            accepted += give(target, demoKitSnack(ItemTypes.of(ItemKey.GOLDEN_APPLE)), 8);
 
             sendKitPresentation(context, target);
             openDemoInventory(
@@ -811,6 +840,142 @@ public final class TestPlugin implements Plugin {
         }
     }
 
+    @CommandSpec(label = "fandparticle", arguments = {"player", "mode"}, aliases = {"fparticle"}, permission = "fand.testplugin.particle")
+    static final class ParticleCommand implements CommandExecutor, CommandCompleter {
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            TargetedArgs targeted = targetedArgs(sender, args, "/fandparticle <player> [all|simple|dust|block|item|trail|vibration]");
+            if (targeted == null) {
+                return;
+            }
+            String mode = targeted.args().isEmpty() ? "all" : targeted.args().getFirst().toLowerCase(Locale.ROOT);
+            if (!PARTICLE_MODES.contains(mode)) {
+                sender.sendMessage(Component.text("Usage: /fandparticle <player> [all|simple|dust|block|item|trail|vibration]", NamedTextColor.RED));
+                return;
+            }
+
+            var target = targeted.player();
+            var base = target.location().offset(0.0, 1.1, 0.0);
+            if (mode.equals("all") || mode.equals("simple")) {
+                target.spawnParticle(base, Particles.simple(ParticleKey.HAPPY_VILLAGER),
+                        ParticleEmission.count(20).withOffset(0.45, 0.45, 0.45).withSpeed(0.05));
+            }
+            if (mode.equals("all") || mode.equals("dust")) {
+                target.spawnParticle(base.offset(0.0, 0.4, 0.0),
+                        Particles.dust(ParticleColor.rgb(0x33CCFF), 1.4F),
+                        ParticleEmission.count(24).withOffset(0.35, 0.35, 0.35));
+                target.spawnParticle(base.offset(0.0, 0.8, 0.0),
+                        Particles.dustTransition(ParticleColor.rgb(0xFFAA00), ParticleColor.rgb(0x66FF99), 1.2F),
+                        ParticleEmission.count(16).withOffset(0.25, 0.25, 0.25));
+            }
+            if (mode.equals("all") || mode.equals("block")) {
+                target.world().spawnParticle(base,
+                        Particles.block(BlockTypes.of(BlockKey.GLASS)),
+                        ParticleEmission.count(32).withOffset(0.4, 0.35, 0.4).withSpeed(0.03));
+                target.world().spawnParticle(base.offset(0.0, 0.6, 0.0),
+                        Particles.fallingDust(BlockTypes.of(BlockKey.REDSTONE_BLOCK)),
+                        ParticleEmission.count(20).withOffset(0.25, 0.2, 0.25));
+            }
+            if (mode.equals("all") || mode.equals("item")) {
+                target.spawnParticle(base,
+                        Particles.item(demoComponentItem(ItemTypes.of(ItemKey.DIAMOND), "particle")),
+                        ParticleEmission.count(18).withOffset(0.35, 0.45, 0.35).withSpeed(0.08));
+            }
+            if (mode.equals("all") || mode.equals("trail")) {
+                target.spawnParticle(base,
+                        Particles.trail(base.offset(0.0, 1.8, 0.0), ParticleColor.rgb(0xFF66CC), 35),
+                        ParticleEmission.SINGLE);
+            }
+            if (mode.equals("all") || mode.equals("vibration")) {
+                target.world().spawnParticle(base.offset(1.5, 0.0, 0.0),
+                        Particles.vibration(base.offset(0.0, 0.2, 0.0), 30),
+                        ParticleEmission.SINGLE.withAlwaysShow(true));
+            }
+
+            target.sendMessage(Component.text("Spawned Fand particle demo: " + mode, NamedTextColor.AQUA));
+            if (target != sender) {
+                sender.sendMessage(Component.text("Spawned particle demo for " + target.name() + ".", NamedTextColor.GREEN));
+            }
+        }
+
+        @Override
+        public List<String> complete(CommandSender sender, String label, List<String> args) {
+            if (args.size() <= 1) {
+                var values = new ArrayList<>(playerNames());
+                if (sender instanceof Player) {
+                    values.addAll(PARTICLE_MODES);
+                }
+                return matching(values, args.isEmpty() ? "" : args.getLast());
+            }
+            if (args.size() == 2 && Fand.server().player(args.getFirst()).isPresent()) {
+                return matching(PARTICLE_MODES, args.getLast());
+            }
+            return List.of();
+        }
+    }
+
+    @CommandSpec(label = "fandsound", arguments = {"player", "mode"}, aliases = {"fsound"}, permission = "fand.testplugin.sound")
+    static final class SoundCommand implements CommandExecutor, CommandCompleter {
+
+        @Override
+        public void execute(CommandSender sender, String label, List<String> args) {
+            TargetedArgs targeted = targetedArgs(sender, args, "/fandsound <player> [orb|levelup|anvil|toast|world]");
+            if (targeted == null) {
+                return;
+            }
+            String mode = targeted.args().isEmpty() ? "orb" : targeted.args().getFirst().toLowerCase(Locale.ROOT);
+            if (!SOUND_MODES.contains(mode)) {
+                sender.sendMessage(Component.text("Usage: /fandsound <player> [orb|levelup|anvil|toast|world]", NamedTextColor.RED));
+                return;
+            }
+
+            var target = targeted.player();
+            var location = target.location();
+            if (mode.equals("orb")) {
+                target.playSound(Sounds.effect(SoundKey.EXPERIENCE_ORB_PICKUP, SoundCategory.PLAYER)
+                        .withVolume(0.8F)
+                        .withPitch(1.35F));
+            } else if (mode.equals("levelup")) {
+                target.playSound(location, Sounds.effect(SoundKey.PLAYER_LEVELUP, SoundCategory.PLAYER)
+                        .withVolume(0.9F)
+                        .withPitch(1.0F));
+            } else if (mode.equals("anvil")) {
+                target.playSound(location, Sounds.effect(SoundKey.ANVIL_USE, SoundCategory.BLOCK)
+                        .withVolume(0.75F)
+                        .withPitch(1.15F));
+            } else if (mode.equals("toast")) {
+                target.playSound(Sounds.effect(SoundKey.UI_TOAST_CHALLENGE_COMPLETE, SoundCategory.MASTER)
+                        .withVolume(0.9F)
+                        .withPitch(1.0F));
+            } else {
+                target.world().playSound(location, Sounds.effect(SoundKey.NOTE_BLOCK_PLING, SoundCategory.RECORD)
+                        .withVolume(1.0F)
+                        .withPitch(1.4F));
+            }
+
+            target.sendMessage(Component.text("Played Fand sound demo: " + mode, NamedTextColor.AQUA));
+            if (target != sender) {
+                sender.sendMessage(Component.text("Played sound demo for " + target.name() + ".", NamedTextColor.GREEN));
+            }
+        }
+
+        @Override
+        public List<String> complete(CommandSender sender, String label, List<String> args) {
+            if (args.size() <= 1) {
+                var values = new ArrayList<>(playerNames());
+                if (sender instanceof Player) {
+                    values.addAll(SOUND_MODES);
+                }
+                return matching(values, args.isEmpty() ? "" : args.getLast());
+            }
+            if (args.size() == 2 && Fand.server().player(args.getFirst()).isPresent()) {
+                return matching(SOUND_MODES, args.getLast());
+            }
+            return List.of();
+        }
+    }
+
     @CommandSpec(label = "fandkick", arguments = {"player", "reason"}, aliases = {"fkick"}, permission = "fand.testplugin.kick")
     static final class KickCommand implements CommandExecutor, CommandCompleter {
 
@@ -1287,8 +1452,8 @@ public final class TestPlugin implements Plugin {
                 new ShapelessRecipe(
                         DEMO_COMPONENT_RECIPE,
                         List.of(
-                                RecipeIngredient.of(Key.key("minecraft:diamond")),
-                                RecipeIngredient.of(Key.key("minecraft:redstone"))),
+                                RecipeIngredient.of(ItemKey.DIAMOND),
+                                RecipeIngredient.of(ItemKey.REDSTONE)),
                         demoComponentItem(diamond, "recipe").withAmount(2),
                         "fand_demo",
                         CraftingRecipeCategory.EQUIPMENT,
@@ -1297,8 +1462,8 @@ public final class TestPlugin implements Plugin {
                         DEMO_NAVIGATOR_RECIPE,
                         List.of(" R ", "RCR", " R "),
                         Map.of(
-                                'R', RecipeIngredient.of(Key.key("minecraft:redstone")),
-                                'C', RecipeIngredient.of(Key.key("minecraft:compass"))),
+                                'R', RecipeIngredient.of(ItemKey.REDSTONE),
+                                'C', RecipeIngredient.of(ItemKey.COMPASS)),
                         demoKitNavigator(compass, "recipe"),
                         "fand_demo",
                         CraftingRecipeCategory.EQUIPMENT,
@@ -1306,7 +1471,7 @@ public final class TestPlugin implements Plugin {
                 new CookingRecipe(
                         DEMO_SNACK_RECIPE,
                         RecipeType.SMELTING,
-                        RecipeIngredient.of(Key.key("minecraft:apple")),
+                        RecipeIngredient.of(ItemKey.APPLE),
                         demoKitSnack(goldenApple),
                         0.35F,
                         120,
@@ -1315,7 +1480,7 @@ public final class TestPlugin implements Plugin {
                         true),
                 new StonecuttingRecipe(
                         DEMO_GLASS_RECIPE,
-                        RecipeIngredient.of(Key.key("minecraft:glass")),
+                        RecipeIngredient.of(ItemKey.GLASS),
                         demoGlassRecipeResult(glass),
                         "fand_demo",
                         true));
@@ -1364,8 +1529,8 @@ public final class TestPlugin implements Plugin {
                         Component.text("Lore, model data, glint, and custom data survive inventory round-trips.", NamedTextColor.GRAY))
                 .withRarity(ItemRarity.RARE)
                 .withEnchantmentGlintOverride(true)
-                .withEnchantment(EnchantmentKeys.UNBREAKING, 3)
-                .withStoredEnchantment(EnchantmentKeys.MENDING, 1)
+                .withEnchantment(EnchantmentKey.UNBREAKING, 3)
+                .withStoredEnchantment(EnchantmentKey.MENDING, 1)
                 .withEnchantable(30)
                 .withHiddenTooltipComponent(ItemComponentKeys.STORED_ENCHANTMENTS, true)
                 .withCustomModelData(new CustomModelData(

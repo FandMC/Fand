@@ -4,7 +4,46 @@ plugins {
 
 description = "Fand Server plugin API"
 
+val generatedFandDataSources = layout.buildDirectory.dir("generated/sources/fandData/main/java")
+val minecraftSourceRoot = rootProject.layout.projectDirectory.dir("fand-server/src/minecraft/java")
+val fandDataGenerator by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+
+val generateFandData by tasks.registering(JavaExec::class) {
+    group = "fand"
+    description = "Generates vanilla registry key API sources from the current Minecraft sources."
+    dependsOn(":fand-data-generator:classes")
+
+    classpath = fandDataGenerator
+    mainClass.set("io.fand.datagenerator.FandDataGenerator")
+
+    args(minecraftSourceRoot.asFile.absolutePath, generatedFandDataSources.get().asFile.absolutePath)
+    inputs.dir(minecraftSourceRoot)
+    inputs.files(fandDataGenerator).withPropertyName("generatorClasspath")
+    outputs.dir(generatedFandDataSources)
+}
+
+sourceSets.named("main") {
+    java.srcDir(generatedFandDataSources)
+}
+
+tasks.named<JavaCompile>("compileJava") {
+    dependsOn(generateFandData)
+}
+
+tasks.named<Jar>("sourcesJar") {
+    dependsOn(generateFandData)
+}
+
+tasks.named<Javadoc>("javadoc") {
+    dependsOn(generateFandData)
+}
+
 dependencies {
+    fandDataGenerator(project(":fand-data-generator"))
+
     api("com.google.code.gson:gson:2.11.0")
     api("net.kyori:adventure-api:4.17.0")
     api("net.kyori:adventure-text-serializer-gson:4.17.0")

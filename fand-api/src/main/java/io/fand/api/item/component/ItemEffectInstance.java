@@ -28,6 +28,21 @@ public record ItemEffectInstance(
         this(effect, duration, 0, false, true, true, Optional.empty());
     }
 
+    public ItemEffectInstance(EffectKey effect, int duration) {
+        this(Objects.requireNonNull(effect, "effect").key(), duration);
+    }
+
+    public ItemEffectInstance(
+            EffectKey effect,
+            int duration,
+            int amplifier,
+            boolean ambient,
+            boolean showParticles,
+            boolean showIcon,
+            Optional<ItemEffectInstance> hiddenEffect) {
+        this(Objects.requireNonNull(effect, "effect").key(), duration, amplifier, ambient, showParticles, showIcon, hiddenEffect);
+    }
+
     public static ItemEffectInstance fromJson(JsonElement value) {
         var object = ItemComponentJson.object(value, "effect instance");
         boolean showParticles = ItemComponentJson.booleanOr(object, "show_particles", true);

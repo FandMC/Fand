@@ -1,6 +1,9 @@
 package io.fand.api.world;
 
 import io.fand.api.entity.Player;
+import io.fand.api.world.particle.ParticleEffect;
+import io.fand.api.world.particle.ParticleEmission;
+import io.fand.api.world.sound.SoundEffect;
 import java.util.Collection;
 import net.kyori.adventure.audience.ForwardingAudience;
 import net.kyori.adventure.key.Key;
@@ -31,6 +34,17 @@ public interface World extends ForwardingAudience {
 
     /** Snapshot of all players currently in this world. */
     Collection<? extends Player> players();
+
+    /** Plays a sound at {@code location} for players in this world. Marshals to the server thread. */
+    void playSound(Location location, SoundEffect sound);
+
+    /** Spawns a single particle at {@code location} for players in this world. Marshals to the server thread. */
+    default void spawnParticle(Location location, ParticleEffect effect) {
+        spawnParticle(location, effect, ParticleEmission.SINGLE);
+    }
+
+    /** Spawns particles at {@code location} for players in this world. Marshals to the server thread. */
+    void spawnParticle(Location location, ParticleEffect effect, ParticleEmission emission);
 
     /** Builds a {@link Location} in this world. */
     default Location at(double x, double y, double z) {

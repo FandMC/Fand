@@ -6,12 +6,17 @@ import io.fand.api.permission.PermissionService;
 import io.fand.api.scoreboard.Sidebar;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
+import io.fand.api.world.particle.ParticleEffect;
+import io.fand.api.world.particle.ParticleEmission;
+import io.fand.api.world.sound.SoundEffect;
 import io.fand.server.audience.BossBarTracker;
 import io.fand.server.audience.PacketAudience;
 import io.fand.server.audience.SidebarTracker;
 import io.fand.server.command.AdventureBridge;
 import io.fand.server.inventory.FandPlayerInventory;
+import io.fand.server.world.ParticleEffects;
 import io.fand.server.world.FandWorld;
+import io.fand.server.world.SoundEffects;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -129,6 +134,42 @@ public final class FandPlayer implements Player {
     }
 
     @Override
+    public void playSound(SoundEffect sound) {
+        Objects.requireNonNull(sound, "sound");
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            if (online()) {
+                SoundEffects.playTo(handle, location(), sound);
+            }
+        });
+    }
+
+    @Override
+    public void playSound(Location location, SoundEffect sound) {
+        Objects.requireNonNull(location, "location");
+        Objects.requireNonNull(sound, "sound");
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            if (online() && sameWorld(location, handle.level())) {
+                SoundEffects.playTo(handle, location, sound);
+            }
+        });
+    }
+
+    @Override
+    public void spawnParticle(Location location, ParticleEffect effect, ParticleEmission emission) {
+        Objects.requireNonNull(location, "location");
+        Objects.requireNonNull(effect, "effect");
+        Objects.requireNonNull(emission, "emission");
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            if (online() && sameWorld(location, handle.level())) {
+                ParticleEffects.spawnTo(handle, location, effect, emission);
+            }
+        });
+    }
+
+    @Override
     public Location location() {
         var handle = bound.handle;
         var world = registry.wrapLevel(handle.level());
@@ -201,6 +242,12 @@ public final class FandPlayer implements Player {
             }
         }
         throw new IllegalArgumentException("World not loaded: " + key.asString());
+    }
+
+    private static boolean sameWorld(Location location, ServerLevel level) {
+        var identifier = level.dimension().identifier();
+        var key = location.world().key();
+        return identifier.getNamespace().equals(key.namespace()) && identifier.getPath().equals(key.value());
     }
 
     @Override

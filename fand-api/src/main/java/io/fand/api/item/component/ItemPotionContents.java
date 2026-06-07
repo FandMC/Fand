@@ -28,6 +28,10 @@ public record ItemPotionContents(
         this(Optional.of(potion), Optional.empty(), List.of(), Optional.empty());
     }
 
+    public ItemPotionContents(PotionKey potion) {
+        this(Objects.requireNonNull(potion, "potion").key());
+    }
+
     public static ItemPotionContents fromJson(JsonElement value) {
         Objects.requireNonNull(value, "value");
         if (value.isJsonPrimitive()) {

@@ -3,6 +3,7 @@ package io.fand.api.item.component;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.fand.api.world.sound.SoundKey;
 import java.util.List;
 import java.util.Objects;
 import net.kyori.adventure.key.Key;
@@ -166,6 +167,10 @@ public sealed interface ItemConsumeEffect extends ItemComponentData permits
 
         public PlaySound {
             sound = Objects.requireNonNull(sound, "sound");
+        }
+
+        public PlaySound(SoundKey sound) {
+            this(Objects.requireNonNull(sound, "sound").key());
         }
 
         private static PlaySound fromObject(JsonObject object) {
