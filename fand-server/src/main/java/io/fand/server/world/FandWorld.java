@@ -2,8 +2,10 @@ package io.fand.server.world;
 
 import io.fand.api.block.Block;
 import io.fand.api.entity.Entity;
+import io.fand.api.entity.ItemEntity;
 import io.fand.api.entity.EntityType;
 import io.fand.api.entity.Player;
+import io.fand.api.item.ItemStack;
 import io.fand.api.world.Difficulty;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
@@ -14,6 +16,7 @@ import io.fand.api.world.sound.SoundEffect;
 import io.fand.server.block.FandBlock;
 import io.fand.server.entity.FandEntityType;
 import io.fand.server.entity.PlayerRegistry;
+import io.fand.server.item.FandItemStacks;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
@@ -166,6 +169,15 @@ public final class FandWorld implements World {
     }
 
     @Override
+    public Collection<? extends Entity> entities(EntityType type) {
+        Objects.requireNonNull(type, "type");
+        if (!(type instanceof FandEntityType fandType)) {
+            return List.of();
+        }
+        return streamEntities(handle.getAllEntities(), entity -> entity.getType() == fandType.handle());
+    }
+
+    @Override
     public Optional<? extends Entity> entity(java.util.UUID uniqueId) {
         Objects.requireNonNull(uniqueId, "uniqueId");
         return Optional.ofNullable(handle.getEntity(uniqueId)).map(this::wrapEntity);
@@ -186,6 +198,30 @@ public final class FandWorld implements World {
                 checkedCenter.z() + radius
         );
         return streamEntities(handle.getEntities((net.minecraft.world.entity.Entity) null, box, entity -> true));
+    }
+
+    @Override
+    public Collection<? extends Entity> nearbyEntities(Location center, double radius, EntityType type) {
+        var checkedCenter = requireThisWorld(center);
+        Objects.requireNonNull(type, "type");
+        if (!(type instanceof FandEntityType fandType)) {
+            return List.of();
+        }
+        if (radius < 0.0) {
+            throw new IllegalArgumentException("radius must be >= 0, got " + radius);
+        }
+        var box = new AABB(
+                checkedCenter.x() - radius,
+                checkedCenter.y() - radius,
+                checkedCenter.z() - radius,
+                checkedCenter.x() + radius,
+                checkedCenter.y() + radius,
+                checkedCenter.z() + radius
+        );
+        return streamEntities(handle.getEntities(
+                (net.minecraft.world.entity.Entity) null,
+                box,
+                entity -> entity.getType() == fandType.handle()));
     }
 
     @Override
@@ -211,6 +247,45 @@ public final class FandWorld implements World {
                 }
                 var wrapped = wrapEntity(entity);
                 future.complete(Optional.of(wrapped));
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        });
+        return future;
+    }
+
+    @Override
+    public CompletableFuture<Optional<? extends ItemEntity>> dropItem(Location location, ItemStack item) {
+        var checkedLocation = requireThisWorld(location);
+        Objects.requireNonNull(item, "item");
+        if (item.isEmpty()) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        var future = new CompletableFuture<Optional<? extends ItemEntity>>();
+        runOnServerThread(() -> {
+            try {
+                var vanilla = FandItemStacks.toVanilla(item);
+                if (vanilla.isEmpty()) {
+                    future.complete(Optional.empty());
+                    return;
+                }
+                var entity = new net.minecraft.world.entity.item.ItemEntity(
+                        handle,
+                        checkedLocation.x(),
+                        checkedLocation.y(),
+                        checkedLocation.z(),
+                        vanilla);
+                entity.setDefaultPickUpDelay();
+                if (!handle.addFreshEntity(entity)) {
+                    future.complete(Optional.empty());
+                    return;
+                }
+                var wrapped = wrapEntity(entity);
+                if (wrapped instanceof ItemEntity itemEntity) {
+                    future.complete(Optional.of(itemEntity));
+                } else {
+                    future.completeExceptionally(new IllegalStateException("Dropped item wrapped as non-item entity: " + entity));
+                }
             } catch (Throwable failure) {
                 future.completeExceptionally(failure);
             }
@@ -301,9 +376,18 @@ public final class FandWorld implements World {
     }
 
     private Collection<? extends Entity> streamEntities(Iterable<net.minecraft.world.entity.Entity> entities) {
+        return streamEntities(entities, entity -> true);
+    }
+
+    private Collection<? extends Entity> streamEntities(
+            Iterable<net.minecraft.world.entity.Entity> entities,
+            java.util.function.Predicate<net.minecraft.world.entity.Entity> filter
+    ) {
         var snapshot = new java.util.ArrayList<Entity>();
         for (var entity : entities) {
-            snapshot.add(wrapEntity(entity));
+            if (filter.test(entity)) {
+                snapshot.add(wrapEntity(entity));
+            }
         }
         return List.copyOf(snapshot);
     }

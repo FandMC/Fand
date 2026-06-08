@@ -1,6 +1,7 @@
 package io.fand.api;
 
 import io.fand.api.command.CommandRegistry;
+import io.fand.api.entity.EntityKey;
 import io.fand.api.entity.Player;
 import io.fand.api.event.EventBus;
 import io.fand.api.lifecycle.LifecyclePhase;
@@ -120,6 +121,11 @@ public interface Server extends ForwardingAudience {
 
     /** Looks up an entity type by its registry key. */
     Optional<? extends io.fand.api.entity.EntityType> entityType(Key key);
+
+    /** Convenience overload for generated vanilla entity keys. */
+    default Optional<? extends io.fand.api.entity.EntityType> entityType(EntityKey key) {
+        return entityType(key.key());
+    }
 
     /** Current lifecycle phase. */
     LifecyclePhase phase();

@@ -7,6 +7,8 @@ import io.fand.api.block.BlockTypes;
 import io.fand.api.command.CommandSender;
 import io.fand.api.component.DataComponentKey;
 import io.fand.api.config.Configuration;
+import io.fand.api.entity.EntityType;
+import io.fand.api.entity.EntityTypes;
 import io.fand.api.entity.Player;
 import io.fand.api.inventory.Inventory;
 import io.fand.api.inventory.InventoryType;
@@ -90,6 +92,16 @@ final class DemoSupport {
             "minecraft:bread",
             "minecraft:compass"
     );
+    static final List<String> SAMPLE_ENTITIES = List.of(
+            "minecraft:zombie",
+            "minecraft:skeleton",
+            "minecraft:creeper",
+            "minecraft:cow",
+            "minecraft:pig",
+            "minecraft:villager",
+            "minecraft:item",
+            "minecraft:arrow"
+    );
     static final List<String> PARTICLE_MODES = List.of(
             "all",
             "simple",
@@ -130,6 +142,8 @@ final class DemoSupport {
             "fand.testplugin.performance",
             "fand.testplugin.world",
             "fand.testplugin.tp",
+            "fand.testplugin.spawnentity",
+            "fand.testplugin.dropitem",
             "fand.testplugin.setblock",
             "fand.testplugin.give",
             "fand.testplugin.item",
@@ -480,6 +494,18 @@ final class DemoSupport {
             return null;
         } catch (InvalidKeyException ex) {
             sender.sendMessage(Component.text("Invalid item key: " + raw, NamedTextColor.RED));
+            return null;
+        }
+    }
+
+    static EntityType entityType(CommandSender sender, String raw) {
+        try {
+            return EntityTypes.of(keyString(raw));
+        } catch (NoSuchElementException ex) {
+            sender.sendMessage(Component.text("Unknown entity: " + raw, NamedTextColor.RED));
+            return null;
+        } catch (InvalidKeyException ex) {
+            sender.sendMessage(Component.text("Invalid entity key: " + raw, NamedTextColor.RED));
             return null;
         }
     }

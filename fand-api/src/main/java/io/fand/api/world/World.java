@@ -2,7 +2,14 @@ package io.fand.api.world;
 
 import io.fand.api.entity.Player;
 import io.fand.api.entity.Entity;
+import io.fand.api.entity.EntityKey;
 import io.fand.api.entity.EntityType;
+import io.fand.api.entity.EntityTypes;
+import io.fand.api.entity.ItemEntity;
+import io.fand.api.item.ItemKey;
+import io.fand.api.item.ItemStack;
+import io.fand.api.item.ItemType;
+import io.fand.api.item.ItemTypes;
 import io.fand.api.world.particle.ParticleEffect;
 import io.fand.api.world.particle.ParticleEmission;
 import io.fand.api.world.sound.SoundEffect;
@@ -80,6 +87,19 @@ public interface World extends ForwardingAudience {
         return java.util.List.of();
     }
 
+    /** Snapshot of loaded entities of {@code type} in this world. */
+    default Collection<? extends Entity> entities(EntityType type) {
+        java.util.Objects.requireNonNull(type, "type");
+        return entities().stream()
+                .filter(entity -> entity.type().equals(type))
+                .toList();
+    }
+
+    /** Convenience overload for generated vanilla entity keys. */
+    default Collection<? extends Entity> entities(EntityKey type) {
+        return entities(EntityTypes.of(type));
+    }
+
     /** Looks up a loaded entity in this world by uuid. */
     default Optional<? extends Entity> entity(java.util.UUID uniqueId) {
         return Optional.empty();
@@ -96,12 +116,51 @@ public interface World extends ForwardingAudience {
     }
 
     /**
+     * Snapshot of loaded entities of {@code type} within {@code radius} blocks
+     * of {@code center}.
+     */
+    default Collection<? extends Entity> nearbyEntities(Location center, double radius, EntityType type) {
+        java.util.Objects.requireNonNull(type, "type");
+        return nearbyEntities(center, radius).stream()
+                .filter(entity -> entity.type().equals(type))
+                .toList();
+    }
+
+    /** Convenience overload for generated vanilla entity keys. */
+    default Collection<? extends Entity> nearbyEntities(Location center, double radius, EntityKey type) {
+        return nearbyEntities(center, radius, EntityTypes.of(type));
+    }
+
+    /**
      * Spawns an entity of {@code type} at {@code location}. The future completes
      * with the spawned entity, or empty when vanilla cannot create/spawn that
      * type in this world.
      */
     default CompletableFuture<java.util.Optional<? extends Entity>> spawnEntity(Location location, EntityType type) {
         return CompletableFuture.failedFuture(new UnsupportedOperationException("Entity spawning is not supported"));
+    }
+
+    /** Convenience overload for generated vanilla entity keys. */
+    default CompletableFuture<java.util.Optional<? extends Entity>> spawnEntity(Location location, EntityKey type) {
+        return spawnEntity(location, EntityTypes.of(type));
+    }
+
+    /**
+     * Drops an item stack at {@code location}. The future completes with the
+     * dropped item entity, or empty when {@code item} is empty.
+     */
+    default CompletableFuture<java.util.Optional<? extends ItemEntity>> dropItem(Location location, ItemStack item) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Item dropping is not supported"));
+    }
+
+    /** Convenience overload for dropping a plain item stack. */
+    default CompletableFuture<java.util.Optional<? extends ItemEntity>> dropItem(Location location, ItemType type, int amount) {
+        return dropItem(location, type.stack(amount));
+    }
+
+    /** Convenience overload for generated vanilla item keys. */
+    default CompletableFuture<java.util.Optional<? extends ItemEntity>> dropItem(Location location, ItemKey type, int amount) {
+        return dropItem(location, ItemTypes.of(type), amount);
     }
 
     /** Plays a sound at {@code location} for players in this world. Marshals to the server thread. */

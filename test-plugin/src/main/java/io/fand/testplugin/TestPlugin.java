@@ -40,6 +40,8 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new PerformanceCommand());
         context.commands().register(new WorldCommand(context));
         context.commands().register(new TeleportCommand(context));
+        context.commands().register(new SpawnEntityCommand(context));
+        context.commands().register(new DropItemCommand(context));
         context.commands().register(new SetBlockCommand(context));
         context.commands().register(new GiveCommand(context));
         context.commands().register(new ComponentItemCommand(context));
