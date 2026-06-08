@@ -134,16 +134,12 @@ public final class EntityEvents {
         if (!bus.hasListeners(EntityDeathEvent.class)) {
             return;
         }
-        var fandEntity = FandHooks.wrapLivingEntity(entity);
+        var fandEntity = wrapLivingEntityForEvent("EntityDeathEvent entity", entity);
         if (fandEntity == null) {
             return;
         }
-        var directEntity = Optional.ofNullable(source.getDirectEntity())
-                .filter(candidate -> candidate instanceof net.minecraft.world.entity.LivingEntity)
-                .map(candidate -> FandHooks.wrapLivingEntity((net.minecraft.world.entity.LivingEntity) candidate));
-        var attacker = Optional.ofNullable(source.getEntity())
-                .filter(candidate -> candidate instanceof net.minecraft.world.entity.LivingEntity)
-                .map(candidate -> FandHooks.wrapLivingEntity((net.minecraft.world.entity.LivingEntity) candidate));
+        var directEntity = wrapLivingDamageSource(source.getDirectEntity(), "EntityDeathEvent direct entity");
+        var attacker = wrapLivingDamageSource(source.getEntity(), "EntityDeathEvent attacker");
         var cause = source.typeHolder().unwrapKey().map(key -> key.identifier().toString()).orElse("minecraft:generic");
         try {
             bus.fire(new EntityDeathEvent(fandEntity, cause, directEntity, attacker));
@@ -164,16 +160,12 @@ public final class EntityEvents {
         if (!hasGenericListeners && !hasByEntityListeners && !hasByBlockListeners) {
             return damage;
         }
-        var victim = FandHooks.wrapLivingEntity(entity);
+        var victim = wrapLivingEntityForEvent("EntityDamageEvent victim", entity);
         if (victim == null) {
             return damage;
         }
-        var directEntity = Optional.ofNullable(source.getDirectEntity())
-                .filter(candidate -> candidate instanceof net.minecraft.world.entity.LivingEntity)
-                .map(candidate -> FandHooks.wrapLivingEntity((net.minecraft.world.entity.LivingEntity) candidate));
-        var attacker = Optional.ofNullable(source.getEntity())
-                .filter(candidate -> candidate instanceof net.minecraft.world.entity.LivingEntity)
-                .map(candidate -> FandHooks.wrapLivingEntity((net.minecraft.world.entity.LivingEntity) candidate));
+        var directEntity = wrapLivingDamageSource(source.getDirectEntity(), "EntityDamageEvent direct entity");
+        var attacker = wrapLivingDamageSource(source.getEntity(), "EntityDamageEvent attacker");
         BlockPos explicitBlockSource = NEXT_BLOCK_DAMAGE_SOURCE.get();
         var blockSource = !(entity.level() instanceof ServerLevel serverLevel)
                 ? Optional.<io.fand.api.block.Block>empty()
@@ -1444,6 +1436,38 @@ public final class EntityEvents {
             positions.add(new BlockPos(block.x(), block.y(), block.z()));
         }
         return new ArrayList<>(positions);
+    }
+
+    private static Optional<io.fand.api.entity.LivingEntity> wrapLivingDamageSource(
+            net.minecraft.world.entity.@Nullable Entity entity,
+            String description
+    ) {
+        if (!(entity instanceof net.minecraft.world.entity.LivingEntity)) {
+            return Optional.empty();
+        }
+        try {
+            var wrapped = FandHooks.wrapEntity(entity);
+            if (wrapped instanceof io.fand.api.entity.LivingEntity living) {
+                return Optional.of(living);
+            }
+            LOGGER.warn("Damage source wrapped as non-living for {}: {}", description, entity);
+            return Optional.empty();
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Failed to wrap damage source for {}: {}", description, entity, failure);
+            return Optional.empty();
+        }
+    }
+
+    private static io.fand.api.entity.@Nullable LivingEntity wrapLivingEntityForEvent(
+            String description,
+            net.minecraft.world.entity.LivingEntity entity
+    ) {
+        try {
+            return FandHooks.wrapLivingEntity(entity);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Failed to wrap living entity for {}: {}", description, entity, failure);
+            return null;
+        }
     }
 
     private static boolean isVehicle(net.minecraft.world.entity.Entity entity) {

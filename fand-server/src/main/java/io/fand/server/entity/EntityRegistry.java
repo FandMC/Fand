@@ -43,9 +43,9 @@ public final class EntityRegistry {
         return fresh;
     }
 
-    public FandLivingEntity wrap(LivingEntity handle) {
+    public io.fand.api.entity.LivingEntity wrap(LivingEntity handle) {
         var wrapped = wrap((net.minecraft.world.entity.Entity) handle);
-        if (wrapped instanceof FandLivingEntity living) {
+        if (wrapped instanceof io.fand.api.entity.LivingEntity living) {
             return living;
         }
         throw new IllegalStateException("Living entity wrapped as non-living entity: " + handle);

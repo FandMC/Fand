@@ -490,6 +490,7 @@ public final class FandServer implements Server, AutoCloseable {
         chunks.close();
         scheduler.close();
         guiThemes.close();
+        performance.close();
         if (current != LifecyclePhase.BOOTSTRAP) {
             Fand.unbind(this);
         }

@@ -64,7 +64,7 @@ public interface Server extends ForwardingAudience {
     /** Configured maximum simultaneous players, or {@code -1} for uncapped. */
     int maxPlayers();
 
-    /** Current server tick performance snapshot. */
+    /** Latest published server tick performance snapshot. */
     ServerPerformance performance();
 
     /** Snapshot of all currently online players. The returned collection is a copy. */

@@ -1,0 +1,111 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Mon, 8 Jun 2026 22:10:30 +0800
+Subject: [PATCH] Restore cancelled block placement side effects
+
+
+diff --git a/net/minecraft/world/item/BlockItem.java b/net/minecraft/world/item/BlockItem.java
+index bb4921c7621a5eac4e9543ef3cdfc5610c2f8955..15667cfd4b962b482cdc2ea8b583ddf7efa94e86 100644
+--- a/net/minecraft/world/item/BlockItem.java
++++ b/net/minecraft/world/item/BlockItem.java
+@@ -27,6 +27,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
+ import net.minecraft.world.level.block.entity.BlockEntityType;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.gameevent.GameEvent;
++import net.minecraft.world.level.levelgen.structure.BoundingBox;
+ import net.minecraft.world.level.storage.TagValueOutput;
+ import net.minecraft.world.phys.shapes.CollisionContext;
+ import org.jspecify.annotations.Nullable;
+@@ -58,26 +59,28 @@ public class BlockItem extends Item {
+             if (updatedPlaceContext == null) {
+                 return InteractionResult.FAIL;
+             } else {
++                BlockPos fandPos = updatedPlaceContext.getClickedPos();
++                Level fandLevel = updatedPlaceContext.getLevel();
++                Player fandContextPlayer = updatedPlaceContext.getPlayer();
++                boolean fandTrackPlacement = fandLevel instanceof net.minecraft.server.level.ServerLevel
++                        && fandContextPlayer instanceof ServerPlayer
++                        && io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.block.BlockPlaceEvent.class);
++                Map<BlockPos, BlockState> fandBeforeStates = fandTrackPlacement ? snapshotPlacementStates(fandLevel, fandPos) : Map.of();
++                Map<BlockPos, io.fand.api.component.DataComponentMap> fandBeforeComponents = fandTrackPlacement
++                        && fandLevel instanceof net.minecraft.server.level.ServerLevel fandServerLevel
++                        ? snapshotPlacementComponents(fandServerLevel, fandBeforeStates.keySet())
++                        : Map.of();
+                 BlockState placementState = this.getPlacementState(updatedPlaceContext);
+                 if (placementState == null) {
++                    restorePlacementIfTracked(fandLevel, fandBeforeStates, fandBeforeComponents, fandContextPlayer);
+                     return InteractionResult.FAIL;
+                 } else {
+-                    BlockPos fandPos = updatedPlaceContext.getClickedPos();
+-                    Level fandLevel = updatedPlaceContext.getLevel();
+-                    Player fandContextPlayer = updatedPlaceContext.getPlayer();
+                     BlockState fandReplacedState = fandLevel.getBlockState(fandPos);
+                     io.fand.api.component.DataComponentMap fandReplacedComponents = fandLevel instanceof net.minecraft.server.level.ServerLevel fandServerLevel
+                             ? io.fand.server.component.BlockComponentStorage.snapshot(fandServerLevel, fandPos)
+                             : io.fand.api.component.DataComponentMap.EMPTY;
+-                    boolean fandTrackPlacement = fandLevel instanceof net.minecraft.server.level.ServerLevel
+-                            && fandContextPlayer instanceof ServerPlayer
+-                            && io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.block.BlockPlaceEvent.class);
+-                    Map<BlockPos, BlockState> fandBeforeStates = fandTrackPlacement ? snapshotPlacementStates(fandLevel, fandPos) : Map.of();
+-                    Map<BlockPos, io.fand.api.component.DataComponentMap> fandBeforeComponents = fandTrackPlacement
+-                            && fandLevel instanceof net.minecraft.server.level.ServerLevel fandServerLevel
+-                            ? snapshotPlacementComponents(fandServerLevel, fandBeforeStates.keySet())
+-                            : Map.of();
+                     if (!this.placeBlock(updatedPlaceContext, placementState)) {
++                        restorePlacementIfTracked(fandLevel, fandBeforeStates, fandBeforeComponents, fandContextPlayer);
+                         return InteractionResult.FAIL;
+                     }
+                     BlockPos pos = fandPos;
+@@ -280,7 +283,8 @@ public class BlockItem extends Item {
+             final Map<BlockPos, io.fand.api.component.DataComponentMap> beforeComponents,
+             final ServerPlayer player
+     ) {
+-        for (Map.Entry<BlockPos, BlockState> entry : beforeStates.entrySet()) {
++        level.getBlockTicks().clearArea(restoreArea(beforeStates));
++        for (Map.Entry<BlockPos, BlockState> entry : orderedRestoreStates(beforeStates)) {
+             BlockPos pos = entry.getKey();
+             level.setBlock(pos, entry.getValue(), Block.UPDATE_ALL);
+             io.fand.api.component.DataComponentMap components = beforeComponents.getOrDefault(pos, io.fand.api.component.DataComponentMap.EMPTY);
+@@ -293,6 +297,42 @@ public class BlockItem extends Item {
+         }
+     }
+ 
++    private static void restorePlacementIfTracked(
++            final Level level,
++            final Map<BlockPos, BlockState> beforeStates,
++            final Map<BlockPos, io.fand.api.component.DataComponentMap> beforeComponents,
++            final @Nullable Player player
++    ) {
++        if (level instanceof net.minecraft.server.level.ServerLevel serverLevel && player instanceof ServerPlayer serverPlayer && !beforeStates.isEmpty()) {
++            restorePlacement(serverLevel, beforeStates, beforeComponents, serverPlayer);
++        }
++    }
++
++    private static List<Map.Entry<BlockPos, BlockState>> orderedRestoreStates(final Map<BlockPos, BlockState> states) {
++        List<Map.Entry<BlockPos, BlockState>> ordered = new ArrayList<>(states.entrySet());
++        ordered.sort((left, right) -> Integer.compare(right.getKey().getY(), left.getKey().getY()));
++        return ordered;
++    }
++
++    private static BoundingBox restoreArea(final Map<BlockPos, BlockState> states) {
++        BlockPos first = states.keySet().iterator().next();
++        int minX = first.getX();
++        int minY = first.getY();
++        int minZ = first.getZ();
++        int maxX = first.getX();
++        int maxY = first.getY();
++        int maxZ = first.getZ();
++        for (BlockPos pos : states.keySet()) {
++            minX = Math.min(minX, pos.getX());
++            minY = Math.min(minY, pos.getY());
++            minZ = Math.min(minZ, pos.getZ());
++            maxX = Math.max(maxX, pos.getX());
++            maxY = Math.max(maxY, pos.getY());
++            maxZ = Math.max(maxZ, pos.getZ());
++        }
++        return new BoundingBox(minX, minY, minZ, maxX, maxY, maxZ);
++    }
++
+     public void registerBlocks(final Map<Block, Item> map, final Item item) {
+         map.put(this.getBlock(), item);
+     }

@@ -5,29 +5,48 @@ import io.fand.api.performance.ServerPerformance;
 import io.fand.api.performance.TickWindow;
 import io.fand.api.performance.TickWindowSnapshot;
 import java.util.Arrays;
+import java.util.Objects;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 
-public final class ServerPerformanceTracker {
+public final class ServerPerformanceTracker implements AutoCloseable {
 
     private static final int CAPACITY = TickWindow.FIFTEEN_MINUTES.ticks();
     private static final long TARGET_TICK_NANOS = 50_000_000L;
     private static final long IDLE_TICK_INTERVAL_TOLERANCE_NANOS = 2_000_000L;
     private static final double NANOS_PER_MILLISECOND = 1_000_000.0;
     private static final double NANOS_PER_SECOND = 1_000_000_000.0;
+    private static final ServerPerformance INITIAL_SNAPSHOT = createSnapshot(Samples.empty());
 
+    private final Executor executor;
+    private final AutoCloseable closeExecutor;
     private final long[] tickDurationsNanos = new long[CAPACITY];
     private final long[] tickIntervalsNanos = new long[CAPACITY];
     private final long[] tickIntervalWorkNanos = new long[CAPACITY];
+    private volatile ServerPerformance publishedSnapshot = INITIAL_SNAPSHOT;
     private long previousTickStartNanos = -1L;
     private long previousTickWorkNanos = -1L;
     private long tickCount;
-    private long snapshotTickCount = -1L;
-    private ServerPerformance cachedSnapshot;
+    private boolean recomputeQueued;
+    private boolean closed;
 
-    public synchronized void recordTick(long tickStartNanos, long tickDurationNanos) {
+    public ServerPerformanceTracker() {
+        var executorService = Executors.newSingleThreadExecutor(ServerPerformanceTracker::snapshotThread);
+        this.executor = executorService;
+        this.closeExecutor = executorService::shutdownNow;
+    }
+
+    ServerPerformanceTracker(Executor executor) {
+        this.executor = Objects.requireNonNull(executor, "executor");
+        this.closeExecutor = () -> {};
+    }
+
+    public void recordTick(long tickStartNanos, long tickDurationNanos) {
         recordTick(tickStartNanos, tickDurationNanos, 0L);
     }
 
-    public synchronized void recordTick(long tickStartNanos, long tickDurationNanos, long taskExecutionNanos) {
+    public void recordTick(long tickStartNanos, long tickDurationNanos, long taskExecutionNanos) {
         if (tickStartNanos < 0L) {
             throw new IllegalArgumentException("tickStartNanos must be >= 0");
         }
@@ -38,45 +57,134 @@ public final class ServerPerformanceTracker {
             throw new IllegalArgumentException("taskExecutionNanos must be >= 0");
         }
 
-        long tickWorkNanos = tickDurationNanos + taskExecutionNanos;
-        long tickIntervalNanos = previousTickStartNanos < 0L
-                ? Math.max(TARGET_TICK_NANOS, tickWorkNanos)
-                : tickStartNanos - previousTickStartNanos;
-        previousTickStartNanos = tickStartNanos;
-        if (tickIntervalNanos <= 0L) {
-            tickIntervalNanos = TARGET_TICK_NANOS;
-        }
-        long intervalWorkNanos = previousTickWorkNanos < 0L ? tickWorkNanos : previousTickWorkNanos;
-        previousTickWorkNanos = tickWorkNanos;
+        boolean shouldSchedule;
+        synchronized (this) {
+            if (closed) {
+                return;
+            }
 
-        int index = (int) (tickCount % tickDurationsNanos.length);
-        tickDurationsNanos[index] = tickWorkNanos;
-        tickIntervalsNanos[index] = tickIntervalNanos;
-        tickIntervalWorkNanos[index] = intervalWorkNanos;
-        tickCount++;
+            long tickWorkNanos = tickDurationNanos + taskExecutionNanos;
+            long tickIntervalNanos = previousTickStartNanos < 0L
+                    ? Math.max(TARGET_TICK_NANOS, tickWorkNanos)
+                    : tickStartNanos - previousTickStartNanos;
+            previousTickStartNanos = tickStartNanos;
+            if (tickIntervalNanos <= 0L) {
+                tickIntervalNanos = TARGET_TICK_NANOS;
+            }
+            long intervalWorkNanos = previousTickWorkNanos < 0L ? tickWorkNanos : previousTickWorkNanos;
+            previousTickWorkNanos = tickWorkNanos;
+
+            int index = (int) (tickCount % tickDurationsNanos.length);
+            tickDurationsNanos[index] = tickWorkNanos;
+            tickIntervalsNanos[index] = tickIntervalNanos;
+            tickIntervalWorkNanos[index] = intervalWorkNanos;
+            tickCount++;
+            shouldSchedule = markRecomputeNeeded();
+        }
+
+        if (shouldSchedule) {
+            scheduleRecompute();
+        }
     }
 
-    public synchronized ServerPerformance snapshot() {
-        if (cachedSnapshot != null && snapshotTickCount == tickCount) {
-            return cachedSnapshot;
+    public ServerPerformance snapshot() {
+        return publishedSnapshot;
+    }
+
+    @Override
+    public void close() {
+        synchronized (this) {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            recomputeQueued = false;
         }
-        var snapshot = new ServerPerformance(
-                window(TickWindow.ONE_SECOND),
-                window(TickWindow.FIVE_SECONDS),
-                window(TickWindow.TEN_SECONDS),
-                window(TickWindow.FIFTEEN_SECONDS),
-                window(TickWindow.ONE_MINUTE),
-                window(TickWindow.FIVE_MINUTES),
-                window(TickWindow.FIFTEEN_MINUTES),
-                tickCount
+        try {
+            closeExecutor.close();
+        } catch (Exception failure) {
+            throw new IllegalStateException("Failed to close performance tracker", failure);
+        }
+    }
+
+    private boolean markRecomputeNeeded() {
+        if (closed || recomputeQueued) {
+            return false;
+        }
+        recomputeQueued = true;
+        return true;
+    }
+
+    private void scheduleRecompute() {
+        try {
+            executor.execute(this::recomputeSnapshots);
+        } catch (RejectedExecutionException failure) {
+            boolean shouldThrow;
+            synchronized (this) {
+                recomputeQueued = false;
+                shouldThrow = !closed;
+            }
+            if (shouldThrow) {
+                throw failure;
+            }
+        }
+    }
+
+    private void recomputeSnapshots() {
+        while (true) {
+            Samples samples;
+            synchronized (this) {
+                if (closed) {
+                    recomputeQueued = false;
+                    return;
+                }
+                samples = captureSamples();
+            }
+
+            ServerPerformance snapshot = createSnapshot(samples);
+
+            synchronized (this) {
+                if (!closed && snapshot.tickCount() >= publishedSnapshot.tickCount()) {
+                    publishedSnapshot = snapshot;
+                }
+                if (closed || samples.tickCount() == tickCount) {
+                    recomputeQueued = false;
+                    return;
+                }
+            }
+        }
+    }
+
+    private Samples captureSamples() {
+        int samples = sampleCount(CAPACITY);
+        var durations = new long[samples];
+        var intervals = new long[samples];
+        var intervalWork = new long[samples];
+        for (int offset = 0; offset < samples; offset++) {
+            long sampleIndex = tickCount - samples + offset;
+            int index = (int) Math.floorMod(sampleIndex, tickDurationsNanos.length);
+            durations[offset] = tickDurationsNanos[index];
+            intervals[offset] = tickIntervalsNanos[index];
+            intervalWork[offset] = tickIntervalWorkNanos[index];
+        }
+        return new Samples(tickCount, durations, intervals, intervalWork);
+    }
+
+    private static ServerPerformance createSnapshot(Samples samples) {
+        return new ServerPerformance(
+                window(TickWindow.ONE_SECOND, samples),
+                window(TickWindow.FIVE_SECONDS, samples),
+                window(TickWindow.TEN_SECONDS, samples),
+                window(TickWindow.FIFTEEN_SECONDS, samples),
+                window(TickWindow.ONE_MINUTE, samples),
+                window(TickWindow.FIVE_MINUTES, samples),
+                window(TickWindow.FIFTEEN_MINUTES, samples),
+                samples.tickCount()
         );
-        cachedSnapshot = snapshot;
-        snapshotTickCount = tickCount;
-        return snapshot;
     }
 
-    private TickWindowSnapshot window(TickWindow window) {
-        int samples = sampleCount(window.ticks());
+    private static TickWindowSnapshot window(TickWindow window, Samples source) {
+        int samples = Math.min(source.sampleCount(), window.ticks());
         if (samples == 0) {
             return new TickWindowSnapshot(
                     window,
@@ -87,40 +195,39 @@ public final class ServerPerformanceTracker {
                     0);
         }
 
-        long[] durations = latest(tickDurationsNanos, samples);
-        long[] intervals = latest(tickIntervalsNanos, samples);
-        long[] intervalWork = latest(tickIntervalWorkNanos, samples);
-        var mspt = millisecondStatistics(durations);
+        int start = source.sampleCount() - samples;
+        var mspt = millisecondStatistics(source.durations(), start, samples);
         return new TickWindowSnapshot(
                 window,
-                tpsStatistics(intervals, intervalWork),
-                millisecondStatistics(intervals),
+                tpsStatistics(source.intervals(), source.intervalWork(), start, samples),
+                millisecondStatistics(source.intervals(), start, samples),
                 mspt,
                 mspt.average() / 50.0,
                 samples);
     }
 
-    private MetricStatistics tpsStatistics(long[] intervals, long[] intervalWork) {
-        var raw = new double[intervals.length];
+    private static MetricStatistics tpsStatistics(long[] intervals, long[] intervalWork, int start, int length) {
+        var raw = new double[length];
         long total = 0L;
-        for (int i = 0; i < intervals.length; i++) {
-            long interval = normalizeTpsInterval(intervals[i], intervalWork[i]);
+        for (int i = 0; i < length; i++) {
+            int index = start + i;
+            long interval = normalizeTpsInterval(intervals[index], intervalWork[index]);
             raw[i] = normalizeTps(NANOS_PER_SECOND / interval);
             total += interval;
         }
-        double average = normalizeTps(intervals.length * NANOS_PER_SECOND / total);
+        double average = normalizeTps(length * NANOS_PER_SECOND / total);
         return new MetricStatistics(average, min(raw), max(raw), median(raw));
     }
 
-    private MetricStatistics millisecondStatistics(long[] values) {
-        var raw = new double[values.length];
+    private static MetricStatistics millisecondStatistics(long[] values, int start, int length) {
+        var raw = new double[length];
         long total = 0L;
-        for (int i = 0; i < values.length; i++) {
-            long value = Math.max(1L, values[i]);
+        for (int i = 0; i < length; i++) {
+            long value = Math.max(1L, values[start + i]);
             raw[i] = value / NANOS_PER_MILLISECOND;
             total += value;
         }
-        double average = total / (double) values.length / NANOS_PER_MILLISECOND;
+        double average = total / (double) length / NANOS_PER_MILLISECOND;
         return new MetricStatistics(average, min(raw), max(raw), median(raw));
     }
 
@@ -141,16 +248,6 @@ public final class ServerPerformanceTracker {
 
     private int sampleCount(int requested) {
         return (int) Math.min(Math.min(tickCount, tickDurationsNanos.length), requested);
-    }
-
-    private long[] latest(long[] source, int samples) {
-        var result = new long[samples];
-        for (int offset = 0; offset < samples; offset++) {
-            long sampleIndex = tickCount - 1L - offset;
-            int index = (int) Math.floorMod(sampleIndex, source.length);
-            result[samples - 1 - offset] = source[index];
-        }
-        return result;
     }
 
     private static double min(double[] values) {
@@ -177,5 +274,22 @@ public final class ServerPerformanceTracker {
             return (copy[middle - 1] + copy[middle]) / 2.0;
         }
         return copy[middle];
+    }
+
+    private static Thread snapshotThread(Runnable task) {
+        var thread = new Thread(task, "Fand Performance Snapshot");
+        thread.setDaemon(true);
+        return thread;
+    }
+
+    private record Samples(long tickCount, long[] durations, long[] intervals, long[] intervalWork) {
+
+        private static Samples empty() {
+            return new Samples(0L, new long[0], new long[0], new long[0]);
+        }
+
+        private int sampleCount() {
+            return durations.length;
+        }
     }
 }

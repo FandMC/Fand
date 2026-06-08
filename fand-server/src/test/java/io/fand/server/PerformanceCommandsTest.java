@@ -8,6 +8,7 @@ import io.fand.server.config.FandConfig;
 import io.fand.server.permission.PermissionSet;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import net.kyori.adventure.text.Component;
 import org.junit.jupiter.api.Test;
 
@@ -15,33 +16,44 @@ final class PerformanceCommandsTest {
 
     @Test
     void registersTpsAndMsptCommandsWithOperatorPermission() {
-        var server = new FandServer(new FandConfig(), getClass().getClassLoader());
-        var denied = new TestSender(false);
-        var allowed = new TestSender(true);
+        try (var server = new FandServer(new FandConfig(), getClass().getClassLoader())) {
+            var denied = new TestSender(false);
+            var allowed = new TestSender(true);
 
-        assertThat(server.commandManager().resolve(denied, List.of("tps"))).isEmpty();
-        assertThat(server.commandManager().resolve(denied, List.of("mspt"))).isEmpty();
-        assertThat(server.commandManager().resolve(allowed, List.of("tps"))).isPresent();
-        assertThat(server.commandManager().resolve(allowed, List.of("mspt"))).isPresent();
+            assertThat(server.commandManager().resolve(denied, List.of("tps"))).isEmpty();
+            assertThat(server.commandManager().resolve(denied, List.of("mspt"))).isEmpty();
+            assertThat(server.commandManager().resolve(allowed, List.of("tps"))).isPresent();
+            assertThat(server.commandManager().resolve(allowed, List.of("mspt"))).isPresent();
+        }
     }
 
     @Test
     void reportsPerformanceSnapshots() throws Exception {
-        var server = new FandServer(new FandConfig(), getClass().getClassLoader());
-        var sender = new TestSender(true);
+        try (var server = new FandServer(new FandConfig(), getClass().getClassLoader())) {
+            var sender = new TestSender(true);
 
-        server.recordTick(0L, 25_000_000L);
-        server.recordTick(50_000_000L, 75_000_000L);
+            server.recordTick(0L, 25_000_000L);
+            server.recordTick(50_000_000L, 75_000_000L);
+            awaitPerformanceTicks(server, 2L);
 
-        var tps = server.commandManager().resolve(sender, List.of("tps")).orElseThrow();
-        tps.command().executor().execute(sender, tps.usedLabel(), List.of());
-        var mspt = server.commandManager().resolve(sender, List.of("mspt")).orElseThrow();
-        mspt.command().executor().execute(sender, mspt.usedLabel(), List.of());
+            var tps = server.commandManager().resolve(sender, List.of("tps")).orElseThrow();
+            tps.command().executor().execute(sender, tps.usedLabel(), List.of());
+            var mspt = server.commandManager().resolve(sender, List.of("mspt")).orElseThrow();
+            mspt.command().executor().execute(sender, mspt.usedLabel(), List.of());
 
-        assertThat(sender.messages).containsExactly(
-                Component.text("TPS: 20.00, 20.00, 20.00 (1m, 5m, 15m)"),
-                Component.text("MSPT (avg/min/max): 50.00/25.00/75.00, 50.00/25.00/75.00, 50.00/25.00/75.00 (5s, 10s, 1m)")
-        );
+            assertThat(sender.messages).containsExactly(
+                    Component.text("TPS: 20.00, 20.00, 20.00 (1m, 5m, 15m)"),
+                    Component.text("MSPT (avg/min/max): 50.00/25.00/75.00, 50.00/25.00/75.00, 50.00/25.00/75.00 (5s, 10s, 1m)")
+            );
+        }
+    }
+
+    private static void awaitPerformanceTicks(FandServer server, long tickCount) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2L);
+        while (server.performance().tickCount() < tickCount && System.nanoTime() < deadline) {
+            Thread.sleep(1L);
+        }
+        assertThat(server.performance().tickCount()).isEqualTo(tickCount);
     }
 
     private static final class TestSender implements CommandSender, PermissionSubject {

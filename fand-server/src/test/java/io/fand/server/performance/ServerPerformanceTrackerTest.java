@@ -3,13 +3,15 @@ package io.fand.server.performance;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.fand.api.performance.TickWindow;
+import java.util.ArrayDeque;
+import java.util.Queue;
 import org.junit.jupiter.api.Test;
 
 final class ServerPerformanceTrackerTest {
 
     @Test
     void startsWithHealthyDefaultsBeforeFirstTick() {
-        var tracker = new ServerPerformanceTracker();
+        var tracker = newSynchronousTracker();
 
         var snapshot = tracker.snapshot();
 
@@ -22,7 +24,7 @@ final class ServerPerformanceTrackerTest {
 
     @Test
     void reportsMsptFromMeasuredTickDurations() {
-        var tracker = new ServerPerformanceTracker();
+        var tracker = newSynchronousTracker();
 
         tracker.recordTick(0L, 25_000_000L);
         tracker.recordTick(50_000_000L, 75_000_000L);
@@ -38,12 +40,15 @@ final class ServerPerformanceTrackerTest {
     }
 
     @Test
-    void reusesSnapshotUntilANewTickIsRecorded() {
-        var tracker = new ServerPerformanceTracker();
+    void returnsPublishedSnapshotUntilAsyncRecomputeRuns() {
+        var executor = new ManualExecutor();
+        var tracker = new ServerPerformanceTracker(executor);
 
         var first = tracker.snapshot();
-        var second = tracker.snapshot();
         tracker.recordTick(0L, 25_000_000L);
+
+        var second = tracker.snapshot();
+        executor.runNext();
         var third = tracker.snapshot();
 
         assertThat(second).isSameAs(first);
@@ -53,7 +58,7 @@ final class ServerPerformanceTrackerTest {
 
     @Test
     void includesMeasuredTaskExecutionInMspt() {
-        var tracker = new ServerPerformanceTracker();
+        var tracker = newSynchronousTracker();
 
         tracker.recordTick(0L, 25_000_000L, 15_000_000L);
 
@@ -65,7 +70,7 @@ final class ServerPerformanceTrackerTest {
 
     @Test
     void reportsTwentyTpsWhenTicksKeepTargetPacing() {
-        var tracker = new ServerPerformanceTracker();
+        var tracker = newSynchronousTracker();
 
         tracker.recordTick(0L, 10_000_000L);
         tracker.recordTick(50_000_000L, 100_000_000L);
@@ -78,7 +83,7 @@ final class ServerPerformanceTrackerTest {
 
     @Test
     void treatsSmallIdleOversleepAsFullTps() {
-        var tracker = new ServerPerformanceTracker();
+        var tracker = newSynchronousTracker();
 
         tracker.recordTick(0L, 7_000_000L);
         tracker.recordTick(51_000_000L, 8_000_000L);
@@ -91,7 +96,7 @@ final class ServerPerformanceTrackerTest {
 
     @Test
     void slowsTpsWhenTickStartsFallBehindTargetPacing() {
-        var tracker = new ServerPerformanceTracker();
+        var tracker = newSynchronousTracker();
 
         tracker.recordTick(0L, 10_000_000L);
         tracker.recordTick(100_000_000L, 10_000_000L);
@@ -102,7 +107,64 @@ final class ServerPerformanceTrackerTest {
         assertThat(snapshot.fiveSeconds().tickIntervalMilliseconds().maximum()).isEqualTo(100.0);
     }
 
+    @Test
+    void coalescesQueuedAsyncRecomputes() {
+        var executor = new ManualExecutor();
+        var tracker = new ServerPerformanceTracker(executor);
+
+        tracker.recordTick(0L, 25_000_000L);
+        tracker.recordTick(50_000_000L, 75_000_000L);
+        tracker.recordTick(100_000_000L, 10_000_000L);
+
+        assertThat(executor.pendingTasks()).isEqualTo(1);
+        executor.runNext();
+
+        var snapshot = tracker.snapshot();
+        assertThat(snapshot.tickCount()).isEqualTo(3L);
+        assertThat(snapshot.currentMillisecondsPerTick()).isCloseTo(36.667, within(0.001));
+        assertThat(executor.pendingTasks()).isZero();
+    }
+
+    @Test
+    void closeStopsFurtherSnapshotUpdates() {
+        var executor = new ManualExecutor();
+        var tracker = new ServerPerformanceTracker(executor);
+
+        tracker.recordTick(0L, 25_000_000L);
+        assertThat(executor.pendingTasks()).isEqualTo(1);
+
+        tracker.close();
+        executor.runNext();
+        tracker.recordTick(50_000_000L, 75_000_000L);
+
+        assertThat(tracker.snapshot().tickCount()).isZero();
+        assertThat(executor.pendingTasks()).isZero();
+    }
+
+    private static ServerPerformanceTracker newSynchronousTracker() {
+        return new ServerPerformanceTracker(Runnable::run);
+    }
+
     private static org.assertj.core.data.Offset<Double> within(double value) {
         return org.assertj.core.data.Offset.offset(value);
+    }
+
+    private static final class ManualExecutor implements java.util.concurrent.Executor {
+
+        private final Queue<Runnable> pendingTasks = new ArrayDeque<>();
+
+        @Override
+        public void execute(Runnable command) {
+            pendingTasks.add(command);
+        }
+
+        int pendingTasks() {
+            return pendingTasks.size();
+        }
+
+        void runNext() {
+            var task = pendingTasks.remove();
+            task.run();
+        }
     }
 }

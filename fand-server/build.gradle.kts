@@ -52,10 +52,21 @@ val integrationTestSourceSet = sourceSets.create("integrationTest") {
     runtimeClasspath += output + compileClasspath
 }
 
+val benchmarkSourceSet = sourceSets.create("benchmark") {
+    compileClasspath += sourceSets.main.get().output + configurations.testRuntimeClasspath.get()
+    runtimeClasspath += output + compileClasspath
+}
+
 configurations.named(integrationTestSourceSet.implementationConfigurationName) {
     extendsFrom(configurations.testImplementation.get())
 }
 configurations.named(integrationTestSourceSet.runtimeOnlyConfigurationName) {
+    extendsFrom(configurations.testRuntimeOnly.get())
+}
+configurations.named(benchmarkSourceSet.implementationConfigurationName) {
+    extendsFrom(configurations.testImplementation.get())
+}
+configurations.named(benchmarkSourceSet.runtimeOnlyConfigurationName) {
     extendsFrom(configurations.testRuntimeOnly.get())
 }
 
@@ -71,6 +82,13 @@ val integrationTest by tasks.registering(Test::class) {
     classpath = integrationTestSourceSet.runtimeClasspath
     shouldRunAfter(tasks.test)
     useJUnitPlatform()
+}
+
+val benchmark by tasks.registering(JavaExec::class) {
+    description = "Runs lightweight Fand server microbenchmarks."
+    group = "verification"
+    mainClass.set("io.fand.server.benchmark.FandBenchmarkRunner")
+    classpath = benchmarkSourceSet.runtimeClasspath
 }
 
 tasks.check {
