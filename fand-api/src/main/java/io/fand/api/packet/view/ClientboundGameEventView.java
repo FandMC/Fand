@@ -1,16 +1,31 @@
 package io.fand.api.packet.view;
 
 import io.fand.api.packet.PacketView;
+import java.util.UUID;
 
-/**
- * Typed view of a game-state event (rain start/stop, gamemode change, etc.).
- * Read-only. The event kind is exposed via the dynamic {@code get("event", ...)}
- * as an opaque value.
- */
+/** Typed view of {@link ClientboundGameEventPacket}. */
 public interface ClientboundGameEventView extends PacketView {
 
-    /** The event parameter (meaning depends on the event kind). */
+    default Object event() {
+        return require("event", Object.class);
+    }
     default float param() {
-        return require("param", Float.class);
+        return require("param", float.class);
+    }
+    default int id() {
+        return require("id", int.class);
+    }
+
+    /** Returns a copy with {@code event} replaced. */
+    default ClientboundGameEventView withEvent(Object event) {
+        return (ClientboundGameEventView) with("event", event);
+    }
+    /** Returns a copy with {@code param} replaced. */
+    default ClientboundGameEventView withParam(float param) {
+        return (ClientboundGameEventView) with("param", param);
+    }
+    /** Returns a copy with {@code id} replaced. */
+    default ClientboundGameEventView withId(int id) {
+        return (ClientboundGameEventView) with("id", id);
     }
 }

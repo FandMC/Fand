@@ -1,15 +1,24 @@
 package io.fand.api.packet.view;
 
-import io.fand.api.packet.BlockPosition;
 import io.fand.api.packet.PacketView;
+import java.util.UUID;
 
-/**
- * Typed view of a block-entity data update. Read-only. The block-entity type
- * and NBT tag are exposed via the dynamic {@code get(...)} as opaque values.
- */
+/** Typed view of {@link ClientboundBlockEntityDataPacket}. */
 public interface ClientboundBlockEntityDataView extends PacketView {
 
-    default BlockPosition position() {
-        return require("pos", BlockPosition.class);
+    default Object pos() {
+        return require("pos", Object.class);
+    }
+    default Object tag() {
+        return require("tag", Object.class);
+    }
+
+    /** Returns a copy with {@code pos} replaced. */
+    default ClientboundBlockEntityDataView withPos(Object pos) {
+        return (ClientboundBlockEntityDataView) with("pos", pos);
+    }
+    /** Returns a copy with {@code tag} replaced. */
+    default ClientboundBlockEntityDataView withTag(Object tag) {
+        return (ClientboundBlockEntityDataView) with("tag", tag);
     }
 }

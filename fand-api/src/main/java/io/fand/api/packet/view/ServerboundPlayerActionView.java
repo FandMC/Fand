@@ -1,31 +1,38 @@
 package io.fand.api.packet.view;
 
-import io.fand.api.packet.BlockPosition;
 import io.fand.api.packet.PacketView;
+import java.util.UUID;
 
-/** Typed view of a block action: starting/finishing a dig, dropping items, etc. Read-only. */
+/** Typed view of {@link ServerboundPlayerActionPacket}. */
 public interface ServerboundPlayerActionView extends PacketView {
 
-    /**
-     * The action, e.g. {@code "START_DESTROY_BLOCK"}, {@code "STOP_DESTROY_BLOCK"},
-     * {@code "DROP_ITEM"}, {@code "RELEASE_USE_ITEM"}.
-     */
-    default String action() {
-        return require("action", String.class);
+    default Object pos() {
+        return require("pos", Object.class);
     }
-
-    /** The targeted block position. */
-    default BlockPosition position() {
-        return require("pos", BlockPosition.class);
+    default Object direction() {
+        return require("direction", Object.class);
     }
-
-    /** The targeted block face, e.g. {@code "UP"}, {@code "NORTH"}. */
-    default String direction() {
-        return require("direction", String.class);
+    default Object action() {
+        return require("action", Object.class);
     }
-
-    /** The client prediction sequence number. */
     default int sequence() {
-        return require("sequence", Integer.class);
+        return require("sequence", int.class);
+    }
+
+    /** Returns a copy with {@code pos} replaced. */
+    default ServerboundPlayerActionView withPos(Object pos) {
+        return (ServerboundPlayerActionView) with("pos", pos);
+    }
+    /** Returns a copy with {@code direction} replaced. */
+    default ServerboundPlayerActionView withDirection(Object direction) {
+        return (ServerboundPlayerActionView) with("direction", direction);
+    }
+    /** Returns a copy with {@code action} replaced. */
+    default ServerboundPlayerActionView withAction(Object action) {
+        return (ServerboundPlayerActionView) with("action", action);
+    }
+    /** Returns a copy with {@code sequence} replaced. */
+    default ServerboundPlayerActionView withSequence(int sequence) {
+        return (ServerboundPlayerActionView) with("sequence", sequence);
     }
 }

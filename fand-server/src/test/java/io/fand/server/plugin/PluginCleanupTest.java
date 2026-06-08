@@ -87,6 +87,7 @@ final class PluginCleanupTest {
                 new PermissionManager(),
                 scheduler,
                 recipes,
+                noopPacketRegistry(),
                 PluginRuntime.Options.defaults()
         );
         try {
@@ -170,5 +171,24 @@ final class PluginCleanupTest {
                     }
                 }
                 """;
+    }
+
+    private static io.fand.api.packet.PacketRegistry noopPacketRegistry() {
+        return new io.fand.api.packet.PacketRegistry() {
+            @Override
+            public <V extends io.fand.api.packet.PacketView> io.fand.api.packet.PacketRegistration intercept(
+                    io.fand.api.packet.PacketType type, io.fand.api.packet.PacketInterceptor<V> interceptor) {
+                return () -> {};
+            }
+            @Override
+            public <P extends Record> io.fand.api.packet.PacketRegistration register(
+                    io.fand.api.packet.CustomPacketDefinition<P> definition,
+                    io.fand.api.packet.CustomPacketHandler<P> handler) {
+                return () -> {};
+            }
+            @Override
+            public <P extends Record> void send(io.fand.api.entity.Player player, P payload) {
+            }
+        };
     }
 }

@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.network.protocol.Packet;
@@ -122,9 +123,23 @@ final class PacketFieldModel {
     Object read(Object packet, String name) {
         try {
             if (record) {
-                return accessors.get(name).invoke(packet);
+                Method accessor = accessors.get(name);
+                if (accessor == null) {
+                    throw new NoSuchElementException(
+                            "No accessor for field '" + name + "' on " + packet.getClass().getSimpleName()
+                                    + " (available fields: " + String.join(", ", names) + ")"
+                    );
+                }
+                return accessor.invoke(packet);
             }
-            return fields.get(name).get(packet);
+            Field field = fields.get(name);
+            if (field == null) {
+                throw new NoSuchElementException(
+                        "No field '" + name + "' on " + packet.getClass().getSimpleName()
+                                + " (available fields: " + String.join(", ", names) + ")"
+                );
+            }
+            return field.get(packet);
         } catch (ReflectiveOperationException failure) {
             throw new IllegalStateException("Cannot read field '" + name + "' of " + packet.getClass().getName(), failure);
         }
@@ -151,5 +166,9 @@ final class PacketFieldModel {
         } catch (Throwable failure) {
             throw new IllegalStateException("Cannot rebuild " + original.getClass().getName(), failure);
         }
+    }
+
+    Class<?> fieldType(String name) {
+        return types.get(name);
     }
 }

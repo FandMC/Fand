@@ -1,20 +1,24 @@
 package io.fand.api.packet.view;
 
 import io.fand.api.packet.PacketView;
-import net.kyori.adventure.text.Component;
+import java.util.UUID;
 
-/**
- * Typed view of a container-open request. Read-only. The menu type is exposed
- * via the dynamic {@code get("type", ...)} as an opaque value.
- */
+/** Typed view of {@link ClientboundOpenScreenPacket}. */
 public interface ClientboundOpenScreenView extends PacketView {
 
     default int containerId() {
-        return require("containerId", Integer.class);
+        return require("containerId", int.class);
+    }
+    default Object title() {
+        return require("title", Object.class);
     }
 
-    /** The window title. */
-    default Component title() {
-        return require("title", Component.class);
+    /** Returns a copy with {@code containerId} replaced. */
+    default ClientboundOpenScreenView withContainerId(int containerId) {
+        return (ClientboundOpenScreenView) with("containerId", containerId);
+    }
+    /** Returns a copy with {@code title} replaced. */
+    default ClientboundOpenScreenView withTitle(Object title) {
+        return (ClientboundOpenScreenView) with("title", title);
     }
 }

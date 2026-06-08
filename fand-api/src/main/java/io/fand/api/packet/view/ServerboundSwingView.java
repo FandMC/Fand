@@ -1,12 +1,17 @@
 package io.fand.api.packet.view;
 
 import io.fand.api.packet.PacketView;
+import java.util.UUID;
 
-/** Typed view of a player's arm-swing animation. Read-only. */
+/** Typed view of {@link ServerboundSwingPacket}. */
 public interface ServerboundSwingView extends PacketView {
 
-    /** The hand swung: {@code "MAIN_HAND"} or {@code "OFF_HAND"}. */
-    default String hand() {
-        return require("hand", String.class);
+    default Object hand() {
+        return require("hand", Object.class);
+    }
+
+    /** Returns a copy with {@code hand} replaced. */
+    default ServerboundSwingView withHand(Object hand) {
+        return (ServerboundSwingView) with("hand", hand);
     }
 }

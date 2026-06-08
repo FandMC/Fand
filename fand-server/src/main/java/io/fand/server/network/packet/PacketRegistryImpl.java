@@ -92,19 +92,47 @@ public final class PacketRegistryImpl implements PacketRegistry {
             throw new IllegalArgumentException(
                     "Namespace '" + namespace + "' is reserved for proxy plugin messaging and cannot be claimed");
         }
-        if (definition.direction() == PacketDirection.INBOUND && handler == null) {
-            throw new IllegalArgumentException("Inbound definition " + definition.key() + " requires a handler");
+        PacketDirection direction = definition.direction();
+        if ((direction == PacketDirection.INBOUND || direction == PacketDirection.BIDIRECTIONAL) && handler == null) {
+            throw new IllegalArgumentException(
+                    direction + " definition " + definition.key() + " requires a handler");
+        }
+        if (direction == PacketDirection.OUTBOUND && handler != null) {
+            throw new IllegalArgumentException(
+                    "OUTBOUND definition " + definition.key() + " must not have a handler (use BIDIRECTIONAL if you need both)");
         }
 
-        if (handler != null) {
-            inboundChannels.put(definition.key(), new InboundChannel<>(definition, handler));
+        InboundChannel<P> inboundChannel = null;
+        if (direction == PacketDirection.INBOUND || direction == PacketDirection.BIDIRECTIONAL) {
+            inboundChannel = new InboundChannel<>(definition, handler);
+            InboundChannel<?> existing = inboundChannels.putIfAbsent(definition.key(), inboundChannel);
+            if (existing != null) {
+                throw new IllegalStateException(
+                        "Custom packet channel " + definition.key() + " is already registered");
+            }
         }
-        if (definition.direction() == PacketDirection.OUTBOUND) {
-            outboundChannels.put(definition.payloadType(), definition.key());
+        String outboundKey = null;
+        if (direction == PacketDirection.OUTBOUND || direction == PacketDirection.BIDIRECTIONAL) {
+            outboundKey = outboundChannels.putIfAbsent(definition.payloadType(), definition.key());
+            if (outboundKey != null) {
+                if (inboundChannel != null) {
+                    inboundChannels.remove(definition.key(), inboundChannel);
+                }
+                throw new IllegalStateException(
+                        "Payload type " + definition.payloadType().getName() + " is already registered to " + outboundKey);
+            }
         }
+
+        InboundChannel<P> finalInbound = inboundChannel;
+        String finalOutbound = (direction == PacketDirection.OUTBOUND || direction == PacketDirection.BIDIRECTIONAL)
+                ? definition.key() : null;
         return new SingleRegistration(() -> {
-            inboundChannels.remove(definition.key());
-            outboundChannels.remove(definition.payloadType(), definition.key());
+            if (finalInbound != null) {
+                inboundChannels.remove(definition.key(), finalInbound);
+            }
+            if (finalOutbound != null) {
+                outboundChannels.remove(definition.payloadType(), finalOutbound);
+            }
         });
     }
 
@@ -187,11 +215,12 @@ public final class PacketRegistryImpl implements PacketRegistry {
     }
 
     private static @Nullable Packet<?> rebuild(PacketType type, Packet<?> original, PacketView view) {
-        if (view instanceof DynamicPacketView dynamic) {
+        DynamicPacketView dynamic = PacketViewFactory.unwrap(view);
+        if (dynamic != null) {
             try {
                 return dynamic.rebuild();
             } catch (RuntimeException failure) {
-                LOGGER.warn("Failed to rebuild replaced {}; keeping original", type, failure);
+                LOGGER.error("Failed to rebuild replaced {}; keeping original", type, failure);
                 return original;
             }
         }

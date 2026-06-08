@@ -1,18 +1,24 @@
 package io.fand.api.packet.view;
 
 import io.fand.api.packet.PacketView;
-import net.kyori.adventure.text.Component;
+import java.util.UUID;
 
-/** Typed view of a system chat message (no signature). Replaceable. */
+/** Typed view of {@link ClientboundSystemChatPacket}. */
 public interface ClientboundSystemChatView extends PacketView {
 
-    /** The message content. */
-    default Component content() {
-        return require("content", Component.class);
+    default Object content() {
+        return require("content", Object.class);
+    }
+    default boolean overlay() {
+        return require("overlay", boolean.class);
     }
 
-    /** Whether the message renders on the action bar instead of the chat box. */
-    default boolean overlay() {
-        return require("overlay", Boolean.class);
+    /** Returns a copy with {@code content} replaced. */
+    default ClientboundSystemChatView withContent(Object content) {
+        return (ClientboundSystemChatView) with("content", content);
+    }
+    /** Returns a copy with {@code overlay} replaced. */
+    default ClientboundSystemChatView withOverlay(boolean overlay) {
+        return (ClientboundSystemChatView) with("overlay", overlay);
     }
 }

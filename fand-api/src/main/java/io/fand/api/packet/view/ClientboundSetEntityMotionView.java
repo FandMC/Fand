@@ -1,30 +1,24 @@
 package io.fand.api.packet.view;
 
 import io.fand.api.packet.PacketView;
-import io.fand.api.packet.Vec3d;
+import java.util.UUID;
 
-/** Typed view of an entity velocity update. Replaceable. */
+/** Typed view of {@link ClientboundSetEntityMotionPacket}. */
 public interface ClientboundSetEntityMotionView extends PacketView {
 
-    /** The id of the entity whose velocity is being set. */
-    default int entityId() {
-        return require("id", Integer.class);
+    default int id() {
+        return require("id", int.class);
+    }
+    default Object movement() {
+        return require("movement", Object.class);
     }
 
-    /** The velocity vector, in blocks per tick. */
-    default Vec3d velocity() {
-        return require("movement", Vec3d.class);
+    /** Returns a copy with {@code id} replaced. */
+    default ClientboundSetEntityMotionView withId(int id) {
+        return (ClientboundSetEntityMotionView) with("id", id);
     }
-
-    default double velocityX() {
-        return velocity().x();
-    }
-
-    default double velocityY() {
-        return velocity().y();
-    }
-
-    default double velocityZ() {
-        return velocity().z();
+    /** Returns a copy with {@code movement} replaced. */
+    default ClientboundSetEntityMotionView withMovement(Object movement) {
+        return (ClientboundSetEntityMotionView) with("movement", movement);
     }
 }

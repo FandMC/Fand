@@ -3,6 +3,7 @@ package io.fand.api.plugin;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.config.Configuration;
 import io.fand.api.event.EventBus;
+import io.fand.api.packet.PacketRegistry;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
@@ -30,6 +31,9 @@ public interface PluginContext {
 
     /** Recipe registry scoped to this plugin's lifecycle. */
     RecipeRegistry recipes();
+
+    /** Packet registry scoped to this plugin's lifecycle. */
+    PacketRegistry packets();
 
     /** Scheduler scoped to this plugin's lifecycle. */
     Scheduler scheduler();

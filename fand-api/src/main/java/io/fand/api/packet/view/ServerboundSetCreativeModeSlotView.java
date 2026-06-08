@@ -1,18 +1,24 @@
 package io.fand.api.packet.view;
 
-import io.fand.api.item.ItemStack;
 import io.fand.api.packet.PacketView;
+import java.util.UUID;
 
-/** Typed view of a creative-mode inventory edit. Replaceable. */
+/** Typed view of {@link ServerboundSetCreativeModeSlotPacket}. */
 public interface ServerboundSetCreativeModeSlotView extends PacketView {
 
-    /** The inventory slot being set. */
-    default short slot() {
-        return require("slotNum", Short.class);
+    default short slotNum() {
+        return require("slotNum", short.class);
+    }
+    default Object itemStack() {
+        return require("itemStack", Object.class);
     }
 
-    /** The item placed into the slot. */
-    default ItemStack item() {
-        return require("itemStack", ItemStack.class);
+    /** Returns a copy with {@code slotNum} replaced. */
+    default ServerboundSetCreativeModeSlotView withSlotNum(short slotNum) {
+        return (ServerboundSetCreativeModeSlotView) with("slotNum", slotNum);
+    }
+    /** Returns a copy with {@code itemStack} replaced. */
+    default ServerboundSetCreativeModeSlotView withItemStack(Object itemStack) {
+        return (ServerboundSetCreativeModeSlotView) with("itemStack", itemStack);
     }
 }

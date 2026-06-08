@@ -249,6 +249,10 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new ComponentsCommand());
         context.commands().register(new GuiCommand(context, demoGuiViewers));
         registerDemoRecipes(context);
+        io.fand.testplugin.packet.PacketDemo.install(context);
+        var packetPlayground = new io.fand.testplugin.packet.PacketPlayground(context);
+        packetPlayground.install();
+        context.commands().register(new io.fand.testplugin.packet.TestCommand(packetPlayground));
         context.events().subscribe(ServerStartedEvent.class, event ->
                 context.logger().info("Server started; Fand brand={} version={} minecraft={}",
                         event.server().brand(), event.server().version(), event.server().minecraftVersion()));

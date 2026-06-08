@@ -1,13 +1,17 @@
 package io.fand.api.packet.view;
 
 import io.fand.api.packet.PacketView;
-import net.kyori.adventure.text.Component;
+import java.util.UUID;
 
-/** Typed view of the title text shown to a player. Replaceable. */
+/** Typed view of {@link ClientboundSetTitleTextPacket}. */
 public interface ClientboundSetTitleTextView extends PacketView {
 
-    /** The title text. */
-    default Component text() {
-        return require("text", Component.class);
+    default Object text() {
+        return require("text", Object.class);
+    }
+
+    /** Returns a copy with {@code text} replaced. */
+    default ClientboundSetTitleTextView withText(Object text) {
+        return (ClientboundSetTitleTextView) with("text", text);
     }
 }

@@ -1,13 +1,17 @@
 package io.fand.api.packet.view;
 
 import io.fand.api.packet.PacketView;
-import net.kyori.adventure.text.Component;
+import java.util.UUID;
 
-/** Typed view of the action-bar text shown to a player. Replaceable. */
+/** Typed view of {@link ClientboundSetActionBarTextPacket}. */
 public interface ClientboundSetActionBarTextView extends PacketView {
 
-    /** The action-bar text. */
-    default Component text() {
-        return require("text", Component.class);
+    default Object text() {
+        return require("text", Object.class);
+    }
+
+    /** Returns a copy with {@code text} replaced. */
+    default ClientboundSetActionBarTextView withText(Object text) {
+        return (ClientboundSetActionBarTextView) with("text", text);
     }
 }

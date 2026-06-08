@@ -106,6 +106,7 @@ public final class FandServer implements Server, AutoCloseable {
                 permissions,
                 scheduler,
                 recipes,
+                packets,
                 ConfigReloader.toPluginOptions(initialConfig)
         );
         this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, guiThemes);

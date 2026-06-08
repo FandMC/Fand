@@ -6,11 +6,20 @@ import io.fand.api.entity.Player;
 /**
  * Entry point for vanilla packet interception and custom packet channels.
  *
- * <p>Obtain the instance via {@link #get()}.
+ * <p><b>Plugins should use {@link io.fand.api.plugin.PluginContext#packets()}</b>
+ * as their primary entry point — registrations made through the context are
+ * automatically cleaned up on plugin disable, preventing classloader leaks.
+ * The static {@link #get()} accessor is provided for library code or contexts
+ * where plugin lifecycle tracking is not required.
  */
 public interface PacketRegistry {
 
-    /** Returns the running server's packet registry. */
+    /**
+     * Returns the running server's packet registry.
+     *
+     * <p><b>Plugins:</b> prefer {@link io.fand.api.plugin.PluginContext#packets()}
+     * for automatic cleanup on disable.
+     */
     static PacketRegistry get() {
         return Fand.server().packets();
     }

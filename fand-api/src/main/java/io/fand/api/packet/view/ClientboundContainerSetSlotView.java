@@ -1,25 +1,38 @@
 package io.fand.api.packet.view;
 
-import io.fand.api.item.ItemStack;
 import io.fand.api.packet.PacketView;
+import java.util.UUID;
 
-/** Typed view of a single container slot update. Read-only. */
+/** Typed view of {@link ClientboundContainerSetSlotPacket}. */
 public interface ClientboundContainerSetSlotView extends PacketView {
 
     default int containerId() {
-        return require("containerId", Integer.class);
+        return require("containerId", int.class);
     }
-
     default int stateId() {
-        return require("stateId", Integer.class);
+        return require("stateId", int.class);
     }
-
     default int slot() {
-        return require("slot", Integer.class);
+        return require("slot", int.class);
+    }
+    default Object itemStack() {
+        return require("itemStack", Object.class);
     }
 
-    /** The item placed into the slot. */
-    default ItemStack item() {
-        return require("itemStack", ItemStack.class);
+    /** Returns a copy with {@code containerId} replaced. */
+    default ClientboundContainerSetSlotView withContainerId(int containerId) {
+        return (ClientboundContainerSetSlotView) with("containerId", containerId);
+    }
+    /** Returns a copy with {@code stateId} replaced. */
+    default ClientboundContainerSetSlotView withStateId(int stateId) {
+        return (ClientboundContainerSetSlotView) with("stateId", stateId);
+    }
+    /** Returns a copy with {@code slot} replaced. */
+    default ClientboundContainerSetSlotView withSlot(int slot) {
+        return (ClientboundContainerSetSlotView) with("slot", slot);
+    }
+    /** Returns a copy with {@code itemStack} replaced. */
+    default ClientboundContainerSetSlotView withItemStack(Object itemStack) {
+        return (ClientboundContainerSetSlotView) with("itemStack", itemStack);
     }
 }

@@ -33,6 +33,13 @@ fand-server/src/minecraft/
 .settings/
 bin/
 
+# Local-only — kept out of the experimental packet API work
+/test-plugin/
+/todo.md
+/CLAUDE.md
+/PACKET_API.md
+/PACKET_API_SUMMARY.md
+
 # OS
 .DS_Store
 Thumbs.db

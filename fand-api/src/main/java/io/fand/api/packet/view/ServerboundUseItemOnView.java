@@ -1,26 +1,31 @@
 package io.fand.api.packet.view;
 
-import io.fand.api.packet.BlockHit;
 import io.fand.api.packet.PacketView;
+import java.util.UUID;
 
-/**
- * Typed view of a player using the held item on a block (right-click block).
- * Read-only.
- */
+/** Typed view of {@link ServerboundUseItemOnPacket}. */
 public interface ServerboundUseItemOnView extends PacketView {
 
-    /** The hand used: {@code "MAIN_HAND"} or {@code "OFF_HAND"}. */
-    default String hand() {
-        return require("hand", String.class);
+    default Object blockHit() {
+        return require("blockHit", Object.class);
     }
-
-    /** Where the player clicked: the block, the hit face, and the precise point. */
-    default BlockHit hit() {
-        return require("blockHit", BlockHit.class);
+    default Object hand() {
+        return require("hand", Object.class);
     }
-
-    /** The client prediction sequence number. */
     default int sequence() {
-        return require("sequence", Integer.class);
+        return require("sequence", int.class);
+    }
+
+    /** Returns a copy with {@code blockHit} replaced. */
+    default ServerboundUseItemOnView withBlockHit(Object blockHit) {
+        return (ServerboundUseItemOnView) with("blockHit", blockHit);
+    }
+    /** Returns a copy with {@code hand} replaced. */
+    default ServerboundUseItemOnView withHand(Object hand) {
+        return (ServerboundUseItemOnView) with("hand", hand);
+    }
+    /** Returns a copy with {@code sequence} replaced. */
+    default ServerboundUseItemOnView withSequence(int sequence) {
+        return (ServerboundUseItemOnView) with("sequence", sequence);
     }
 }

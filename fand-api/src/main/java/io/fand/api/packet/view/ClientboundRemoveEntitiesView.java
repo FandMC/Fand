@@ -1,12 +1,17 @@
 package io.fand.api.packet.view;
 
 import io.fand.api.packet.PacketView;
+import java.util.UUID;
 
-/** Typed view of an entity-removal batch. Read-only. */
+/** Typed view of {@link ClientboundRemoveEntitiesPacket}. */
 public interface ClientboundRemoveEntitiesView extends PacketView {
 
-    /** The ids of the entities being removed. */
-    default int[] entityIds() {
-        return require("entityIds", int[].class);
+    default Object entityIds() {
+        return require("entityIds", Object.class);
+    }
+
+    /** Returns a copy with {@code entityIds} replaced. */
+    default ClientboundRemoveEntitiesView withEntityIds(Object entityIds) {
+        return (ClientboundRemoveEntitiesView) with("entityIds", entityIds);
     }
 }

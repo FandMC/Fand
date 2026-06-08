@@ -72,7 +72,7 @@ class PacketRegistryImplTest {
         var registry = newRegistry();
         var seen = new AtomicReference<Vec3d>();
         registry.<ClientboundSetEntityMotionView>intercept(PacketType.S2C_SET_ENTITY_MOTION, (view, controller) -> {
-            seen.set(view.velocity());
+            seen.set((Vec3d) view.movement());
             controller.replace(view.with("movement", new Vec3d(0.0, 2.0, 0.0)));
         });
 
@@ -132,6 +132,85 @@ class PacketRegistryImplTest {
         assertThatThrownBy(() -> registry.register(velocity, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("reserved");
+    }
+
+    @Test
+    void typedWithMethodsWorkForHighFrequencyPackets() {
+        var registry = newRegistry();
+
+        // Test ServerboundChatView.withMessage()
+        registry.intercept(PacketType.C2S_CHAT, (view, controller) -> {
+            ServerboundChatView chatView = (ServerboundChatView) view;
+            controller.replace(chatView.withMessage(chatView.message().toUpperCase()));
+        });
+
+        Packet<?> rewrittenChat = registry.interceptInbound(chat("hello"), null);
+        assertThat(rewrittenChat).isInstanceOf(ServerboundChatPacket.class);
+        assertThat(((ServerboundChatPacket) rewrittenChat).message()).isEqualTo("HELLO");
+
+        // Test ClientboundSetEntityMotionView.withMovement()
+        registry.intercept(PacketType.S2C_SET_ENTITY_MOTION, (view, controller) -> {
+            ClientboundSetEntityMotionView motionView = (ClientboundSetEntityMotionView) view;
+            controller.replace(motionView.withMovement(new Vec3d(1.0, 2.0, 3.0)));
+        });
+
+        var motionPacket = new ClientboundSetEntityMotionPacket(42, new Vec3(0.0, 0.0, 0.0));
+        Packet<?> rewrittenMotion = registry.interceptOutbound(motionPacket, null);
+        assertThat(rewrittenMotion).isInstanceOf(ClientboundSetEntityMotionPacket.class);
+        Vec3 newMovement = ((ClientboundSetEntityMotionPacket) rewrittenMotion).movement();
+        assertThat(newMovement.x).isEqualTo(1.0);
+        assertThat(newMovement.y).isEqualTo(2.0);
+        assertThat(newMovement.z).isEqualTo(3.0);
+    }
+
+    @Test
+    void classPacketsCanBeReplacedViaSnapshot() {
+        var registry = newRegistry();
+
+        // Test ClientboundSetHealthPacket (Class type, now replaceable)
+        registry.intercept(PacketType.S2C_SET_HEALTH, (view, controller) -> {
+            float currentHealth = view.require("health", Float.class);
+            controller.replace(view.with("health", currentHealth * 2.0f));
+        });
+
+        var healthPacket = new net.minecraft.network.protocol.game.ClientboundSetHealthPacket(10.0f, 15, 5.0f);
+        Packet<?> rewrittenHealth = registry.interceptOutbound(healthPacket, null);
+        assertThat(rewrittenHealth).isInstanceOf(net.minecraft.network.protocol.game.ClientboundSetHealthPacket.class);
+        assertThat(((net.minecraft.network.protocol.game.ClientboundSetHealthPacket) rewrittenHealth).getHealth())
+                .isEqualTo(20.0f);
+        assertThat(((net.minecraft.network.protocol.game.ClientboundSetHealthPacket) rewrittenHealth).getFood())
+                .isEqualTo(15);
+
+        // Test ClientboundContainerSetSlotPacket (Class type, now replaceable)
+        registry.intercept(PacketType.S2C_CONTAINER_SET_SLOT, (view, controller) -> {
+            controller.replace(view.with("slot", 5));
+        });
+
+        var slotPacket = new net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket(
+                1, 2, 3, net.minecraft.world.item.ItemStack.EMPTY);
+        Packet<?> rewrittenSlot = registry.interceptOutbound(slotPacket, null);
+        assertThat(rewrittenSlot).isInstanceOf(net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket.class);
+        assertThat(((net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket) rewrittenSlot).getSlot())
+                .isEqualTo(5);
+        assertThat(((net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket) rewrittenSlot).getContainerId())
+                .isEqualTo(1);
+    }
+
+    @Test
+    void genericClassPacketsCanBeReplaced() {
+        var registry = newRegistry();
+
+        // Test a Class packet without a dedicated snapshot (should use generic codec)
+        registry.intercept(PacketType.S2C_KEEP_ALIVE, (view, controller) -> {
+            long currentId = view.require("id", Long.class);
+            controller.replace(view.with("id", currentId + 100L));
+        });
+
+        var keepAlivePacket = new net.minecraft.network.protocol.common.ClientboundKeepAlivePacket(123L);
+        Packet<?> rewritten = registry.interceptOutbound(keepAlivePacket, null);
+        assertThat(rewritten).isInstanceOf(net.minecraft.network.protocol.common.ClientboundKeepAlivePacket.class);
+        assertThat(((net.minecraft.network.protocol.common.ClientboundKeepAlivePacket) rewritten).getId())
+                .isEqualTo(223L);
     }
 
     record SamplePayload(long value) {

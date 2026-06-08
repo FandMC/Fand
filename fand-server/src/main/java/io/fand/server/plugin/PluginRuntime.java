@@ -47,6 +47,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final EventBus eventBus;
     private final PermissionService permissions;
     private final RecipeRegistry recipeRegistry;
+    private final io.fand.api.packet.PacketRegistry packetRegistry;
     private final Scheduler scheduler;
     private volatile Options options;
     private final ConcurrentHashMap<String, LoadedPlugin> loadedPlugins = new ConcurrentHashMap<>();
@@ -73,6 +74,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 permissions,
                 scheduler,
                 new FandRecipeRegistry(),
+                noopPacketRegistry(),
                 Options.defaults()
         );
     }
@@ -96,8 +98,28 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 permissions,
                 scheduler,
                 new FandRecipeRegistry(),
+                noopPacketRegistry(),
                 options
         );
+    }
+
+    private static io.fand.api.packet.PacketRegistry noopPacketRegistry() {
+        return new io.fand.api.packet.PacketRegistry() {
+            @Override
+            public <V extends io.fand.api.packet.PacketView> io.fand.api.packet.PacketRegistration intercept(
+                    io.fand.api.packet.PacketType type, io.fand.api.packet.PacketInterceptor<V> interceptor) {
+                return () -> {};
+            }
+            @Override
+            public <P extends Record> io.fand.api.packet.PacketRegistration register(
+                    io.fand.api.packet.CustomPacketDefinition<P> definition,
+                    io.fand.api.packet.CustomPacketHandler<P> handler) {
+                return () -> {};
+            }
+            @Override
+            public <P extends Record> void send(io.fand.api.entity.Player player, P payload) {
+            }
+        };
     }
 
     public PluginRuntime(
@@ -109,6 +131,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             PermissionService permissions,
             Scheduler scheduler,
             RecipeRegistry recipeRegistry,
+            io.fand.api.packet.PacketRegistry packetRegistry,
             Options options
     ) {
         this.pluginsDirectory = pluginsDirectory;
@@ -118,6 +141,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.eventBus = eventBus;
         this.permissions = permissions;
         this.recipeRegistry = recipeRegistry;
+        this.packetRegistry = packetRegistry;
         this.scheduler = scheduler;
         this.options = options;
     }
@@ -159,6 +183,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                         permissions,
                         new PluginCommandRegistry(commandRegistry, resources, artifact.descriptor.id()),
                         new PluginRecipeRegistry(recipeRegistry, resources, artifact.descriptor.id()),
+                        new PluginPacketRegistry(packetRegistry, resources),
                         new PluginScheduler(scheduler, resources),
                         dataDirectoryRoot.resolve(artifact.descriptor.id()),
                         resources,
