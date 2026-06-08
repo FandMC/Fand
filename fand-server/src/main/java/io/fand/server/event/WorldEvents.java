@@ -2,14 +2,22 @@ package io.fand.server.event;
 
 import io.fand.api.event.world.ChunkLoadEvent;
 import io.fand.api.event.world.ChunkUnloadEvent;
+import io.fand.api.event.world.SpawnChangeEvent;
 import io.fand.api.event.world.ThunderChangeEvent;
+import io.fand.api.event.world.TimeSkipEvent;
 import io.fand.api.event.world.WeatherChangeEvent;
 import io.fand.api.event.world.WorldSaveEvent;
+import io.fand.api.world.Location;
 import io.fand.server.hooks.FandHooks;
+import io.fand.server.world.FandWorld;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.FullChunkStatus;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.LevelData;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,6 +94,67 @@ public final class WorldEvents {
         }
     }
 
+    public static Long fireTimeSkip(ServerLevel level, TimeSkipEvent.Cause cause, long fromTime, long toTime) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(TimeSkipEvent.class)) {
+            return toTime;
+        }
+        var world = FandHooks.wrapWorld(level);
+        if (world == null) {
+            return toTime;
+        }
+        var event = new TimeSkipEvent(world, cause, fromTime, toTime);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("TimeSkipEvent listener failed for {}", world.key().asString(), failure);
+            return toTime;
+        }
+        return event.cancelled() ? null : event.toTime();
+    }
+
+    public static LevelData.@Nullable RespawnData fireSpawnChange(
+            MinecraftServer server,
+            LevelData.RespawnData previous,
+            LevelData.RespawnData next
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(SpawnChangeEvent.class)) {
+            return next;
+        }
+        var previousLevel = server.getLevel(previous.dimension());
+        var nextLevel = server.getLevel(next.dimension());
+        if (previousLevel == null || nextLevel == null) {
+            return next;
+        }
+        var previousWorld = FandHooks.wrapWorld(previousLevel);
+        var nextWorld = FandHooks.wrapWorld(nextLevel);
+        if (previousWorld == null || nextWorld == null) {
+            return next;
+        }
+        var event = new SpawnChangeEvent(location(previousWorld, previous), location(nextWorld, next));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("SpawnChangeEvent listener failed", failure);
+            return next;
+        }
+        if (event.cancelled()) {
+            return null;
+        }
+        var retargeted = event.newSpawn();
+        ServerLevel targetLevel = resolveLevel(server, retargeted.world());
+        if (targetLevel == null) {
+            LOGGER.warn("SpawnChangeEvent targeted an unloaded world: {}", retargeted.world().key().asString());
+            return next;
+        }
+        return LevelData.RespawnData.of(
+                targetLevel.dimension(),
+                BlockPos.containing(retargeted.x(), retargeted.y(), retargeted.z()),
+                retargeted.yaw(),
+                retargeted.pitch());
+    }
+
     private static void fireChunkLoad(ServerLevel level, ChunkPos pos) {
         var bus = FandHooks.events();
         if (!bus.hasListeners(ChunkLoadEvent.class)) {
@@ -116,5 +185,24 @@ public final class WorldEvents {
         } catch (RuntimeException failure) {
             LOGGER.warn("ChunkUnloadEvent listener failed", failure);
         }
+    }
+
+    private static Location location(FandWorld world, LevelData.RespawnData data) {
+        var pos = data.pos();
+        return new Location(world, pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, data.yaw(), data.pitch());
+    }
+
+    private static ServerLevel resolveLevel(MinecraftServer server, io.fand.api.world.World world) {
+        if (world instanceof FandWorld fandWorld) {
+            return fandWorld.handle();
+        }
+        var key = world.key();
+        for (var level : server.getAllLevels()) {
+            var identifier = level.dimension().identifier();
+            if (identifier.getNamespace().equals(key.namespace()) && identifier.getPath().equals(key.value())) {
+                return level;
+            }
+        }
+        return null;
     }
 }

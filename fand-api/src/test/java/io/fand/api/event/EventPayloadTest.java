@@ -8,34 +8,93 @@ import io.fand.api.entity.GameMode;
 import io.fand.api.entity.Player;
 import io.fand.api.block.Block;
 import io.fand.api.block.BlockType;
+import io.fand.api.event.block.BlockBurnEvent;
 import io.fand.api.event.block.BlockChangeEvent;
+import io.fand.api.event.block.BlockDispenseEvent;
+import io.fand.api.event.block.BlockExplodeEvent;
+import io.fand.api.event.block.BlockFadeEvent;
+import io.fand.api.event.block.BlockGrowEvent;
+import io.fand.api.event.block.BlockIgniteEvent;
 import io.fand.api.event.block.BlockPhysicsEvent;
+import io.fand.api.event.block.BlockFace;
+import io.fand.api.event.block.BlockPistonExtendEvent;
+import io.fand.api.event.block.BlockPistonRetractEvent;
+import io.fand.api.event.block.BlockRedstoneEvent;
+import io.fand.api.event.block.BlockSpreadEvent;
+import io.fand.api.event.block.FluidFlowEvent;
+import io.fand.api.event.block.LeavesDecayEvent;
+import io.fand.api.event.block.SignChangeEvent;
 import io.fand.api.event.command.CommandExecuteEvent;
+import io.fand.api.event.entity.EntityBreedEvent;
+import io.fand.api.event.entity.EntityCombustEvent;
 import io.fand.api.event.entity.EntityDamageEvent;
 import io.fand.api.event.entity.EntityDeathEvent;
+import io.fand.api.event.entity.EntityDismountEvent;
+import io.fand.api.event.entity.EntityExplodeEvent;
+import io.fand.api.event.entity.EntityMountEvent;
+import io.fand.api.event.entity.EntityPotionEffectEvent;
+import io.fand.api.event.entity.EntityRegainHealthEvent;
 import io.fand.api.event.entity.EntityRemoveEvent;
+import io.fand.api.event.entity.EntityResurrectEvent;
+import io.fand.api.event.entity.EntityShootBowEvent;
 import io.fand.api.event.entity.EntitySpawnEvent;
+import io.fand.api.event.entity.EntityTameEvent;
+import io.fand.api.event.entity.EntityTargetEvent;
 import io.fand.api.event.entity.EntityTeleportEvent;
+import io.fand.api.event.entity.EntityTransformEvent;
 import io.fand.api.event.entity.ExplosionPrimeEvent;
+import io.fand.api.event.entity.ProjectileHitEvent;
+import io.fand.api.event.entity.ProjectileLaunchEvent;
+import io.fand.api.event.inventory.BrewEvent;
+import io.fand.api.event.inventory.CraftItemEvent;
+import io.fand.api.event.inventory.EnchantItemEvent;
+import io.fand.api.event.inventory.EnchantmentOffer;
+import io.fand.api.event.inventory.FurnaceBurnEvent;
+import io.fand.api.event.inventory.FurnaceExtractEvent;
+import io.fand.api.event.inventory.FurnaceSmeltEvent;
 import io.fand.api.event.inventory.ClickType;
+import io.fand.api.event.inventory.DragType;
 import io.fand.api.event.inventory.InventoryAction;
 import io.fand.api.event.inventory.InventoryClickEvent;
+import io.fand.api.event.inventory.InventoryDragEvent;
+import io.fand.api.event.inventory.InventoryMoveItemEvent;
+import io.fand.api.event.inventory.InventoryPickupItemEvent;
+import io.fand.api.event.inventory.PrepareAnvilEvent;
+import io.fand.api.event.inventory.PrepareItemEnchantEvent;
+import io.fand.api.event.inventory.PrepareItemCraftEvent;
+import io.fand.api.event.inventory.PrepareSmithingEvent;
+import io.fand.api.recipe.Recipe;
+import io.fand.api.event.player.PlayerAdvancementDoneEvent;
+import io.fand.api.event.player.PlayerBedEnterEvent;
+import io.fand.api.event.player.PlayerBedLeaveEvent;
+import io.fand.api.event.player.PlayerBucketEmptyEvent;
+import io.fand.api.event.player.PlayerBucketFillEvent;
 import io.fand.api.event.player.PlayerCommandPreprocessEvent;
+import io.fand.api.event.player.PlayerDeathEvent;
 import io.fand.api.event.player.PlayerDropItemEvent;
+import io.fand.api.event.player.PlayerExperienceChangeEvent;
+import io.fand.api.event.player.PlayerFoodLevelChangeEvent;
 import io.fand.api.event.player.PlayerGameModeChangeEvent;
+import io.fand.api.event.player.PlayerInteractEntityEvent;
 import io.fand.api.event.player.PlayerInteractEvent;
 import io.fand.api.event.player.PlayerItemConsumeEvent;
 import io.fand.api.event.player.PlayerItemDamageEvent;
+import io.fand.api.event.player.PlayerItemHeldEvent;
 import io.fand.api.event.player.PlayerKickEvent;
+import io.fand.api.event.player.PlayerLoginEvent;
+import io.fand.api.event.player.PlayerMoveEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
 import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
 import io.fand.api.event.player.PlayerToggleSneakEvent;
 import io.fand.api.event.player.PlayerToggleSprintEvent;
+import io.fand.api.event.server.ServerListPingEvent;
 import io.fand.api.event.world.ChunkLoadEvent;
 import io.fand.api.event.world.ChunkUnloadEvent;
+import io.fand.api.event.world.SpawnChangeEvent;
 import io.fand.api.event.world.ThunderChangeEvent;
+import io.fand.api.event.world.TimeSkipEvent;
 import io.fand.api.event.world.WeatherChangeEvent;
 import io.fand.api.event.world.WorldLoadEvent;
 import io.fand.api.event.world.WorldSaveEvent;
@@ -47,11 +106,15 @@ import io.fand.api.world.Difficulty;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldBorder;
+import java.net.InetSocketAddress;
 import java.lang.reflect.Proxy;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.key.Key;
+import net.kyori.adventure.text.Component;
 import org.junit.jupiter.api.Test;
 
 final class EventPayloadTest {
@@ -130,6 +193,47 @@ final class EventPayloadTest {
                 stack("minecraft:stone", 4));
 
         assertThat(event.action()).isEqualTo(InventoryAction.PLACE_ALL);
+    }
+
+    @Test
+    void inventoryMoveItemEventCarriesMutableItemAndDirection() {
+        var source = proxy(Inventory.class);
+        var destination = proxy(Inventory.class);
+        var stone = stack("minecraft:stone", 1);
+        var diamond = stack("minecraft:diamond", 1);
+
+        var event = new InventoryMoveItemEvent(source, destination, stone, true);
+        event.setItem(diamond);
+        event.setCancelled(true);
+        var pickup = new InventoryPickupItemEvent(destination, stone);
+        pickup.setItem(diamond);
+        pickup.setCancelled(true);
+
+        assertThat(event.source()).isSameAs(source);
+        assertThat(event.destination()).isSameAs(destination);
+        assertThat(event.item()).isSameAs(diamond);
+        assertThat(event.sourceInitiated()).isTrue();
+        assertThat(event.cancelled()).isTrue();
+        assertThat(pickup.inventory()).isSameAs(destination);
+        assertThat(pickup.item()).isSameAs(diamond);
+        assertThat(pickup.cancelled()).isTrue();
+    }
+
+    @Test
+    void inventoryDragEventCarriesSlotsAndCancellation() {
+        var player = proxy(Player.class);
+        var inventory = proxy(Inventory.class);
+        var cursor = stack("minecraft:stone", 32);
+
+        var event = new InventoryDragEvent(player, inventory, DragType.EVEN, Set.of(10, 11, 12), cursor);
+        event.setCancelled(true);
+
+        assertThat(event.player()).isSameAs(player);
+        assertThat(event.inventory()).isSameAs(inventory);
+        assertThat(event.dragType()).isEqualTo(DragType.EVEN);
+        assertThat(event.slots()).containsExactlyInAnyOrder(10, 11, 12);
+        assertThat(event.cursorItem()).isSameAs(cursor);
+        assertThat(event.cancelled()).isTrue();
     }
 
     @Test
@@ -236,6 +340,21 @@ final class EventPayloadTest {
     }
 
     @Test
+    void playerMoveEventCarriesLocationsAndCancellation() {
+        var player = proxy(Player.class);
+        var from = location("minecraft:overworld", 0, 64, 0);
+        var to = location("minecraft:overworld", 1, 64, 0);
+
+        var event = new PlayerMoveEvent(player, from, to);
+        event.setCancelled(true);
+
+        assertThat(event.player()).isSameAs(player);
+        assertThat(event.from()).isSameAs(from);
+        assertThat(event.to()).isSameAs(to);
+        assertThat(event.cancelled()).isTrue();
+    }
+
+    @Test
     void playerRespawnEventCarriesMutableLocation() {
         var player = proxy(Player.class);
         var original = location("minecraft:overworld", 0, 64, 0);
@@ -261,6 +380,18 @@ final class EventPayloadTest {
         assertThat(event.cause()).isEqualTo("minecraft:mob_attack");
         assertThat(event.directEntity()).isEmpty();
         assertThat(event.attacker()).contains(attacker);
+    }
+
+    @Test
+    void playerDeathEventCarriesMutableDeathMessage() {
+        var player = proxy(Player.class);
+        var replacement = Component.text("custom death");
+
+        var event = new PlayerDeathEvent(player, Component.text("old death"));
+        event.setDeathMessage(replacement);
+
+        assertThat(event.player()).isSameAs(player);
+        assertThat(event.deathMessage()).isEqualTo(replacement);
     }
 
     @Test
@@ -301,6 +432,92 @@ final class EventPayloadTest {
     }
 
     @Test
+    void entityDetailEventsCarryTargetsAndMutableCombustion() {
+        var projectile = proxy(Entity.class);
+        var hitEntity = proxy(Entity.class);
+        var hitBlock = proxy(Block.class);
+        var location = location("minecraft:overworld", 1, 2, 3);
+        var projectileHit = new ProjectileHitEvent(
+                projectile,
+                Optional.of(hitEntity),
+                Optional.of(hitBlock),
+                location,
+                ProjectileHitEvent.HitType.ENTITY);
+        var combust = new EntityCombustEvent(
+                hitEntity,
+                Optional.of(projectile),
+                EntityCombustEvent.Cause.PROJECTILE,
+                5.0F);
+        combust.setDurationSeconds(-1.0F);
+        combust.setCancelled(true);
+        var regain = new EntityRegainHealthEvent(
+                proxy(LivingEntity.class),
+                -2.0,
+                EntityRegainHealthEvent.Cause.MAGIC);
+        regain.setAmount(3.5);
+        regain.setCancelled(true);
+
+        assertThat(projectileHit.projectile()).isSameAs(projectile);
+        assertThat(projectileHit.hitEntity()).contains(hitEntity);
+        assertThat(projectileHit.hitBlock()).contains(hitBlock);
+        assertThat(projectileHit.hitLocation()).isSameAs(location);
+        assertThat(projectileHit.hitType()).isEqualTo(ProjectileHitEvent.HitType.ENTITY);
+        assertThat(combust.durationSeconds()).isZero();
+        assertThat(combust.source()).contains(projectile);
+        assertThat(combust.cancelled()).isTrue();
+        assertThat(regain.amount()).isEqualTo(3.5);
+        assertThat(regain.cause()).isEqualTo(EntityRegainHealthEvent.Cause.MAGIC);
+        assertThat(regain.cancelled()).isTrue();
+    }
+
+    @Test
+    void entityFineEventsCarryMutableTargetsAndCancellations() {
+        var entity = proxy(LivingEntity.class);
+        var oldTarget = proxy(LivingEntity.class);
+        var newTarget = proxy(LivingEntity.class);
+        var replacement = proxy(LivingEntity.class);
+        var player = proxy(Player.class);
+        var vehicle = proxy(Entity.class);
+        var child = proxy(LivingEntity.class);
+
+        var target = new EntityTargetEvent(
+                entity,
+                Optional.of(oldTarget),
+                Optional.of(newTarget),
+                EntityTargetEvent.Cause.CLOSEST_ENTITY);
+        target.setTarget(Optional.of(replacement));
+        target.setCancelled(true);
+        var effect = new EntityPotionEffectEvent(
+                entity,
+                Key.key("minecraft:speed"),
+                Optional.empty(),
+                Optional.of(new EntityPotionEffectEvent.Effect(120, 1, false, true, true)),
+                Optional.of(vehicle),
+                EntityPotionEffectEvent.Action.ADDED);
+        effect.setCancelled(true);
+        var mount = new EntityMountEvent(vehicle, entity);
+        mount.setCancelled(true);
+        var dismount = new EntityDismountEvent(vehicle, entity);
+        var tame = new EntityTameEvent(entity, player);
+        var breed = new EntityBreedEvent(entity, replacement, Optional.of(player), child);
+
+        assertThat(target.oldTarget()).contains(oldTarget);
+        assertThat(target.target()).contains(replacement);
+        assertThat(target.cause()).isEqualTo(EntityTargetEvent.Cause.CLOSEST_ENTITY);
+        assertThat(target.cancelled()).isTrue();
+        assertThat(effect.effect()).isEqualTo(Key.key("minecraft:speed"));
+        assertThat(effect.newEffect()).get().extracting(EntityPotionEffectEvent.Effect::durationTicks).isEqualTo(120);
+        assertThat(effect.source()).contains(vehicle);
+        assertThat(effect.cancelled()).isTrue();
+        assertThat(mount.vehicle()).isSameAs(entity);
+        assertThat(mount.cancelled()).isTrue();
+        assertThat(dismount.entity()).isSameAs(vehicle);
+        assertThat(tame.owner()).isSameAs(player);
+        assertThat(breed.child()).isSameAs(child);
+        assertThat(breed.breeder()).contains(player);
+    }
+
+    @Test
     void playerItemAndStateEventsCarryMutableFields() {
         var player = proxy(Player.class);
         var stone = stack("minecraft:stone", 1);
@@ -322,6 +539,76 @@ final class EventPayloadTest {
         assertThat(swap.offHandItem()).isSameAs(stone);
         assertThat(sneak.sneaking()).isTrue();
         assertThat(sprint.sprinting()).isFalse();
+    }
+
+    @Test
+    void playerFineEventsCarryBucketsHeldSlotAndEntityInteraction() {
+        var player = proxy(Player.class);
+        var block = proxy(Block.class);
+        var entity = proxy(Entity.class);
+        var emptyBucket = stack("minecraft:bucket", 1);
+        var waterBucket = stack("minecraft:water_bucket", 1);
+        var lavaBucket = stack("minecraft:lava_bucket", 1);
+
+        var held = new PlayerItemHeldEvent(player, 1, 2, emptyBucket, waterBucket);
+        held.setCancelled(true);
+        var interact = new PlayerInteractEntityEvent(
+                player,
+                entity,
+                PlayerInteractEvent.Hand.MAIN_HAND,
+                emptyBucket,
+                true);
+        interact.setCancelled(true);
+        var fill = new PlayerBucketFillEvent(player, block, emptyBucket, waterBucket);
+        fill.setResultItem(lavaBucket);
+        fill.setCancelled(true);
+        var empty = new PlayerBucketEmptyEvent(player, block, Key.key("minecraft:water"), waterBucket, emptyBucket);
+
+        assertThat(held.previousSlot()).isEqualTo(1);
+        assertThat(held.newSlot()).isEqualTo(2);
+        assertThat(held.previousItem()).isSameAs(emptyBucket);
+        assertThat(held.newItem()).isSameAs(waterBucket);
+        assertThat(held.cancelled()).isTrue();
+        assertThat(interact.entity()).isSameAs(entity);
+        assertThat(interact.item()).isSameAs(emptyBucket);
+        assertThat(interact.preciseInteraction()).isTrue();
+        assertThat(interact.cancelled()).isTrue();
+        assertThat(fill.resultItem()).isSameAs(lavaBucket);
+        assertThat(fill.cancelled()).isTrue();
+        assertThat(empty.fluid()).isEqualTo(Key.key("minecraft:water"));
+    }
+
+    @Test
+    void playerDetailEventsCarryMutableFields() {
+        var player = proxy(Player.class);
+        var bed = proxy(Block.class);
+        var food = new PlayerFoodLevelChangeEvent(
+                player,
+                18,
+                20,
+                1.0F,
+                4.0F,
+                PlayerFoodLevelChangeEvent.Cause.EAT);
+        food.setToLevel(19);
+        food.setToSaturation(50.0F);
+        food.setCancelled(true);
+        var xp = new PlayerExperienceChangeEvent(player, 5);
+        xp.setAmount(12);
+        var bedEnter = new PlayerBedEnterEvent(player, bed);
+        bedEnter.setCancelled(true);
+        var bedLeave = new PlayerBedLeaveEvent(player, bed, true);
+        var advancement = new PlayerAdvancementDoneEvent(player, Key.key("minecraft:story/mine_stone"));
+
+        assertThat(food.fromLevel()).isEqualTo(18);
+        assertThat(food.toLevel()).isEqualTo(19);
+        assertThat(food.toSaturation()).isEqualTo(50.0F);
+        assertThat(food.cause()).isEqualTo(PlayerFoodLevelChangeEvent.Cause.EAT);
+        assertThat(food.cancelled()).isTrue();
+        assertThat(xp.amount()).isEqualTo(12);
+        assertThat(bedEnter.bed()).isSameAs(bed);
+        assertThat(bedEnter.cancelled()).isTrue();
+        assertThat(bedLeave.forcefulWakeUp()).isTrue();
+        assertThat(advancement.advancement()).isEqualTo(Key.key("minecraft:story/mine_stone"));
     }
 
     @Test
@@ -358,6 +645,164 @@ final class EventPayloadTest {
     }
 
     @Test
+    void blockDetailEventsCarryCausesAndMutableCancellation() {
+        var sourceBlock = proxy(Block.class);
+        var block = proxy(Block.class);
+        var oldType = proxy(BlockType.class);
+        var newType = proxy(BlockType.class);
+
+        var burn = new BlockBurnEvent(block, oldType, sourceBlock);
+        burn.setCancelled(true);
+        var fade = new BlockFadeEvent(block, oldType, newType, BlockFadeEvent.Cause.MELT);
+        var grow = new BlockGrowEvent(block, oldType, newType, BlockGrowEvent.Cause.BONEMEAL);
+        var ignite = new BlockIgniteEvent(block, newType, BlockIgniteEvent.Cause.SPREAD, Optional.of(sourceBlock));
+        ignite.setCancelled(true);
+        var spread = new BlockSpreadEvent(sourceBlock, block, oldType, newType, BlockSpreadEvent.Cause.FIRE);
+        var leaves = new LeavesDecayEvent(block, oldType);
+        var dispense = new BlockDispenseEvent(sourceBlock, BlockFace.NORTH, stack("minecraft:arrow", 1));
+        dispense.setItem(stack("minecraft:spectral_arrow", 1));
+        dispense.setCancelled(true);
+
+        assertThat(burn.sourceBlock()).isSameAs(sourceBlock);
+        assertThat(burn.cancelled()).isTrue();
+        assertThat(fade.cause()).isEqualTo(BlockFadeEvent.Cause.MELT);
+        assertThat(grow.cause()).isEqualTo(BlockGrowEvent.Cause.BONEMEAL);
+        assertThat(ignite.sourceBlock()).contains(sourceBlock);
+        assertThat(ignite.cancelled()).isTrue();
+        assertThat(spread.sourceType()).isSameAs(oldType);
+        assertThat(spread.newType()).isSameAs(newType);
+        assertThat(leaves.blockType()).isSameAs(oldType);
+        assertThat(dispense.direction()).isEqualTo(BlockFace.NORTH);
+        assertThat(dispense.item().type().key()).isEqualTo(Key.key("minecraft:spectral_arrow"));
+        assertThat(dispense.cancelled()).isTrue();
+    }
+
+    @Test
+    void blockFineEventsCarryPistonAndFluidDetails() {
+        var sourceBlock = proxy(Block.class);
+        var block = proxy(Block.class);
+        var affected = java.util.List.of(proxy(Block.class), proxy(Block.class));
+
+        var extend = new BlockPistonExtendEvent(sourceBlock, BlockFace.EAST, affected);
+        extend.setCancelled(true);
+        var retract = new BlockPistonRetractEvent(sourceBlock, BlockFace.WEST, affected);
+        var fluid = new FluidFlowEvent(sourceBlock, block, Key.key("minecraft:water"), BlockFace.DOWN);
+        fluid.setCancelled(true);
+
+        assertThat(extend.block()).isSameAs(sourceBlock);
+        assertThat(extend.direction()).isEqualTo(BlockFace.EAST);
+        assertThat(extend.affectedBlocks()).hasSize(2);
+        assertThat(extend.cancelled()).isTrue();
+        assertThat(retract.direction()).isEqualTo(BlockFace.WEST);
+        assertThat(fluid.sourceBlock()).isSameAs(sourceBlock);
+        assertThat(fluid.block()).isSameAs(block);
+        assertThat(fluid.fluid()).isEqualTo(Key.key("minecraft:water"));
+        assertThat(fluid.direction()).isEqualTo(BlockFace.DOWN);
+        assertThat(fluid.cancelled()).isTrue();
+    }
+
+    @Test
+    void blockEcosystemEventsExposeMutableExplosionRedstoneAndSigns() {
+        var player = proxy(Player.class);
+        var block = proxy(Block.class);
+        var affected = new java.util.ArrayList<>(List.of(proxy(Block.class), proxy(Block.class)));
+
+        var explode = new BlockExplodeEvent(block, affected);
+        explode.affectedBlocks().removeFirst();
+        explode.setCancelled(true);
+        var redstone = new BlockRedstoneEvent(block, 20, -4);
+        redstone.setNewCurrent(99);
+        var sign = new SignChangeEvent(player, block, true, List.of("[fand]", "old"));
+        sign.setLine(1, "new");
+        sign.setCancelled(true);
+
+        assertThat(explode.block()).isSameAs(block);
+        assertThat(explode.affectedBlocks()).hasSize(1);
+        assertThat(explode.cancelled()).isTrue();
+        assertThat(redstone.oldCurrent()).isEqualTo(15);
+        assertThat(redstone.newCurrent()).isEqualTo(15);
+        assertThat(sign.player()).isSameAs(player);
+        assertThat(sign.frontText()).isTrue();
+        assertThat(sign.lines()).containsExactly("[fand]", "new");
+        assertThat(sign.cancelled()).isTrue();
+    }
+
+    @Test
+    void craftingEventsCarryRecipeAndMutableResult() {
+        var player = proxy(Player.class);
+        var inventory = proxy(Inventory.class);
+        var recipe = proxy(Recipe.class);
+        var stone = stack("minecraft:stone", 1);
+        var diamond = stack("minecraft:diamond", 1);
+
+        var prepare = new PrepareItemCraftEvent(player, inventory, Optional.of(recipe), stone);
+        prepare.setResult(diamond);
+        var craft = new CraftItemEvent(player, inventory, Optional.of(recipe), diamond, ClickType.QUICK_MOVE);
+        craft.setCancelled(true);
+
+        assertThat(prepare.player()).isSameAs(player);
+        assertThat(prepare.inventory()).isSameAs(inventory);
+        assertThat(prepare.recipe()).contains(recipe);
+        assertThat(prepare.result()).isSameAs(diamond);
+        assertThat(craft.result()).isSameAs(diamond);
+        assertThat(craft.clickType()).isEqualTo(ClickType.QUICK_MOVE);
+        assertThat(craft.cancelled()).isTrue();
+    }
+
+    @Test
+    void workstationEventsCarryMutableResultsAndCancellation() {
+        var player = proxy(Player.class);
+        var inventory = proxy(Inventory.class);
+        var block = proxy(Block.class);
+        var recipe = proxy(Recipe.class);
+        var stone = stack("minecraft:stone", 1);
+        var diamond = stack("minecraft:diamond", 1);
+        var coal = stack("minecraft:coal", 1);
+        var offer = new EnchantmentOffer(0, -3, Optional.of(Key.key("minecraft:sharpness")), -2);
+        offer.setCost(5);
+        offer.setLevel(2);
+
+        var prepareEnchant = new PrepareItemEnchantEvent(player, inventory, stone, 15, List.of(offer));
+        var enchant = new EnchantItemEvent(player, inventory, stone, diamond, 0, 3, 2, List.of(offer));
+        enchant.setResultItem(stone);
+        enchant.setCancelled(true);
+        var anvil = new PrepareAnvilEvent(player, inventory, stone, diamond, stone, 7, Optional.of("Demo"));
+        anvil.setResult(diamond);
+        anvil.setCost(4);
+        var smithing = new PrepareSmithingEvent(player, inventory, Optional.of(recipe), stone, stone, diamond, stone);
+        smithing.setResult(diamond);
+        var burn = new FurnaceBurnEvent(block, inventory, coal, -1);
+        burn.setBurnTime(200);
+        burn.setCancelled(true);
+        var smelt = new FurnaceSmeltEvent(block, inventory, Optional.of(recipe), stone, diamond);
+        smelt.setResult(stone);
+        smelt.setCancelled(true);
+        var extract = new FurnaceExtractEvent(player, inventory, diamond, 3);
+        var brew = new BrewEvent(block, inventory, stone, List.of(diamond));
+        brew.results().add(stone);
+        brew.setCancelled(true);
+
+        assertThat(offer.cost()).isEqualTo(5);
+        assertThat(offer.level()).isEqualTo(2);
+        assertThat(prepareEnchant.bookshelfPower()).isEqualTo(15);
+        assertThat(prepareEnchant.offers()).singleElement().isSameAs(offer);
+        assertThat(enchant.resultItem()).isSameAs(stone);
+        assertThat(enchant.cancelled()).isTrue();
+        assertThat(anvil.result()).isSameAs(diamond);
+        assertThat(anvil.cost()).isEqualTo(4);
+        assertThat(anvil.renameText()).contains("Demo");
+        assertThat(smithing.recipe()).contains(recipe);
+        assertThat(smithing.result()).isSameAs(diamond);
+        assertThat(burn.burnTime()).isEqualTo(200);
+        assertThat(burn.cancelled()).isTrue();
+        assertThat(smelt.result()).isSameAs(stone);
+        assertThat(smelt.cancelled()).isTrue();
+        assertThat(extract.amount()).isEqualTo(3);
+        assertThat(brew.results()).hasSize(2);
+        assertThat(brew.cancelled()).isTrue();
+    }
+
+    @Test
     void worldLifecycleEventsCarryWorld() {
         var world = new TestWorld(Key.key("minecraft:overworld"));
 
@@ -372,6 +817,82 @@ final class EventPayloadTest {
         assertThat(weather.toStorm()).isTrue();
         assertThat(thunder.toThundering()).isTrue();
         assertThat(thunder.cancelled()).isTrue();
+    }
+
+    @Test
+    void entityEcosystemEventsCarryMutableExplosionProjectilesAndTransforms() {
+        var entity = proxy(Entity.class);
+        var shooter = proxy(LivingEntity.class);
+        var projectile = proxy(Entity.class);
+        var block = proxy(Block.class);
+        var location = location("minecraft:overworld", 1, 64, 1);
+        var bow = stack("minecraft:bow", 1);
+        var arrow = stack("minecraft:arrow", 1);
+        var affected = new java.util.ArrayList<>(List.of(block, proxy(Block.class)));
+
+        var explode = new EntityExplodeEvent(entity, location, affected);
+        explode.affectedBlocks().removeLast();
+        explode.setCancelled(true);
+        var launch = new ProjectileLaunchEvent(projectile, Optional.of(entity), arrow);
+        launch.setCancelled(true);
+        var shoot = new EntityShootBowEvent(shooter, bow, arrow, projectile, -1.0F);
+        shoot.setCancelled(true);
+        var resurrect = new EntityResurrectEvent(shooter, stack("minecraft:totem_of_undying", 1), EntityResurrectEvent.Hand.OFF_HAND);
+        resurrect.setCancelled(true);
+        var transform = new EntityTransformEvent(entity, Key.key("minecraft:zombie_villager"), EntityTransformEvent.Cause.CONVERSION);
+        transform.setCancelled(true);
+
+        assertThat(explode.location()).isSameAs(location);
+        assertThat(explode.affectedBlocks()).containsExactly(block);
+        assertThat(explode.cancelled()).isTrue();
+        assertThat(launch.shooter()).contains(entity);
+        assertThat(launch.cancelled()).isTrue();
+        assertThat(shoot.force()).isZero();
+        assertThat(shoot.cancelled()).isTrue();
+        assertThat(resurrect.hand()).isEqualTo(EntityResurrectEvent.Hand.OFF_HAND);
+        assertThat(resurrect.cancelled()).isTrue();
+        assertThat(transform.targetType()).isEqualTo(Key.key("minecraft:zombie_villager"));
+        assertThat(transform.cause()).isEqualTo(EntityTransformEvent.Cause.CONVERSION);
+        assertThat(transform.cancelled()).isTrue();
+    }
+
+    @Test
+    void serverAndWorldControlEventsCarryMutableState() {
+        var address = InetSocketAddress.createUnresolved("127.0.0.1", 25565);
+        var login = new PlayerLoginEvent(
+                java.util.UUID.randomUUID(),
+                "Steve",
+                address,
+                PlayerLoginEvent.Result.ALLOWED,
+                Component.text("ok"));
+        login.disallow(PlayerLoginEvent.Result.KICK_OTHER, Component.text("no"));
+        var ping = new ServerListPingEvent(Component.text("old"), 2, 20, false);
+        ping.setMotd(Component.text("new"));
+        ping.setOnlinePlayers(-1);
+        ping.setMaxPlayers(40);
+        ping.setHidePlayers(true);
+        var previous = location("minecraft:overworld", 0, 64, 0);
+        var next = location("minecraft:overworld", 10, 70, 10);
+        var spawn = new SpawnChangeEvent(previous, next);
+        spawn.setNewSpawn(previous);
+        spawn.setCancelled(true);
+        var skip = new TimeSkipEvent(previous.world(), TimeSkipEvent.Cause.SLEEP, 1000, 24000);
+        skip.setToTime(26000);
+        skip.setCancelled(true);
+
+        assertThat(login.address()).isSameAs(address);
+        assertThat(login.result()).isEqualTo(PlayerLoginEvent.Result.KICK_OTHER);
+        assertThat(login.kickMessage()).isEqualTo(Component.text("no"));
+        assertThat(ping.motd()).isEqualTo(Component.text("new"));
+        assertThat(ping.onlinePlayers()).isZero();
+        assertThat(ping.maxPlayers()).isEqualTo(40);
+        assertThat(ping.hidePlayers()).isTrue();
+        assertThat(spawn.previousSpawn()).isSameAs(previous);
+        assertThat(spawn.newSpawn()).isSameAs(previous);
+        assertThat(spawn.cancelled()).isTrue();
+        assertThat(skip.world()).isSameAs(previous.world());
+        assertThat(skip.toTime()).isEqualTo(26000);
+        assertThat(skip.cancelled()).isTrue();
     }
 
     private static <T> T proxy(Class<T> type) {

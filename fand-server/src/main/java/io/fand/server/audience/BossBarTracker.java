@@ -22,7 +22,7 @@ import net.minecraft.world.BossEvent;
  */
 public final class BossBarTracker {
 
-    private final ServerPlayer player;
+    private ServerPlayer player;
     private final Map<BossBar, Entry> entries = new HashMap<>();
 
     public BossBarTracker(ServerPlayer player) {
@@ -30,9 +30,7 @@ public final class BossBarTracker {
     }
 
     public void rebind(ServerPlayer freshHandle) {
-        for (var entry : entries.values()) {
-            sendAdd(freshHandle, entry.event);
-        }
+        this.player = freshHandle;
     }
 
     public void show(BossBar bar) {

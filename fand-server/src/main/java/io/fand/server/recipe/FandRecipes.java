@@ -34,7 +34,7 @@ import net.minecraft.world.item.crafting.SmeltingRecipe;
 import net.minecraft.world.item.crafting.SmokingRecipe;
 import net.minecraft.world.item.crafting.StonecutterRecipe;
 
-final class FandRecipes {
+public final class FandRecipes {
 
     private FandRecipes() {
     }
@@ -50,7 +50,7 @@ final class FandRecipes {
         };
     }
 
-    static io.fand.api.recipe.Recipe fromVanilla(RecipeHolder<?> holder) {
+    public static io.fand.api.recipe.Recipe fromVanilla(RecipeHolder<?> holder) {
         var recipe = holder.value();
         var key = key(holder.id().identifier());
         return switch (recipe) {
@@ -326,7 +326,7 @@ final class FandRecipes {
         return Identifier.fromNamespaceAndPath(key.namespace(), key.value());
     }
 
-    static Key key(Identifier id) {
+    public static Key key(Identifier id) {
         return Key.key(id.getNamespace(), id.getPath());
     }
 }

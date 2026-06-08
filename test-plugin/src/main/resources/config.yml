@@ -18,20 +18,32 @@ features:
   mute-next-demo: true
   report-right-clicks: false
   log-inventory-clicks: false
+  log-inventory-moves: false
+  log-crafting-events: false
+  log-workstation-events: false
   log-world-events: true
   log-chunk-events: false
+  log-server-events: false
   log-block-change-events: false
   log-block-physics-events: false
+  log-block-detail-events: false
+  log-redstone-events: false
   log-entity-spawns: false
   log-entity-removes: false
   log-entity-teleports: false
+  log-entity-detail-events: false
+  log-player-move-events: false
   log-player-state-events: false
+  log-player-detail-events: false
+  decorate-player-death-message: true
   decorate-kick-reason: true
+  decorate-server-list: true
 
 protections:
   block-tnt-placement: true
   cancel-fall-damage: true
   limit-explosion-radius: true
+  limit-explosion-block-damage: true
 
 limits:
   max-give-amount: 2304

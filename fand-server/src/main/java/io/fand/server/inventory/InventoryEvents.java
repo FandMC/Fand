@@ -1,22 +1,50 @@
 package io.fand.server.inventory;
 
+import io.fand.api.event.inventory.BrewEvent;
 import io.fand.api.event.inventory.ClickType;
 import io.fand.api.event.inventory.DragType;
+import io.fand.api.event.inventory.EnchantItemEvent;
+import io.fand.api.event.inventory.EnchantmentOffer;
+import io.fand.api.event.inventory.FurnaceBurnEvent;
+import io.fand.api.event.inventory.FurnaceExtractEvent;
+import io.fand.api.event.inventory.FurnaceSmeltEvent;
 import io.fand.api.event.inventory.InventoryClickEvent;
 import io.fand.api.event.inventory.InventoryCloseEvent;
 import io.fand.api.event.inventory.InventoryDragEvent;
+import io.fand.api.event.inventory.InventoryMoveItemEvent;
 import io.fand.api.event.inventory.InventoryOpenEvent;
+import io.fand.api.event.inventory.InventoryPickupItemEvent;
+import io.fand.api.event.inventory.PrepareAnvilEvent;
+import io.fand.api.event.inventory.PrepareItemEnchantEvent;
+import io.fand.api.event.inventory.PrepareSmithingEvent;
 import io.fand.api.inventory.InventoryType;
 import io.fand.api.item.ItemStack;
 import io.fand.server.entity.FandPlayer;
+import io.fand.server.block.FandBlock;
 import io.fand.server.hooks.FandHooks;
 import io.fand.server.item.FandItemStacks;
+import io.fand.server.recipe.FandRecipes;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import net.kyori.adventure.key.Key;
+import net.minecraft.core.Holder;
+import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.Container;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.EnchantmentInstance;
+import net.minecraft.world.item.crafting.RecipeHolder;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fires the public inventory events from vanilla call sites. Each method:
@@ -125,6 +153,73 @@ public final class InventoryEvents {
         return !event.cancelled();
     }
 
+    public static ClickType resolveClickType(ContainerInput input, int button, int slot) {
+        return ClickTypes.resolve(input, button, slot);
+    }
+
+    public static MoveItemResult fireMoveItem(
+            Container source,
+            Container destination,
+            net.minecraft.world.item.ItemStack itemStack,
+            boolean sourceInitiated
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(InventoryMoveItemEvent.class)) {
+            return new MoveItemResult(true, itemStack);
+        }
+        var event = new InventoryMoveItemEvent(
+                new FandContainerInventory(source, InventoryType.UNKNOWN),
+                new FandContainerInventory(destination, InventoryType.UNKNOWN),
+                FandItemStacks.fromVanilla(itemStack),
+                sourceInitiated);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("InventoryMoveItemEvent listener failed", failure);
+            return new MoveItemResult(true, itemStack);
+        }
+        if (event.cancelled() || event.item().isEmpty()) {
+            return new MoveItemResult(false, itemStack);
+        }
+        try {
+            return new MoveItemResult(true, FandItemStacks.toVanilla(event.item()));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("InventoryMoveItemEvent supplied an invalid item stack", failure);
+            return new MoveItemResult(true, itemStack);
+        }
+    }
+
+    public record MoveItemResult(boolean allowed, net.minecraft.world.item.ItemStack itemStack) {
+    }
+
+    public static MoveItemResult firePickupItem(
+            Container inventory,
+            net.minecraft.world.item.ItemStack itemStack
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(InventoryPickupItemEvent.class)) {
+            return new MoveItemResult(true, itemStack);
+        }
+        var event = new InventoryPickupItemEvent(
+                new FandContainerInventory(inventory, InventoryType.UNKNOWN),
+                FandItemStacks.fromVanilla(itemStack));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("InventoryPickupItemEvent listener failed", failure);
+            return new MoveItemResult(true, itemStack);
+        }
+        if (event.cancelled() || event.item().isEmpty()) {
+            return new MoveItemResult(false, itemStack);
+        }
+        try {
+            return new MoveItemResult(true, FandItemStacks.toVanilla(event.item()));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("InventoryPickupItemEvent supplied an invalid item stack", failure);
+            return new MoveItemResult(true, itemStack);
+        }
+    }
+
     /**
      * Returns {@code true} if the drag placement should proceed. Called from
      * {@link AbstractContainerMenu#doClick} at QUICKCRAFT_HEADER_END after the
@@ -164,5 +259,332 @@ public final class InventoryEvents {
             return true;
         }
         return !event.cancelled();
+    }
+
+    public static void firePrepareEnchant(
+            ServerPlayer player,
+            AbstractContainerMenu menu,
+            RegistryAccess access,
+            net.minecraft.world.item.ItemStack itemStack,
+            int bookshelfPower,
+            int[] costs,
+            int[] enchantClue,
+            int[] levelClue
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PrepareItemEnchantEvent.class)) {
+            return;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return;
+        }
+        var offers = new ArrayList<EnchantmentOffer>();
+        var holders = access.lookupOrThrow(Registries.ENCHANTMENT).asHolderIdMap();
+        for (int slot = 0; slot < costs.length; slot++) {
+            Optional<Key> enchantment = Optional.ofNullable(holders.byId(enchantClue[slot]))
+                    .flatMap(Holder::unwrapKey)
+                    .map(ResourceKey::identifier)
+                    .map(InventoryEvents::key);
+            offers.add(new EnchantmentOffer(slot, costs[slot], enchantment, levelClue[slot]));
+        }
+        var event = new PrepareItemEnchantEvent(
+                fandPlayer,
+                new ContainerMenuView(menu),
+                FandItemStacks.fromVanilla(itemStack),
+                bookshelfPower,
+                offers);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PrepareItemEnchantEvent listener failed", failure);
+            return;
+        }
+        for (var offer : event.offers()) {
+            int slot = offer.slot();
+            if (slot < 0 || slot >= costs.length) {
+                continue;
+            }
+            costs[slot] = offer.cost();
+            levelClue[slot] = offer.level();
+            enchantClue[slot] = offer.enchantment()
+                    .flatMap(enchantment -> resolveEnchantmentId(access, enchantment))
+                    .orElse(-1);
+        }
+    }
+
+    public static net.minecraft.world.item.@Nullable ItemStack fireEnchantItem(
+            ServerPlayer player,
+            AbstractContainerMenu menu,
+            net.minecraft.world.item.ItemStack inputItem,
+            net.minecraft.world.item.ItemStack resultItem,
+            int button,
+            int levelCost,
+            int xpCost,
+            List<EnchantmentInstance> enchantments
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(EnchantItemEvent.class)) {
+            return resultItem;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return resultItem;
+        }
+        var offers = enchantments.stream()
+                .map(enchantment -> new EnchantmentOffer(
+                        button,
+                        xpCost,
+                        enchantment.enchantment().unwrapKey().map(ResourceKey::identifier).map(InventoryEvents::key),
+                        enchantment.level()))
+                .toList();
+        var event = new EnchantItemEvent(
+                fandPlayer,
+                new ContainerMenuView(menu),
+                FandItemStacks.fromVanilla(inputItem),
+                FandItemStacks.fromVanilla(resultItem),
+                button,
+                levelCost,
+                xpCost,
+                offers);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EnchantItemEvent listener failed", failure);
+            return resultItem;
+        }
+        if (event.cancelled() || event.resultItem().isEmpty()) {
+            return null;
+        }
+        try {
+            return FandItemStacks.toVanilla(event.resultItem());
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EnchantItemEvent supplied an invalid result item", failure);
+            return resultItem;
+        }
+    }
+
+    public static AnvilResult firePrepareAnvil(
+            ServerPlayer player,
+            AbstractContainerMenu menu,
+            net.minecraft.world.item.ItemStack firstItem,
+            net.minecraft.world.item.ItemStack secondItem,
+            net.minecraft.world.item.ItemStack result,
+            int cost,
+            Optional<String> renameText
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PrepareAnvilEvent.class)) {
+            return new AnvilResult(result, cost);
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return new AnvilResult(result, cost);
+        }
+        var event = new PrepareAnvilEvent(
+                fandPlayer,
+                new ContainerMenuView(menu),
+                FandItemStacks.fromVanilla(firstItem),
+                FandItemStacks.fromVanilla(secondItem),
+                FandItemStacks.fromVanilla(result),
+                cost,
+                renameText);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PrepareAnvilEvent listener failed", failure);
+            return new AnvilResult(result, cost);
+        }
+        try {
+            return new AnvilResult(FandItemStacks.toVanilla(event.result()), event.cost());
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PrepareAnvilEvent supplied an invalid result item", failure);
+            return new AnvilResult(result, cost);
+        }
+    }
+
+    public static net.minecraft.world.item.ItemStack firePrepareSmithing(
+            ServerPlayer player,
+            AbstractContainerMenu menu,
+            Optional<RecipeHolder<?>> recipe,
+            net.minecraft.world.item.ItemStack templateItem,
+            net.minecraft.world.item.ItemStack baseItem,
+            net.minecraft.world.item.ItemStack additionItem,
+            net.minecraft.world.item.ItemStack result
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PrepareSmithingEvent.class)) {
+            return result;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return result;
+        }
+        var event = new PrepareSmithingEvent(
+                fandPlayer,
+                new ContainerMenuView(menu),
+                recipe.map(FandRecipes::fromVanilla),
+                FandItemStacks.fromVanilla(templateItem),
+                FandItemStacks.fromVanilla(baseItem),
+                FandItemStacks.fromVanilla(additionItem),
+                FandItemStacks.fromVanilla(result));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PrepareSmithingEvent listener failed", failure);
+            return result;
+        }
+        try {
+            return FandItemStacks.toVanilla(event.result());
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PrepareSmithingEvent supplied an invalid result item", failure);
+            return result;
+        }
+    }
+
+    public static int fireFurnaceBurn(
+            ServerLevel level,
+            net.minecraft.core.BlockPos pos,
+            Container inventory,
+            net.minecraft.world.item.ItemStack fuel,
+            int burnTime
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(FurnaceBurnEvent.class)) {
+            return burnTime;
+        }
+        var world = FandHooks.wrapWorld(level);
+        if (world == null) {
+            return burnTime;
+        }
+        var event = new FurnaceBurnEvent(
+                new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()),
+                new FandContainerInventory(inventory, InventoryType.FURNACE),
+                FandItemStacks.fromVanilla(fuel),
+                burnTime);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("FurnaceBurnEvent listener failed", failure);
+            return burnTime;
+        }
+        return event.cancelled() ? 0 : event.burnTime();
+    }
+
+    public static net.minecraft.world.item.@Nullable ItemStack fireFurnaceSmelt(
+            ServerLevel level,
+            net.minecraft.core.BlockPos pos,
+            Container inventory,
+            Optional<RecipeHolder<?>> recipe,
+            net.minecraft.world.item.ItemStack source,
+            net.minecraft.world.item.ItemStack result
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(FurnaceSmeltEvent.class)) {
+            return result;
+        }
+        var world = FandHooks.wrapWorld(level);
+        if (world == null) {
+            return result;
+        }
+        var event = new FurnaceSmeltEvent(
+                new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()),
+                new FandContainerInventory(inventory, InventoryType.FURNACE),
+                recipe.map(FandRecipes::fromVanilla),
+                FandItemStacks.fromVanilla(source),
+                FandItemStacks.fromVanilla(result));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("FurnaceSmeltEvent listener failed", failure);
+            return result;
+        }
+        if (event.cancelled() || event.result().isEmpty()) {
+            return null;
+        }
+        try {
+            return FandItemStacks.toVanilla(event.result());
+        } catch (RuntimeException failure) {
+            LOGGER.warn("FurnaceSmeltEvent supplied an invalid result item", failure);
+            return result;
+        }
+    }
+
+    public static void fireFurnaceExtract(
+            ServerPlayer player,
+            Container inventory,
+            net.minecraft.world.item.ItemStack item,
+            int amount
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(FurnaceExtractEvent.class) || amount <= 0) {
+            return;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return;
+        }
+        try {
+            bus.fire(new FurnaceExtractEvent(
+                    fandPlayer,
+                    new FandContainerInventory(inventory, InventoryType.FURNACE),
+                    FandItemStacks.fromVanilla(item),
+                    amount));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("FurnaceExtractEvent listener failed", failure);
+        }
+    }
+
+    public static @Nullable List<net.minecraft.world.item.ItemStack> fireBrew(
+            net.minecraft.world.level.Level level,
+            net.minecraft.core.BlockPos pos,
+            Container inventory,
+            net.minecraft.world.item.ItemStack ingredient,
+            List<net.minecraft.world.item.ItemStack> results
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(BrewEvent.class)) {
+            return results;
+        }
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return results;
+        }
+        var world = FandHooks.wrapWorld(serverLevel);
+        if (world == null) {
+            return results;
+        }
+        var event = new BrewEvent(
+                new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()),
+                new FandContainerInventory(inventory, InventoryType.BREWING),
+                FandItemStacks.fromVanilla(ingredient),
+                results.stream().map(FandItemStacks::fromVanilla).toList());
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("BrewEvent listener failed", failure);
+            return results;
+        }
+        if (event.cancelled()) {
+            return null;
+        }
+        try {
+            return event.results().stream().map(FandItemStacks::toVanilla).toList();
+        } catch (RuntimeException failure) {
+            LOGGER.warn("BrewEvent supplied invalid result items", failure);
+            return results;
+        }
+    }
+
+    public record AnvilResult(net.minecraft.world.item.ItemStack itemStack, int cost) {
+    }
+
+    private static Optional<Integer> resolveEnchantmentId(RegistryAccess access, Key key) {
+        var registry = access.lookupOrThrow(Registries.ENCHANTMENT);
+        var holder = registry.get(ResourceKey.create(Registries.ENCHANTMENT, Identifier.fromNamespaceAndPath(key.namespace(), key.value())));
+        return holder.map(value -> registry.asHolderIdMap().getId((Holder<Enchantment>) value));
+    }
+
+    private static Key key(Identifier identifier) {
+        return Key.key(identifier.getNamespace(), identifier.getPath());
     }
 }

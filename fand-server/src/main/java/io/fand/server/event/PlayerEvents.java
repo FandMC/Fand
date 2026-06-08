@@ -1,9 +1,19 @@
 package io.fand.server.event;
 
 import io.fand.api.event.player.PlayerDropItemEvent;
+import io.fand.api.event.player.PlayerAdvancementDoneEvent;
+import io.fand.api.event.player.PlayerBedEnterEvent;
+import io.fand.api.event.player.PlayerBedLeaveEvent;
+import io.fand.api.event.player.PlayerBucketEmptyEvent;
+import io.fand.api.event.player.PlayerBucketFillEvent;
+import io.fand.api.event.player.PlayerExperienceChangeEvent;
+import io.fand.api.event.player.PlayerFoodLevelChangeEvent;
 import io.fand.api.event.player.PlayerGameModeChangeEvent;
+import io.fand.api.event.player.PlayerInteractEntityEvent;
+import io.fand.api.event.player.PlayerInteractEvent;
 import io.fand.api.event.player.PlayerItemConsumeEvent;
 import io.fand.api.event.player.PlayerItemDamageEvent;
+import io.fand.api.event.player.PlayerItemHeldEvent;
 import io.fand.api.event.player.PlayerKickEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
@@ -13,6 +23,7 @@ import io.fand.api.event.player.PlayerToggleSneakEvent;
 import io.fand.api.event.player.PlayerToggleSprintEvent;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
+import io.fand.server.block.FandBlock;
 import io.fand.server.command.AdventureBridge;
 import io.fand.server.entity.GameModes;
 import io.fand.server.command.CommandEvents;
@@ -22,12 +33,18 @@ import io.fand.server.item.FandItemStacks;
 import io.fand.server.world.FandWorld;
 import java.util.Objects;
 import java.util.Optional;
+import net.kyori.adventure.key.Key;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.entity.Relative;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.portal.TeleportTransition;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
@@ -265,6 +282,62 @@ public final class PlayerEvents {
         return !event.cancelled();
     }
 
+    public static boolean fireItemHeld(ServerPlayer player, int previousSlot, int newSlot) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerItemHeldEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return true;
+        }
+        var inventory = player.getInventory();
+        var event = new PlayerItemHeldEvent(
+                fandPlayer,
+                previousSlot,
+                newSlot,
+                FandItemStacks.fromVanilla(inventory.getItem(previousSlot)),
+                FandItemStacks.fromVanilla(inventory.getItem(newSlot)));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerItemHeldEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireInteractEntity(
+            ServerPlayer player,
+            net.minecraft.world.entity.Entity target,
+            InteractionHand hand,
+            net.minecraft.world.item.ItemStack itemStack,
+            boolean preciseInteraction
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerInteractEntityEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        var fandTarget = FandHooks.wrapEntity(target);
+        if (fandPlayer == null || fandTarget == null) {
+            return true;
+        }
+        var event = new PlayerInteractEntityEvent(
+                fandPlayer,
+                fandTarget,
+                hand(hand),
+                FandItemStacks.fromVanilla(itemStack),
+                preciseInteraction);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerInteractEntityEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
     public static @Nullable GameType fireGameModeChange(ServerPlayer player, GameType from, GameType to) {
         if (from == to) {
             return to;
@@ -317,6 +390,195 @@ public final class PlayerEvents {
             return null;
         }
         return AdventureBridge.toVanillaOrFallback(event.reason(), reason, player.registryAccess());
+    }
+
+    public static @Nullable FoodChange fireFoodLevelChange(
+            ServerPlayer player,
+            int fromLevel,
+            int toLevel,
+            float fromSaturation,
+            float toSaturation,
+            PlayerFoodLevelChangeEvent.Cause cause
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerFoodLevelChangeEvent.class)) {
+            return new FoodChange(toLevel, toSaturation);
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return new FoodChange(toLevel, toSaturation);
+        }
+        var event = new PlayerFoodLevelChangeEvent(
+                fandPlayer,
+                fromLevel,
+                toLevel,
+                fromSaturation,
+                toSaturation,
+                cause);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerFoodLevelChangeEvent listener failed", failure);
+            return new FoodChange(toLevel, toSaturation);
+        }
+        return event.cancelled() ? null : new FoodChange(event.toLevel(), event.toSaturation());
+    }
+
+    public static net.minecraft.world.item.@Nullable ItemStack fireBucketFill(
+            ServerPlayer player,
+            BlockPos pos,
+            net.minecraft.world.item.ItemStack bucket,
+            net.minecraft.world.item.ItemStack result
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerBucketFillEvent.class)) {
+            return result;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        var world = FandHooks.wrapWorld(player.level());
+        if (fandPlayer == null || world == null) {
+            return result;
+        }
+        var event = new PlayerBucketFillEvent(
+                fandPlayer,
+                new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()),
+                FandItemStacks.fromVanilla(bucket),
+                FandItemStacks.fromVanilla(result));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerBucketFillEvent listener failed", failure);
+            return result;
+        }
+        if (event.cancelled() || event.resultItem().isEmpty()) {
+            return null;
+        }
+        try {
+            return FandItemStacks.toVanilla(event.resultItem());
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerBucketFillEvent supplied an invalid result item", failure);
+            return result;
+        }
+    }
+
+    public static net.minecraft.world.item.@Nullable ItemStack fireBucketEmpty(
+            ServerPlayer player,
+            BlockPos pos,
+            Fluid fluid,
+            net.minecraft.world.item.ItemStack bucket,
+            net.minecraft.world.item.ItemStack result
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerBucketEmptyEvent.class)) {
+            return result;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        var world = FandHooks.wrapWorld(player.level());
+        if (fandPlayer == null || world == null) {
+            return result;
+        }
+        var identifier = BuiltInRegistries.FLUID.getKey(fluid);
+        var event = new PlayerBucketEmptyEvent(
+                fandPlayer,
+                new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()),
+                identifier == null ? Key.key("minecraft:empty") : Key.key(identifier.getNamespace(), identifier.getPath()),
+                FandItemStacks.fromVanilla(bucket),
+                FandItemStacks.fromVanilla(result));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerBucketEmptyEvent listener failed", failure);
+            return result;
+        }
+        if (event.cancelled() || event.resultItem().isEmpty()) {
+            return null;
+        }
+        try {
+            return FandItemStacks.toVanilla(event.resultItem());
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerBucketEmptyEvent supplied an invalid result item", failure);
+            return result;
+        }
+    }
+
+    public static int fireExperienceChange(ServerPlayer player, int amount) {
+        if (amount == 0) {
+            return amount;
+        }
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerExperienceChangeEvent.class)) {
+            return amount;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return amount;
+        }
+        var event = new PlayerExperienceChangeEvent(fandPlayer, amount);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerExperienceChangeEvent listener failed", failure);
+            return amount;
+        }
+        return event.cancelled() ? 0 : event.amount();
+    }
+
+    public static boolean fireBedEnter(ServerPlayer player, BlockPos pos) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerBedEnterEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        var world = FandHooks.wrapWorld(player.level());
+        if (fandPlayer == null || world == null) {
+            return true;
+        }
+        var event = new PlayerBedEnterEvent(fandPlayer, new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerBedEnterEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static void fireBedLeave(ServerPlayer player, BlockPos pos, boolean forcefulWakeUp) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerBedLeaveEvent.class)) {
+            return;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        var world = FandHooks.wrapWorld(player.level());
+        if (fandPlayer == null || world == null) {
+            return;
+        }
+        var event = new PlayerBedLeaveEvent(
+                fandPlayer,
+                new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()),
+                forcefulWakeUp);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerBedLeaveEvent listener failed", failure);
+        }
+    }
+
+    public static void fireAdvancementDone(ServerPlayer player, Identifier advancement) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerAdvancementDoneEvent.class)) {
+            return;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return;
+        }
+        var key = Key.key(advancement.getNamespace(), advancement.getPath());
+        try {
+            bus.fire(new PlayerAdvancementDoneEvent(fandPlayer, key));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerAdvancementDoneEvent listener failed", failure);
+        }
     }
 
     public static @Nullable TeleportTransition fireTeleport(ServerPlayer player, TeleportTransition transition) {
@@ -467,6 +729,12 @@ public final class PlayerEvents {
         return null;
     }
 
+    private static PlayerInteractEvent.Hand hand(InteractionHand hand) {
+        return hand == InteractionHand.OFF_HAND
+                ? PlayerInteractEvent.Hand.OFF_HAND
+                : PlayerInteractEvent.Hand.MAIN_HAND;
+    }
+
     private static boolean sameLocation(Location a, Location b) {
         return a.world().equals(b.world())
                 && Double.compare(a.x(), b.x()) == 0
@@ -480,5 +748,8 @@ public final class PlayerEvents {
             net.minecraft.world.item.ItemStack mainHandItem,
             net.minecraft.world.item.ItemStack offHandItem
     ) {
+    }
+
+    public record FoodChange(int level, float saturation) {
     }
 }

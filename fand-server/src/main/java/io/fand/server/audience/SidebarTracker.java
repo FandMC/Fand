@@ -30,6 +30,7 @@ public final class SidebarTracker {
     private Objective objective;
     private Sidebar sidebar;
     private List<String> owners = List.of();
+    private boolean resendDisplay;
 
     public SidebarTracker(ServerPlayer player) {
         this.player = player;
@@ -41,8 +42,8 @@ public final class SidebarTracker {
         if (current == null) {
             return;
         }
-        this.objective = null;
         this.owners = List.of();
+        this.resendDisplay = true;
         show(current);
     }
 
@@ -73,6 +74,7 @@ public final class SidebarTracker {
         objective = null;
         sidebar = null;
         owners = List.of();
+        resendDisplay = false;
     }
 
     private Objective ensureObjective(Sidebar next) {
@@ -90,12 +92,17 @@ public final class SidebarTracker {
                     objective,
                     ClientboundSetObjectivePacket.METHOD_ADD));
             PacketAudience.send(player, new ClientboundSetDisplayObjectivePacket(DisplaySlot.SIDEBAR, objective));
+            resendDisplay = false;
             return objective;
         }
         objective.setDisplayName(title);
         PacketAudience.send(player, new ClientboundSetObjectivePacket(
                 objective,
                 ClientboundSetObjectivePacket.METHOD_CHANGE));
+        if (resendDisplay) {
+            PacketAudience.send(player, new ClientboundSetDisplayObjectivePacket(DisplaySlot.SIDEBAR, objective));
+            resendDisplay = false;
+        }
         return objective;
     }
 

@@ -2,20 +2,41 @@ package io.fand.testplugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.fand.api.command.CommandCompleter;
+import io.fand.api.command.CommandDescriptor;
+import io.fand.api.command.CommandExecutor;
+import io.fand.api.command.CommandRegistration;
+import io.fand.api.command.CommandRegistry;
+import io.fand.api.command.CommandSender;
+import io.fand.api.command.CommandSpec;
+import io.fand.api.command.RegisteredCommand;
+import io.fand.api.command.ResolvedCommand;
+import io.fand.api.event.Event;
+import io.fand.api.event.EventBus;
+import io.fand.api.event.EventListener;
+import io.fand.api.event.EventPriority;
+import io.fand.api.event.EventSubscription;
 import io.fand.api.inventory.InventoryType;
+import io.fand.api.item.ItemStack;
+import io.fand.api.item.ItemType;
 import io.fand.api.item.component.EnchantmentKey;
 import io.fand.api.item.component.ItemComponentKeys;
 import io.fand.api.item.component.ItemRarity;
 import io.fand.api.performance.MetricStatistics;
 import io.fand.api.performance.TickAverages;
-import io.fand.api.item.ItemStack;
-import io.fand.api.item.ItemType;
 import io.fand.api.recipe.CookingRecipe;
 import io.fand.api.recipe.RecipeType;
 import io.fand.api.recipe.ShapedRecipe;
 import io.fand.api.recipe.ShapelessRecipe;
 import io.fand.api.recipe.StonecuttingRecipe;
+import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -25,45 +46,45 @@ final class TestPluginTest {
 
     @Test
     void normalisesMinecraftKeys() {
-        assertThat(TestPlugin.keyString("stone")).isEqualTo("minecraft:stone");
-        assertThat(TestPlugin.keyString(" MINECRAFT:DIAMOND ")).isEqualTo("minecraft:diamond");
-        assertThat(TestPlugin.keyString("custom:block")).isEqualTo("custom:block");
+        assertThat(DemoSupport.keyString("stone")).isEqualTo("minecraft:stone");
+        assertThat(DemoSupport.keyString(" MINECRAFT:DIAMOND ")).isEqualTo("minecraft:diamond");
+        assertThat(DemoSupport.keyString("custom:block")).isEqualTo("custom:block");
     }
 
     @Test
     void matchesValuesByCaseInsensitivePrefix() {
-        assertThat(TestPlugin.matching(List.of("minecraft:stone", "minecraft:torch", "minecraft:diamond"), "MINECRAFT:T"))
+        assertThat(DemoSupport.matching(List.of("minecraft:stone", "minecraft:torch", "minecraft:diamond"), "MINECRAFT:T"))
                 .containsExactly("minecraft:torch");
-        assertThat(TestPlugin.matching(List.of("alpha", "beta"), ""))
+        assertThat(DemoSupport.matching(List.of("alpha", "beta"), ""))
                 .containsExactly("alpha", "beta");
     }
 
     @Test
     void recognisesMuteNextCommand() {
-        assertThat(TestPlugin.isMuteNextCommand("!mute-next")).isTrue();
-        assertThat(TestPlugin.isMuteNextCommand("  !MUTE-NEXT  ")).isTrue();
-        assertThat(TestPlugin.isMuteNextCommand("!where")).isFalse();
+        assertThat(DemoSupport.isMuteNextCommand("!mute-next")).isTrue();
+        assertThat(DemoSupport.isMuteNextCommand("  !MUTE-NEXT  ")).isTrue();
+        assertThat(DemoSupport.isMuteNextCommand("!where")).isFalse();
     }
 
     @Test
     void recognisesCommandAliasDemo() {
-        assertThat(TestPlugin.isCommandAliasDemo(" fwhere ")).isTrue();
-        assertThat(TestPlugin.isCommandAliasDemo("fanddemo")).isFalse();
+        assertThat(DemoSupport.isCommandAliasDemo(" fwhere ")).isTrue();
+        assertThat(DemoSupport.isCommandAliasDemo("fanddemo")).isFalse();
     }
 
     @Test
     void recognisesTabAndSidebarModes() {
-        assertThat(TestPlugin.isClearMode(" clear ")).isTrue();
-        assertThat(TestPlugin.isClearMode("show")).isFalse();
-        assertThat(TestPlugin.isShowMode(" SHOW ")).isTrue();
-        assertThat(TestPlugin.isShowMode("clear")).isFalse();
+        assertThat(DemoSupport.isClearMode(" clear ")).isTrue();
+        assertThat(DemoSupport.isClearMode("show")).isFalse();
+        assertThat(DemoSupport.isShowMode(" SHOW ")).isTrue();
+        assertThat(DemoSupport.isShowMode("clear")).isFalse();
     }
 
     @Test
     void locksBarrierInDemoGui() {
         var barrier = stack("minecraft:barrier");
 
-        assertThat(TestPlugin.isLockedDemoGuiClick(true, InventoryType.CHEST, TestPlugin.DEMO_GUI_LOCKED_SLOT, barrier))
+        assertThat(DemoSupport.isLockedDemoGuiClick(true, InventoryType.CHEST, DemoSupport.DEMO_GUI_LOCKED_SLOT, barrier))
                 .isTrue();
     }
 
@@ -71,49 +92,133 @@ final class TestPluginTest {
     void ignoresBarrierOutsideDemoLockedSlot() {
         var barrier = stack("minecraft:barrier");
 
-        assertThat(TestPlugin.isLockedDemoGuiClick(false, InventoryType.CHEST, TestPlugin.DEMO_GUI_LOCKED_SLOT, barrier))
+        assertThat(DemoSupport.isLockedDemoGuiClick(false, InventoryType.CHEST, DemoSupport.DEMO_GUI_LOCKED_SLOT, barrier))
                 .isFalse();
-        assertThat(TestPlugin.isLockedDemoGuiClick(true, InventoryType.CHEST, TestPlugin.DEMO_GUI_LOCKED_SLOT + 1, barrier))
+        assertThat(DemoSupport.isLockedDemoGuiClick(true, InventoryType.CHEST, DemoSupport.DEMO_GUI_LOCKED_SLOT + 1, barrier))
                 .isFalse();
-        assertThat(TestPlugin.isLockedDemoGuiClick(true, InventoryType.PLAYER, TestPlugin.DEMO_GUI_LOCKED_SLOT, barrier))
+        assertThat(DemoSupport.isLockedDemoGuiClick(true, InventoryType.PLAYER, DemoSupport.DEMO_GUI_LOCKED_SLOT, barrier))
                 .isFalse();
-        assertThat(TestPlugin.isLockedDemoGuiClick(true, InventoryType.CHEST, TestPlugin.DEMO_GUI_LOCKED_SLOT, ItemStack.EMPTY))
+        assertThat(DemoSupport.isLockedDemoGuiClick(true, InventoryType.CHEST, DemoSupport.DEMO_GUI_LOCKED_SLOT, ItemStack.EMPTY))
                 .isFalse();
     }
 
     @Test
     void recognisesStackTypeWithImplicitNamespace() {
-        assertThat(TestPlugin.isStackType(stack("minecraft:barrier"), "barrier")).isTrue();
-        assertThat(TestPlugin.isStackType(stack("minecraft:stone"), "barrier")).isFalse();
-        assertThat(TestPlugin.isStackType(ItemStack.EMPTY, "barrier")).isFalse();
+        assertThat(DemoSupport.isStackType(stack("minecraft:barrier"), "barrier")).isTrue();
+        assertThat(DemoSupport.isStackType(stack("minecraft:stone"), "barrier")).isFalse();
+        assertThat(DemoSupport.isStackType(ItemStack.EMPTY, "barrier")).isFalse();
     }
 
     @Test
     void clampsBossBarProgress() {
-        assertThat(TestPlugin.boundedBossBarProgress(-0.5F)).isZero();
-        assertThat(TestPlugin.boundedBossBarProgress(0.6F)).isEqualTo(0.6F);
-        assertThat(TestPlugin.boundedBossBarProgress(1.5F)).isEqualTo(1.0F);
+        assertThat(DemoSupport.boundedBossBarProgress(-0.5F)).isZero();
+        assertThat(DemoSupport.boundedBossBarProgress(0.6F)).isEqualTo(0.6F);
+        assertThat(DemoSupport.boundedBossBarProgress(1.5F)).isEqualTo(1.0F);
     }
 
     @Test
     void recognisesFiniteFloatText() {
-        assertThat(TestPlugin.isFloat("0.5")).isTrue();
-        assertThat(TestPlugin.isFloat("NaN")).isFalse();
-        assertThat(TestPlugin.isFloat("hello")).isFalse();
+        assertThat(DemoSupport.isFloat("0.5")).isTrue();
+        assertThat(DemoSupport.isFloat("NaN")).isFalse();
+        assertThat(DemoSupport.isFloat("hello")).isFalse();
+    }
+
+    @Test
+    void exposesDetailEventConfigKeys() throws Exception {
+        String config = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/resources/config.yml"));
+
+        assertThat(config).contains(
+                "log-inventory-moves: false",
+                "log-crafting-events: false",
+                "log-block-detail-events: false",
+                "log-entity-detail-events: false",
+                "log-player-detail-events: false",
+                "log-player-move-events: false",
+                "decorate-player-death-message: true");
+    }
+
+    @Test
+    void selfTestMetadataCoversCommandAndPermission() {
+        assertThat(DemoSupport.PERMISSIONS).contains("fand.testplugin.selftest");
+        assertThat(SelfTestCommand.expectedCommands()).extracting(SelfTestCommand.ExpectedCommand::label)
+                .contains("fandselftest", "fandgui")
+                .doesNotHaveDuplicates();
+        assertThat(SelfTestCommand.expectedEvents()).extracting(event -> event.type().getName())
+                .doesNotHaveDuplicates();
+    }
+
+    @Test
+    void allDemoCommandClassesCarryCommandSpec() {
+        assertThat(List.of(
+                HelloCommand.class,
+                DemoCommand.class,
+                KitCommand.class,
+                PerformanceCommand.class,
+                WorldCommand.class,
+                TeleportCommand.class,
+                SetBlockCommand.class,
+                GiveCommand.class,
+                ComponentItemCommand.class,
+                HealCommand.class,
+                GameModeCommand.class,
+                FlyCommand.class,
+                ActionBarCommand.class,
+                TitleCommand.class,
+                BossBarCommand.class,
+                ParticleCommand.class,
+                SoundCommand.class,
+                KickCommand.class,
+                TabCommand.class,
+                SidebarCommand.class,
+                RecipeCommand.class,
+                ComponentsCommand.class,
+                SelfTestCommand.class,
+                GuiCommand.class
+        )).allSatisfy(type -> assertThat(type.getAnnotation(CommandSpec.class))
+                .as(type.getSimpleName())
+                .isNotNull());
+    }
+
+    @Test
+    void selfTestPassesWithExpectedRegistryAndListeners() {
+        var report = SelfTestCommand.runSelfTest(
+                new FakeCommandRegistry(SelfTestCommand.expectedCommands()),
+                new FakeEventBus(SelfTestCommand.expectedEvents().stream()
+                        .map(SelfTestCommand.ExpectedEvent::type)
+                        .collect(java.util.stream.Collectors.toSet())),
+                new TestSender(),
+                EnumSet.allOf(SelfTestCommand.SelfTestScope.class));
+
+        assertThat(report.success()).isTrue();
+        assertThat(report.commandsChecked()).isEqualTo(SelfTestCommand.expectedCommands().size());
+        assertThat(report.listenersChecked()).isEqualTo(SelfTestCommand.expectedEvents().size());
+    }
+
+    @Test
+    void selfTestReportsMissingCommandAndListener() {
+        var report = SelfTestCommand.runSelfTest(
+                new FakeCommandRegistry(List.of()),
+                new FakeEventBus(Set.of()),
+                new TestSender(),
+                EnumSet.allOf(SelfTestCommand.SelfTestScope.class));
+
+        assertThat(report.success()).isFalse();
+        assertThat(report.failures()).anySatisfy(failure -> assertThat(failure).contains("missing command /fandtest"));
+        assertThat(report.failures()).anySatisfy(failure -> assertThat(failure).contains("missing listener"));
     }
 
     @Test
     void joinsMessageTextWithFallback() {
-        assertThat(TestPlugin.messageText(List.of("hello", "world"), "fallback")).isEqualTo("hello world");
-        assertThat(TestPlugin.messageText(List.of(), "fallback")).isEqualTo("fallback");
-        assertThat(TestPlugin.messageText(List.of("  "), "fallback")).isEqualTo("fallback");
+        assertThat(DemoSupport.messageText(List.of("hello", "world"), "fallback")).isEqualTo("hello world");
+        assertThat(DemoSupport.messageText(List.of(), "fallback")).isEqualTo("fallback");
+        assertThat(DemoSupport.messageText(List.of("  "), "fallback")).isEqualTo("fallback");
     }
 
     @Test
     void splitsDemoTitleAndSubtitle() {
-        var explicit = TestPlugin.demoTitle("Main | Sub", "Default", "Default Sub");
-        var fallbackSubtitle = TestPlugin.demoTitle("Main", "Default", "Default Sub");
-        var fallbackTitle = TestPlugin.demoTitle(" | Sub", "Default", "Default Sub");
+        var explicit = DemoSupport.demoTitle("Main | Sub", "Default", "Default Sub");
+        var fallbackSubtitle = DemoSupport.demoTitle("Main", "Default", "Default Sub");
+        var fallbackTitle = DemoSupport.demoTitle(" | Sub", "Default", "Default Sub");
 
         assertThat(explicit.title()).isEqualTo("Main");
         assertThat(explicit.subtitle()).isEqualTo("Sub");
@@ -125,7 +230,7 @@ final class TestPluginTest {
 
     @Test
     void buildsDemoComponentItem() {
-        var item = TestPlugin.demoComponentItem(new TestItemType(Key.key("minecraft:diamond"), 64), "tester");
+        var item = DemoSupport.demoComponentItem(new TestItemType(Key.key("minecraft:diamond"), 64), "tester");
 
         assertThat(item.maxStackSize()).isEqualTo(99);
         assertThat(item.customName()).contains(net.kyori.adventure.text.Component.text("Fand Component Item", net.kyori.adventure.text.format.NamedTextColor.GOLD));
@@ -142,21 +247,21 @@ final class TestPluginTest {
 
     @Test
     void buildsKitNavigatorWithCustomDataMarker() {
-        var item = TestPlugin.demoKitNavigator(new TestItemType(Key.key("minecraft:compass"), 64), "tester");
+        var item = DemoSupport.demoKitNavigator(new TestItemType(Key.key("minecraft:compass"), 64), "tester");
 
         assertThat(item.customName()).contains(net.kyori.adventure.text.Component.text("Fand Kit Navigator", net.kyori.adventure.text.format.NamedTextColor.AQUA));
         assertThat(item.lore()).hasSize(2);
         assertThat(item.rarity()).contains(ItemRarity.UNCOMMON);
         assertThat(item.enchantmentGlintOverride()).contains(true);
         assertThat(item.useCooldown()).get().extracting(cooldown -> cooldown.seconds()).isEqualTo(1.5F);
-        assertThat(TestPlugin.isKitNavigator(item)).isTrue();
-        assertThat(TestPlugin.isKitNavigator(stack("minecraft:compass"))).isFalse();
+        assertThat(DemoSupport.isKitNavigator(item)).isTrue();
+        assertThat(DemoSupport.isKitNavigator(stack("minecraft:compass"))).isFalse();
     }
 
     @Test
     void buildsKitBookAndSnackComponents() {
-        var book = TestPlugin.demoKitBook(new TestItemType(Key.key("minecraft:written_book"), 64), "tester");
-        var snack = TestPlugin.demoKitSnack(new TestItemType(Key.key("minecraft:golden_apple"), 64));
+        var book = DemoSupport.demoKitBook(new TestItemType(Key.key("minecraft:written_book"), 64), "tester");
+        var snack = DemoSupport.demoKitSnack(new TestItemType(Key.key("minecraft:golden_apple"), 64));
 
         assertThat(book.writtenBookContent()).isPresent();
         assertThat(book.customData()).get().extracting(json -> json.get("demo_role").getAsString()).isEqualTo("fand_kit_guide");
@@ -167,17 +272,17 @@ final class TestPluginTest {
 
     @Test
     void buildsDemoRecipeModels() {
-        var recipes = TestPlugin.demoRecipes(
+        var recipes = DemoSupport.demoRecipes(
                 new TestItemType(Key.key("minecraft:diamond"), 64),
                 new TestItemType(Key.key("minecraft:compass"), 64),
                 new TestItemType(Key.key("minecraft:golden_apple"), 64),
                 new TestItemType(Key.key("minecraft:glass"), 64));
 
         assertThat(recipes).extracting(recipe -> recipe.key()).containsExactly(
-                TestPlugin.DEMO_COMPONENT_RECIPE,
-                TestPlugin.DEMO_NAVIGATOR_RECIPE,
-                TestPlugin.DEMO_SNACK_RECIPE,
-                TestPlugin.DEMO_GLASS_RECIPE);
+                DemoSupport.DEMO_COMPONENT_RECIPE,
+                DemoSupport.DEMO_NAVIGATOR_RECIPE,
+                DemoSupport.DEMO_SNACK_RECIPE,
+                DemoSupport.DEMO_GLASS_RECIPE);
         assertThat(recipes).extracting(recipe -> recipe.type()).containsExactly(
                 RecipeType.SHAPELESS,
                 RecipeType.SHAPED,
@@ -209,15 +314,15 @@ final class TestPluginTest {
 
     @Test
     void formatsDemoRecipeSummariesAndSuggestions() {
-        var recipe = TestPlugin.demoRecipes(
+        var recipe = DemoSupport.demoRecipes(
                 new TestItemType(Key.key("minecraft:diamond"), 64),
                 new TestItemType(Key.key("minecraft:compass"), 64),
                 new TestItemType(Key.key("minecraft:golden_apple"), 64),
                 new TestItemType(Key.key("minecraft:glass"), 64)).getFirst();
 
-        assertThat(TestPlugin.recipeSummary(recipe))
+        assertThat(DemoSupport.recipeSummary(recipe))
                 .isEqualTo("fand-test-plugin:component_diamond shapeless -> 2x minecraft:diamond");
-        assertThat(TestPlugin.demoRecipeKeySuggestions()).contains(
+        assertThat(DemoSupport.demoRecipeKeySuggestions()).contains(
                 "fand-test-plugin:component_diamond",
                 "component_diamond",
                 "kit_navigator",
@@ -227,9 +332,9 @@ final class TestPluginTest {
 
     @Test
     void formatsPerformanceSnapshots() {
-        assertThat(TestPlugin.formatTickAverages(new TickAverages(20.0, 19.5, 18.25)))
+        assertThat(DemoSupport.formatTickAverages(new TickAverages(20.0, 19.5, 18.25)))
                 .isEqualTo("20.00, 19.50, 18.25 (1m, 5m, 15m)");
-        assertThat(TestPlugin.formatMetricStatistics(new MetricStatistics(4.0, 1.0, 12.5, 3.0)))
+        assertThat(DemoSupport.formatMetricStatistics(new MetricStatistics(4.0, 1.0, 12.5, 3.0)))
                 .isEqualTo("avg 4.00 / min 1.00 / max 12.50 / median 3.00");
     }
 
@@ -238,5 +343,109 @@ final class TestPluginTest {
     }
 
     private record TestItemType(Key key, int maxStackSize) implements ItemType {
+    }
+
+    private static final class FakeCommandRegistry implements CommandRegistry {
+
+        private final Map<String, RegisteredCommand> commands = new LinkedHashMap<>();
+
+        FakeCommandRegistry(List<SelfTestCommand.ExpectedCommand> expectedCommands) {
+            for (var expected : expectedCommands) {
+                var descriptor = new CommandDescriptor(
+                        "fand-test-plugin",
+                        expected.label(),
+                        List.of(),
+                        List.of("scope"),
+                        expected.aliases(),
+                        expected.permission());
+                var command = new FakeRegisteredCommand(descriptor);
+                commands.put(expected.label(), command);
+                expected.aliases().forEach(alias -> commands.put(alias, command));
+            }
+        }
+
+        @Override
+        public CommandRegistration register(CommandDescriptor descriptor, CommandExecutor executor, CommandCompleter completer) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Optional<RegisteredCommand> lookup(String name) {
+            return Optional.ofNullable(commands.get(name));
+        }
+
+        @Override
+        public boolean claims(List<String> tokens) {
+            return !tokens.isEmpty() && commands.containsKey(tokens.getFirst());
+        }
+
+        @Override
+        public Optional<ResolvedCommand> resolve(CommandSender sender, List<String> tokens) {
+            return lookup(tokens.getFirst()).map(command -> new ResolvedCommand(command, 1, tokens.getFirst()));
+        }
+
+        @Override
+        public List<String> suggestions(CommandSender sender, List<String> tokens) {
+            return List.of();
+        }
+
+        @Override
+        public List<RegisteredCommand> visibleCommands(CommandSender sender) {
+            return commands.values().stream().distinct().toList();
+        }
+    }
+
+    private record FakeRegisteredCommand(CommandDescriptor descriptor) implements RegisteredCommand {
+
+        @Override
+        public CommandExecutor executor() {
+            return (sender, label, args) -> {
+            };
+        }
+
+        @Override
+        public CommandCompleter completer() {
+            return (sender, label, args) -> List.of();
+        }
+    }
+
+    private record FakeEventBus(Set<Class<? extends Event>> listeners) implements EventBus {
+
+        @Override
+        public <E extends Event> EventSubscription subscribe(Class<E> type, EventPriority priority, EventListener<E> listener) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public <E extends Event> E fire(E event) {
+            return event;
+        }
+
+        @Override
+        public boolean hasListeners(Class<? extends Event> type) {
+            return listeners.contains(type);
+        }
+
+        @Override
+        public <E extends Event> CompletableFuture<E> fireAsync(E event, Executor executor) {
+            return CompletableFuture.completedFuture(event);
+        }
+    }
+
+    private static final class TestSender implements CommandSender {
+
+        @Override
+        public String name() {
+            return "test";
+        }
+
+        @Override
+        public void sendMessage(Component message) {
+        }
+
+        @Override
+        public boolean hasPermission(String permission) {
+            return true;
+        }
     }
 }
