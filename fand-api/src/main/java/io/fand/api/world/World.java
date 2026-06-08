@@ -133,6 +133,109 @@ public interface World extends ForwardingAudience {
     }
 
     /**
+     * Snapshot of loaded entities whose bounds intersect the axis-aligned box
+     * formed by {@code min} and {@code max}.
+     */
+    default Collection<? extends Entity> entitiesInBox(Location min, Location max) {
+        requireSameWorld(min, this, "min");
+        requireSameWorld(max, this, "max");
+        double minX = Math.min(min.x(), max.x());
+        double minY = Math.min(min.y(), max.y());
+        double minZ = Math.min(min.z(), max.z());
+        double maxX = Math.max(min.x(), max.x());
+        double maxY = Math.max(min.y(), max.y());
+        double maxZ = Math.max(min.z(), max.z());
+        return entities().stream()
+                .filter(entity -> intersects(entity, minX, minY, minZ, maxX, maxY, maxZ))
+                .toList();
+    }
+
+    /** Snapshot of loaded entities of {@code type} whose bounds intersect the axis-aligned box. */
+    default Collection<? extends Entity> entitiesInBox(Location min, Location max, EntityType type) {
+        java.util.Objects.requireNonNull(type, "type");
+        return entitiesInBox(min, max).stream()
+                .filter(entity -> entity.type().equals(type))
+                .toList();
+    }
+
+    /** Convenience overload for generated vanilla entity keys. */
+    default Collection<? extends Entity> entitiesInBox(Location min, Location max, EntityKey type) {
+        return entitiesInBox(min, max, EntityTypes.of(type));
+    }
+
+    /** Finds the nearest loaded entity within {@code radius} blocks of {@code center}. */
+    default Optional<? extends Entity> nearestEntity(Location center, double radius) {
+        requireSameWorld(center, this, "center");
+        requireNonNegativeFinite(radius, "radius");
+        double radiusSquared = radius * radius;
+        return nearbyEntities(center, radius).stream()
+                .filter(entity -> {
+                    var location = entity.location();
+                    return location.world().key().equals(key()) && distanceSquared(center, location) <= radiusSquared;
+                })
+                .min(java.util.Comparator.comparingDouble(entity -> distanceSquared(center, entity.location())));
+    }
+
+    /** Finds the nearest loaded entity of {@code type} within {@code radius} blocks of {@code center}. */
+    default Optional<? extends Entity> nearestEntity(Location center, double radius, EntityType type) {
+        requireSameWorld(center, this, "center");
+        requireNonNegativeFinite(radius, "radius");
+        java.util.Objects.requireNonNull(type, "type");
+        double radiusSquared = radius * radius;
+        return nearbyEntities(center, radius, type).stream()
+                .filter(entity -> distanceSquared(center, entity.location()) <= radiusSquared)
+                .min(java.util.Comparator.comparingDouble(entity -> distanceSquared(center, entity.location())));
+    }
+
+    /** Convenience overload for generated vanilla entity keys. */
+    default Optional<? extends Entity> nearestEntity(Location center, double radius, EntityKey type) {
+        return nearestEntity(center, radius, EntityTypes.of(type));
+    }
+
+    /** Ray traces blocks using collider shapes and ignoring fluids. */
+    default Optional<BlockRayTraceResult> rayTraceBlock(Location start, Vector3 direction, double maxDistance) {
+        return rayTraceBlock(start, direction, maxDistance, RayTraceBlockMode.COLLIDER, RayTraceFluidMode.NONE);
+    }
+
+    /** Ray traces blocks from {@code start} along {@code direction}. */
+    default Optional<BlockRayTraceResult> rayTraceBlock(
+            Location start,
+            Vector3 direction,
+            double maxDistance,
+            RayTraceBlockMode blockMode,
+            RayTraceFluidMode fluidMode
+    ) {
+        return Optional.empty();
+    }
+
+    /** Ray traces entities from {@code start} along {@code direction}. */
+    default Optional<EntityRayTraceResult> rayTraceEntity(Location start, Vector3 direction, double maxDistance) {
+        return Optional.empty();
+    }
+
+    /** Ray traces entities of {@code type} from {@code start} along {@code direction}. */
+    default Optional<EntityRayTraceResult> rayTraceEntity(
+            Location start,
+            Vector3 direction,
+            double maxDistance,
+            EntityType type
+    ) {
+        java.util.Objects.requireNonNull(type, "type");
+        return rayTraceEntity(start, direction, maxDistance)
+                .filter(result -> result.entity().type().equals(type));
+    }
+
+    /** Convenience overload for generated vanilla entity keys. */
+    default Optional<EntityRayTraceResult> rayTraceEntity(
+            Location start,
+            Vector3 direction,
+            double maxDistance,
+            EntityKey type
+    ) {
+        return rayTraceEntity(start, direction, maxDistance, EntityTypes.of(type));
+    }
+
+    /**
      * Spawns an entity of {@code type} at {@code location}. The future completes
      * with the spawned entity, or empty when vanilla cannot create/spawn that
      * type in this world.
@@ -228,6 +331,44 @@ public interface World extends ForwardingAudience {
     /** Spawns particles at {@code location} for players in this world. Marshals to the server thread. */
     void spawnParticle(Location location, ParticleEffect effect, ParticleEmission emission);
 
+    /** Strikes real lightning at {@code location}. Marshals to the server thread. */
+    default CompletableFuture<Optional<? extends Entity>> strikeLightning(Location location) {
+        return strikeLightning(location, false);
+    }
+
+    /**
+     * Strikes lightning at {@code location}. When {@code visualOnly} is true,
+     * vanilla only plays the visual/sound effect.
+     */
+    default CompletableFuture<Optional<? extends Entity>> strikeLightning(Location location, boolean visualOnly) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Lightning is not supported"));
+    }
+
+    /** Creates a block-breaking explosion without fire. Marshals to the server thread. */
+    default CompletableFuture<Void> createExplosion(Location location, float power) {
+        return createExplosion(location, power, false, true);
+    }
+
+    /** Creates an explosion. Marshals to the server thread. */
+    default CompletableFuture<Void> createExplosion(Location location, float power, boolean fire, boolean breakBlocks) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Explosions are not supported"));
+    }
+
+    /** Whether the chunk at chunk coordinates {@code chunkX}, {@code chunkZ} is currently loaded. */
+    default boolean chunkLoaded(int chunkX, int chunkZ) {
+        return false;
+    }
+
+    /** Number of loaded entities in this world. */
+    default int loadedEntityCount() {
+        return entities().size();
+    }
+
+    /** Number of loaded entities whose current bounds intersect a loaded chunk. */
+    default int entityCount(int chunkX, int chunkZ) {
+        return 0;
+    }
+
     /** Builds a {@link Location} in this world. */
     default Location at(double x, double y, double z) {
         return new Location(this, x, y, z, 0.0F, 0.0F);
@@ -244,4 +385,48 @@ public interface World extends ForwardingAudience {
      * {@link io.fand.api.block.Block#setType} is invoked.
      */
     io.fand.api.block.Block blockAt(int x, int y, int z);
+
+    private static void requireSameWorld(Location location, World world, String name) {
+        java.util.Objects.requireNonNull(location, name);
+        if (!location.world().key().equals(world.key())) {
+            throw new IllegalArgumentException(name + " world " + location.world().key().asString()
+                    + " does not match " + world.key().asString());
+        }
+        if (!Double.isFinite(location.x()) || !Double.isFinite(location.y()) || !Double.isFinite(location.z())) {
+            throw new IllegalArgumentException(name + " coordinates must be finite");
+        }
+    }
+
+    private static void requireNonNegativeFinite(double value, String name) {
+        if (!Double.isFinite(value) || value < 0.0) {
+            throw new IllegalArgumentException(name + " must be finite and >= 0");
+        }
+    }
+
+    private static boolean intersects(
+            Entity entity,
+            double minX,
+            double minY,
+            double minZ,
+            double maxX,
+            double maxY,
+            double maxZ
+    ) {
+        var location = entity.location();
+        double halfWidth = Math.max(0.0, entity.width()) * 0.5;
+        double height = Math.max(0.0, entity.height());
+        return location.x() + halfWidth >= minX
+                && location.x() - halfWidth <= maxX
+                && location.y() + height >= minY
+                && location.y() <= maxY
+                && location.z() + halfWidth >= minZ
+                && location.z() - halfWidth <= maxZ;
+    }
+
+    private static double distanceSquared(Location a, Location b) {
+        double dx = a.x() - b.x();
+        double dy = a.y() - b.y();
+        double dz = a.z() - b.z();
+        return dx * dx + dy * dy + dz * dz;
+    }
 }
