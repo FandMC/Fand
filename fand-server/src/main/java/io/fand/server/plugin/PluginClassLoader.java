@@ -35,7 +35,7 @@ public final class PluginClassLoader extends URLClassLoader {
 
             try {
                 return resolveIfNeeded(findClass(name), resolve);
-            } catch (ClassNotFoundException ignored) {
+            } catch (ClassNotFoundException notInPlugin) {
             }
 
             for (var dependency : dependencies) {
@@ -43,7 +43,7 @@ public final class PluginClassLoader extends URLClassLoader {
                     var visited = Collections.newSetFromMap(new IdentityHashMap<PluginClassLoader, Boolean>());
                     visited.add(this);
                     return resolveIfNeeded(dependency.loadClassFromDependency(name, visited), resolve);
-                } catch (ClassNotFoundException ignored) {
+                } catch (ClassNotFoundException notInDependency) {
                 }
             }
 
@@ -62,12 +62,12 @@ public final class PluginClassLoader extends URLClassLoader {
             }
             try {
                 return findClass(name);
-            } catch (ClassNotFoundException ignored) {
+            } catch (ClassNotFoundException notInPlugin) {
             }
             for (var dependency : dependencies) {
                 try {
                     return dependency.loadClassFromDependency(name, visited);
-                } catch (ClassNotFoundException ignored) {
+                } catch (ClassNotFoundException notInDependency) {
                 }
             }
             throw new ClassNotFoundException(name);

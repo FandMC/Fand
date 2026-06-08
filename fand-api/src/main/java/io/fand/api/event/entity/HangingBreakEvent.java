@@ -5,6 +5,7 @@ import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before a hanging entity is broken.
@@ -20,13 +21,13 @@ public final class HangingBreakEvent implements Event, Cancellable {
     }
 
     private final Entity entity;
-    private final Optional<Entity> remover;
+    private final @Nullable Entity remover;
     private final Cause cause;
     private boolean cancelled;
 
-    public HangingBreakEvent(Entity entity, Optional<Entity> remover, Cause cause) {
+    public HangingBreakEvent(Entity entity, @Nullable Entity remover, Cause cause) {
         this.entity = Objects.requireNonNull(entity, "entity");
-        this.remover = Objects.requireNonNull(remover, "remover");
+        this.remover = remover;
         this.cause = Objects.requireNonNull(cause, "cause");
     }
 
@@ -35,7 +36,7 @@ public final class HangingBreakEvent implements Event, Cancellable {
     }
 
     public Optional<Entity> remover() {
-        return remover;
+        return Optional.ofNullable(remover);
     }
 
     public Cause cause() {

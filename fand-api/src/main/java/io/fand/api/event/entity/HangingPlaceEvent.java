@@ -9,21 +9,22 @@ import io.fand.api.event.block.BlockFace;
 import io.fand.api.item.ItemStack;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before a hanging entity is placed.
  */
 public final class HangingPlaceEvent implements Event, Cancellable {
 
-    private final Optional<Player> player;
+    private final @Nullable Player player;
     private final Entity entity;
     private final Block block;
     private final BlockFace face;
     private final ItemStack item;
     private boolean cancelled;
 
-    public HangingPlaceEvent(Optional<Player> player, Entity entity, Block block, BlockFace face, ItemStack item) {
-        this.player = Objects.requireNonNull(player, "player");
+    public HangingPlaceEvent(@Nullable Player player, Entity entity, Block block, BlockFace face, ItemStack item) {
+        this.player = player;
         this.entity = Objects.requireNonNull(entity, "entity");
         this.block = Objects.requireNonNull(block, "block");
         this.face = Objects.requireNonNull(face, "face");
@@ -31,7 +32,7 @@ public final class HangingPlaceEvent implements Event, Cancellable {
     }
 
     public Optional<Player> player() {
-        return player;
+        return Optional.ofNullable(player);
     }
 
     public Entity entity() {

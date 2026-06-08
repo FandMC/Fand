@@ -7,6 +7,7 @@ import io.fand.api.event.Event;
 import java.util.Objects;
 import java.util.Optional;
 import net.kyori.adventure.key.Key;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before a potion effect is added, changed, or
@@ -16,24 +17,24 @@ public final class EntityPotionEffectEvent implements Event, Cancellable {
 
     private final LivingEntity entity;
     private final Key effect;
-    private final Optional<Effect> oldEffect;
-    private final Optional<Effect> newEffect;
-    private final Optional<Entity> source;
+    private final @Nullable Effect oldEffect;
+    private final @Nullable Effect newEffect;
+    private final @Nullable Entity source;
     private final Action action;
     private boolean cancelled;
 
     public EntityPotionEffectEvent(
             LivingEntity entity,
             Key effect,
-            Optional<Effect> oldEffect,
-            Optional<Effect> newEffect,
-            Optional<Entity> source,
+            @Nullable Effect oldEffect,
+            @Nullable Effect newEffect,
+            @Nullable Entity source,
             Action action) {
         this.entity = Objects.requireNonNull(entity, "entity");
         this.effect = Objects.requireNonNull(effect, "effect");
-        this.oldEffect = Objects.requireNonNull(oldEffect, "oldEffect");
-        this.newEffect = Objects.requireNonNull(newEffect, "newEffect");
-        this.source = Objects.requireNonNull(source, "source");
+        this.oldEffect = oldEffect;
+        this.newEffect = newEffect;
+        this.source = source;
         this.action = Objects.requireNonNull(action, "action");
     }
 
@@ -47,15 +48,15 @@ public final class EntityPotionEffectEvent implements Event, Cancellable {
     }
 
     public Optional<Effect> oldEffect() {
-        return oldEffect;
+        return Optional.ofNullable(oldEffect);
     }
 
     public Optional<Effect> newEffect() {
-        return newEffect;
+        return Optional.ofNullable(newEffect);
     }
 
     public Optional<Entity> source() {
-        return source;
+        return Optional.ofNullable(source);
     }
 
     public Action action() {

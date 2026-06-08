@@ -2,7 +2,7 @@ package io.fand.api.event.entity;
 
 import io.fand.api.entity.LivingEntity;
 import java.util.Objects;
-import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before one living entity damages another.
@@ -20,8 +20,8 @@ public final class EntityDamageByEntityEvent extends EntityDamageEvent {
             String cause,
             double amount,
             LivingEntity damager,
-            Optional<LivingEntity> directEntity) {
-        super(entity, cause, amount, directEntity, Optional.of(Objects.requireNonNull(damager, "damager")));
+            @Nullable LivingEntity directEntity) {
+        super(entity, cause, amount, directEntity, Objects.requireNonNull(damager, "damager"));
         this.damager = damager;
     }
 

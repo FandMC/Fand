@@ -6,6 +6,7 @@ import io.fand.api.event.Event;
 import io.fand.api.world.Location;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before an explosion is created.
@@ -13,14 +14,14 @@ import java.util.Optional;
 public final class ExplosionPrimeEvent implements Event, Cancellable {
 
     private final Location location;
-    private final Optional<Entity> source;
+    private final @Nullable Entity source;
     private float radius;
     private boolean fire;
     private boolean cancelled;
 
-    public ExplosionPrimeEvent(Location location, Optional<Entity> source, float radius, boolean fire) {
+    public ExplosionPrimeEvent(Location location, @Nullable Entity source, float radius, boolean fire) {
         this.location = Objects.requireNonNull(location, "location");
-        this.source = Objects.requireNonNull(source, "source");
+        this.source = source;
         this.radius = radius;
         this.fire = fire;
     }
@@ -30,7 +31,7 @@ public final class ExplosionPrimeEvent implements Event, Cancellable {
     }
 
     public Optional<Entity> source() {
-        return source;
+        return Optional.ofNullable(source);
     }
 
     public float radius() {

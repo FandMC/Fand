@@ -5,19 +5,24 @@ import com.google.gson.JsonObject;
 import java.util.Objects;
 import java.util.Optional;
 import net.kyori.adventure.key.Key;
+import org.jspecify.annotations.Nullable;
 
 /** Typed value for {@code minecraft:use_cooldown}. */
-public record ItemUseCooldown(float seconds, Optional<Key> cooldownGroup) implements ItemComponentData {
+public final class ItemUseCooldown implements ItemComponentData {
 
-    public ItemUseCooldown {
+    private final float seconds;
+    private final @Nullable Key cooldownGroup;
+
+    public ItemUseCooldown(float seconds, @Nullable Key cooldownGroup) {
         if (seconds <= 0.0F) {
             throw new IllegalArgumentException("seconds must be > 0");
         }
-        cooldownGroup = Objects.requireNonNull(cooldownGroup, "cooldownGroup");
+        this.seconds = seconds;
+        this.cooldownGroup = cooldownGroup;
     }
 
     public ItemUseCooldown(float seconds) {
-        this(seconds, Optional.empty());
+        this(seconds, null);
     }
 
     public static ItemUseCooldown fromJson(JsonElement value) {
@@ -27,16 +32,45 @@ public record ItemUseCooldown(float seconds, Optional<Key> cooldownGroup) implem
         var object = value.getAsJsonObject();
         return new ItemUseCooldown(
                 object.get("seconds").getAsFloat(),
-                object.has("cooldown_group")
-                        ? Optional.of(Key.key(object.get("cooldown_group").getAsString()))
-                        : Optional.empty());
+                object.has("cooldown_group") ? Key.key(object.get("cooldown_group").getAsString()) : null);
+    }
+
+    public float seconds() {
+        return seconds;
+    }
+
+    public Optional<Key> cooldownGroup() {
+        return Optional.ofNullable(cooldownGroup);
     }
 
     @Override
     public JsonObject toJson() {
         var json = new JsonObject();
         json.addProperty("seconds", seconds);
-        cooldownGroup.ifPresent(group -> json.addProperty("cooldown_group", group.asString()));
+        if (cooldownGroup != null) {
+            json.addProperty("cooldown_group", cooldownGroup.asString());
+        }
         return json;
+    }
+
+    @Override
+    public boolean equals(@Nullable Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof ItemUseCooldown that)) {
+            return false;
+        }
+        return Float.compare(seconds, that.seconds) == 0 && Objects.equals(cooldownGroup, that.cooldownGroup);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(seconds, cooldownGroup);
+    }
+
+    @Override
+    public String toString() {
+        return "ItemUseCooldown[seconds=" + seconds + ", cooldownGroup=" + cooldownGroup() + "]";
     }
 }

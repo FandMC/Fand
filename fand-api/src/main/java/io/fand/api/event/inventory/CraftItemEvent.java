@@ -8,6 +8,7 @@ import io.fand.api.item.ItemStack;
 import io.fand.api.recipe.Recipe;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before a player takes a crafting result.
@@ -16,7 +17,7 @@ public final class CraftItemEvent implements Event, Cancellable {
 
     private final Player player;
     private final Inventory inventory;
-    private final Optional<Recipe> recipe;
+    private final @Nullable Recipe recipe;
     private final ItemStack result;
     private final ClickType clickType;
     private boolean cancelled;
@@ -24,12 +25,12 @@ public final class CraftItemEvent implements Event, Cancellable {
     public CraftItemEvent(
             Player player,
             Inventory inventory,
-            Optional<Recipe> recipe,
+            @Nullable Recipe recipe,
             ItemStack result,
             ClickType clickType) {
         this.player = Objects.requireNonNull(player, "player");
         this.inventory = Objects.requireNonNull(inventory, "inventory");
-        this.recipe = Objects.requireNonNull(recipe, "recipe");
+        this.recipe = recipe;
         this.result = Objects.requireNonNull(result, "result");
         this.clickType = Objects.requireNonNull(clickType, "clickType");
     }
@@ -43,7 +44,7 @@ public final class CraftItemEvent implements Event, Cancellable {
     }
 
     public Optional<Recipe> recipe() {
-        return recipe;
+        return Optional.ofNullable(recipe);
     }
 
     public ItemStack result() {

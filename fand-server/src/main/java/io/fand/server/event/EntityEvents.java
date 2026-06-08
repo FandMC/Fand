@@ -138,8 +138,8 @@ public final class EntityEvents {
         if (fandEntity == null) {
             return;
         }
-        var directEntity = wrapLivingDamageSource(source.getDirectEntity(), "EntityDeathEvent direct entity");
-        var attacker = wrapLivingDamageSource(source.getEntity(), "EntityDeathEvent attacker");
+        var directEntity = wrapLivingDamageSource(source.getDirectEntity(), "EntityDeathEvent direct entity").orElse(null);
+        var attacker = wrapLivingDamageSource(source.getEntity(), "EntityDeathEvent attacker").orElse(null);
         var cause = source.typeHolder().unwrapKey().map(key -> key.identifier().toString()).orElse("minecraft:generic");
         try {
             bus.fire(new EntityDeathEvent(fandEntity, cause, directEntity, attacker));
@@ -178,9 +178,14 @@ public final class EntityEvents {
         }
         var cause = source.typeHolder().unwrapKey().map(key -> key.identifier().toString()).orElse("minecraft:generic");
         EntityDamageEvent event = attacker
-                .<EntityDamageEvent>map(damager -> new EntityDamageByEntityEvent(victim, cause, damage, damager, directEntity))
+                .<EntityDamageEvent>map(damager -> new EntityDamageByEntityEvent(
+                        victim,
+                        cause,
+                        damage,
+                        damager,
+                        directEntity.orElse(null)))
                 .or(() -> blockSource.map(block -> new EntityDamageByBlockEvent(victim, cause, damage, block)))
-                .orElseGet(() -> new EntityDamageEvent(victim, cause, damage, directEntity, Optional.empty()));
+                .orElseGet(() -> new EntityDamageEvent(victim, cause, damage, directEntity.orElse(null), null));
         FandHooks.fireOrLog(
                 bus,
                 event,
@@ -311,7 +316,7 @@ public final class EntityEvents {
             }
             event = new EntityCombustByBlockEvent(fandEntity, new FandBlock(world, sourceBlock.getX(), sourceBlock.getY(), sourceBlock.getZ()), cause, ticks / 20.0F);
         } else {
-            event = new EntityCombustEvent(fandEntity, Optional.empty(), cause, ticks / 20.0F);
+            event = new EntityCombustEvent(fandEntity, null, cause, ticks / 20.0F);
         }
         try {
             bus.fire(event);
@@ -466,9 +471,10 @@ public final class EntityEvents {
         if (fandParent == null || fandPartner == null || fandChild == null) {
             return true;
         }
-        Optional<io.fand.api.entity.Player> breeder = Optional.ofNullable(parent.getLoveCause())
+        var breeder = Optional.ofNullable(parent.getLoveCause())
                 .or(() -> Optional.ofNullable(partner.getLoveCause()))
-                .map(player -> FandHooks.findPlayer(player.getUUID()));
+                .map(player -> FandHooks.findPlayer(player.getUUID()))
+                .orElse(null);
         var event = new EntityBreedEvent(fandParent, fandPartner, breeder, fandChild);
         try {
             bus.fire(event);
@@ -494,13 +500,15 @@ public final class EntityEvents {
         if (fandEntity == null) {
             return new TargetResult(true, target);
         }
-        Optional<io.fand.api.entity.LivingEntity> oldTarget = Optional.ofNullable(entity.getTargetUnchecked())
-                .map(FandHooks::wrapLivingEntity);
-        Optional<io.fand.api.entity.LivingEntity> newTarget = Optional.ofNullable(target)
-                .map(FandHooks::wrapLivingEntity);
-        EntityTargetEvent event = newTarget
-                .<EntityTargetEvent>map(living -> new EntityTargetLivingEntityEvent(fandEntity, oldTarget, living, cause))
-                .orElseGet(() -> new EntityTargetEvent(fandEntity, oldTarget, Optional.empty(), cause));
+        var oldTarget = Optional.ofNullable(entity.getTargetUnchecked())
+                .map(FandHooks::wrapLivingEntity)
+                .orElse(null);
+        var newTarget = Optional.ofNullable(target)
+                .map(FandHooks::wrapLivingEntity)
+                .orElse(null);
+        EntityTargetEvent event = newTarget == null
+                ? new EntityTargetEvent(fandEntity, oldTarget, null, cause)
+                : new EntityTargetLivingEntityEvent(fandEntity, oldTarget, newTarget, cause);
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {
@@ -536,9 +544,9 @@ public final class EntityEvents {
         var event = new EntityPotionEffectEvent(
                 fandEntity,
                 key,
-                Optional.ofNullable(oldEffect).map(EntityEvents::effect),
-                Optional.ofNullable(newEffect).map(EntityEvents::effect),
-                Optional.ofNullable(source).map(FandHooks::wrapEntity),
+                Optional.ofNullable(oldEffect).map(EntityEvents::effect).orElse(null),
+                Optional.ofNullable(newEffect).map(EntityEvents::effect).orElse(null),
+                source == null ? null : FandHooks.wrapEntity(source),
                 action);
         try {
             bus.fire(event);
@@ -944,8 +952,8 @@ public final class EntityEvents {
         }
         var event = new HangingPlaceEvent(
                 player instanceof ServerPlayer serverPlayer
-                        ? Optional.ofNullable(FandHooks.findPlayer(serverPlayer.getUUID()))
-                        : Optional.empty(),
+                        ? FandHooks.findPlayer(serverPlayer.getUUID())
+                        : null,
                 fandEntity,
                 new FandBlock(world, blockPos.getX(), blockPos.getY(), blockPos.getZ()),
                 face(direction),
@@ -974,7 +982,7 @@ public final class EntityEvents {
         }
         var event = new HangingBreakEvent(
                 fandEntity,
-                Optional.ofNullable(remover).map(FandHooks::wrapEntity),
+                remover == null ? null : FandHooks.wrapEntity(remover),
                 cause);
         try {
             bus.fire(event);
@@ -1036,7 +1044,7 @@ public final class EntityEvents {
         if (fandVehicle == null) {
             return true;
         }
-        var event = new VehicleDestroyEvent(fandVehicle, Optional.ofNullable(attacker).map(FandHooks::wrapEntity));
+        var event = new VehicleDestroyEvent(fandVehicle, attacker == null ? null : FandHooks.wrapEntity(attacker));
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {
@@ -1091,7 +1099,7 @@ public final class EntityEvents {
         }
         var event = new ExplosionPrimeEvent(
                 new Location(world, x, y, z, 0.0F, 0.0F),
-                Optional.ofNullable(source).map(FandHooks::wrapEntity),
+                source == null ? null : FandHooks.wrapEntity(source),
                 radius,
                 fire);
         try {
@@ -1153,7 +1161,7 @@ public final class EntityEvents {
         }
         var event = new ProjectileLaunchEvent(
                 fandProjectile,
-                Optional.ofNullable(projectile.getOwner()).map(FandHooks::wrapEntity),
+                projectile.getOwner() == null ? null : FandHooks.wrapEntity(projectile.getOwner()),
                 FandItemStacks.fromVanilla(itemStack));
         try {
             bus.fire(event);
@@ -1279,7 +1287,7 @@ public final class EntityEvents {
                 fandPotion,
                 FandItemStacks.fromVanilla(potionItem),
                 new Location(world, location.x, location.y, location.z, potion.getYRot(), potion.getXRot()),
-                Optional.ofNullable(potion.getOwner()).map(FandHooks::wrapEntity),
+                potion.getOwner() == null ? null : FandHooks.wrapEntity(potion.getOwner()),
                 affected);
         try {
             bus.fire(event);
@@ -1319,7 +1327,7 @@ public final class EntityEvents {
                 fandPotion,
                 FandItemStacks.fromVanilla(potionItem),
                 new Location(world, location.x, location.y, location.z, potion.getYRot(), potion.getXRot()),
-                Optional.ofNullable(potion.getOwner()).map(FandHooks::wrapEntity));
+                potion.getOwner() == null ? null : FandHooks.wrapEntity(potion.getOwner()));
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {
@@ -1349,18 +1357,18 @@ public final class EntityEvents {
                 hitResult.getLocation().z,
                 0.0F,
                 0.0F);
-        Optional<io.fand.api.entity.Entity> hitEntity = Optional.empty();
-        Optional<io.fand.api.block.Block> hitBlock = Optional.empty();
+        io.fand.api.entity.@Nullable Entity hitEntity = null;
+        io.fand.api.block.@Nullable Block hitBlock = null;
         ProjectileHitEvent.HitType hitType = switch (hitResult.getType()) {
             case ENTITY -> ProjectileHitEvent.HitType.ENTITY;
             case BLOCK -> ProjectileHitEvent.HitType.BLOCK;
             case MISS -> ProjectileHitEvent.HitType.MISS;
         };
         if (hitResult instanceof EntityHitResult entityHit) {
-            hitEntity = Optional.ofNullable(FandHooks.wrapEntity(entityHit.getEntity()));
+            hitEntity = FandHooks.wrapEntity(entityHit.getEntity());
         } else if (hitResult instanceof BlockHitResult blockHit && !blockHit.isWorldBorderHit()) {
             BlockPos pos = blockHit.getBlockPos();
-            hitBlock = Optional.of(new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()));
+            hitBlock = new FandBlock(world, pos.getX(), pos.getY(), pos.getZ());
         }
         var event = new ProjectileHitEvent(fandProjectile, hitEntity, hitBlock, hitLocation, hitType);
         try {

@@ -8,6 +8,7 @@ import io.fand.api.item.ItemStack;
 import io.fand.api.recipe.Recipe;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before a furnace starts cooking an input item.
@@ -16,15 +17,15 @@ public final class FurnaceStartSmeltEvent implements Event, Cancellable {
 
     private final Block block;
     private final Inventory inventory;
-    private final Optional<Recipe> recipe;
+    private final @Nullable Recipe recipe;
     private final ItemStack source;
     private int totalCookTime;
     private boolean cancelled;
 
-    public FurnaceStartSmeltEvent(Block block, Inventory inventory, Optional<Recipe> recipe, ItemStack source, int totalCookTime) {
+    public FurnaceStartSmeltEvent(Block block, Inventory inventory, @Nullable Recipe recipe, ItemStack source, int totalCookTime) {
         this.block = Objects.requireNonNull(block, "block");
         this.inventory = Objects.requireNonNull(inventory, "inventory");
-        this.recipe = Objects.requireNonNull(recipe, "recipe");
+        this.recipe = recipe;
         this.source = Objects.requireNonNull(source, "source");
         this.totalCookTime = Math.max(0, totalCookTime);
     }
@@ -38,7 +39,7 @@ public final class FurnaceStartSmeltEvent implements Event, Cancellable {
     }
 
     public Optional<Recipe> recipe() {
-        return recipe;
+        return Optional.ofNullable(recipe);
     }
 
     public ItemStack source() {

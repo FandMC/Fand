@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /** Typed value for {@code minecraft:tool}. */
 public record ItemTool(
@@ -57,48 +58,87 @@ public record ItemTool(
         return json;
     }
 
-    public record Rule(ItemKeySet blocks, Optional<Float> speed, Optional<Boolean> correctForDrops) implements ItemComponentData {
+    public static final class Rule implements ItemComponentData {
 
-        public Rule {
-            blocks = Objects.requireNonNull(blocks, "blocks");
-            speed = Objects.requireNonNull(speed, "speed");
-            correctForDrops = Objects.requireNonNull(correctForDrops, "correctForDrops");
-            speed.ifPresent(value -> {
-                if (value <= 0.0F) {
-                    throw new IllegalArgumentException("speed must be > 0");
-                }
-            });
+        private final ItemKeySet blocks;
+        private final @Nullable Float speed;
+        private final @Nullable Boolean correctForDrops;
+
+        public Rule(ItemKeySet blocks, @Nullable Float speed, @Nullable Boolean correctForDrops) {
+            this.blocks = Objects.requireNonNull(blocks, "blocks");
+            this.speed = speed;
+            this.correctForDrops = correctForDrops;
+            if (speed != null && speed <= 0.0F) {
+                throw new IllegalArgumentException("speed must be > 0");
+            }
         }
 
         public static Rule minesAndDrops(ItemKeySet blocks, float speed) {
-            return new Rule(blocks, Optional.of(speed), Optional.of(true));
+            return new Rule(blocks, speed, true);
         }
 
         public static Rule deniesDrops(ItemKeySet blocks) {
-            return new Rule(blocks, Optional.empty(), Optional.of(false));
+            return new Rule(blocks, null, false);
         }
 
         public static Rule overrideSpeed(ItemKeySet blocks, float speed) {
-            return new Rule(blocks, Optional.of(speed), Optional.empty());
+            return new Rule(blocks, speed, null);
         }
 
         public static Rule fromJson(JsonElement value) {
             var object = ItemComponentJson.object(value, "tool rule");
             return new Rule(
                     ItemKeySet.fromJson(object.get("blocks")),
-                    ItemComponentJson.optionalFloat(object, "speed"),
-                    object.has("correct_for_drops")
-                            ? Optional.of(object.get("correct_for_drops").getAsBoolean())
-                            : Optional.empty());
+                    ItemComponentJson.optionalFloat(object, "speed").orElse(null),
+                    object.has("correct_for_drops") ? object.get("correct_for_drops").getAsBoolean() : null);
+        }
+
+        public ItemKeySet blocks() {
+            return blocks;
+        }
+
+        public Optional<Float> speed() {
+            return Optional.ofNullable(speed);
+        }
+
+        public Optional<Boolean> correctForDrops() {
+            return Optional.ofNullable(correctForDrops);
         }
 
         @Override
         public JsonObject toJson() {
             var json = new JsonObject();
             json.add("blocks", blocks.toJson());
-            speed.ifPresent(value -> json.addProperty("speed", value));
-            correctForDrops.ifPresent(value -> json.addProperty("correct_for_drops", value));
+            if (speed != null) {
+                json.addProperty("speed", speed);
+            }
+            if (correctForDrops != null) {
+                json.addProperty("correct_for_drops", correctForDrops);
+            }
             return json;
+        }
+
+        @Override
+        public boolean equals(@Nullable Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof Rule that)) {
+                return false;
+            }
+            return blocks.equals(that.blocks)
+                    && Objects.equals(speed, that.speed)
+                    && Objects.equals(correctForDrops, that.correctForDrops);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(blocks, speed, correctForDrops);
+        }
+
+        @Override
+        public String toString() {
+            return "Rule[blocks=" + blocks + ", speed=" + speed() + ", correctForDrops=" + correctForDrops() + "]";
         }
     }
 }

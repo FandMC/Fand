@@ -53,7 +53,7 @@ public final class CraftingEvents {
         var event = new PrepareItemCraftEvent(
                 fandPlayer,
                 new ContainerMenuView(menu),
-                Optional.ofNullable(recipe).map(FandRecipes::fromVanilla),
+                recipe == null ? null : FandRecipes.fromVanilla(recipe),
                 FandItemStacks.fromVanilla(result));
         try {
             bus.fire(event);
@@ -101,7 +101,7 @@ public final class CraftingEvents {
         var event = new CraftItemEvent(
                 fandPlayer,
                 new ContainerMenuView(menu),
-                Optional.ofNullable(recipe).map(FandRecipes::fromVanilla),
+                recipe == null ? null : FandRecipes.fromVanilla(recipe),
                 FandItemStacks.fromVanilla(result),
                 currentClickType(clickType));
         try {

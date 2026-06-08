@@ -9,6 +9,7 @@ import io.fand.api.world.Location;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before a splash potion applies effects to nearby
@@ -19,7 +20,7 @@ public final class PotionSplashEvent implements Event, Cancellable {
     private final Entity potion;
     private final ItemStack item;
     private final Location location;
-    private final Optional<Entity> source;
+    private final @Nullable Entity source;
     private final Map<LivingEntity, Double> affectedEntities;
     private boolean cancelled;
 
@@ -27,13 +28,13 @@ public final class PotionSplashEvent implements Event, Cancellable {
             Entity potion,
             ItemStack item,
             Location location,
-            Optional<Entity> source,
+            @Nullable Entity source,
             Map<LivingEntity, Double> affectedEntities
     ) {
         this.potion = Objects.requireNonNull(potion, "potion");
         this.item = Objects.requireNonNull(item, "item");
         this.location = Objects.requireNonNull(location, "location");
-        this.source = Objects.requireNonNull(source, "source");
+        this.source = source;
         this.affectedEntities = new java.util.LinkedHashMap<>(Objects.requireNonNull(affectedEntities, "affectedEntities"));
     }
 
@@ -50,7 +51,7 @@ public final class PotionSplashEvent implements Event, Cancellable {
     }
 
     public Optional<Entity> source() {
-        return source;
+        return Optional.ofNullable(source);
     }
 
     /**

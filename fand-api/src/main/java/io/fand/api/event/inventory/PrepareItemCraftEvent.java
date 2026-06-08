@@ -7,6 +7,7 @@ import io.fand.api.item.ItemStack;
 import io.fand.api.recipe.Recipe;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread when vanilla recalculates a crafting result slot.
@@ -15,13 +16,13 @@ public final class PrepareItemCraftEvent implements Event {
 
     private final Player player;
     private final Inventory inventory;
-    private final Optional<Recipe> recipe;
+    private final @Nullable Recipe recipe;
     private ItemStack result;
 
-    public PrepareItemCraftEvent(Player player, Inventory inventory, Optional<Recipe> recipe, ItemStack result) {
+    public PrepareItemCraftEvent(Player player, Inventory inventory, @Nullable Recipe recipe, ItemStack result) {
         this.player = Objects.requireNonNull(player, "player");
         this.inventory = Objects.requireNonNull(inventory, "inventory");
-        this.recipe = Objects.requireNonNull(recipe, "recipe");
+        this.recipe = recipe;
         this.result = Objects.requireNonNull(result, "result");
     }
 
@@ -34,7 +35,7 @@ public final class PrepareItemCraftEvent implements Event {
     }
 
     public Optional<Recipe> recipe() {
-        return recipe;
+        return Optional.ofNullable(recipe);
     }
 
     public ItemStack result() {

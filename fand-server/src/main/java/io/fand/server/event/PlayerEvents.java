@@ -412,7 +412,7 @@ public final class PlayerEvents {
         var event = new PlayerLeashEntityEvent(
                 fandPlayer,
                 fandEntity,
-                Optional.ofNullable(fandHolder),
+                fandHolder,
                 cause);
         try {
             bus.fire(event);
@@ -441,7 +441,7 @@ public final class PlayerEvents {
         var event = new PlayerUnleashEntityEvent(
                 fandPlayer,
                 fandEntity,
-                Optional.ofNullable(holder).map(FandHooks::wrapEntity),
+                holder == null ? null : FandHooks.wrapEntity(holder),
                 dropLead);
         try {
             bus.fire(event);
@@ -1001,7 +1001,7 @@ public final class PlayerEvents {
                 slot,
                 FandItemStacks.fromVanilla(previousBook),
                 FandItemStacks.fromVanilla(newBook),
-                title,
+                title.orElse(null),
                 signing);
         try {
             bus.fire(event);
@@ -1096,7 +1096,7 @@ public final class PlayerEvents {
                 fandPlayer,
                 fandHook,
                 state,
-                caught.map(FandHooks::wrapEntity),
+                caught.map(FandHooks::wrapEntity).orElse(null),
                 drops.stream().map(FandItemStacks::fromVanilla).toList());
         try {
             bus.fire(event);

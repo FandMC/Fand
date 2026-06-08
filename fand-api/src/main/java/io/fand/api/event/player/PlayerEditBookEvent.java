@@ -6,6 +6,7 @@ import io.fand.api.event.Event;
 import io.fand.api.item.ItemStack;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired before a player edits or signs a writable book.
@@ -16,16 +17,16 @@ public final class PlayerEditBookEvent implements Event, Cancellable {
     private final int slot;
     private final ItemStack previousBook;
     private ItemStack newBook;
-    private final Optional<String> title;
+    private final @Nullable String title;
     private final boolean signing;
     private boolean cancelled;
 
-    public PlayerEditBookEvent(Player player, int slot, ItemStack previousBook, ItemStack newBook, Optional<String> title, boolean signing) {
+    public PlayerEditBookEvent(Player player, int slot, ItemStack previousBook, ItemStack newBook, @Nullable String title, boolean signing) {
         this.player = Objects.requireNonNull(player, "player");
         this.slot = slot;
         this.previousBook = Objects.requireNonNull(previousBook, "previousBook");
         this.newBook = Objects.requireNonNull(newBook, "newBook");
-        this.title = Objects.requireNonNull(title, "title");
+        this.title = title;
         this.signing = signing;
     }
 
@@ -50,7 +51,7 @@ public final class PlayerEditBookEvent implements Event, Cancellable {
     }
 
     public Optional<String> title() {
-        return title;
+        return Optional.ofNullable(title);
     }
 
     public boolean signing() {

@@ -348,7 +348,7 @@ public final class BlockEvents {
                 block(world, pos),
                 FandBlockType.of(newState.getBlock()),
                 cause,
-                Optional.ofNullable(sourcePos).map(source -> block(world, source)));
+                sourcePos == null ? null : block(world, sourcePos));
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {
@@ -374,8 +374,7 @@ public final class BlockEvents {
         if (world == null) {
             return buildable;
         }
-        Optional<io.fand.api.entity.Player> fandPlayer = Optional.ofNullable(player)
-                .map(serverPlayer -> FandHooks.findPlayer(serverPlayer.getUUID()));
+        var fandPlayer = player == null ? null : FandHooks.findPlayer(player.getUUID());
         var event = new BlockCanBuildEvent(
                 fandPlayer,
                 block(world, pos),
@@ -663,8 +662,7 @@ public final class BlockEvents {
         if (world == null) {
             return true;
         }
-        Optional<io.fand.api.entity.Player> fandPlayer = Optional.ofNullable(player)
-                .map(serverPlayer -> FandHooks.findPlayer(serverPlayer.getUUID()));
+        var fandPlayer = player == null ? null : FandHooks.findPlayer(player.getUUID());
         var event = new BlockFertilizeEvent(
                 fandPlayer,
                 block(world, pos),
@@ -722,8 +720,7 @@ public final class BlockEvents {
         if (world == null) {
             return true;
         }
-        Optional<io.fand.api.entity.Player> fandPlayer = Optional.ofNullable(player)
-                .map(serverPlayer -> FandHooks.findPlayer(serverPlayer.getUUID()));
+        var fandPlayer = player == null ? null : FandHooks.findPlayer(player.getUUID());
         var event = new StructureGrowEvent(
                 new Location(world, origin.getX() + 0.5, origin.getY(), origin.getZ() + 0.5, 0.0F, 0.0F),
                 fandPlayer,
@@ -787,7 +784,7 @@ public final class BlockEvents {
                 FandBlockType.of(newState.getBlock()),
                 cauldronLevel(oldState),
                 cauldronLevel(newState),
-                Optional.ofNullable(entity).map(FandHooks::wrapEntity),
+                entity == null ? null : FandHooks.wrapEntity(entity),
                 cause);
         try {
             bus.fire(event);

@@ -5,6 +5,7 @@ import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before a vehicle is destroyed by damage.
@@ -12,12 +13,12 @@ import java.util.Optional;
 public final class VehicleDestroyEvent implements Event, Cancellable {
 
     private final Entity vehicle;
-    private final Optional<Entity> attacker;
+    private final @Nullable Entity attacker;
     private boolean cancelled;
 
-    public VehicleDestroyEvent(Entity vehicle, Optional<Entity> attacker) {
+    public VehicleDestroyEvent(Entity vehicle, @Nullable Entity attacker) {
         this.vehicle = Objects.requireNonNull(vehicle, "vehicle");
-        this.attacker = Objects.requireNonNull(attacker, "attacker");
+        this.attacker = attacker;
     }
 
     public Entity vehicle() {
@@ -25,7 +26,7 @@ public final class VehicleDestroyEvent implements Event, Cancellable {
     }
 
     public Optional<Entity> attacker() {
-        return attacker;
+        return Optional.ofNullable(attacker);
     }
 
     @Override

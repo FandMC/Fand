@@ -5,17 +5,21 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /** Filterable string value used by writable and written books. */
-public record ItemFilterableText(String raw, Optional<String> filtered) implements ItemComponentData {
+public final class ItemFilterableText implements ItemComponentData {
 
-    public ItemFilterableText {
-        raw = Objects.requireNonNull(raw, "raw");
-        filtered = Objects.requireNonNull(filtered, "filtered");
+    private final String raw;
+    private final @Nullable String filtered;
+
+    public ItemFilterableText(String raw, @Nullable String filtered) {
+        this.raw = Objects.requireNonNull(raw, "raw");
+        this.filtered = filtered;
     }
 
     public static ItemFilterableText of(String raw) {
-        return new ItemFilterableText(raw, Optional.empty());
+        return new ItemFilterableText(raw, null);
     }
 
     public static ItemFilterableText fromJson(JsonElement value) {
@@ -26,17 +30,46 @@ public record ItemFilterableText(String raw, Optional<String> filtered) implemen
         var object = ItemComponentJson.object(value, "filterable text");
         return new ItemFilterableText(
                 object.get("raw").getAsString(),
-                ItemComponentJson.optionalString(object, "filtered"));
+                ItemComponentJson.optionalString(object, "filtered").orElse(null));
+    }
+
+    public String raw() {
+        return raw;
+    }
+
+    public Optional<String> filtered() {
+        return Optional.ofNullable(filtered);
     }
 
     @Override
     public JsonElement toJson() {
-        if (filtered.isEmpty()) {
+        if (filtered == null) {
             return new JsonPrimitive(raw);
         }
         var json = new JsonObject();
         json.addProperty("raw", raw);
-        json.addProperty("filtered", filtered.orElseThrow());
+        json.addProperty("filtered", filtered);
         return json;
+    }
+
+    @Override
+    public boolean equals(@Nullable Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof ItemFilterableText that)) {
+            return false;
+        }
+        return raw.equals(that.raw) && Objects.equals(filtered, that.filtered);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(raw, filtered);
+    }
+
+    @Override
+    public String toString() {
+        return "ItemFilterableText[raw=" + raw + ", filtered=" + filtered() + "]";
     }
 }

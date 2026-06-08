@@ -8,6 +8,7 @@ import io.fand.api.world.Location;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before a tree-like structure grows.
@@ -15,14 +16,14 @@ import java.util.Optional;
 public final class StructureGrowEvent implements Event, Cancellable {
 
     private final Location location;
-    private final Optional<Player> player;
+    private final @Nullable Player player;
     private final boolean fromBonemeal;
     private final List<Block> blocks;
     private boolean cancelled;
 
-    public StructureGrowEvent(Location location, Optional<Player> player, boolean fromBonemeal, List<? extends Block> blocks) {
+    public StructureGrowEvent(Location location, @Nullable Player player, boolean fromBonemeal, List<? extends Block> blocks) {
         this.location = Objects.requireNonNull(location, "location");
-        this.player = Objects.requireNonNull(player, "player");
+        this.player = player;
         this.fromBonemeal = fromBonemeal;
         this.blocks = List.copyOf(Objects.requireNonNull(blocks, "blocks"));
     }
@@ -32,7 +33,7 @@ public final class StructureGrowEvent implements Event, Cancellable {
     }
 
     public Optional<Player> player() {
-        return player;
+        return Optional.ofNullable(player);
     }
 
     public boolean fromBonemeal() {
