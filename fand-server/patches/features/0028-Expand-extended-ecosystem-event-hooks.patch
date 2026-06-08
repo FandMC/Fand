@@ -1,0 +1,409 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Mon, 8 Jun 2026 14:13:10 +0800
+Subject: [PATCH] Expand extended ecosystem event hooks
+
+Add vanilla hook points for portal traversal, player world changes, command completions, creative inventory packets, merchant trade preparation and completion, dropped item lifecycle, hanging entity placement and breakage, item frame edits, resource-pack responses, client brand reports, locale changes, and vehicle lifecycle events.
+
+Keep patched code thin by routing API wrapping, cancellation handling, and listener failure logging through Fand bridge helpers.
+
+diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
+index 2e8995e18b06708f5aa21a49dd20cc6ca85af2c4..8889b6b86fdfccd42752de40f67f20e6a9477a6b 100644
+--- a/net/minecraft/server/level/ServerPlayer.java
++++ b/net/minecraft/server/level/ServerPlayer.java
+@@ -1178,6 +1178,7 @@ public class ServerPlayer extends Player {
+                 newLevel.addDuringTeleport(this);
+                 profiler.pop();
+                 this.triggerDimensionChangeTriggers(oldLevel);
++                io.fand.server.event.PlayerEvents.fireChangedWorld(this, oldLevel, newLevel);
+                 this.stopUsingItem();
+                 this.connection.send(new ClientboundPlayerAbilitiesPacket(this.getAbilities()));
+                 playerList.sendLevelInfo(this, newLevel);
+diff --git a/net/minecraft/server/network/ServerCommonPacketListenerImpl.java b/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+index e72fec049b3d522dd162da0bb62d004f84a3a26d..ad4a7e2ffbbbdbcf5df7b2a46faf3afcd0501ecf 100644
+--- a/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+@@ -20,6 +20,7 @@ import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
+ import net.minecraft.network.protocol.common.ServerboundKeepAlivePacket;
+ import net.minecraft.network.protocol.common.ServerboundPongPacket;
+ import net.minecraft.network.protocol.common.ServerboundResourcePackPacket;
++import net.minecraft.network.protocol.common.custom.BrandPayload;
+ import net.minecraft.network.protocol.cookie.ServerboundCookieResponsePacket;
+ import net.minecraft.server.MinecraftServer;
+ import net.minecraft.server.level.ClientInformation;
+@@ -93,6 +94,10 @@ public abstract class ServerCommonPacketListenerImpl implements ServerCommonPack
+ 
+     @Override
+     public void handleCustomPayload(final ServerboundCustomPayloadPacket packet) {
++        PacketUtils.ensureRunningOnSameThread(packet, this, this.server.packetProcessor());
++        if (packet.payload() instanceof BrandPayload brand && this instanceof ServerGamePacketListenerImpl game) {
++            io.fand.server.event.PlayerEvents.fireClientBrand(game.player, brand.brand());
++        }
+     }
+ 
+     @Override
+@@ -104,6 +109,13 @@ public abstract class ServerCommonPacketListenerImpl implements ServerCommonPack
+     @Override
+     public void handleResourcePackResponse(final ServerboundResourcePackPacket packet) {
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.server.packetProcessor());
++        if (this instanceof ServerGamePacketListenerImpl game) {
++            io.fand.server.event.PlayerEvents.fireResourcePackStatus(
++                game.player,
++                packet.id(),
++                io.fand.api.event.player.PlayerResourcePackStatusEvent.Status.valueOf(packet.action().name())
++            );
++        }
+         if (packet.action() == ServerboundResourcePackPacket.Action.DECLINED && this.server.isResourcePackRequired()) {
+             LOGGER.info("Disconnecting {} due to resource pack {} rejection", this.playerProfile().name(), packet.id());
+             this.disconnect(Component.translatable("multiplayer.requiredTexturePrompt.disconnect"));
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index cf66667f71e2589e4a5398b97df887b781678145..9f27b1b5154857ad8285802611aa355d6c44c131 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -594,7 +594,10 @@ public class ServerGamePacketListenerImpl
+         if (fandSuggestions.isPresent()) {
+             var result = fandSuggestions.get();
+             var range = new com.mojang.brigadier.context.StringRange(result.replaceStart(), result.replaceEnd());
+-            var suggestionList = result.values().stream()
++            var completions = io.fand.server.command.CommandEvents
++                    .fireTabComplete(this.player, packet.getCommand(), result.values())
++                    .orElse(List.of());
++            var suggestionList = completions.stream()
+                     .map(value -> new com.mojang.brigadier.suggestion.Suggestion(range, value))
+                     .toList();
+             this.send(new ClientboundCommandSuggestionsPacket(packet.getId(), new Suggestions(range, suggestionList)));
+@@ -608,6 +611,18 @@ public class ServerGamePacketListenerImpl
+         ParseResults<CommandSourceStack> parse = this.server.getCommands().getDispatcher().parse(command, this.player.createCommandSourceStack());
+         this.server.getCommands().getDispatcher().getCompletionSuggestions(parse).thenAccept(results -> {
+             Suggestions suggestions = results.getList().size() <= 1000 ? results : new Suggestions(results.getRange(), results.getList().subList(0, 1000));
++            var completions = io.fand.server.command.CommandEvents
++                    .fireTabComplete(
++                            this.player,
++                            packet.getCommand(),
++                            suggestions.getList().stream().map(com.mojang.brigadier.suggestion.Suggestion::getText).toList())
++                    .orElse(List.of());
++            var range = suggestions.getRange();
++            suggestions = new Suggestions(
++                    range,
++                    completions.stream()
++                            .map(value -> new com.mojang.brigadier.suggestion.Suggestion(range, value))
++                            .toList());
+             this.send(new ClientboundCommandSuggestionsPacket(packet.getId(), suggestions));
+         });
+     }
+@@ -2189,6 +2204,16 @@ public class ServerGamePacketListenerImpl
+ 
+             boolean validSlot = packet.slotNum() >= 1 && packet.slotNum() <= 45;
+             boolean validData = itemStack.isEmpty() || itemStack.getCount() <= itemStack.getMaxStackSize();
++            if ((validSlot || drop) && validData) {
++                itemStack = io.fand.server.inventory.InventoryEvents.fireCreative(this.player, packet.slotNum(), drop, itemStack);
++                if (itemStack == null) {
++                    return;
++                }
++                validData = itemStack.isEmpty() || itemStack.getCount() <= itemStack.getMaxStackSize();
++                if (!validData) {
++                    return;
++                }
++            }
+             if (validSlot && validData) {
+                 this.player.inventoryMenu.getSlot(packet.slotNum()).setByPlayer(itemStack);
+                 this.player.inventoryMenu.setRemoteSlot(packet.slotNum(), itemStack);
+@@ -2241,7 +2266,9 @@ public class ServerGamePacketListenerImpl
+     public void handleClientInformation(final ServerboundClientInformationPacket packet) {
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+         boolean wasHatShown = this.player.isModelPartShown(PlayerModelPart.HAT);
++        var oldInformation = this.player.clientInformation();
+         this.player.updateOptions(packet.information());
++        io.fand.server.event.PlayerEvents.fireLocaleChange(this.player, oldInformation.language(), packet.information().language());
+         if (this.player.isModelPartShown(PlayerModelPart.HAT) != wasHatShown) {
+             this.server.getPlayerList().broadcastAll(new ClientboundPlayerInfoUpdatePacket(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_HAT, this.player));
+         }
+diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
+index 669b3ffa86838b9f2b29cf6dd6d2f7c566c25a49..8eaf29fec7e30679b7cc1eb143be122797bd2121 100644
+--- a/net/minecraft/world/entity/Entity.java
++++ b/net/minecraft/world/entity/Entity.java
+@@ -2566,7 +2566,22 @@ public abstract class Entity
+                     if (teleportTransition != null) {
+                         ServerLevel newLevel = teleportTransition.newLevel();
+                         if (level.isAllowedToEnterPortal(newLevel) && (newLevel.dimension() == level.dimension() || this.canTeleport(level, newLevel))) {
+-                            this.teleport(teleportTransition);
++                            TeleportTransition fandTransition = this instanceof ServerPlayer serverPlayer
++                                ? io.fand.server.event.PlayerEvents.firePortal(serverPlayer, teleportTransition)
++                                : io.fand.server.event.EntityEvents.firePortal(this, teleportTransition);
++                            if (fandTransition != null) {
++                                if (this instanceof ServerPlayer serverPlayer) {
++                                    io.fand.server.event.PlayerEvents.withTeleportCause(
++                                        io.fand.api.event.player.PlayerTeleportEvent.Cause.PORTAL,
++                                        () -> this.teleport(fandTransition)
++                                    );
++                                } else {
++                                    io.fand.server.event.EntityEvents.withTeleportCause(
++                                        io.fand.api.event.entity.EntityTeleportEvent.Cause.PORTAL,
++                                        () -> this.teleport(fandTransition)
++                                    );
++                                }
++                            }
+                         }
+                     }
+ 
+@@ -3755,6 +3770,7 @@ public abstract class Entity
+ 
+     public final void setPosRaw(final double x, final double y, final double z) {
+         if (this.position.x != x || this.position.y != y || this.position.z != z) {
++            Vec3 oldPosition = this.position;
+             this.position = new Vec3(x, y, z);
+             int fx = Mth.floor(x);
+             int fy = Mth.floor(y);
+@@ -3769,6 +3785,7 @@ public abstract class Entity
+ 
+             this.levelCallback.onMove();
+             if (!this.firstTick && this.level instanceof ServerLevel serverLevel && !this.isRemoved()) {
++                io.fand.server.event.EntityEvents.fireVehicleMove(this, oldPosition, this.position);
+                 if (this instanceof WaypointTransmitter waypoint && waypoint.isTransmittingWaypoint()) {
+                     serverLevel.getWaypointManager().updateWaypoint(waypoint);
+                 }
+diff --git a/net/minecraft/world/entity/decoration/BlockAttachedEntity.java b/net/minecraft/world/entity/decoration/BlockAttachedEntity.java
+index cd278c307c212da5455202f12495c7426b62422c..f823ff18fa0bffd36ad9d14d50a02c17d3d82d36 100644
+--- a/net/minecraft/world/entity/decoration/BlockAttachedEntity.java
++++ b/net/minecraft/world/entity/decoration/BlockAttachedEntity.java
+@@ -3,6 +3,7 @@ package net.minecraft.world.entity.decoration;
+ import com.mojang.logging.LogUtils;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.server.level.ServerLevel;
++import net.minecraft.tags.DamageTypeTags;
+ import net.minecraft.world.damagesource.DamageSource;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.EntityType;
+@@ -42,6 +43,13 @@ public abstract class BlockAttachedEntity extends Entity {
+             if (this.checkInterval++ == 100) {
+                 this.checkInterval = 0;
+                 if (!this.isRemoved() && !this.survives()) {
++                    if (!io.fand.server.event.EntityEvents.fireHangingBreak(
++                        this,
++                        null,
++                        io.fand.api.event.entity.HangingBreakEvent.Cause.OBSTRUCTION
++                    )) {
++                        return;
++                    }
+                     this.discard();
+                     this.dropItem(level, null);
+                 }
+@@ -75,6 +83,15 @@ public abstract class BlockAttachedEntity extends Entity {
+             return false;
+         } else {
+             if (!this.isRemoved()) {
++                if (!io.fand.server.event.EntityEvents.fireHangingBreak(
++                    this,
++                    source.getEntity(),
++                    source.is(DamageTypeTags.IS_EXPLOSION)
++                        ? io.fand.api.event.entity.HangingBreakEvent.Cause.EXPLOSION
++                        : io.fand.api.event.entity.HangingBreakEvent.Cause.ENTITY
++                )) {
++                    return false;
++                }
+                 this.kill(level);
+                 this.markHurt();
+                 this.dropItem(level, source.getEntity());
+@@ -93,6 +110,13 @@ public abstract class BlockAttachedEntity extends Entity {
+     @Override
+     public void move(final MoverType moverType, final Vec3 delta) {
+         if (this.level() instanceof ServerLevel level && !this.isRemoved() && delta.lengthSqr() > 0.0) {
++            if (!io.fand.server.event.EntityEvents.fireHangingBreak(
++                this,
++                null,
++                io.fand.api.event.entity.HangingBreakEvent.Cause.PHYSICS
++            )) {
++                return;
++            }
+             this.kill(level);
+             this.dropItem(level, null);
+         }
+@@ -101,6 +125,13 @@ public abstract class BlockAttachedEntity extends Entity {
+     @Override
+     public void push(final double xa, final double ya, final double za) {
+         if (this.level() instanceof ServerLevel level && !this.isRemoved() && xa * xa + ya * ya + za * za > 0.0) {
++            if (!io.fand.server.event.EntityEvents.fireHangingBreak(
++                this,
++                null,
++                io.fand.api.event.entity.HangingBreakEvent.Cause.PHYSICS
++            )) {
++                return;
++            }
+             this.kill(level);
+             this.dropItem(level, null);
+         }
+diff --git a/net/minecraft/world/entity/decoration/ItemFrame.java b/net/minecraft/world/entity/decoration/ItemFrame.java
+index 8f7fafa4932ea17ac25e31e3d5c1ee1cd7a704ed..3ea94dbb52de0cc957b3c7df815f3735a0e31993 100644
+--- a/net/minecraft/world/entity/decoration/ItemFrame.java
++++ b/net/minecraft/world/entity/decoration/ItemFrame.java
+@@ -173,6 +173,20 @@ public class ItemFrame extends HangingEntity {
+             if (this.isInvulnerableToBase(source)) {
+                 return false;
+             } else if (this.shouldDamageDropItem(source)) {
++                if (source.getEntity() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
++                    var result = io.fand.server.event.EntityEvents.fireItemFrameChange(
++                        this,
++                        serverPlayer,
++                        io.fand.api.event.entity.PlayerItemFrameChangeEvent.Action.REMOVE,
++                        this.getItem(),
++                        this.getRotation()
++                    );
++                    if (result == null) {
++                        return false;
++                    }
++                    this.setItem(result.itemStack(), false);
++                    this.setRotation(result.rotation(), false);
++                }
+                 this.dropItem(level, source.getEntity(), false);
+                 this.gameEvent(GameEvent.BLOCK_CHANGE, source.getEntity());
+                 this.playSound(this.getRemoveItemSound(), 1.0F, 1.0F);
+@@ -366,7 +380,24 @@ public class ItemFrame extends HangingEntity {
+                     if (data != null && data.isTrackedCountOverLimit(256)) {
+                         return InteractionResult.FAIL;
+                     } else {
+-                        this.setItem(itemStack);
++                        ItemStack placedItem = itemStack;
++                        if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
++                            var result = io.fand.server.event.EntityEvents.fireItemFrameChange(
++                                this,
++                                serverPlayer,
++                                io.fand.api.event.entity.PlayerItemFrameChangeEvent.Action.PLACE,
++                                itemStack,
++                                this.getRotation()
++                            );
++                            if (result == null) {
++                                return InteractionResult.FAIL;
++                            }
++                            placedItem = result.itemStack();
++                            if (placedItem.isEmpty()) {
++                                return InteractionResult.PASS;
++                            }
++                        }
++                        this.setItem(placedItem);
+                         this.gameEvent(GameEvent.BLOCK_CHANGE, player);
+                         itemStack.consume(1, player);
+                         return InteractionResult.SUCCESS;
+@@ -375,6 +406,23 @@ public class ItemFrame extends HangingEntity {
+                     return InteractionResult.PASS;
+                 }
+             } else {
++                if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
++                    var result = io.fand.server.event.EntityEvents.fireItemFrameChange(
++                        this,
++                        serverPlayer,
++                        io.fand.api.event.entity.PlayerItemFrameChangeEvent.Action.ROTATE,
++                        this.getItem(),
++                        this.getRotation() + 1
++                    );
++                    if (result == null) {
++                        return InteractionResult.FAIL;
++                    }
++                    this.setItem(result.itemStack(), false);
++                    this.setRotation(result.rotation());
++                    this.playSound(this.getRotateItemSound(), 1.0F, 1.0F);
++                    this.gameEvent(GameEvent.BLOCK_CHANGE, player);
++                    return InteractionResult.SUCCESS;
++                }
+                 this.playSound(this.getRotateItemSound(), 1.0F, 1.0F);
+                 this.setRotation(this.getRotation() + 1);
+                 this.gameEvent(GameEvent.BLOCK_CHANGE, player);
+diff --git a/net/minecraft/world/entity/item/ItemEntity.java b/net/minecraft/world/entity/item/ItemEntity.java
+index 37199032b24e7c478d3c145e7d41de55385dac6e..67d72a04e46ff769f01487cb667009e8bc3d339c 100644
+--- a/net/minecraft/world/entity/item/ItemEntity.java
++++ b/net/minecraft/world/entity/item/ItemEntity.java
+@@ -185,7 +185,11 @@ public class ItemEntity extends Entity implements TraceableEntity {
+             }
+ 
+             if (!this.level().isClientSide() && this.age >= 6000) {
+-                this.discard();
++                if (io.fand.server.event.EntityEvents.fireItemDespawn(this, this.age)) {
++                    this.discard();
++                } else {
++                    this.age = 0;
++                }
+             }
+         }
+     }
+@@ -257,6 +261,9 @@ public class ItemEntity extends Entity implements TraceableEntity {
+     }
+ 
+     private static void merge(final ItemEntity toItem, final ItemStack toStack, final ItemEntity fromItem, final ItemStack fromStack) {
++        if (!io.fand.server.event.EntityEvents.fireItemMerge(toItem, fromItem)) {
++            return;
++        }
+         merge(toItem, toStack, fromStack);
+         toItem.pickupDelay = Math.max(toItem.pickupDelay, fromItem.pickupDelay);
+         toItem.age = Math.min(toItem.age, fromItem.age);
+diff --git a/net/minecraft/world/entity/vehicle/VehicleEntity.java b/net/minecraft/world/entity/vehicle/VehicleEntity.java
+index 096f9106775cdf6c8aefe32a610a4a5b7693b6da..2ec5ad227b8406a192ceaa351533be3cfc80a1b5 100644
+--- a/net/minecraft/world/entity/vehicle/VehicleEntity.java
++++ b/net/minecraft/world/entity/vehicle/VehicleEntity.java
+@@ -46,9 +46,15 @@ public abstract class VehicleEntity extends Entity {
+             boolean creativePlayer = source.getEntity() instanceof Player player && player.getAbilities().instabuild;
+             if ((creativePlayer || !(this.getDamage() > 40.0F)) && !this.shouldSourceDestroy(source)) {
+                 if (creativePlayer) {
++                    if (!io.fand.server.event.EntityEvents.fireVehicleDestroy(this, source.getEntity())) {
++                        return false;
++                    }
+                     this.discard();
+                 }
+             } else {
++                if (!io.fand.server.event.EntityEvents.fireVehicleDestroy(this, source.getEntity())) {
++                    return false;
++                }
+                 this.destroy(level, source);
+             }
+ 
+diff --git a/net/minecraft/world/inventory/MerchantContainer.java b/net/minecraft/world/inventory/MerchantContainer.java
+index f4bbc326b5b37614fbeece6661898fea327f904e..c627385075d6d5ef4596d55f8bd167a54b46c29d 100644
+--- a/net/minecraft/world/inventory/MerchantContainer.java
++++ b/net/minecraft/world/inventory/MerchantContainer.java
+@@ -111,7 +111,18 @@ public class MerchantContainer implements Container {
+ 
+                 if (offer != null && !offer.isOutOfStock()) {
+                     this.activeOffer = offer;
+-                    this.setItem(2, offer.assemble());
++                    ItemStack result = offer.assemble();
++                    if (this.merchant.getTradingPlayer() instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
++                        result = io.fand.server.inventory.InventoryEvents.firePrepareTrade(
++                            serverPlayer,
++                            this,
++                            buyA,
++                            buyB,
++                            result,
++                            offer.getXp()
++                        );
++                    }
++                    this.setItem(2, result);
+                     this.futureXp = offer.getXp();
+                 } else {
+                     this.setItem(2, ItemStack.EMPTY);
+diff --git a/net/minecraft/world/inventory/MerchantResultSlot.java b/net/minecraft/world/inventory/MerchantResultSlot.java
+index 732c5503c7cf039d073d45a11d171f38d69b571c..aeb5a61b31b680bdffeb6339977ff73f5f9f3185 100644
+--- a/net/minecraft/world/inventory/MerchantResultSlot.java
++++ b/net/minecraft/world/inventory/MerchantResultSlot.java
+@@ -52,6 +52,10 @@ public class MerchantResultSlot extends Slot {
+         if (offer != null) {
+             ItemStack buyA = this.slots.getItem(0);
+             ItemStack buyB = this.slots.getItem(1);
++            if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer
++                && !io.fand.server.inventory.InventoryEvents.fireTrade(serverPlayer, this.slots, offer, buyA, buyB, carried)) {
++                return;
++            }
+             if (offer.take(buyA, buyB) || offer.take(buyB, buyA)) {
+                 this.merchant.notifyTrade(offer);
+                 player.awardStat(Stats.TRADED_WITH_VILLAGER);
+diff --git a/net/minecraft/world/item/HangingEntityItem.java b/net/minecraft/world/item/HangingEntityItem.java
+index 17574ae594c802d4c5ddc84397a5951b3a131191..7ab284b69080f4d23dc7a2575a02669b3b6c3d3c 100644
+--- a/net/minecraft/world/item/HangingEntityItem.java
++++ b/net/minecraft/world/item/HangingEntityItem.java
+@@ -62,6 +62,9 @@ public class HangingEntityItem extends Item {
+             EntityType.<HangingEntity>createDefaultStackConfig(level, itemInHand, player).accept(entity);
+             if (entity.survives()) {
+                 if (!level.isClientSide()) {
++                    if (!io.fand.server.event.EntityEvents.fireHangingPlace(player, entity, blockPos, clickedFace, itemInHand)) {
++                        return InteractionResult.CONSUME;
++                    }
+                     entity.playPlacementSound();
+                     level.gameEvent(player, GameEvent.ENTITY_PLACE, entity.position());
+                     level.addFreshEntity(entity);

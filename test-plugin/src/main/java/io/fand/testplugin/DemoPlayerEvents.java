@@ -12,6 +12,8 @@ import io.fand.api.event.player.PlayerBedEnterEvent;
 import io.fand.api.event.player.PlayerBedLeaveEvent;
 import io.fand.api.event.player.PlayerBucketEmptyEvent;
 import io.fand.api.event.player.PlayerBucketFillEvent;
+import io.fand.api.event.player.PlayerChangedWorldEvent;
+import io.fand.api.event.player.PlayerClientBrandEvent;
 import io.fand.api.event.player.PlayerDeathEvent;
 import io.fand.api.event.player.PlayerDropItemEvent;
 import io.fand.api.event.player.PlayerExperienceChangeEvent;
@@ -23,9 +25,12 @@ import io.fand.api.event.player.PlayerItemConsumeEvent;
 import io.fand.api.event.player.PlayerItemDamageEvent;
 import io.fand.api.event.player.PlayerItemHeldEvent;
 import io.fand.api.event.player.PlayerKickEvent;
+import io.fand.api.event.player.PlayerLocaleChangeEvent;
 import io.fand.api.event.player.PlayerMoveEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
+import io.fand.api.event.player.PlayerPortalEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
+import io.fand.api.event.player.PlayerResourcePackStatusEvent;
 import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
 import io.fand.api.event.player.PlayerToggleSneakEvent;
@@ -148,6 +153,21 @@ final class DemoPlayerEvents implements Listener {
     }
 
     @Subscribe
+    public void onPortal(PlayerPortalEvent event) {
+        if (context.config().getBoolean("features.log-teleports", false)) {
+            logger.info("{} portal {} -> {}", event.player().name(), compactLocation(event.from()), compactLocation(event.to()));
+        }
+    }
+
+    @Subscribe
+    public void onChangedWorld(PlayerChangedWorldEvent event) {
+        if (context.config().getBoolean("features.log-teleports", false)) {
+            logger.info("{} changed world {} -> {}",
+                    event.player().name(), event.fromWorld().key().asString(), event.toWorld().key().asString());
+        }
+    }
+
+    @Subscribe
     public void onRespawn(PlayerRespawnEvent event) {
         event.player().sendMessage(Component.text("Respawned by " + event.cause()
                 + " at " + compactLocation(event.respawnLocation()), NamedTextColor.AQUA));
@@ -188,6 +208,27 @@ final class DemoPlayerEvents implements Listener {
     public void onGameModeChange(PlayerGameModeChangeEvent event) {
         if (context.config().getBoolean("features.log-player-state-events", false)) {
             logger.info("{} game mode {} -> {}", event.player().name(), event.fromGameMode(), event.toGameMode());
+        }
+    }
+
+    @Subscribe
+    public void onLocaleChange(PlayerLocaleChangeEvent event) {
+        if (context.config().getBoolean("features.log-player-state-events", false)) {
+            logger.info("{} locale {} -> {}", event.player().name(), event.oldLocale(), event.newLocale());
+        }
+    }
+
+    @Subscribe
+    public void onClientBrand(PlayerClientBrandEvent event) {
+        if (context.config().getBoolean("features.log-player-state-events", false)) {
+            logger.info("{} client brand {}", event.player().name(), event.brand());
+        }
+    }
+
+    @Subscribe
+    public void onResourcePackStatus(PlayerResourcePackStatusEvent event) {
+        if (context.config().getBoolean("features.log-player-state-events", false)) {
+            logger.info("{} resource pack {} {}", event.player().name(), event.id(), event.status());
         }
     }
 

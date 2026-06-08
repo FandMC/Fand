@@ -2,8 +2,10 @@ package io.fand.server.command;
 
 import io.fand.api.command.CommandSender;
 import io.fand.api.event.command.CommandExecuteEvent;
+import io.fand.api.event.command.TabCompleteEvent;
 import io.fand.api.event.player.PlayerCommandPreprocessEvent;
 import io.fand.server.hooks.FandHooks;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import net.minecraft.commands.CommandSourceStack;
@@ -64,6 +66,25 @@ public final class CommandEvents {
             return Optional.of(stripCommandPrefix(command));
         }
         return event.cancelled() ? Optional.empty() : Optional.of(event.command());
+    }
+
+    public static Optional<List<String>> fireTabComplete(ServerPlayer player, String buffer, List<String> completions) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(TabCompleteEvent.class)) {
+            return Optional.of(completions);
+        }
+        var fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return Optional.of(completions);
+        }
+        var event = new TabCompleteEvent(fandPlayer, buffer, completions);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("TabCompleteEvent listener failed", failure);
+            return Optional.of(completions);
+        }
+        return event.cancelled() ? Optional.empty() : Optional.of(List.copyOf(event.completions()));
     }
 
     public static void runWithoutCommandExecuteEvent(Runnable task) {

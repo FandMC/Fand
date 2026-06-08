@@ -12,14 +12,17 @@ import io.fand.api.event.inventory.FurnaceExtractEvent;
 import io.fand.api.event.inventory.FurnaceSmeltEvent;
 import io.fand.api.event.inventory.InventoryClickEvent;
 import io.fand.api.event.inventory.InventoryCloseEvent;
+import io.fand.api.event.inventory.InventoryCreativeEvent;
 import io.fand.api.event.inventory.InventoryDragEvent;
 import io.fand.api.event.inventory.InventoryOpenEvent;
 import io.fand.api.event.inventory.InventoryMoveItemEvent;
 import io.fand.api.event.inventory.InventoryPickupItemEvent;
+import io.fand.api.event.inventory.InventoryTradeEvent;
 import io.fand.api.event.inventory.PrepareAnvilEvent;
 import io.fand.api.event.inventory.PrepareItemEnchantEvent;
 import io.fand.api.event.inventory.PrepareItemCraftEvent;
 import io.fand.api.event.inventory.PrepareSmithingEvent;
+import io.fand.api.event.inventory.PrepareTradeEvent;
 import io.fand.api.inventory.Inventory;
 import io.fand.api.plugin.PluginContext;
 import java.util.Set;
@@ -75,6 +78,14 @@ final class DemoInventoryEvents implements Listener {
         if (context.config().getBoolean("features.log-inventory-clicks", false)) {
             logger.info("{} dragged {} across {} slots cursor={}",
                     event.player().name(), event.dragType(), event.slots().size(), stackName(event.cursorItem()));
+        }
+    }
+
+    @Subscribe
+    public void onInventoryCreative(InventoryCreativeEvent event) {
+        if (context.config().getBoolean("features.log-inventory-clicks", false)) {
+            logger.info("{} creative slot={} drop={} item={}",
+                    event.player().name(), event.rawSlot(), event.drop(), stackName(event.item()));
         }
     }
 
@@ -154,6 +165,30 @@ final class DemoInventoryEvents implements Listener {
                     event.player().name(),
                     event.recipe().map(recipe -> recipe.key().asString()).orElse("none"),
                     stackName(event.result()));
+        }
+    }
+
+    @Subscribe
+    public void onPrepareTrade(PrepareTradeEvent event) {
+        if (context.config().getBoolean("features.log-workstation-events", false)) {
+            logger.info("{} prepared trade {} + {} -> {} xp={}",
+                    event.player().name(),
+                    stackName(event.firstCost()),
+                    stackName(event.secondCost()),
+                    stackName(event.result()),
+                    event.villagerExperience());
+        }
+    }
+
+    @Subscribe
+    public void onTrade(InventoryTradeEvent event) {
+        if (context.config().getBoolean("features.log-workstation-events", false)) {
+            logger.info("{} traded {} + {} -> {} xp={}",
+                    event.player().name(),
+                    stackName(event.firstCost()),
+                    stackName(event.secondCost()),
+                    stackName(event.result()),
+                    event.villagerExperience());
         }
     }
 

@@ -11,6 +11,7 @@ import io.fand.api.event.entity.EntityDeathEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
 import io.fand.api.event.entity.EntityExplodeEvent;
 import io.fand.api.event.entity.EntityMountEvent;
+import io.fand.api.event.entity.EntityPortalEvent;
 import io.fand.api.event.entity.EntityPotionEffectEvent;
 import io.fand.api.event.entity.EntityRegainHealthEvent;
 import io.fand.api.event.entity.EntityRemoveEvent;
@@ -22,8 +23,19 @@ import io.fand.api.event.entity.EntityTargetEvent;
 import io.fand.api.event.entity.EntityTeleportEvent;
 import io.fand.api.event.entity.EntityTransformEvent;
 import io.fand.api.event.entity.ExplosionPrimeEvent;
+import io.fand.api.event.entity.HangingBreakEvent;
+import io.fand.api.event.entity.HangingPlaceEvent;
+import io.fand.api.event.entity.ItemDespawnEvent;
+import io.fand.api.event.entity.ItemMergeEvent;
+import io.fand.api.event.entity.ItemSpawnEvent;
+import io.fand.api.event.entity.PlayerItemFrameChangeEvent;
 import io.fand.api.event.entity.ProjectileHitEvent;
 import io.fand.api.event.entity.ProjectileLaunchEvent;
+import io.fand.api.event.vehicle.VehicleCreateEvent;
+import io.fand.api.event.vehicle.VehicleDestroyEvent;
+import io.fand.api.event.vehicle.VehicleEnterEvent;
+import io.fand.api.event.vehicle.VehicleExitEvent;
+import io.fand.api.event.vehicle.VehicleMoveEvent;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import io.fand.api.plugin.PluginContext;
@@ -55,6 +67,27 @@ final class DemoEntityEvents implements Listener {
     }
 
     @Subscribe
+    public void onItemSpawn(ItemSpawnEvent event) {
+        if (context.config().getBoolean("features.log-item-events", false)) {
+            logger.info("Item spawned: {} at {}", stackName(event.item()), compactLocation(event.entity().location()));
+        }
+    }
+
+    @Subscribe
+    public void onItemDespawn(ItemDespawnEvent event) {
+        if (context.config().getBoolean("features.log-item-events", false)) {
+            logger.info("Item despawn: {} age={}", stackName(event.item()), event.age());
+        }
+    }
+
+    @Subscribe
+    public void onItemMerge(ItemMergeEvent event) {
+        if (context.config().getBoolean("features.log-item-events", false)) {
+            logger.info("Item merge: {} <- {}", stackName(event.targetItem()), stackName(event.sourceItem()));
+        }
+    }
+
+    @Subscribe
     public void onEntityRemove(EntityRemoveEvent event) {
         if (context.config().getBoolean("features.log-entity-removes", false)) {
             logger.info("Entity removed: {} cause={}", event.entity().type().asString(), event.cause());
@@ -65,6 +98,14 @@ final class DemoEntityEvents implements Listener {
     public void onEntityTeleport(EntityTeleportEvent event) {
         if (context.config().getBoolean("features.log-entity-teleports", false)) {
             logger.info("Entity teleport: {} {} -> {}",
+                    event.entity().type().asString(), compactLocation(event.from()), compactLocation(event.to()));
+        }
+    }
+
+    @Subscribe
+    public void onEntityPortal(EntityPortalEvent event) {
+        if (context.config().getBoolean("features.log-entity-teleports", false)) {
+            logger.info("Entity portal: {} {} -> {}",
                     event.entity().type().asString(), compactLocation(event.from()), compactLocation(event.to()));
         }
     }
@@ -208,6 +249,73 @@ final class DemoEntityEvents implements Listener {
         if (context.config().getBoolean("features.log-entity-detail-events", false)) {
             logger.info("Entity transform: {} -> {} cause={}",
                     event.entity().type().asString(), event.targetType().asString(), event.cause());
+        }
+    }
+
+    @Subscribe
+    public void onHangingPlace(HangingPlaceEvent event) {
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            logger.info("Hanging place: {} face={} item={} player={}",
+                    event.entity().type().asString(),
+                    event.face(),
+                    stackName(event.item()),
+                    event.player().map(Player::name).orElse("none"));
+        }
+    }
+
+    @Subscribe
+    public void onHangingBreak(HangingBreakEvent event) {
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            logger.info("Hanging break: {} cause={} remover={}",
+                    event.entity().type().asString(),
+                    event.cause(),
+                    event.remover().map(entity -> entity.type().asString()).orElse("none"));
+        }
+    }
+
+    @Subscribe
+    public void onItemFrameChange(PlayerItemFrameChangeEvent event) {
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            logger.info("Item frame: {} action={} item={} rotation={}",
+                    event.player().name(), event.action(), stackName(event.item()), event.rotation());
+        }
+    }
+
+    @Subscribe
+    public void onVehicleCreate(VehicleCreateEvent event) {
+        if (context.config().getBoolean("features.log-vehicle-events", false)) {
+            logger.info("Vehicle create: {} at {}", event.vehicle().type().asString(), compactLocation(event.vehicle().location()));
+        }
+    }
+
+    @Subscribe
+    public void onVehicleDestroy(VehicleDestroyEvent event) {
+        if (context.config().getBoolean("features.log-vehicle-events", false)) {
+            logger.info("Vehicle destroy: {} attacker={}",
+                    event.vehicle().type().asString(),
+                    event.attacker().map(entity -> entity.type().asString()).orElse("none"));
+        }
+    }
+
+    @Subscribe
+    public void onVehicleEnter(VehicleEnterEvent event) {
+        if (context.config().getBoolean("features.log-vehicle-events", false)) {
+            logger.info("Vehicle enter: {} <- {}", event.vehicle().type().asString(), event.entity().type().asString());
+        }
+    }
+
+    @Subscribe
+    public void onVehicleExit(VehicleExitEvent event) {
+        if (context.config().getBoolean("features.log-vehicle-events", false)) {
+            logger.info("Vehicle exit: {} -> {}", event.vehicle().type().asString(), event.entity().type().asString());
+        }
+    }
+
+    @Subscribe
+    public void onVehicleMove(VehicleMoveEvent event) {
+        if (context.config().getBoolean("features.log-vehicle-move-events", false)) {
+            logger.info("Vehicle move: {} {} -> {}",
+                    event.vehicle().type().asString(), compactLocation(event.from()), compactLocation(event.to()));
         }
     }
 }

@@ -6,6 +6,8 @@ import io.fand.api.event.player.PlayerBedEnterEvent;
 import io.fand.api.event.player.PlayerBedLeaveEvent;
 import io.fand.api.event.player.PlayerBucketEmptyEvent;
 import io.fand.api.event.player.PlayerBucketFillEvent;
+import io.fand.api.event.player.PlayerChangedWorldEvent;
+import io.fand.api.event.player.PlayerClientBrandEvent;
 import io.fand.api.event.player.PlayerExperienceChangeEvent;
 import io.fand.api.event.player.PlayerFoodLevelChangeEvent;
 import io.fand.api.event.player.PlayerGameModeChangeEvent;
@@ -15,8 +17,11 @@ import io.fand.api.event.player.PlayerItemConsumeEvent;
 import io.fand.api.event.player.PlayerItemDamageEvent;
 import io.fand.api.event.player.PlayerItemHeldEvent;
 import io.fand.api.event.player.PlayerKickEvent;
+import io.fand.api.event.player.PlayerLocaleChangeEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
+import io.fand.api.event.player.PlayerPortalEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
+import io.fand.api.event.player.PlayerResourcePackStatusEvent;
 import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
 import io.fand.api.event.player.PlayerToggleSneakEvent;
@@ -33,6 +38,7 @@ import io.fand.server.item.FandItemStacks;
 import io.fand.server.world.FandWorld;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import net.kyori.adventure.key.Key;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -635,6 +641,132 @@ public final class PlayerEvents {
                 transition.asPassenger(),
                 java.util.Set.of(),
                 transition.postTeleportTransition());
+    }
+
+    public static @Nullable TeleportTransition firePortal(ServerPlayer player, TeleportTransition transition) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerPortalEvent.class)) {
+            return transition;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        var fromWorld = FandHooks.wrapWorld(player.level());
+        var toWorld = FandHooks.wrapWorld(transition.newLevel());
+        if (fandPlayer == null || fromWorld == null || toWorld == null) {
+            return transition;
+        }
+        PositionMoveRotation absolute = PositionMoveRotation.calculateAbsolute(
+                PositionMoveRotation.of(player),
+                PositionMoveRotation.of(transition),
+                transition.relatives());
+        var from = new Location(fromWorld, player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
+        var to = new Location(
+                toWorld,
+                absolute.position().x,
+                absolute.position().y,
+                absolute.position().z,
+                absolute.yRot(),
+                absolute.xRot());
+        var event = new PlayerPortalEvent(fandPlayer, from, to);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerPortalEvent listener failed", failure);
+            return transition;
+        }
+        if (event.cancelled()) {
+            return null;
+        }
+        if (sameLocation(to, event.to())) {
+            return transition;
+        }
+        ServerLevel level = resolveLevel(event.to().world(), player);
+        if (level == null) {
+            LOGGER.warn("PlayerPortalEvent targeted an unloaded world: {}", event.to().world().key().asString());
+            return transition;
+        }
+        return new TeleportTransition(
+                level,
+                new Vec3(event.to().x(), event.to().y(), event.to().z()),
+                transition.deltaMovement(),
+                event.to().yaw(),
+                event.to().pitch(),
+                transition.missingRespawnBlock(),
+                transition.asPassenger(),
+                java.util.Set.of(),
+                transition.postTeleportTransition());
+    }
+
+    public static void fireChangedWorld(ServerPlayer player, ServerLevel oldLevel, ServerLevel newLevel) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerChangedWorldEvent.class)) {
+            return;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        var fromWorld = FandHooks.wrapWorld(oldLevel);
+        var toWorld = FandHooks.wrapWorld(newLevel);
+        if (fandPlayer == null || fromWorld == null || toWorld == null) {
+            return;
+        }
+        try {
+            bus.fire(new PlayerChangedWorldEvent(fandPlayer, fromWorld, toWorld));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerChangedWorldEvent listener failed", failure);
+        }
+    }
+
+    public static void fireResourcePackStatus(
+            ServerPlayer player,
+            UUID id,
+            PlayerResourcePackStatusEvent.Status status
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerResourcePackStatusEvent.class)) {
+            return;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return;
+        }
+        try {
+            bus.fire(new PlayerResourcePackStatusEvent(fandPlayer, id, status));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerResourcePackStatusEvent listener failed", failure);
+        }
+    }
+
+    public static void fireLocaleChange(ServerPlayer player, String oldLocale, String newLocale) {
+        if (oldLocale.equalsIgnoreCase(newLocale)) {
+            return;
+        }
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerLocaleChangeEvent.class)) {
+            return;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return;
+        }
+        try {
+            bus.fire(new PlayerLocaleChangeEvent(fandPlayer, oldLocale, newLocale));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerLocaleChangeEvent listener failed", failure);
+        }
+    }
+
+    public static void fireClientBrand(ServerPlayer player, String brand) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerClientBrandEvent.class)) {
+            return;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return;
+        }
+        try {
+            bus.fire(new PlayerClientBrandEvent(fandPlayer, brand));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerClientBrandEvent listener failed", failure);
+        }
     }
 
     public static ServerLevel fireRespawn(

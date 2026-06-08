@@ -5,6 +5,7 @@ import static io.fand.testplugin.DemoSupport.*;
 import io.fand.api.event.Listener;
 import io.fand.api.event.Subscribe;
 import io.fand.api.event.command.CommandExecuteEvent;
+import io.fand.api.event.command.TabCompleteEvent;
 import io.fand.api.event.player.PlayerChatEvent;
 import io.fand.api.event.player.PlayerCommandPreprocessEvent;
 import io.fand.api.event.player.PlayerQuitEvent;
@@ -53,6 +54,14 @@ final class DemoCommandEvents implements Listener {
     public void onCommandExecute(CommandExecuteEvent event) {
         if (context.config().getBoolean("features.log-command-execute", false)) {
             logger.info("{} executing /{}", event.sender().name(), event.command());
+        }
+    }
+
+    @Subscribe
+    public void onTabComplete(TabCompleteEvent event) {
+        if (context.config().getBoolean("features.log-command-completions", false)) {
+            logger.info("{} requested completions for '{}' count={}",
+                    event.player().name(), event.buffer(), event.completions().size());
         }
     }
 

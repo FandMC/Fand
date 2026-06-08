@@ -10,12 +10,15 @@ import io.fand.api.event.inventory.FurnaceExtractEvent;
 import io.fand.api.event.inventory.FurnaceSmeltEvent;
 import io.fand.api.event.inventory.InventoryClickEvent;
 import io.fand.api.event.inventory.InventoryCloseEvent;
+import io.fand.api.event.inventory.InventoryCreativeEvent;
 import io.fand.api.event.inventory.InventoryDragEvent;
+import io.fand.api.event.inventory.InventoryTradeEvent;
 import io.fand.api.event.inventory.InventoryMoveItemEvent;
 import io.fand.api.event.inventory.InventoryOpenEvent;
 import io.fand.api.event.inventory.InventoryPickupItemEvent;
 import io.fand.api.event.inventory.PrepareAnvilEvent;
 import io.fand.api.event.inventory.PrepareItemEnchantEvent;
+import io.fand.api.event.inventory.PrepareTradeEvent;
 import io.fand.api.event.inventory.PrepareSmithingEvent;
 import io.fand.api.inventory.InventoryType;
 import io.fand.api.item.ItemStack;
@@ -44,6 +47,7 @@ import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentInstance;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.trading.MerchantOffer;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -217,6 +221,38 @@ public final class InventoryEvents {
         } catch (RuntimeException failure) {
             LOGGER.warn("InventoryPickupItemEvent supplied an invalid item stack", failure);
             return new MoveItemResult(true, itemStack);
+        }
+    }
+
+    public static net.minecraft.world.item.@Nullable ItemStack fireCreative(
+            ServerPlayer player,
+            int rawSlot,
+            boolean drop,
+            net.minecraft.world.item.ItemStack itemStack
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(InventoryCreativeEvent.class)) {
+            return itemStack;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return itemStack;
+        }
+        var event = new InventoryCreativeEvent(fandPlayer, rawSlot, drop, FandItemStacks.fromVanilla(itemStack));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("InventoryCreativeEvent listener failed", failure);
+            return itemStack;
+        }
+        if (event.cancelled()) {
+            return null;
+        }
+        try {
+            return FandItemStacks.toVanilla(event.item());
+        } catch (RuntimeException failure) {
+            LOGGER.warn("InventoryCreativeEvent supplied an invalid item stack", failure);
+            return itemStack;
         }
     }
 
@@ -440,6 +476,75 @@ public final class InventoryEvents {
             LOGGER.warn("PrepareSmithingEvent supplied an invalid result item", failure);
             return result;
         }
+    }
+
+    public static net.minecraft.world.item.ItemStack firePrepareTrade(
+            ServerPlayer player,
+            Container inventory,
+            net.minecraft.world.item.ItemStack firstCost,
+            net.minecraft.world.item.ItemStack secondCost,
+            net.minecraft.world.item.ItemStack result,
+            int villagerExperience
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PrepareTradeEvent.class)) {
+            return result;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return result;
+        }
+        var event = new PrepareTradeEvent(
+                fandPlayer,
+                new FandContainerInventory(inventory, InventoryType.MERCHANT),
+                FandItemStacks.fromVanilla(firstCost),
+                FandItemStacks.fromVanilla(secondCost),
+                FandItemStacks.fromVanilla(result),
+                villagerExperience);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PrepareTradeEvent listener failed", failure);
+            return result;
+        }
+        try {
+            return FandItemStacks.toVanilla(event.result());
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PrepareTradeEvent supplied an invalid result item", failure);
+            return result;
+        }
+    }
+
+    public static boolean fireTrade(
+            ServerPlayer player,
+            Container inventory,
+            MerchantOffer offer,
+            net.minecraft.world.item.ItemStack firstCost,
+            net.minecraft.world.item.ItemStack secondCost,
+            net.minecraft.world.item.ItemStack result
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(InventoryTradeEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return true;
+        }
+        var event = new InventoryTradeEvent(
+                fandPlayer,
+                new FandContainerInventory(inventory, InventoryType.MERCHANT),
+                FandItemStacks.fromVanilla(firstCost),
+                FandItemStacks.fromVanilla(secondCost),
+                FandItemStacks.fromVanilla(result),
+                offer.getXp());
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("InventoryTradeEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
     }
 
     public static int fireFurnaceBurn(

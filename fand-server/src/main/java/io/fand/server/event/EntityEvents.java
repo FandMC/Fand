@@ -5,6 +5,7 @@ import io.fand.api.event.entity.EntityBreedEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
 import io.fand.api.event.entity.EntityExplodeEvent;
 import io.fand.api.event.entity.EntityMountEvent;
+import io.fand.api.event.entity.EntityPortalEvent;
 import io.fand.api.event.entity.EntityPotionEffectEvent;
 import io.fand.api.event.entity.EntityRegainHealthEvent;
 import io.fand.api.event.entity.EntityRemoveEvent;
@@ -17,8 +18,20 @@ import io.fand.api.event.entity.EntityTeleportEvent;
 import io.fand.api.event.entity.EntityTransformEvent;
 import io.fand.api.event.entity.EntityDeathEvent;
 import io.fand.api.event.entity.ExplosionPrimeEvent;
+import io.fand.api.event.entity.HangingBreakEvent;
+import io.fand.api.event.entity.HangingPlaceEvent;
+import io.fand.api.event.entity.ItemDespawnEvent;
+import io.fand.api.event.entity.ItemMergeEvent;
+import io.fand.api.event.entity.ItemSpawnEvent;
+import io.fand.api.event.entity.PlayerItemFrameChangeEvent;
 import io.fand.api.event.entity.ProjectileHitEvent;
 import io.fand.api.event.entity.ProjectileLaunchEvent;
+import io.fand.api.event.block.BlockFace;
+import io.fand.api.event.vehicle.VehicleCreateEvent;
+import io.fand.api.event.vehicle.VehicleDestroyEvent;
+import io.fand.api.event.vehicle.VehicleEnterEvent;
+import io.fand.api.event.vehicle.VehicleExitEvent;
+import io.fand.api.event.vehicle.VehicleMoveEvent;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
 import io.fand.server.block.FandBlock;
@@ -27,14 +40,17 @@ import io.fand.server.entity.FandPlayer;
 import io.fand.server.hooks.FandHooks;
 import io.fand.server.item.FandItemStacks;
 import io.fand.server.world.FandWorld;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.PositionMoveRotation;
@@ -56,6 +72,7 @@ public final class EntityEvents {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(EntityEvents.class);
     private static final ThreadLocal<EntityRegainHealthEvent.Cause> NEXT_HEAL_CAUSE = new ThreadLocal<>();
+    private static final ThreadLocal<EntityTeleportEvent.Cause> NEXT_TELEPORT_CAUSE = new ThreadLocal<>();
 
     private EntityEvents() {
     }
@@ -70,6 +87,20 @@ public final class EntityEvents {
                 NEXT_HEAL_CAUSE.remove();
             } else {
                 NEXT_HEAL_CAUSE.set(previous);
+            }
+        }
+    }
+
+    public static void withTeleportCause(EntityTeleportEvent.Cause cause, Runnable task) {
+        EntityTeleportEvent.Cause previous = NEXT_TELEPORT_CAUSE.get();
+        NEXT_TELEPORT_CAUSE.set(Objects.requireNonNull(cause, "cause"));
+        try {
+            task.run();
+        } finally {
+            if (previous == null) {
+                NEXT_TELEPORT_CAUSE.remove();
+            } else {
+                NEXT_TELEPORT_CAUSE.set(previous);
             }
         }
     }
@@ -99,21 +130,59 @@ public final class EntityEvents {
 
     public static boolean fireSpawn(net.minecraft.world.entity.Entity entity, EntitySpawnEvent.Cause cause) {
         var bus = FandHooks.events();
-        if (!bus.hasListeners(EntitySpawnEvent.class)) {
+        boolean hasEntityListeners = bus.hasListeners(EntitySpawnEvent.class);
+        boolean hasItemListeners = entity instanceof net.minecraft.world.entity.item.ItemEntity
+                && bus.hasListeners(ItemSpawnEvent.class);
+        boolean hasVehicleListeners = isVehicle(entity) && bus.hasListeners(VehicleCreateEvent.class);
+        if (!hasEntityListeners && !hasItemListeners && !hasVehicleListeners) {
             return true;
         }
         var fandEntity = FandHooks.wrapEntity(entity);
         if (fandEntity == null) {
             return true;
         }
-        var event = new EntitySpawnEvent(fandEntity, cause);
-        try {
-            bus.fire(event);
-        } catch (RuntimeException failure) {
-            LOGGER.warn("EntitySpawnEvent listener failed", failure);
-            return true;
+        if (hasEntityListeners) {
+            var event = new EntitySpawnEvent(fandEntity, cause);
+            try {
+                bus.fire(event);
+            } catch (RuntimeException failure) {
+                LOGGER.warn("EntitySpawnEvent listener failed", failure);
+                return true;
+            }
+            if (event.cancelled()) {
+                return false;
+            }
         }
-        return !event.cancelled();
+        if (hasItemListeners && entity instanceof net.minecraft.world.entity.item.ItemEntity itemEntity) {
+            var event = new ItemSpawnEvent(fandEntity, FandItemStacks.fromVanilla(itemEntity.getItem()));
+            try {
+                bus.fire(event);
+            } catch (RuntimeException failure) {
+                LOGGER.warn("ItemSpawnEvent listener failed", failure);
+                return true;
+            }
+            if (event.cancelled() || event.item().isEmpty()) {
+                return false;
+            }
+            try {
+                itemEntity.setItem(FandItemStacks.toVanilla(event.item()));
+            } catch (RuntimeException failure) {
+                LOGGER.warn("ItemSpawnEvent supplied an invalid item stack", failure);
+            }
+        }
+        if (hasVehicleListeners) {
+            var event = new VehicleCreateEvent(fandEntity);
+            try {
+                bus.fire(event);
+            } catch (RuntimeException failure) {
+                LOGGER.warn("VehicleCreateEvent listener failed", failure);
+                return true;
+            }
+            if (event.cancelled()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public static int fireCombust(
@@ -175,7 +244,9 @@ public final class EntityEvents {
 
     public static boolean fireMount(net.minecraft.world.entity.Entity entity, net.minecraft.world.entity.Entity vehicle) {
         var bus = FandHooks.events();
-        if (!bus.hasListeners(EntityMountEvent.class)) {
+        boolean hasMountListeners = bus.hasListeners(EntityMountEvent.class);
+        boolean hasVehicleListeners = isVehicle(vehicle) && bus.hasListeners(VehicleEnterEvent.class);
+        if (!hasMountListeners && !hasVehicleListeners) {
             return true;
         }
         var fandEntity = FandHooks.wrapEntity(entity);
@@ -183,19 +254,38 @@ public final class EntityEvents {
         if (fandEntity == null || fandVehicle == null) {
             return true;
         }
-        var event = new EntityMountEvent(fandEntity, fandVehicle);
-        try {
-            bus.fire(event);
-        } catch (RuntimeException failure) {
-            LOGGER.warn("EntityMountEvent listener failed", failure);
-            return true;
+        if (hasMountListeners) {
+            var event = new EntityMountEvent(fandEntity, fandVehicle);
+            try {
+                bus.fire(event);
+            } catch (RuntimeException failure) {
+                LOGGER.warn("EntityMountEvent listener failed", failure);
+                return true;
+            }
+            if (event.cancelled()) {
+                return false;
+            }
         }
-        return !event.cancelled();
+        if (hasVehicleListeners) {
+            var event = new VehicleEnterEvent(fandVehicle, fandEntity);
+            try {
+                bus.fire(event);
+            } catch (RuntimeException failure) {
+                LOGGER.warn("VehicleEnterEvent listener failed", failure);
+                return true;
+            }
+            if (event.cancelled()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public static boolean fireDismount(net.minecraft.world.entity.Entity entity, net.minecraft.world.entity.Entity vehicle) {
         var bus = FandHooks.events();
-        if (!bus.hasListeners(EntityDismountEvent.class)) {
+        boolean hasDismountListeners = bus.hasListeners(EntityDismountEvent.class);
+        boolean hasVehicleListeners = isVehicle(vehicle) && bus.hasListeners(VehicleExitEvent.class);
+        if (!hasDismountListeners && !hasVehicleListeners) {
             return true;
         }
         var fandEntity = FandHooks.wrapEntity(entity);
@@ -203,14 +293,31 @@ public final class EntityEvents {
         if (fandEntity == null || fandVehicle == null) {
             return true;
         }
-        var event = new EntityDismountEvent(fandEntity, fandVehicle);
-        try {
-            bus.fire(event);
-        } catch (RuntimeException failure) {
-            LOGGER.warn("EntityDismountEvent listener failed", failure);
-            return true;
+        if (hasDismountListeners) {
+            var event = new EntityDismountEvent(fandEntity, fandVehicle);
+            try {
+                bus.fire(event);
+            } catch (RuntimeException failure) {
+                LOGGER.warn("EntityDismountEvent listener failed", failure);
+                return true;
+            }
+            if (event.cancelled()) {
+                return false;
+            }
         }
-        return !event.cancelled();
+        if (hasVehicleListeners) {
+            var event = new VehicleExitEvent(fandVehicle, fandEntity);
+            try {
+                bus.fire(event);
+            } catch (RuntimeException failure) {
+                LOGGER.warn("VehicleExitEvent listener failed", failure);
+                return true;
+            }
+            if (event.cancelled()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public static boolean fireTame(net.minecraft.world.entity.LivingEntity entity, net.minecraft.server.level.ServerPlayer owner) {
@@ -372,7 +479,7 @@ public final class EntityEvents {
                 absolute.position().z,
                 absolute.yRot(),
                 absolute.xRot());
-        var event = new EntityTeleportEvent(fandEntity, from, to, teleportCause(entity.level(), transition.newLevel()));
+        var event = new EntityTeleportEvent(fandEntity, from, to, currentTeleportCause(entity.level(), transition.newLevel()));
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {
@@ -400,6 +507,260 @@ public final class EntityEvents {
                 transition.asPassenger(),
                 java.util.Set.of(),
                 transition.postTeleportTransition());
+    }
+
+    public static @Nullable TeleportTransition firePortal(
+            net.minecraft.world.entity.Entity entity,
+            TeleportTransition transition
+    ) {
+        if (entity instanceof net.minecraft.server.level.ServerPlayer) {
+            return transition;
+        }
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(EntityPortalEvent.class)) {
+            return transition;
+        }
+        var fandEntity = FandHooks.wrapEntity(entity);
+        var fromWorld = entity.level() instanceof ServerLevel serverLevel ? FandHooks.wrapWorld(serverLevel) : null;
+        var toWorld = FandHooks.wrapWorld(transition.newLevel());
+        if (fandEntity == null || fromWorld == null || toWorld == null) {
+            return transition;
+        }
+        PositionMoveRotation absolute = PositionMoveRotation.calculateAbsolute(
+                PositionMoveRotation.of(entity),
+                PositionMoveRotation.of(transition),
+                transition.relatives());
+        var from = new Location(fromWorld, entity.getX(), entity.getY(), entity.getZ(), entity.getYRot(), entity.getXRot());
+        var to = new Location(
+                toWorld,
+                absolute.position().x,
+                absolute.position().y,
+                absolute.position().z,
+                absolute.yRot(),
+                absolute.xRot());
+        var event = new EntityPortalEvent(fandEntity, from, to);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityPortalEvent listener failed", failure);
+            return transition;
+        }
+        if (event.cancelled()) {
+            return null;
+        }
+        if (sameLocation(to, event.to())) {
+            return transition;
+        }
+        ServerLevel level = resolveLevel(event.to().world(), transition.newLevel());
+        if (level == null) {
+            LOGGER.warn("EntityPortalEvent targeted an unloaded world: {}", event.to().world().key().asString());
+            return transition;
+        }
+        return new TeleportTransition(
+                level,
+                new Vec3(event.to().x(), event.to().y(), event.to().z()),
+                transition.deltaMovement(),
+                event.to().yaw(),
+                event.to().pitch(),
+                transition.missingRespawnBlock(),
+                transition.asPassenger(),
+                java.util.Set.of(),
+                transition.postTeleportTransition());
+    }
+
+    public static boolean fireItemDespawn(net.minecraft.world.entity.item.ItemEntity entity, int age) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(ItemDespawnEvent.class)) {
+            return true;
+        }
+        var fandEntity = FandHooks.wrapEntity(entity);
+        if (fandEntity == null) {
+            return true;
+        }
+        var event = new ItemDespawnEvent(fandEntity, FandItemStacks.fromVanilla(entity.getItem()), age);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("ItemDespawnEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireItemMerge(
+            net.minecraft.world.entity.item.ItemEntity target,
+            net.minecraft.world.entity.item.ItemEntity source
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(ItemMergeEvent.class)) {
+            return true;
+        }
+        var fandTarget = FandHooks.wrapEntity(target);
+        var fandSource = FandHooks.wrapEntity(source);
+        if (fandTarget == null || fandSource == null) {
+            return true;
+        }
+        var event = new ItemMergeEvent(
+                fandTarget,
+                fandSource,
+                FandItemStacks.fromVanilla(target.getItem()),
+                FandItemStacks.fromVanilla(source.getItem()));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("ItemMergeEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireHangingPlace(
+            net.minecraft.world.entity.player.@Nullable Player player,
+            net.minecraft.world.entity.decoration.HangingEntity entity,
+            BlockPos blockPos,
+            Direction direction,
+            net.minecraft.world.item.ItemStack itemStack
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(HangingPlaceEvent.class)) {
+            return true;
+        }
+        if (!(entity.level() instanceof ServerLevel level)) {
+            return true;
+        }
+        var world = FandHooks.wrapWorld(level);
+        var fandEntity = FandHooks.wrapEntity(entity);
+        if (world == null || fandEntity == null) {
+            return true;
+        }
+        var event = new HangingPlaceEvent(
+                player instanceof ServerPlayer serverPlayer
+                        ? Optional.ofNullable(FandHooks.findPlayer(serverPlayer.getUUID()))
+                        : Optional.empty(),
+                fandEntity,
+                new FandBlock(world, blockPos.getX(), blockPos.getY(), blockPos.getZ()),
+                face(direction),
+                FandItemStacks.fromVanilla(itemStack));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("HangingPlaceEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireHangingBreak(
+            net.minecraft.world.entity.decoration.BlockAttachedEntity entity,
+            net.minecraft.world.entity.@Nullable Entity remover,
+            HangingBreakEvent.Cause cause
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(HangingBreakEvent.class)) {
+            return true;
+        }
+        var fandEntity = FandHooks.wrapEntity(entity);
+        if (fandEntity == null) {
+            return true;
+        }
+        var event = new HangingBreakEvent(
+                fandEntity,
+                Optional.ofNullable(remover).map(FandHooks::wrapEntity),
+                cause);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("HangingBreakEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static @Nullable ItemFrameChangeResult fireItemFrameChange(
+            net.minecraft.world.entity.decoration.ItemFrame itemFrame,
+            ServerPlayer player,
+            PlayerItemFrameChangeEvent.Action action,
+            net.minecraft.world.item.ItemStack itemStack,
+            int rotation
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerItemFrameChangeEvent.class)) {
+            return new ItemFrameChangeResult(itemStack, rotation);
+        }
+        var fandPlayer = FandHooks.findPlayer(player.getUUID());
+        var fandFrame = FandHooks.wrapEntity(itemFrame);
+        if (fandPlayer == null || fandFrame == null) {
+            return new ItemFrameChangeResult(itemStack, rotation);
+        }
+        var event = new PlayerItemFrameChangeEvent(
+                fandPlayer,
+                fandFrame,
+                action,
+                FandItemStacks.fromVanilla(itemStack),
+                rotation);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerItemFrameChangeEvent listener failed", failure);
+            return new ItemFrameChangeResult(itemStack, rotation);
+        }
+        if (event.cancelled()) {
+            return null;
+        }
+        try {
+            return new ItemFrameChangeResult(FandItemStacks.toVanilla(event.item()), event.rotation());
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerItemFrameChangeEvent supplied an invalid item stack", failure);
+            return new ItemFrameChangeResult(itemStack, rotation);
+        }
+    }
+
+    public static boolean fireVehicleDestroy(
+            net.minecraft.world.entity.vehicle.VehicleEntity vehicle,
+            net.minecraft.world.entity.@Nullable Entity attacker
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(VehicleDestroyEvent.class)) {
+            return true;
+        }
+        var fandVehicle = FandHooks.wrapEntity(vehicle);
+        if (fandVehicle == null) {
+            return true;
+        }
+        var event = new VehicleDestroyEvent(fandVehicle, Optional.ofNullable(attacker).map(FandHooks::wrapEntity));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("VehicleDestroyEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static void fireVehicleMove(
+            net.minecraft.world.entity.Entity vehicle,
+            Vec3 fromPosition,
+            Vec3 toPosition
+    ) {
+        var bus = FandHooks.events();
+        if (!isVehicle(vehicle) || !bus.hasListeners(VehicleMoveEvent.class)) {
+            return;
+        }
+        if (!(vehicle.level() instanceof ServerLevel level)) {
+            return;
+        }
+        var fandVehicle = FandHooks.wrapEntity(vehicle);
+        var world = FandHooks.wrapWorld(level);
+        if (fandVehicle == null || world == null) {
+            return;
+        }
+        var from = new Location(world, fromPosition.x, fromPosition.y, fromPosition.z, vehicle.getYRot(), vehicle.getXRot());
+        var to = new Location(world, toPosition.x, toPosition.y, toPosition.z, vehicle.getYRot(), vehicle.getXRot());
+        try {
+            bus.fire(new VehicleMoveEvent(fandVehicle, from, to));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("VehicleMoveEvent listener failed", failure);
+        }
     }
 
     public static @Nullable ExplosionResult fireExplosionPrime(
@@ -645,6 +1006,14 @@ public final class EntityEvents {
                 : EntityTeleportEvent.Cause.DIMENSION_CHANGE;
     }
 
+    private static EntityTeleportEvent.Cause currentTeleportCause(
+            net.minecraft.world.level.Level from,
+            ServerLevel to
+    ) {
+        EntityTeleportEvent.Cause explicit = NEXT_TELEPORT_CAUSE.get();
+        return explicit == null ? teleportCause(from, to) : explicit;
+    }
+
     private static @Nullable ServerLevel resolveLevel(World world, ServerLevel fallback) {
         if (world instanceof FandWorld fandWorld) {
             return fandWorld.handle();
@@ -683,7 +1052,28 @@ public final class EntityEvents {
         return new ArrayList<>(positions);
     }
 
+    private static boolean isVehicle(net.minecraft.world.entity.Entity entity) {
+        return entity instanceof net.minecraft.world.entity.vehicle.VehicleEntity;
+    }
+
+    private static BlockFace face(Direction direction) {
+        return switch (direction) {
+            case NORTH -> BlockFace.NORTH;
+            case SOUTH -> BlockFace.SOUTH;
+            case EAST -> BlockFace.EAST;
+            case WEST -> BlockFace.WEST;
+            case UP -> BlockFace.UP;
+            case DOWN -> BlockFace.DOWN;
+        };
+    }
+
     public record ExplosionResult(float radius, boolean fire) {
+    }
+
+    public record ItemFrameChangeResult(
+            net.minecraft.world.item.ItemStack itemStack,
+            int rotation
+    ) {
     }
 
     public record TargetResult(
