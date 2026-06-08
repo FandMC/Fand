@@ -2,6 +2,7 @@ package io.fand.server.entity;
 
 import io.fand.api.permission.PermissionService;
 import io.fand.server.world.FandWorld;
+import io.fand.server.world.WorldRegistry;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -29,6 +30,7 @@ public final class PlayerRegistry {
     private final ConcurrentHashMap<ServerLevel, List<FandPlayer>> snapshotsByLevel = new ConcurrentHashMap<>();
     private volatile List<FandPlayer> snapshot = List.of();
     private volatile @Nullable Function<ServerLevel, FandWorld> worldResolver;
+    private volatile @Nullable WorldRegistry worldRegistry;
 
     public PlayerRegistry(PermissionService permissions) {
         this.permissions = permissions;
@@ -36,6 +38,14 @@ public final class PlayerRegistry {
 
     public void bindWorldResolver(Function<ServerLevel, FandWorld> resolver) {
         this.worldResolver = resolver;
+    }
+
+    public void bindWorldRegistry(WorldRegistry worldRegistry) {
+        this.worldRegistry = worldRegistry;
+    }
+
+    @Nullable WorldRegistry worldRegistry() {
+        return worldRegistry;
     }
 
     public synchronized FandPlayer attach(ServerPlayer handle) {

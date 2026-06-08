@@ -1,14 +1,20 @@
 package io.fand.server.entity;
 
 import io.fand.api.component.DataComponentContainer;
+import io.fand.api.entity.EntityType;
 import io.fand.api.world.Location;
+import io.fand.api.world.Vector3;
 import io.fand.api.world.World;
 import io.fand.server.component.EntityComponentStorage;
+import io.fand.server.world.FandWorld;
 import io.fand.server.world.WorldRegistry;
+import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
-import net.kyori.adventure.key.Key;
-import net.minecraft.world.entity.EntityType;
+import java.util.concurrent.CompletableFuture;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Thin handle around any vanilla entity for API consumers.
@@ -38,9 +44,8 @@ public class FandEntity implements io.fand.api.entity.Entity {
     }
 
     @Override
-    public Key type() {
-        var identifier = EntityType.getKey(handle.getType());
-        return Key.key(identifier.getNamespace(), identifier.getPath());
+    public EntityType type() {
+        return FandEntityType.of(handle.getType());
     }
 
     @Override
@@ -62,6 +67,106 @@ public class FandEntity implements io.fand.api.entity.Entity {
     }
 
     @Override
+    public Vector3 velocity() {
+        var movement = handle.getDeltaMovement();
+        return new Vector3(movement.x, movement.y, movement.z);
+    }
+
+    @Override
+    public void setVelocity(Vector3 velocity) {
+        Objects.requireNonNull(velocity, "velocity");
+        runOnServerThread(() -> handle.setDeltaMovement(new Vec3(velocity.x(), velocity.y(), velocity.z())));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> teleport(Location destination) {
+        Objects.requireNonNull(destination, "destination");
+        var server = handle.level().getServer();
+        if (server == null) {
+            return CompletableFuture.completedFuture(false);
+        }
+        ServerLevel target;
+        try {
+            target = resolveLevel(destination.world());
+        } catch (IllegalArgumentException failure) {
+            return CompletableFuture.failedFuture(failure);
+        }
+        var future = new CompletableFuture<Boolean>();
+        Runnable run = () -> {
+            if (!alive()) {
+                future.complete(false);
+                return;
+            }
+            try {
+                boolean ok = handle.teleportTo(
+                        target,
+                        destination.x(),
+                        destination.y(),
+                        destination.z(),
+                        java.util.Set.of(),
+                        destination.yaw(),
+                        destination.pitch(),
+                        true
+                );
+                future.complete(ok);
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        };
+        if (server.isSameThread()) {
+            run.run();
+        } else {
+            server.executeIfPossible(run);
+        }
+        return future;
+    }
+
+    @Override
+    public void remove() {
+        runOnServerThread(handle::discard);
+    }
+
+    @Override
+    public Optional<? extends io.fand.api.entity.Entity> vehicle() {
+        return Optional.ofNullable(handle.getVehicle()).map(this::wrapRelated);
+    }
+
+    @Override
+    public List<? extends io.fand.api.entity.Entity> passengers() {
+        return handle.getPassengers().stream().map(this::wrapRelated).toList();
+    }
+
+    @Override
+    public boolean onGround() {
+        return handle.onGround();
+    }
+
+    @Override
+    public boolean inWater() {
+        return handle.isInWater();
+    }
+
+    @Override
+    public boolean inLava() {
+        return handle.isInLava();
+    }
+
+    @Override
+    public int fireTicks() {
+        return handle.getRemainingFireTicks();
+    }
+
+    @Override
+    public void setFireTicks(int ticks) {
+        runOnServerThread(() -> handle.setRemainingFireTicks(Math.max(0, ticks)));
+    }
+
+    @Override
+    public int ticksLived() {
+        return handle.tickCount;
+    }
+
+    @Override
     public DataComponentContainer components() {
         var server = handle.level().getServer();
         if (server == null) {
@@ -71,6 +176,36 @@ public class FandEntity implements io.fand.api.entity.Entity {
             throw new IllegalStateException("Entity.components() must be accessed on the server thread");
         }
         return EntityComponentStorage.container(server, handle.getUUID());
+    }
+
+    protected void runOnServerThread(Runnable task) {
+        var server = handle.level().getServer();
+        if (server == null || server.isSameThread()) {
+            task.run();
+        } else {
+            server.executeIfPossible(task);
+        }
+    }
+
+    private ServerLevel resolveLevel(World world) {
+        if (world instanceof FandWorld fandWorld) {
+            return fandWorld.handle();
+        }
+        var key = world.key();
+        var server = handle.level().getServer();
+        if (server != null) {
+            for (var level : server.getAllLevels()) {
+                var identifier = level.dimension().identifier();
+                if (identifier.getNamespace().equals(key.namespace()) && identifier.getPath().equals(key.value())) {
+                    return level;
+                }
+            }
+        }
+        throw new IllegalArgumentException("World not loaded: " + key.asString());
+    }
+
+    private io.fand.api.entity.Entity wrapRelated(net.minecraft.world.entity.Entity entity) {
+        return worldRegistry.entityRegistry().wrap(entity);
     }
 
     @Override

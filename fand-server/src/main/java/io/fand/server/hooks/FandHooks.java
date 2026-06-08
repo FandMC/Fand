@@ -107,17 +107,12 @@ public final class FandHooks {
     public static @Nullable LivingEntity wrapLivingEntity(
             net.minecraft.world.entity.LivingEntity entity
     ) {
-        if (entity instanceof net.minecraft.server.level.ServerPlayer player) {
-            return findPlayer(player.getUUID());
-        }
         var registry = Main.runtime().entityRegistryOrNull();
-        return registry == null ? null : registry.wrap(entity);
+        var wrapped = registry == null ? null : registry.wrap(entity);
+        return wrapped instanceof LivingEntity living ? living : null;
     }
 
     public static @Nullable Entity wrapEntity(net.minecraft.world.entity.Entity entity) {
-        if (entity instanceof net.minecraft.server.level.ServerPlayer player) {
-            return findPlayer(player.getUUID());
-        }
         var registry = Main.runtime().entityRegistryOrNull();
         return registry == null ? null : registry.wrap(entity);
     }

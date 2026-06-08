@@ -172,7 +172,8 @@ public final class FandServer implements Server, AutoCloseable {
         }
         var registry = new WorldRegistry(server, players);
         worlds.set(registry);
-        entities.set(new EntityRegistry(registry));
+        entities.set(registry.entityRegistry());
+        players.bindWorldRegistry(registry);
         players.bindWorldResolver(registry::wrap);
         io.fand.server.item.FandItemStacks.useRegistries(server.registryAccess());
         recipes.bind(server);
@@ -303,6 +304,26 @@ public final class FandServer implements Server, AutoCloseable {
         return players.findByName(name);
     }
 
+    @Override
+    public Optional<? extends io.fand.api.entity.Entity> entity(UUID uniqueId) {
+        Objects.requireNonNull(uniqueId, "uniqueId");
+        var player = players.find(uniqueId);
+        if (player.isPresent()) {
+            return player;
+        }
+        var registry = worlds.get();
+        if (registry == null) {
+            return Optional.empty();
+        }
+        for (var world : registry.snapshot()) {
+            var found = world.entity(uniqueId);
+            if (found.isPresent()) {
+                return found;
+            }
+        }
+        return Optional.empty();
+    }
+
     public PlayerRegistry playerRegistry() {
         return players;
     }
@@ -400,6 +421,14 @@ public final class FandServer implements Server, AutoCloseable {
         var id = net.minecraft.resources.Identifier.fromNamespaceAndPath(key.namespace(), key.value());
         return net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(id)
                 .map(io.fand.server.item.FandItemType::of);
+    }
+
+    @Override
+    public Optional<? extends io.fand.api.entity.EntityType> entityType(Key key) {
+        Objects.requireNonNull(key, "key");
+        var id = net.minecraft.resources.Identifier.fromNamespaceAndPath(key.namespace(), key.value());
+        return net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getOptional(id)
+                .map(io.fand.server.entity.FandEntityType::of);
     }
 
     @Override

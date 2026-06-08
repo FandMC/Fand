@@ -76,6 +76,9 @@ public interface Server extends ForwardingAudience {
     /** Looks up an online player by exact (case-sensitive) name. */
     Optional<? extends Player> player(String name);
 
+    /** Looks up a loaded entity by uuid across all worlds, including players. */
+    Optional<? extends io.fand.api.entity.Entity> entity(UUID uniqueId);
+
     /** Snapshot of all loaded worlds. The returned collection is a copy. */
     Collection<? extends World> worlds();
 
@@ -114,6 +117,9 @@ public interface Server extends ForwardingAudience {
 
     /** Looks up an item type by its registry key. */
     Optional<? extends io.fand.api.item.ItemType> itemType(Key key);
+
+    /** Looks up an entity type by its registry key. */
+    Optional<? extends io.fand.api.entity.EntityType> entityType(Key key);
 
     /** Current lifecycle phase. */
     LifecyclePhase phase();

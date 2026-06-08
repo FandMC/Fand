@@ -127,7 +127,7 @@ final class DemoInventoryEvents implements Listener {
             logger.info("Hopper picked up {} at {} itemEntity={}",
                     stackName(event.item()),
                     compactLocation(event.hopperLocation()),
-                    event.itemEntity().type().asString());
+                    event.itemEntity().type().key().asString());
         }
     }
 

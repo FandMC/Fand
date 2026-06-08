@@ -2,11 +2,16 @@ package io.fand.server.entity;
 
 import io.fand.api.component.DataComponentContainer;
 import io.fand.api.entity.ClientSettings;
+import io.fand.api.entity.EntityType;
+import io.fand.api.entity.EntityEffect;
 import io.fand.api.entity.GameMode;
 import io.fand.api.entity.Player;
+import io.fand.api.item.ItemStack;
+import io.fand.api.item.component.ItemEquipmentSlot;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.scoreboard.Sidebar;
 import io.fand.api.world.Location;
+import io.fand.api.world.Vector3;
 import io.fand.api.world.World;
 import io.fand.api.world.particle.ParticleEffect;
 import io.fand.api.world.particle.ParticleEmission;
@@ -17,6 +22,7 @@ import io.fand.server.audience.SidebarTracker;
 import io.fand.server.command.AdventureBridge;
 import io.fand.server.component.EntityComponentStorage;
 import io.fand.server.inventory.FandPlayerInventory;
+import io.fand.server.item.FandItemStacks;
 import io.fand.server.world.ParticleEffects;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.SoundEffects;
@@ -24,6 +30,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.Collection;
 import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.key.Key;
@@ -35,7 +42,7 @@ import net.kyori.adventure.title.TitlePart;
 import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.phys.Vec3;
 
 public final class FandPlayer implements Player {
 
@@ -82,9 +89,8 @@ public final class FandPlayer implements Player {
     }
 
     @Override
-    public Key type() {
-        var identifier = EntityType.getKey(bound.handle.getType());
-        return Key.key(identifier.getNamespace(), identifier.getPath());
+    public EntityType type() {
+        return FandEntityType.of(bound.handle.getType());
     }
 
     @Override
@@ -118,6 +124,110 @@ public final class FandPlayer implements Player {
         } else {
             server.executeIfPossible(run);
         }
+    }
+
+    @Override
+    public boolean dead() {
+        return bound.handle.isDeadOrDying();
+    }
+
+    @Override
+    public void damage(double amount) {
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            if (handle.level() instanceof ServerLevel level) {
+                handle.hurtServer(level, handle.damageSources().generic(), (float) Math.max(0.0, amount));
+            }
+        });
+    }
+
+    @Override
+    public void damage(double amount, io.fand.api.entity.Entity source) {
+        Objects.requireNonNull(source, "source");
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            if (!(handle.level() instanceof ServerLevel level)) {
+                return;
+            }
+            var sourceHandle = EntityHandles.unwrap(source);
+            var damageSource = sourceHandle instanceof net.minecraft.world.entity.LivingEntity living
+                    ? handle.damageSources().mobAttack(living)
+                    : handle.damageSources().generic();
+            handle.hurtServer(level, damageSource, (float) Math.max(0.0, amount));
+        });
+    }
+
+    @Override
+    public void heal(double amount) {
+        if (amount <= 0.0) {
+            return;
+        }
+        runOnServerThread(() -> bound.handle.heal((float) amount));
+    }
+
+    @Override
+    public double absorption() {
+        return bound.handle.getAbsorptionAmount();
+    }
+
+    @Override
+    public void setAbsorption(double absorption) {
+        runOnServerThread(() -> bound.handle.setAbsorptionAmount((float) Math.max(0.0, absorption)));
+    }
+
+    @Override
+    public int armor() {
+        return bound.handle.getArmorValue();
+    }
+
+    @Override
+    public Optional<? extends io.fand.api.entity.Attribute> attribute(Key key) {
+        Objects.requireNonNull(key, "key");
+        return EntityAttributes.holder(key)
+                .map(bound.handle::getAttribute)
+                .map(attribute -> new FandAttribute(attribute, this::runOnServerThread));
+    }
+
+    @Override
+    public Collection<EntityEffect> effects() {
+        return bound.handle.getActiveEffects().stream()
+                .map(EntityEffects::toApi)
+                .toList();
+    }
+
+    @Override
+    public Optional<EntityEffect> effect(Key key) {
+        Objects.requireNonNull(key, "key");
+        return EntityEffects.holder(key)
+                .map(bound.handle::getEffect)
+                .map(EntityEffects::toApi);
+    }
+
+    @Override
+    public void addEffect(EntityEffect effect) {
+        Objects.requireNonNull(effect, "effect");
+        runOnServerThread(() -> bound.handle.addEffect(EntityEffects.toVanilla(effect)));
+    }
+
+    @Override
+    public void removeEffect(Key key) {
+        Objects.requireNonNull(key, "key");
+        EntityEffects.holder(key).ifPresent(holder -> runOnServerThread(() -> bound.handle.removeEffect(holder)));
+    }
+
+    @Override
+    public ItemStack equipment(ItemEquipmentSlot slot) {
+        Objects.requireNonNull(slot, "slot");
+        return FandItemStacks.fromVanilla(bound.handle.getItemBySlot(EquipmentSlots.toVanilla(slot)));
+    }
+
+    @Override
+    public void setEquipment(ItemEquipmentSlot slot, ItemStack item) {
+        Objects.requireNonNull(slot, "slot");
+        Objects.requireNonNull(item, "item");
+        runOnServerThread(() -> bound.handle.setItemSlot(
+                EquipmentSlots.toVanilla(slot),
+                FandItemStacks.toVanilla(item)));
     }
 
     @Override
@@ -194,6 +304,77 @@ public final class FandPlayer implements Player {
     @Override
     public World world() {
         return registry.wrapLevel(bound.handle.level());
+    }
+
+    @Override
+    public Vector3 velocity() {
+        var movement = bound.handle.getDeltaMovement();
+        return new Vector3(movement.x, movement.y, movement.z);
+    }
+
+    @Override
+    public void setVelocity(Vector3 velocity) {
+        Objects.requireNonNull(velocity, "velocity");
+        runOnServerThread(() -> bound.handle.setDeltaMovement(new Vec3(velocity.x(), velocity.y(), velocity.z())));
+    }
+
+    @Override
+    public void remove() {
+        kick(Component.text("Disconnected"));
+    }
+
+    @Override
+    public Optional<? extends io.fand.api.entity.Entity> vehicle() {
+        var vehicle = bound.handle.getVehicle();
+        if (vehicle == null) {
+            return Optional.empty();
+        }
+        var worldRegistry = registry.worldRegistry();
+        if (worldRegistry == null) {
+            return Optional.empty();
+        }
+        return Optional.of(worldRegistry.entityRegistry().wrap(vehicle));
+    }
+
+    @Override
+    public java.util.List<? extends io.fand.api.entity.Entity> passengers() {
+        var worldRegistry = registry.worldRegistry();
+        if (worldRegistry == null) {
+            return java.util.List.of();
+        }
+        return bound.handle.getPassengers().stream()
+                .map(worldRegistry.entityRegistry()::wrap)
+                .toList();
+    }
+
+    @Override
+    public boolean onGround() {
+        return bound.handle.onGround();
+    }
+
+    @Override
+    public boolean inWater() {
+        return bound.handle.isInWater();
+    }
+
+    @Override
+    public boolean inLava() {
+        return bound.handle.isInLava();
+    }
+
+    @Override
+    public int fireTicks() {
+        return bound.handle.getRemainingFireTicks();
+    }
+
+    @Override
+    public void setFireTicks(int ticks) {
+        runOnServerThread(() -> bound.handle.setRemainingFireTicks(Math.max(0, ticks)));
+    }
+
+    @Override
+    public int ticksLived() {
+        return bound.handle.tickCount;
     }
 
     @Override

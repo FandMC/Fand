@@ -1,10 +1,13 @@
 package io.fand.api.world;
 
 import io.fand.api.entity.Player;
+import io.fand.api.entity.Entity;
+import io.fand.api.entity.EntityType;
 import io.fand.api.world.particle.ParticleEffect;
 import io.fand.api.world.particle.ParticleEmission;
 import io.fand.api.world.sound.SoundEffect;
 import java.util.Collection;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.audience.ForwardingAudience;
 import net.kyori.adventure.key.Key;
@@ -71,6 +74,35 @@ public interface World extends ForwardingAudience {
 
     /** Snapshot of all players currently in this world. */
     Collection<? extends Player> players();
+
+    /** Snapshot of all loaded entities currently in this world, including players. */
+    default Collection<? extends Entity> entities() {
+        return java.util.List.of();
+    }
+
+    /** Looks up a loaded entity in this world by uuid. */
+    default Optional<? extends Entity> entity(java.util.UUID uniqueId) {
+        return Optional.empty();
+    }
+
+    /**
+     * Snapshot of loaded entities within {@code radius} blocks of {@code center}.
+     *
+     * @throws IllegalArgumentException if {@code center} belongs to another world
+     *         or {@code radius} is negative
+     */
+    default Collection<? extends Entity> nearbyEntities(Location center, double radius) {
+        return java.util.List.of();
+    }
+
+    /**
+     * Spawns an entity of {@code type} at {@code location}. The future completes
+     * with the spawned entity, or empty when vanilla cannot create/spawn that
+     * type in this world.
+     */
+    default CompletableFuture<java.util.Optional<? extends Entity>> spawnEntity(Location location, EntityType type) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Entity spawning is not supported"));
+    }
 
     /** Plays a sound at {@code location} for players in this world. Marshals to the server thread. */
     void playSound(Location location, SoundEffect sound);

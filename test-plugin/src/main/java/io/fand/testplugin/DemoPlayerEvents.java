@@ -91,7 +91,7 @@ final class DemoPlayerEvents implements Listener {
             logger.info("{} fishing state={} caught={} drops={}",
                     event.player().name(),
                     event.state(),
-                    event.caught().map(entity -> entity.type().asString()).orElse("none"),
+                    event.caught().map(entity -> entity.type().key().asString()).orElse("none"),
                     event.drops().size());
         }
     }
@@ -333,7 +333,7 @@ final class DemoPlayerEvents implements Listener {
                 && event.hand() == PlayerInteractEvent.Hand.MAIN_HAND) {
             logger.info("{} interacted with {} item={} precise={}",
                     event.player().name(),
-                    event.entity().type().asString(),
+                    event.entity().type().key().asString(),
                     stackName(event.item()),
                     event.preciseInteraction());
         }
@@ -344,7 +344,7 @@ final class DemoPlayerEvents implements Listener {
         if (context.config().getBoolean("features.log-player-detail-events", false)) {
             logger.info("{} sheared {} with {}",
                     event.player().name(),
-                    event.entity().type().asString(),
+                    event.entity().type().key().asString(),
                     stackName(event.tool()));
         }
     }
@@ -354,8 +354,8 @@ final class DemoPlayerEvents implements Listener {
         if (context.config().getBoolean("features.log-player-detail-events", false)) {
             logger.info("{} leashed {} to {} cause={}",
                     event.player().name(),
-                    event.entity().type().asString(),
-                    event.holder().map(entity -> entity.type().asString()).orElse("none"),
+                    event.entity().type().key().asString(),
+                    event.holder().map(entity -> entity.type().key().asString()).orElse("none"),
                     event.cause());
         }
     }
@@ -365,8 +365,8 @@ final class DemoPlayerEvents implements Listener {
         if (context.config().getBoolean("features.log-player-detail-events", false)) {
             logger.info("{} unleashed {} holder={} dropLead={}",
                     event.player().name(),
-                    event.entity().type().asString(),
-                    event.holder().map(entity -> entity.type().asString()).orElse("none"),
+                    event.entity().type().key().asString(),
+                    event.holder().map(entity -> entity.type().key().asString()).orElse("none"),
                     event.dropLead());
         }
     }
