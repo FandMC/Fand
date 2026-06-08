@@ -5,17 +5,24 @@ import io.fand.api.event.block.BlockChangeEvent;
 import io.fand.api.event.block.BlockDispenseEvent;
 import io.fand.api.event.block.BlockExplodeEvent;
 import io.fand.api.event.block.BlockFadeEvent;
+import io.fand.api.event.block.BlockFertilizeEvent;
+import io.fand.api.event.block.BlockFormEvent;
 import io.fand.api.event.block.BlockFace;
+import io.fand.api.event.block.BlockFromToEvent;
 import io.fand.api.event.block.BlockGrowEvent;
 import io.fand.api.event.block.BlockIgniteEvent;
 import io.fand.api.event.block.BlockPhysicsEvent;
 import io.fand.api.event.block.BlockPistonExtendEvent;
+import io.fand.api.event.block.BlockPistonPushEvent;
 import io.fand.api.event.block.BlockPistonRetractEvent;
 import io.fand.api.event.block.BlockRedstoneEvent;
 import io.fand.api.event.block.BlockSpreadEvent;
+import io.fand.api.event.block.CauldronLevelChangeEvent;
 import io.fand.api.event.block.FluidFlowEvent;
 import io.fand.api.event.block.LeavesDecayEvent;
+import io.fand.api.event.block.PortalCreateEvent;
 import io.fand.api.event.block.SignChangeEvent;
+import io.fand.api.event.block.SpongeAbsorbEvent;
 import io.fand.server.entity.FandPlayer;
 import io.fand.server.block.FandBlock;
 import io.fand.server.block.FandBlockType;
@@ -31,8 +38,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LayeredCauldronBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
 import net.kyori.adventure.key.Key;
@@ -203,6 +212,29 @@ public final class BlockEvents {
         return !event.cancelled();
     }
 
+    public static boolean fireForm(ServerLevel level, BlockPos pos, BlockState oldState, BlockState newState, BlockFormEvent.Cause cause) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(BlockFormEvent.class)) {
+            return true;
+        }
+        var world = FandHooks.wrapWorld(level);
+        if (world == null) {
+            return true;
+        }
+        var event = new BlockFormEvent(
+                block(world, pos),
+                FandBlockType.of(oldState.getBlock()),
+                FandBlockType.of(newState.getBlock()),
+                cause);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("BlockFormEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
     public static boolean fireIgnite(
             ServerLevel level,
             BlockPos pos,
@@ -335,7 +367,7 @@ public final class BlockEvents {
     ) {
         var bus = FandHooks.events();
         Class<? extends io.fand.api.event.Event> eventType = extending
-                ? BlockPistonExtendEvent.class
+                ? BlockPistonPushEvent.class
                 : BlockPistonRetractEvent.class;
         if (!bus.hasListeners(eventType)) {
             return true;
@@ -351,7 +383,7 @@ public final class BlockEvents {
                 .toList();
         try {
             if (extending) {
-                var event = new BlockPistonExtendEvent(block, face(direction), affected);
+                var event = new BlockPistonPushEvent(block, face(direction), affected);
                 bus.fire(event);
                 return !event.cancelled();
             }
@@ -362,6 +394,39 @@ public final class BlockEvents {
             LOGGER.warn("{} listener failed", extending ? "BlockPistonExtendEvent" : "BlockPistonRetractEvent", failure);
             return true;
         }
+    }
+
+    public static boolean fireFromTo(
+            ServerLevel level,
+            BlockPos sourcePos,
+            BlockPos pos,
+            BlockState sourceState,
+            BlockState newState,
+            Direction direction,
+            BlockFromToEvent.Cause cause
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(BlockFromToEvent.class)) {
+            return true;
+        }
+        var world = FandHooks.wrapWorld(level);
+        if (world == null) {
+            return true;
+        }
+        var event = new BlockFromToEvent(
+                block(world, sourcePos),
+                block(world, pos),
+                FandBlockType.of(sourceState.getBlock()),
+                FandBlockType.of(newState.getBlock()),
+                face(direction),
+                cause);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("BlockFromToEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
     }
 
     public static boolean fireFluidFlow(
@@ -389,6 +454,122 @@ public final class BlockEvents {
             bus.fire(event);
         } catch (RuntimeException failure) {
             LOGGER.warn("FluidFlowEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireFertilize(
+            ServerLevel level,
+            @Nullable ServerPlayer player,
+            BlockPos pos,
+            net.minecraft.world.item.ItemStack itemStack,
+            BlockFertilizeEvent.Cause cause
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(BlockFertilizeEvent.class)) {
+            return true;
+        }
+        var world = FandHooks.wrapWorld(level);
+        if (world == null) {
+            return true;
+        }
+        Optional<io.fand.api.entity.Player> fandPlayer = Optional.ofNullable(player)
+                .map(serverPlayer -> FandHooks.findPlayer(serverPlayer.getUUID()));
+        var event = new BlockFertilizeEvent(
+                fandPlayer,
+                block(world, pos),
+                FandItemStacks.fromVanilla(itemStack),
+                cause);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("BlockFertilizeEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean firePortalCreate(
+            ServerLevel level,
+            List<BlockPos> positions,
+            PortalCreateEvent.Type type,
+            PortalCreateEvent.Cause cause
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PortalCreateEvent.class)) {
+            return true;
+        }
+        var world = FandHooks.wrapWorld(level);
+        if (world == null) {
+            return true;
+        }
+        var blocks = positions.stream()
+                .map(pos -> block(world, pos))
+                .map(io.fand.api.block.Block.class::cast)
+                .toList();
+        var event = new PortalCreateEvent(world, blocks, type, cause);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PortalCreateEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireSpongeAbsorb(ServerLevel level, BlockPos spongePos, List<BlockPos> absorbedPositions) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(SpongeAbsorbEvent.class)) {
+            return true;
+        }
+        var world = FandHooks.wrapWorld(level);
+        if (world == null) {
+            return true;
+        }
+        var event = new SpongeAbsorbEvent(
+                block(world, spongePos),
+                absorbedPositions.stream()
+                        .map(pos -> block(world, pos))
+                        .map(io.fand.api.block.Block.class::cast)
+                        .toList());
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("SpongeAbsorbEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireCauldronLevelChange(
+            net.minecraft.world.level.Level level,
+            BlockPos pos,
+            BlockState oldState,
+            BlockState newState,
+            net.minecraft.world.entity.@Nullable Entity entity,
+            CauldronLevelChangeEvent.Cause cause
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(CauldronLevelChangeEvent.class) || !(level instanceof ServerLevel serverLevel)) {
+            return true;
+        }
+        var world = FandHooks.wrapWorld(serverLevel);
+        if (world == null) {
+            return true;
+        }
+        var event = new CauldronLevelChangeEvent(
+                block(world, pos),
+                FandBlockType.of(oldState.getBlock()),
+                FandBlockType.of(newState.getBlock()),
+                cauldronLevel(oldState),
+                cauldronLevel(newState),
+                Optional.ofNullable(entity).map(FandHooks::wrapEntity),
+                cause);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("CauldronLevelChangeEvent listener failed", failure);
             return true;
         }
         return !event.cancelled();
@@ -477,6 +658,16 @@ public final class BlockEvents {
 
     private static boolean isFire(BlockState state) {
         return state.is(Blocks.FIRE) || state.is(Blocks.SOUL_FIRE);
+    }
+
+    private static int cauldronLevel(BlockState state) {
+        if (state.hasProperty(LayeredCauldronBlock.LEVEL)) {
+            return state.getValue(LayeredCauldronBlock.LEVEL);
+        }
+        if (state.is(Blocks.WATER_CAULDRON) || state.is(Blocks.LAVA_CAULDRON) || state.is(Blocks.POWDER_SNOW_CAULDRON)) {
+            return 3;
+        }
+        return 0;
     }
 
     private record IgniteContext(BlockIgniteEvent.Cause cause, @Nullable BlockPos sourcePos) {

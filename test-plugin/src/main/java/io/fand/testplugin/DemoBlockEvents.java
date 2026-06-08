@@ -11,17 +11,24 @@ import io.fand.api.event.block.BlockChangeEvent;
 import io.fand.api.event.block.BlockDispenseEvent;
 import io.fand.api.event.block.BlockExplodeEvent;
 import io.fand.api.event.block.BlockFadeEvent;
+import io.fand.api.event.block.BlockFertilizeEvent;
+import io.fand.api.event.block.BlockFormEvent;
+import io.fand.api.event.block.BlockFromToEvent;
 import io.fand.api.event.block.BlockGrowEvent;
 import io.fand.api.event.block.BlockIgniteEvent;
 import io.fand.api.event.block.BlockPhysicsEvent;
 import io.fand.api.event.block.BlockPistonExtendEvent;
+import io.fand.api.event.block.BlockPistonPushEvent;
 import io.fand.api.event.block.BlockPistonRetractEvent;
 import io.fand.api.event.block.BlockPlaceEvent;
 import io.fand.api.event.block.BlockRedstoneEvent;
 import io.fand.api.event.block.BlockSpreadEvent;
+import io.fand.api.event.block.CauldronLevelChangeEvent;
 import io.fand.api.event.block.FluidFlowEvent;
 import io.fand.api.event.block.LeavesDecayEvent;
+import io.fand.api.event.block.PortalCreateEvent;
 import io.fand.api.event.block.SignChangeEvent;
+import io.fand.api.event.block.SpongeAbsorbEvent;
 import io.fand.api.plugin.PluginContext;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -125,6 +132,38 @@ final class DemoBlockEvents implements Listener {
     }
 
     @Subscribe
+    public void onBlockForm(BlockFormEvent event) {
+        if (context.config().getBoolean("features.log-block-detail-events", false)) {
+            logger.info("Block form: {} {},{},{} {} -> {} cause={}",
+                    event.block().world().key().asString(),
+                    event.block().x(), event.block().y(), event.block().z(),
+                    blockName(event.oldType()), blockName(event.newType()), event.cause());
+        }
+    }
+
+    @Subscribe
+    public void onBlockFromTo(BlockFromToEvent event) {
+        if (context.config().getBoolean("features.log-block-detail-events", false)) {
+            logger.info("Block from-to: {} {},{},{} -> {},{},{} new={} cause={}",
+                    blockName(event.sourceType()),
+                    event.sourceBlock().x(), event.sourceBlock().y(), event.sourceBlock().z(),
+                    event.block().x(), event.block().y(), event.block().z(),
+                    blockName(event.newType()), event.cause());
+        }
+    }
+
+    @Subscribe
+    public void onBlockFertilize(BlockFertilizeEvent event) {
+        if (context.config().getBoolean("features.log-block-detail-events", false)) {
+            logger.info("Block fertilize: {},{},{} item={} player={} cause={}",
+                    event.block().x(), event.block().y(), event.block().z(),
+                    stackName(event.item()),
+                    event.player().map(player -> player.name()).orElse("none"),
+                    event.cause());
+        }
+    }
+
+    @Subscribe
     public void onBlockIgnite(BlockIgniteEvent event) {
         if (context.config().getBoolean("features.log-block-detail-events", false)) {
             logger.info("Block ignite: {} {},{},{} type={} cause={} source={}",
@@ -134,6 +173,33 @@ final class DemoBlockEvents implements Listener {
                     event.sourceBlock()
                             .map(block -> block.x() + "," + block.y() + "," + block.z())
                             .orElse("none"));
+        }
+    }
+
+    @Subscribe
+    public void onPortalCreate(PortalCreateEvent event) {
+        if (context.config().getBoolean("features.log-block-detail-events", false)) {
+            logger.info("Portal create: world={} type={} cause={} blocks={}",
+                    event.world().key().asString(), event.type(), event.cause(), event.blocks().size());
+        }
+    }
+
+    @Subscribe
+    public void onSpongeAbsorb(SpongeAbsorbEvent event) {
+        if (context.config().getBoolean("features.log-block-detail-events", false)) {
+            logger.info("Sponge absorb: {},{},{} blocks={}",
+                    event.sponge().x(), event.sponge().y(), event.sponge().z(), event.absorbedBlocks().size());
+        }
+    }
+
+    @Subscribe
+    public void onCauldronLevelChange(CauldronLevelChangeEvent event) {
+        if (context.config().getBoolean("features.log-block-detail-events", false)) {
+            logger.info("Cauldron level: {},{},{} {}({}) -> {}({}) cause={}",
+                    event.block().x(), event.block().y(), event.block().z(),
+                    blockName(event.oldType()), event.oldLevel(),
+                    blockName(event.newType()), event.newLevel(),
+                    event.cause());
         }
     }
 
@@ -184,6 +250,15 @@ final class DemoBlockEvents implements Listener {
     public void onPistonExtend(BlockPistonExtendEvent event) {
         if (context.config().getBoolean("features.log-block-detail-events", false)) {
             logger.info("Piston extend: {},{},{} direction={} affected={}",
+                    event.block().x(), event.block().y(), event.block().z(),
+                    event.direction(), event.affectedBlocks().size());
+        }
+    }
+
+    @Subscribe
+    public void onPistonPush(BlockPistonPushEvent event) {
+        if (context.config().getBoolean("features.log-block-detail-events", false)) {
+            logger.info("Piston push: {},{},{} direction={} affected={}",
                     event.block().x(), event.block().y(), event.block().z(),
                     event.direction(), event.affectedBlocks().size());
         }

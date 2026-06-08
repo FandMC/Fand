@@ -6,11 +6,15 @@ import io.fand.api.entity.Player;
 import io.fand.api.event.Listener;
 import io.fand.api.event.Subscribe;
 import io.fand.api.event.entity.EntityBreedEvent;
+import io.fand.api.event.entity.EntityChangeBlockEvent;
 import io.fand.api.event.entity.EntityCombustEvent;
+import io.fand.api.event.entity.EntityDamageByEntityEvent;
 import io.fand.api.event.entity.EntityDeathEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
+import io.fand.api.event.entity.EntityDropItemEvent;
 import io.fand.api.event.entity.EntityExplodeEvent;
 import io.fand.api.event.entity.EntityMountEvent;
+import io.fand.api.event.entity.EntityPickupItemEvent;
 import io.fand.api.event.entity.EntityPortalEvent;
 import io.fand.api.event.entity.EntityPotionEffectEvent;
 import io.fand.api.event.entity.EntityRegainHealthEvent;
@@ -28,7 +32,9 @@ import io.fand.api.event.entity.HangingPlaceEvent;
 import io.fand.api.event.entity.ItemDespawnEvent;
 import io.fand.api.event.entity.ItemMergeEvent;
 import io.fand.api.event.entity.ItemSpawnEvent;
+import io.fand.api.event.entity.LingeringPotionSplashEvent;
 import io.fand.api.event.entity.PlayerItemFrameChangeEvent;
+import io.fand.api.event.entity.PotionSplashEvent;
 import io.fand.api.event.entity.ProjectileHitEvent;
 import io.fand.api.event.entity.ProjectileLaunchEvent;
 import io.fand.api.event.vehicle.VehicleCreateEvent;
@@ -84,6 +90,34 @@ final class DemoEntityEvents implements Listener {
     public void onItemMerge(ItemMergeEvent event) {
         if (context.config().getBoolean("features.log-item-events", false)) {
             logger.info("Item merge: {} <- {}", stackName(event.targetItem()), stackName(event.sourceItem()));
+        }
+    }
+
+    @Subscribe
+    public void onEntityPickupItem(EntityPickupItemEvent event) {
+        if (context.config().getBoolean("features.log-item-events", false)) {
+            logger.info("Entity picked up item: {} item={}",
+                    event.entity().type().asString(), stackName(event.item()));
+        }
+    }
+
+    @Subscribe
+    public void onEntityDropItem(EntityDropItemEvent event) {
+        if (context.config().getBoolean("features.log-item-events", false)) {
+            logger.info("Entity dropped item: {} item={} at {}",
+                    event.entity().type().asString(),
+                    stackName(event.item()),
+                    compactLocation(event.location()));
+        }
+    }
+
+    @Subscribe
+    public void onEntityChangeBlock(EntityChangeBlockEvent event) {
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            logger.info("Entity changed block: {} {},{},{} {} -> {} cause={}",
+                    event.entity().type().asString(),
+                    event.block().x(), event.block().y(), event.block().z(),
+                    blockName(event.oldType()), blockName(event.newType()), event.cause());
         }
     }
 
@@ -147,6 +181,17 @@ final class DemoEntityEvents implements Listener {
     }
 
     @Subscribe
+    public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            logger.info("Entity attacked: {} <- {} cause={} amount={}",
+                    event.entity().type().asString(),
+                    event.damager().type().asString(),
+                    event.cause(),
+                    trim(event.amount()));
+        }
+    }
+
+    @Subscribe
     public void onProjectileHit(ProjectileHitEvent event) {
         if (context.config().getBoolean("features.log-entity-detail-events", false)) {
             logger.info("Projectile hit: {} type={} block={} entity={}",
@@ -195,6 +240,27 @@ final class DemoEntityEvents implements Listener {
                     event.entity().type().asString(),
                     event.effect().asString(),
                     event.action(),
+                    event.source().map(entity -> entity.type().asString()).orElse("none"));
+        }
+    }
+
+    @Subscribe
+    public void onPotionSplash(PotionSplashEvent event) {
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            logger.info("Potion splash: {} at {} affected={} source={}",
+                    stackName(event.item()),
+                    compactLocation(event.location()),
+                    event.affectedEntities().size(),
+                    event.source().map(entity -> entity.type().asString()).orElse("none"));
+        }
+    }
+
+    @Subscribe
+    public void onLingeringPotionSplash(LingeringPotionSplashEvent event) {
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            logger.info("Lingering potion: {} at {} source={}",
+                    stackName(event.item()),
+                    compactLocation(event.location()),
                     event.source().map(entity -> entity.type().asString()).orElse("none"));
         }
     }

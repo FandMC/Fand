@@ -9,7 +9,7 @@ import java.util.Objects;
 /**
  * Fired on the server thread before a piston extends and moves blocks.
  */
-public final class BlockPistonExtendEvent implements Event, Cancellable {
+public class BlockPistonExtendEvent implements Event, Cancellable {
 
     private final Block block;
     private final BlockFace direction;

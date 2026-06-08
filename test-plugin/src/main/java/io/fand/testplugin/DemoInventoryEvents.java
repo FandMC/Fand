@@ -5,11 +5,14 @@ import static io.fand.testplugin.DemoSupport.*;
 import io.fand.api.event.Listener;
 import io.fand.api.event.Subscribe;
 import io.fand.api.event.inventory.BrewEvent;
+import io.fand.api.event.inventory.BrewingStandFuelEvent;
 import io.fand.api.event.inventory.CraftItemEvent;
 import io.fand.api.event.inventory.EnchantItemEvent;
 import io.fand.api.event.inventory.FurnaceBurnEvent;
 import io.fand.api.event.inventory.FurnaceExtractEvent;
 import io.fand.api.event.inventory.FurnaceSmeltEvent;
+import io.fand.api.event.inventory.HopperMoveItemEvent;
+import io.fand.api.event.inventory.HopperPickupItemEvent;
 import io.fand.api.event.inventory.InventoryClickEvent;
 import io.fand.api.event.inventory.InventoryCloseEvent;
 import io.fand.api.event.inventory.InventoryCreativeEvent;
@@ -101,6 +104,28 @@ final class DemoInventoryEvents implements Listener {
     public void onInventoryPickupItem(InventoryPickupItemEvent event) {
         if (context.config().getBoolean("features.log-inventory-moves", false)) {
             logger.info("Inventory picked up {} into {}", stackName(event.item()), event.inventory().type());
+        }
+    }
+
+    @Subscribe
+    public void onHopperMoveItem(HopperMoveItemEvent event) {
+        if (context.config().getBoolean("features.log-inventory-moves", false)) {
+            logger.info("Hopper moved {} at {} from {} to {} hopperInitiated={}",
+                    stackName(event.item()),
+                    compactLocation(event.hopperLocation()),
+                    event.source().type(),
+                    event.destination().type(),
+                    event.hopperInitiated());
+        }
+    }
+
+    @Subscribe
+    public void onHopperPickupItem(HopperPickupItemEvent event) {
+        if (context.config().getBoolean("features.log-inventory-moves", false)) {
+            logger.info("Hopper picked up {} at {} itemEntity={}",
+                    stackName(event.item()),
+                    compactLocation(event.hopperLocation()),
+                    event.itemEntity().type().asString());
         }
     }
 
@@ -217,6 +242,15 @@ final class DemoInventoryEvents implements Listener {
         if (context.config().getBoolean("features.log-workstation-events", false)) {
             logger.info("{} extracted {} x{} from furnace",
                     event.player().name(), stackName(event.item()), event.amount());
+        }
+    }
+
+    @Subscribe
+    public void onBrewingStandFuel(BrewingStandFuelEvent event) {
+        if (context.config().getBoolean("features.log-workstation-events", false)) {
+            logger.info("Brewing fuel: {},{},{} fuel={} power={} consume={}",
+                    event.block().x(), event.block().y(), event.block().z(),
+                    stackName(event.fuel()), event.fuelPower(), event.consumeAmount());
         }
     }
 

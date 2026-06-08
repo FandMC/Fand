@@ -87,7 +87,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.guiThemes = new io.fand.server.console.gui.GuiThemeService(
                 io.fand.server.console.gui.GuiTheme.fromConfig(initialConfig.console.gui.theme));
         this.events = new EventDispatcher();
-        this.permissions = new PermissionManager();
+        this.permissions = new PermissionManager(events);
         this.commands = new CommandManager(permissions);
         registerBuiltinCommands();
         this.scheduler = new TaskScheduler(initialConfig.scheduler.asyncThreads);

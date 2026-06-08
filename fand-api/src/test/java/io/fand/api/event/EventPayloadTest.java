@@ -13,26 +13,37 @@ import io.fand.api.event.block.BlockChangeEvent;
 import io.fand.api.event.block.BlockDispenseEvent;
 import io.fand.api.event.block.BlockExplodeEvent;
 import io.fand.api.event.block.BlockFadeEvent;
+import io.fand.api.event.block.BlockFertilizeEvent;
+import io.fand.api.event.block.BlockFormEvent;
 import io.fand.api.event.block.BlockGrowEvent;
 import io.fand.api.event.block.BlockIgniteEvent;
 import io.fand.api.event.block.BlockPhysicsEvent;
 import io.fand.api.event.block.BlockFace;
+import io.fand.api.event.block.BlockFromToEvent;
 import io.fand.api.event.block.BlockPistonExtendEvent;
+import io.fand.api.event.block.BlockPistonPushEvent;
 import io.fand.api.event.block.BlockPistonRetractEvent;
 import io.fand.api.event.block.BlockRedstoneEvent;
 import io.fand.api.event.block.BlockSpreadEvent;
+import io.fand.api.event.block.CauldronLevelChangeEvent;
 import io.fand.api.event.block.FluidFlowEvent;
 import io.fand.api.event.block.LeavesDecayEvent;
+import io.fand.api.event.block.PortalCreateEvent;
 import io.fand.api.event.block.SignChangeEvent;
+import io.fand.api.event.block.SpongeAbsorbEvent;
 import io.fand.api.event.command.CommandExecuteEvent;
 import io.fand.api.event.command.TabCompleteEvent;
 import io.fand.api.event.entity.EntityBreedEvent;
+import io.fand.api.event.entity.EntityChangeBlockEvent;
 import io.fand.api.event.entity.EntityCombustEvent;
+import io.fand.api.event.entity.EntityDamageByEntityEvent;
 import io.fand.api.event.entity.EntityDamageEvent;
 import io.fand.api.event.entity.EntityDeathEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
+import io.fand.api.event.entity.EntityDropItemEvent;
 import io.fand.api.event.entity.EntityExplodeEvent;
 import io.fand.api.event.entity.EntityMountEvent;
+import io.fand.api.event.entity.EntityPickupItemEvent;
 import io.fand.api.event.entity.EntityPortalEvent;
 import io.fand.api.event.entity.EntityPotionEffectEvent;
 import io.fand.api.event.entity.EntityRegainHealthEvent;
@@ -50,16 +61,21 @@ import io.fand.api.event.entity.HangingPlaceEvent;
 import io.fand.api.event.entity.ItemDespawnEvent;
 import io.fand.api.event.entity.ItemMergeEvent;
 import io.fand.api.event.entity.ItemSpawnEvent;
+import io.fand.api.event.entity.LingeringPotionSplashEvent;
 import io.fand.api.event.entity.PlayerItemFrameChangeEvent;
+import io.fand.api.event.entity.PotionSplashEvent;
 import io.fand.api.event.entity.ProjectileHitEvent;
 import io.fand.api.event.entity.ProjectileLaunchEvent;
 import io.fand.api.event.inventory.BrewEvent;
+import io.fand.api.event.inventory.BrewingStandFuelEvent;
 import io.fand.api.event.inventory.CraftItemEvent;
 import io.fand.api.event.inventory.EnchantItemEvent;
 import io.fand.api.event.inventory.EnchantmentOffer;
 import io.fand.api.event.inventory.FurnaceBurnEvent;
 import io.fand.api.event.inventory.FurnaceExtractEvent;
 import io.fand.api.event.inventory.FurnaceSmeltEvent;
+import io.fand.api.event.inventory.HopperMoveItemEvent;
+import io.fand.api.event.inventory.HopperPickupItemEvent;
 import io.fand.api.event.inventory.ClickType;
 import io.fand.api.event.inventory.DragType;
 import io.fand.api.event.inventory.InventoryCreativeEvent;
@@ -88,12 +104,14 @@ import io.fand.api.event.player.PlayerDropItemEvent;
 import io.fand.api.event.player.PlayerExperienceChangeEvent;
 import io.fand.api.event.player.PlayerFoodLevelChangeEvent;
 import io.fand.api.event.player.PlayerGameModeChangeEvent;
+import io.fand.api.event.player.PlayerFishEvent;
 import io.fand.api.event.player.PlayerInteractEntityEvent;
 import io.fand.api.event.player.PlayerInteractEvent;
 import io.fand.api.event.player.PlayerItemConsumeEvent;
 import io.fand.api.event.player.PlayerItemDamageEvent;
 import io.fand.api.event.player.PlayerItemHeldEvent;
 import io.fand.api.event.player.PlayerKickEvent;
+import io.fand.api.event.player.PlayerLeashEntityEvent;
 import io.fand.api.event.player.PlayerLocaleChangeEvent;
 import io.fand.api.event.player.PlayerLoginEvent;
 import io.fand.api.event.player.PlayerMoveEvent;
@@ -101,10 +119,13 @@ import io.fand.api.event.player.PlayerPickupItemEvent;
 import io.fand.api.event.player.PlayerPortalEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
 import io.fand.api.event.player.PlayerResourcePackStatusEvent;
+import io.fand.api.event.player.PlayerShearEntityEvent;
 import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
 import io.fand.api.event.player.PlayerToggleSneakEvent;
 import io.fand.api.event.player.PlayerToggleSprintEvent;
+import io.fand.api.event.player.PlayerUnleashEntityEvent;
+import io.fand.api.event.permission.PermissionCheckEvent;
 import io.fand.api.event.server.ServerListPingEvent;
 import io.fand.api.event.vehicle.VehicleCreateEvent;
 import io.fand.api.event.vehicle.VehicleDestroyEvent;
@@ -287,6 +308,30 @@ final class EventPayloadTest {
         assertThat(event.directEntity()).contains(direct);
         assertThat(event.attacker()).contains(attacker);
         assertThat(event.amount()).isEqualTo(4.0);
+    }
+
+    @Test
+    void entityDamageByEntityEventSpecializesDamageEvent() {
+        var victim = proxy(LivingEntity.class);
+        var direct = proxy(LivingEntity.class);
+        var attacker = proxy(LivingEntity.class);
+
+        var event = new EntityDamageByEntityEvent(
+                victim,
+                "minecraft:player_attack",
+                6.0,
+                attacker,
+                Optional.of(direct));
+        event.setAmount(2.5);
+        event.setCancelled(true);
+
+        assertThat(event).isInstanceOf(EntityDamageEvent.class);
+        assertThat(event.entity()).isSameAs(victim);
+        assertThat(event.damager()).isSameAs(attacker);
+        assertThat(event.attacker()).contains(attacker);
+        assertThat(event.directEntity()).contains(direct);
+        assertThat(event.amount()).isEqualTo(2.5);
+        assertThat(event.cancelled()).isTrue();
     }
 
     @Test
@@ -706,6 +751,8 @@ final class EventPayloadTest {
 
         var extend = new BlockPistonExtendEvent(sourceBlock, BlockFace.EAST, affected);
         extend.setCancelled(true);
+        var push = new BlockPistonPushEvent(sourceBlock, BlockFace.SOUTH, affected);
+        push.setCancelled(true);
         var retract = new BlockPistonRetractEvent(sourceBlock, BlockFace.WEST, affected);
         var fluid = new FluidFlowEvent(sourceBlock, block, Key.key("minecraft:water"), BlockFace.DOWN);
         fluid.setCancelled(true);
@@ -714,6 +761,9 @@ final class EventPayloadTest {
         assertThat(extend.direction()).isEqualTo(BlockFace.EAST);
         assertThat(extend.affectedBlocks()).hasSize(2);
         assertThat(extend.cancelled()).isTrue();
+        assertThat(push).isInstanceOf(BlockPistonExtendEvent.class);
+        assertThat(push.direction()).isEqualTo(BlockFace.SOUTH);
+        assertThat(push.cancelled()).isTrue();
         assertThat(retract.direction()).isEqualTo(BlockFace.WEST);
         assertThat(fluid.sourceBlock()).isSameAs(sourceBlock);
         assertThat(fluid.block()).isSameAs(block);
@@ -799,6 +849,9 @@ final class EventPayloadTest {
         smelt.setResult(stone);
         smelt.setCancelled(true);
         var extract = new FurnaceExtractEvent(player, inventory, diamond, 3);
+        var brewingFuel = new BrewingStandFuelEvent(block, inventory, coal, 999, -1);
+        brewingFuel.setConsumeAmount(2);
+        brewingFuel.setCancelled(true);
         var brew = new BrewEvent(block, inventory, stone, List.of(diamond));
         brew.results().add(stone);
         brew.setCancelled(true);
@@ -819,6 +872,9 @@ final class EventPayloadTest {
         assertThat(smelt.result()).isSameAs(stone);
         assertThat(smelt.cancelled()).isTrue();
         assertThat(extract.amount()).isEqualTo(3);
+        assertThat(brewingFuel.fuelPower()).isEqualTo(127);
+        assertThat(brewingFuel.consumeAmount()).isEqualTo(2);
+        assertThat(brewingFuel.cancelled()).isTrue();
         assertThat(brew.results()).hasSize(2);
         assertThat(brew.cancelled()).isTrue();
     }
@@ -1015,6 +1071,123 @@ final class EventPayloadTest {
         assertThat(vehicleMove.to()).isSameAs(to);
     }
 
+    @Test
+    void completeEcosystemEventsCarryTypedState() {
+        var player = proxy(Player.class);
+        var entity = proxy(Entity.class);
+        var living = proxy(LivingEntity.class);
+        var inventory = proxy(Inventory.class);
+        var block = proxy(Block.class);
+        var sourceBlock = proxy(Block.class);
+        var world = new TestWorld(Key.key("minecraft:overworld"));
+        var location = location("minecraft:overworld", 1, 64, 1);
+        var stone = stack("minecraft:stone", 3);
+        var diamond = stack("minecraft:diamond", 1);
+        var oldType = new TestBlockType(Key.key("minecraft:water"));
+        var newType = new TestBlockType(Key.key("minecraft:stone"));
+
+        var portal = new PortalCreateEvent(world, List.of(block), PortalCreateEvent.Type.NETHER, PortalCreateEvent.Cause.FIRE);
+        portal.setCancelled(true);
+        var form = new BlockFormEvent(block, oldType, newType, BlockFormEvent.Cause.LAVA_INTERACTION);
+        form.setCancelled(true);
+        var fromTo = new BlockFromToEvent(sourceBlock, block, oldType, newType, BlockFace.DOWN, BlockFromToEvent.Cause.FLUID_FLOW);
+        fromTo.setCancelled(true);
+        var fertilize = new BlockFertilizeEvent(Optional.of(player), block, stone, BlockFertilizeEvent.Cause.BONE_MEAL);
+        fertilize.setCancelled(true);
+        var sponge = new SpongeAbsorbEvent(block, List.of(sourceBlock));
+        sponge.setCancelled(true);
+        var cauldron = new CauldronLevelChangeEvent(
+                block,
+                oldType,
+                newType,
+                -1,
+                9,
+                Optional.of(entity),
+                CauldronLevelChangeEvent.Cause.BUCKET_EMPTY);
+        cauldron.setCancelled(true);
+
+        var hopperMove = new HopperMoveItemEvent(inventory, inventory, inventory, location, stone, true);
+        hopperMove.setItem(diamond);
+        hopperMove.setCancelled(true);
+        var hopperPickup = new HopperPickupItemEvent(inventory, location, entity, stone);
+        hopperPickup.setItem(diamond);
+        hopperPickup.setCancelled(true);
+
+        var entityPickup = new EntityPickupItemEvent(living, stone);
+        entityPickup.setItem(diamond);
+        entityPickup.setCancelled(true);
+        var entityDrop = new EntityDropItemEvent(entity, location, stone);
+        entityDrop.setItem(diamond);
+        entityDrop.setCancelled(true);
+        var changeBlock = new EntityChangeBlockEvent(entity, block, oldType, newType, EntityChangeBlockEvent.Cause.PLACE);
+        changeBlock.setCancelled(true);
+        var potionTargets = new java.util.LinkedHashMap<LivingEntity, Double>();
+        potionTargets.put(living, 0.75);
+        var potionSplash = new PotionSplashEvent(entity, stone, location, Optional.of(entity), potionTargets);
+        potionSplash.affectedEntities().put(proxy(LivingEntity.class), 0.25);
+        potionSplash.setCancelled(true);
+        var lingering = new LingeringPotionSplashEvent(entity, stone, location, Optional.empty());
+        lingering.setCancelled(true);
+        var fish = new PlayerFishEvent(player, entity, PlayerFishEvent.State.CAUGHT_FISH, Optional.empty(), List.of(stone));
+        fish.setCancelled(true);
+        var shear = new PlayerShearEntityEvent(player, entity, PlayerInteractEvent.Hand.MAIN_HAND, stone);
+        shear.setCancelled(true);
+        var leash = new PlayerLeashEntityEvent(player, entity, Optional.of(entity), PlayerLeashEntityEvent.Cause.FENCE);
+        leash.setCancelled(true);
+        var unleash = new PlayerUnleashEntityEvent(player, entity, Optional.of(entity), true);
+        unleash.setCancelled(true);
+        var permission = new PermissionCheckEvent(proxy(io.fand.api.permission.PermissionSubject.class), "fand.test", false);
+        permission.allow();
+
+        assertThat(portal.blocks()).containsExactly(block);
+        assertThat(portal.type()).isEqualTo(PortalCreateEvent.Type.NETHER);
+        assertThat(portal.cancelled()).isTrue();
+        assertThat(form.cause()).isEqualTo(BlockFormEvent.Cause.LAVA_INTERACTION);
+        assertThat(form.cancelled()).isTrue();
+        assertThat(fromTo.sourceBlock()).isSameAs(sourceBlock);
+        assertThat(fromTo.direction()).isEqualTo(BlockFace.DOWN);
+        assertThat(fromTo.cancelled()).isTrue();
+        assertThat(fertilize.player()).contains(player);
+        assertThat(fertilize.item()).isSameAs(stone);
+        assertThat(fertilize.cancelled()).isTrue();
+        assertThat(sponge.absorbedBlocks()).containsExactly(sourceBlock);
+        assertThat(sponge.cancelled()).isTrue();
+        assertThat(cauldron.oldLevel()).isZero();
+        assertThat(cauldron.newLevel()).isEqualTo(3);
+        assertThat(cauldron.entity()).contains(entity);
+        assertThat(cauldron.cancelled()).isTrue();
+        assertThat(hopperMove.item()).isSameAs(diamond);
+        assertThat(hopperMove.hopperInitiated()).isTrue();
+        assertThat(hopperMove.cancelled()).isTrue();
+        assertThat(hopperPickup.itemEntity()).isSameAs(entity);
+        assertThat(hopperPickup.item()).isSameAs(diamond);
+        assertThat(hopperPickup.cancelled()).isTrue();
+        assertThat(entityPickup.entity()).isSameAs(living);
+        assertThat(entityPickup.item()).isSameAs(diamond);
+        assertThat(entityPickup.cancelled()).isTrue();
+        assertThat(entityDrop.item()).isSameAs(diamond);
+        assertThat(entityDrop.location()).isSameAs(location);
+        assertThat(entityDrop.cancelled()).isTrue();
+        assertThat(changeBlock.newType()).isSameAs(newType);
+        assertThat(changeBlock.cancelled()).isTrue();
+        assertThat(potionSplash.source()).contains(entity);
+        assertThat(potionSplash.affectedEntities()).hasSize(2);
+        assertThat(potionSplash.cancelled()).isTrue();
+        assertThat(lingering.location()).isSameAs(location);
+        assertThat(lingering.cancelled()).isTrue();
+        assertThat(fish.state()).isEqualTo(PlayerFishEvent.State.CAUGHT_FISH);
+        assertThat(fish.drops()).containsExactly(stone);
+        assertThat(fish.cancelled()).isTrue();
+        assertThat(shear.tool()).isSameAs(stone);
+        assertThat(shear.cancelled()).isTrue();
+        assertThat(leash.cause()).isEqualTo(PlayerLeashEntityEvent.Cause.FENCE);
+        assertThat(leash.cancelled()).isTrue();
+        assertThat(unleash.dropLead()).isTrue();
+        assertThat(unleash.cancelled()).isTrue();
+        assertThat(permission.result()).contains(true);
+        assertThat(permission.effectiveResult()).isTrue();
+    }
+
     private static <T> T proxy(Class<T> type) {
         Object instance = Proxy.newProxyInstance(
                 type.getClassLoader(),
@@ -1037,6 +1210,9 @@ final class EventPayloadTest {
     }
 
     private record TestItemType(Key key, int maxStackSize) implements ItemType {
+    }
+
+    private record TestBlockType(Key key) implements BlockType {
     }
 
     private record TestWorld(Key key) implements World {

@@ -1,5 +1,7 @@
 package io.fand.server.permission;
 
+import io.fand.api.event.EventBus;
+import io.fand.api.event.permission.PermissionCheckEvent;
 import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
 import io.fand.api.permission.PermissionService;
@@ -9,12 +11,25 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class PermissionManager implements PermissionService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(PermissionManager.class);
     private static final Pattern NODE = Pattern.compile("[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\\.[a-z0-9]+(?:[._-][a-z0-9]+)*)*");
 
+    private final @Nullable EventBus events;
     private final ConcurrentHashMap<String, PermissionDescriptor> descriptors = new ConcurrentHashMap<>();
+
+    public PermissionManager() {
+        this(null);
+    }
+
+    public PermissionManager(@Nullable EventBus events) {
+        this.events = events;
+    }
 
     @Override
     public void register(PermissionDescriptor descriptor) {
@@ -39,14 +54,28 @@ public final class PermissionManager implements PermissionService {
 
         var explicit = explicitValue(subject, normalized);
         if (explicit != null) {
-            return explicit;
+            return fireCheck(subject, normalized, explicit);
         }
 
         var descriptor = descriptors.get(normalized);
         if (descriptor == null) {
-            return false;
+            return fireCheck(subject, normalized, false);
         }
-        return descriptor.defaultAccess().value(subject.operator());
+        return fireCheck(subject, normalized, descriptor.defaultAccess().value(subject.operator()));
+    }
+
+    private boolean fireCheck(PermissionSubject subject, String node, boolean defaultResult) {
+        if (events == null || !events.hasListeners(PermissionCheckEvent.class)) {
+            return defaultResult;
+        }
+        var event = new PermissionCheckEvent(subject, node, defaultResult);
+        try {
+            events.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PermissionCheckEvent listener failed", failure);
+            return defaultResult;
+        }
+        return event.effectiveResult();
     }
 
     private static Boolean explicitValue(PermissionSubject subject, String node) {

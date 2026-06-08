@@ -1,6 +1,7 @@
 package io.fand.server.inventory;
 
 import io.fand.api.event.inventory.BrewEvent;
+import io.fand.api.event.inventory.BrewingStandFuelEvent;
 import io.fand.api.event.inventory.ClickType;
 import io.fand.api.event.inventory.DragType;
 import io.fand.api.event.inventory.EnchantItemEvent;
@@ -8,6 +9,8 @@ import io.fand.api.event.inventory.EnchantmentOffer;
 import io.fand.api.event.inventory.FurnaceBurnEvent;
 import io.fand.api.event.inventory.FurnaceExtractEvent;
 import io.fand.api.event.inventory.FurnaceSmeltEvent;
+import io.fand.api.event.inventory.HopperMoveItemEvent;
+import io.fand.api.event.inventory.HopperPickupItemEvent;
 import io.fand.api.event.inventory.InventoryClickEvent;
 import io.fand.api.event.inventory.InventoryCloseEvent;
 import io.fand.api.event.inventory.InventoryCreativeEvent;
@@ -22,11 +25,13 @@ import io.fand.api.event.inventory.PrepareTradeEvent;
 import io.fand.api.event.inventory.PrepareSmithingEvent;
 import io.fand.api.inventory.InventoryType;
 import io.fand.api.item.ItemStack;
+import io.fand.api.world.Location;
 import io.fand.server.entity.FandPlayer;
 import io.fand.server.block.FandBlock;
 import io.fand.server.hooks.FandHooks;
 import io.fand.server.item.FandItemStacks;
 import io.fand.server.recipe.FandRecipes;
+import io.fand.server.world.FandWorld;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -41,6 +46,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.MenuType;
@@ -48,6 +54,9 @@ import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentInstance;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.trading.MerchantOffer;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.Hopper;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -196,6 +205,47 @@ public final class InventoryEvents {
     public record MoveItemResult(boolean allowed, net.minecraft.world.item.ItemStack itemStack) {
     }
 
+    public static MoveItemResult fireHopperMoveItem(
+            Container source,
+            Container destination,
+            net.minecraft.world.item.ItemStack itemStack
+    ) {
+        var bus = FandHooks.events();
+        boolean sourceIsHopper = source instanceof Hopper;
+        boolean destinationIsHopper = destination instanceof Hopper;
+        if ((!sourceIsHopper && !destinationIsHopper) || !bus.hasListeners(HopperMoveItemEvent.class)) {
+            return new MoveItemResult(true, itemStack);
+        }
+        var hopperContainer = sourceIsHopper ? source : destination;
+        var hopper = (Hopper) hopperContainer;
+        var world = hopperWorld(hopperContainer);
+        if (world == null) {
+            return new MoveItemResult(true, itemStack);
+        }
+        var event = new HopperMoveItemEvent(
+                new FandContainerInventory(hopperContainer, InventoryType.HOPPER),
+                new FandContainerInventory(source, InventoryType.UNKNOWN),
+                new FandContainerInventory(destination, InventoryType.UNKNOWN),
+                hopperLocation(world, hopper),
+                FandItemStacks.fromVanilla(itemStack),
+                sourceIsHopper);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("HopperMoveItemEvent listener failed", failure);
+            return new MoveItemResult(true, itemStack);
+        }
+        if (event.cancelled() || event.item().isEmpty()) {
+            return new MoveItemResult(false, itemStack);
+        }
+        try {
+            return new MoveItemResult(true, FandItemStacks.toVanilla(event.item()));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("HopperMoveItemEvent supplied an invalid item stack", failure);
+            return new MoveItemResult(true, itemStack);
+        }
+    }
+
     public static MoveItemResult firePickupItem(
             Container inventory,
             net.minecraft.world.item.ItemStack itemStack
@@ -220,6 +270,42 @@ public final class InventoryEvents {
             return new MoveItemResult(true, FandItemStacks.toVanilla(event.item()));
         } catch (RuntimeException failure) {
             LOGGER.warn("InventoryPickupItemEvent supplied an invalid item stack", failure);
+            return new MoveItemResult(true, itemStack);
+        }
+    }
+
+    public static MoveItemResult fireHopperPickupItem(
+            Container inventory,
+            ItemEntity itemEntity,
+            net.minecraft.world.item.ItemStack itemStack
+    ) {
+        var bus = FandHooks.events();
+        if (!(inventory instanceof Hopper hopper) || !bus.hasListeners(HopperPickupItemEvent.class)) {
+            return new MoveItemResult(true, itemStack);
+        }
+        var world = hopperWorld(inventory);
+        var fandEntity = FandHooks.wrapEntity(itemEntity);
+        if (world == null || fandEntity == null) {
+            return new MoveItemResult(true, itemStack);
+        }
+        var event = new HopperPickupItemEvent(
+                new FandContainerInventory(inventory, InventoryType.HOPPER),
+                hopperLocation(world, hopper),
+                fandEntity,
+                FandItemStacks.fromVanilla(itemStack));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("HopperPickupItemEvent listener failed", failure);
+            return new MoveItemResult(true, itemStack);
+        }
+        if (event.cancelled() || event.item().isEmpty()) {
+            return new MoveItemResult(false, itemStack);
+        }
+        try {
+            return new MoveItemResult(true, FandItemStacks.toVanilla(event.item()));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("HopperPickupItemEvent supplied an invalid item stack", failure);
             return new MoveItemResult(true, itemStack);
         }
     }
@@ -680,7 +766,61 @@ public final class InventoryEvents {
         }
     }
 
+    public static @Nullable BrewingStandFuelResult fireBrewingStandFuel(
+            Level level,
+            net.minecraft.core.BlockPos pos,
+            Container inventory,
+            net.minecraft.world.item.ItemStack fuel,
+            int fuelPower,
+            int consumeAmount
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(BrewingStandFuelEvent.class)) {
+            return new BrewingStandFuelResult(fuelPower, consumeAmount);
+        }
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return new BrewingStandFuelResult(fuelPower, consumeAmount);
+        }
+        var world = FandHooks.wrapWorld(serverLevel);
+        if (world == null) {
+            return new BrewingStandFuelResult(fuelPower, consumeAmount);
+        }
+        var event = new BrewingStandFuelEvent(
+                new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()),
+                new FandContainerInventory(inventory, InventoryType.BREWING),
+                FandItemStacks.fromVanilla(fuel),
+                fuelPower,
+                consumeAmount);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("BrewingStandFuelEvent listener failed", failure);
+            return new BrewingStandFuelResult(fuelPower, consumeAmount);
+        }
+        return event.cancelled() ? null : new BrewingStandFuelResult(event.fuelPower(), event.consumeAmount());
+    }
+
     public record AnvilResult(net.minecraft.world.item.ItemStack itemStack, int cost) {
+    }
+
+    public record BrewingStandFuelResult(int fuelPower, int consumeAmount) {
+    }
+
+    private static @Nullable FandWorld hopperWorld(Container hopperContainer) {
+        Level level = null;
+        if (hopperContainer instanceof BlockEntity blockEntity) {
+            level = blockEntity.getLevel();
+        } else if (hopperContainer instanceof net.minecraft.world.entity.Entity entity) {
+            level = entity.level();
+        }
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return null;
+        }
+        return FandHooks.wrapWorld(serverLevel);
+    }
+
+    private static Location hopperLocation(FandWorld world, Hopper hopper) {
+        return new Location(world, hopper.getLevelX(), hopper.getLevelY(), hopper.getLevelZ(), 0.0F, 0.0F);
     }
 
     private static Optional<Integer> resolveEnchantmentId(RegistryAccess access, Key key) {

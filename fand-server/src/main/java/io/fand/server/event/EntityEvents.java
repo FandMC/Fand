@@ -2,9 +2,14 @@ package io.fand.server.event;
 
 import io.fand.api.event.entity.EntityCombustEvent;
 import io.fand.api.event.entity.EntityBreedEvent;
+import io.fand.api.event.entity.EntityChangeBlockEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
+import io.fand.api.event.entity.EntityDropItemEvent;
+import io.fand.api.event.entity.EntityDamageByEntityEvent;
+import io.fand.api.event.entity.EntityDamageEvent;
 import io.fand.api.event.entity.EntityExplodeEvent;
 import io.fand.api.event.entity.EntityMountEvent;
+import io.fand.api.event.entity.EntityPickupItemEvent;
 import io.fand.api.event.entity.EntityPortalEvent;
 import io.fand.api.event.entity.EntityPotionEffectEvent;
 import io.fand.api.event.entity.EntityRegainHealthEvent;
@@ -23,7 +28,9 @@ import io.fand.api.event.entity.HangingPlaceEvent;
 import io.fand.api.event.entity.ItemDespawnEvent;
 import io.fand.api.event.entity.ItemMergeEvent;
 import io.fand.api.event.entity.ItemSpawnEvent;
+import io.fand.api.event.entity.LingeringPotionSplashEvent;
 import io.fand.api.event.entity.PlayerItemFrameChangeEvent;
+import io.fand.api.event.entity.PotionSplashEvent;
 import io.fand.api.event.entity.ProjectileHitEvent;
 import io.fand.api.event.entity.ProjectileLaunchEvent;
 import io.fand.api.event.block.BlockFace;
@@ -35,6 +42,7 @@ import io.fand.api.event.vehicle.VehicleMoveEvent;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
 import io.fand.server.block.FandBlock;
+import io.fand.server.block.FandBlockType;
 import io.fand.server.entity.FandLivingEntity;
 import io.fand.server.entity.FandPlayer;
 import io.fand.server.hooks.FandHooks;
@@ -43,8 +51,10 @@ import io.fand.server.world.FandWorld;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
@@ -58,8 +68,14 @@ import net.minecraft.world.entity.ConversionParams;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownLingeringPotion;
+import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownSplashPotion;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.portal.TeleportTransition;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -126,6 +142,48 @@ public final class EntityEvents {
         } catch (RuntimeException failure) {
             LOGGER.warn("EntityDeathEvent listener failed", failure);
         }
+    }
+
+    public static @Nullable Float fireDamage(
+            net.minecraft.world.entity.LivingEntity entity,
+            DamageSource source,
+            float damage
+    ) {
+        var bus = FandHooks.events();
+        boolean hasGenericListeners = bus.hasListeners(EntityDamageEvent.class);
+        boolean hasByEntityListeners = bus.hasListeners(EntityDamageByEntityEvent.class);
+        if (!hasGenericListeners && !hasByEntityListeners) {
+            return damage;
+        }
+        var victim = FandHooks.wrapLivingEntity(entity);
+        if (victim == null) {
+            return damage;
+        }
+        var directEntity = Optional.ofNullable(source.getDirectEntity())
+                .filter(candidate -> candidate instanceof net.minecraft.world.entity.LivingEntity)
+                .map(candidate -> FandHooks.wrapLivingEntity((net.minecraft.world.entity.LivingEntity) candidate));
+        var attacker = Optional.ofNullable(source.getEntity())
+                .filter(candidate -> candidate instanceof net.minecraft.world.entity.LivingEntity)
+                .map(candidate -> FandHooks.wrapLivingEntity((net.minecraft.world.entity.LivingEntity) candidate));
+        if (attacker.isEmpty() && !hasGenericListeners) {
+            return damage;
+        }
+        var cause = source.typeHolder().unwrapKey().map(key -> key.identifier().toString()).orElse("minecraft:generic");
+        EntityDamageEvent event = attacker
+                .<EntityDamageEvent>map(damager -> new EntityDamageByEntityEvent(victim, cause, damage, damager, directEntity))
+                .orElseGet(() -> new EntityDamageEvent(victim, cause, damage, directEntity, Optional.empty()));
+        FandHooks.fireOrLog(
+                bus,
+                event,
+                event instanceof EntityDamageByEntityEvent ? "EntityDamageByEntityEvent" : "EntityDamageEvent");
+        if (event.cancelled()) {
+            return null;
+        }
+        double adjusted = event.amount();
+        if (adjusted < 0.0) {
+            adjusted = 0.0;
+        }
+        return (float) adjusted;
     }
 
     public static boolean fireSpawn(net.minecraft.world.entity.Entity entity, EntitySpawnEvent.Cause cause) {
@@ -614,6 +672,106 @@ public final class EntityEvents {
         return !event.cancelled();
     }
 
+    public static PickupItemResult fireEntityPickupItem(
+            net.minecraft.world.entity.LivingEntity entity,
+            net.minecraft.world.entity.item.ItemEntity itemEntity,
+            net.minecraft.world.item.ItemStack itemStack
+    ) {
+        var bus = FandHooks.events();
+        if (entity instanceof ServerPlayer || !bus.hasListeners(EntityPickupItemEvent.class)) {
+            return new PickupItemResult(true, itemStack);
+        }
+        var fandEntity = FandHooks.wrapLivingEntity(entity);
+        if (fandEntity == null) {
+            return new PickupItemResult(true, itemStack);
+        }
+        var event = new EntityPickupItemEvent(fandEntity, FandItemStacks.fromVanilla(itemStack));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityPickupItemEvent listener failed", failure);
+            return new PickupItemResult(true, itemStack);
+        }
+        if (event.cancelled() || event.item().isEmpty()) {
+            return new PickupItemResult(false, itemStack);
+        }
+        try {
+            itemEntity.setItem(FandItemStacks.toVanilla(event.item()));
+            return new PickupItemResult(true, itemEntity.getItem());
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityPickupItemEvent supplied an invalid item stack", failure);
+            return new PickupItemResult(true, itemStack);
+        }
+    }
+
+    public static net.minecraft.world.item.@Nullable ItemStack fireDropItem(
+            net.minecraft.world.entity.Entity entity,
+            ServerLevel level,
+            Vec3 position,
+            net.minecraft.world.item.ItemStack itemStack
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(EntityDropItemEvent.class)) {
+            return itemStack;
+        }
+        var world = FandHooks.wrapWorld(level);
+        var fandEntity = FandHooks.wrapEntity(entity);
+        if (world == null || fandEntity == null) {
+            return itemStack;
+        }
+        var event = new EntityDropItemEvent(
+                fandEntity,
+                new Location(world, position.x, position.y, position.z, entity.getYRot(), entity.getXRot()),
+                FandItemStacks.fromVanilla(itemStack));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityDropItemEvent listener failed", failure);
+            return itemStack;
+        }
+        if (event.cancelled() || event.item().isEmpty()) {
+            return null;
+        }
+        try {
+            return FandItemStacks.toVanilla(event.item());
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityDropItemEvent supplied an invalid item stack", failure);
+            return itemStack;
+        }
+    }
+
+    public static boolean fireChangeBlock(
+            net.minecraft.world.entity.Entity entity,
+            ServerLevel level,
+            BlockPos pos,
+            BlockState oldState,
+            BlockState newState,
+            EntityChangeBlockEvent.Cause cause
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(EntityChangeBlockEvent.class)) {
+            return true;
+        }
+        var world = FandHooks.wrapWorld(level);
+        var fandEntity = FandHooks.wrapEntity(entity);
+        if (world == null || fandEntity == null) {
+            return true;
+        }
+        var event = new EntityChangeBlockEvent(
+                fandEntity,
+                new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()),
+                FandBlockType.of(oldState.getBlock()),
+                FandBlockType.of(newState.getBlock()),
+                cause);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityChangeBlockEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
     public static boolean fireHangingPlace(
             net.minecraft.world.entity.player.@Nullable Player player,
             net.minecraft.world.entity.decoration.HangingEntity entity,
@@ -943,6 +1101,83 @@ public final class EntityEvents {
         return !event.cancelled();
     }
 
+    public static @Nullable Map<net.minecraft.world.entity.LivingEntity, Double> firePotionSplash(
+            ThrownSplashPotion potion,
+            ServerLevel level,
+            net.minecraft.world.item.ItemStack potionItem,
+            Vec3 location,
+            Map<net.minecraft.world.entity.LivingEntity, Double> affectedEntities
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PotionSplashEvent.class)) {
+            return affectedEntities;
+        }
+        var world = FandHooks.wrapWorld(level);
+        var fandPotion = FandHooks.wrapEntity(potion);
+        if (world == null || fandPotion == null) {
+            return affectedEntities;
+        }
+        var affected = new LinkedHashMap<io.fand.api.entity.LivingEntity, Double>();
+        for (var entry : affectedEntities.entrySet()) {
+            var wrapped = FandHooks.wrapLivingEntity(entry.getKey());
+            if (wrapped != null) {
+                affected.put(wrapped, entry.getValue());
+            }
+        }
+        var event = new PotionSplashEvent(
+                fandPotion,
+                FandItemStacks.fromVanilla(potionItem),
+                new Location(world, location.x, location.y, location.z, potion.getYRot(), potion.getXRot()),
+                Optional.ofNullable(potion.getOwner()).map(FandHooks::wrapEntity),
+                affected);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PotionSplashEvent listener failed", failure);
+            return affectedEntities;
+        }
+        if (event.cancelled()) {
+            return null;
+        }
+        var result = new LinkedHashMap<net.minecraft.world.entity.LivingEntity, Double>();
+        for (var entry : event.affectedEntities().entrySet()) {
+            var living = toVanillaLiving(entry.getKey());
+            if (living != null && living.level() == potion.level()) {
+                result.put(living, Math.max(0.0, Math.min(1.0, entry.getValue())));
+            }
+        }
+        return result;
+    }
+
+    public static boolean fireLingeringPotionSplash(
+            ThrownLingeringPotion potion,
+            ServerLevel level,
+            net.minecraft.world.item.ItemStack potionItem,
+            Vec3 location
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(LingeringPotionSplashEvent.class)) {
+            return true;
+        }
+        var world = FandHooks.wrapWorld(level);
+        var fandPotion = FandHooks.wrapEntity(potion);
+        if (world == null || fandPotion == null) {
+            return true;
+        }
+        var event = new LingeringPotionSplashEvent(
+                fandPotion,
+                FandItemStacks.fromVanilla(potionItem),
+                new Location(world, location.x, location.y, location.z, potion.getYRot(), potion.getXRot()),
+                Optional.ofNullable(potion.getOwner()).map(FandHooks::wrapEntity));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("LingeringPotionSplashEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
     public static void fireProjectileHit(Projectile projectile, HitResult hitResult) {
         var bus = FandHooks.events();
         if (!bus.hasListeners(ProjectileHitEvent.class)) {
@@ -1073,6 +1308,12 @@ public final class EntityEvents {
     public record ItemFrameChangeResult(
             net.minecraft.world.item.ItemStack itemStack,
             int rotation
+    ) {
+    }
+
+    public record PickupItemResult(
+            boolean allowed,
+            net.minecraft.world.item.ItemStack itemStack
     ) {
     }
 

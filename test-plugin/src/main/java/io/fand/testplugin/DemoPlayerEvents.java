@@ -21,20 +21,24 @@ import io.fand.api.event.player.PlayerFoodLevelChangeEvent;
 import io.fand.api.event.player.PlayerGameModeChangeEvent;
 import io.fand.api.event.player.PlayerInteractEntityEvent;
 import io.fand.api.event.player.PlayerInteractEvent;
+import io.fand.api.event.player.PlayerFishEvent;
 import io.fand.api.event.player.PlayerItemConsumeEvent;
 import io.fand.api.event.player.PlayerItemDamageEvent;
 import io.fand.api.event.player.PlayerItemHeldEvent;
 import io.fand.api.event.player.PlayerKickEvent;
+import io.fand.api.event.player.PlayerLeashEntityEvent;
 import io.fand.api.event.player.PlayerLocaleChangeEvent;
 import io.fand.api.event.player.PlayerMoveEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
 import io.fand.api.event.player.PlayerPortalEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
 import io.fand.api.event.player.PlayerResourcePackStatusEvent;
+import io.fand.api.event.player.PlayerShearEntityEvent;
 import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
 import io.fand.api.event.player.PlayerToggleSneakEvent;
 import io.fand.api.event.player.PlayerToggleSprintEvent;
+import io.fand.api.event.player.PlayerUnleashEntityEvent;
 import io.fand.api.plugin.PluginContext;
 import java.util.Set;
 import java.util.UUID;
@@ -70,6 +74,17 @@ final class DemoPlayerEvents implements Listener {
     public void onPickup(PlayerPickupItemEvent event) {
         if (context.config().getBoolean("features.log-item-events", false)) {
             logger.info("{} picked up {}", event.player().name(), stackName(event.item()));
+        }
+    }
+
+    @Subscribe
+    public void onFish(PlayerFishEvent event) {
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} fishing state={} caught={} drops={}",
+                    event.player().name(),
+                    event.state(),
+                    event.caught().map(entity -> entity.type().asString()).orElse("none"),
+                    event.drops().size());
         }
     }
 
@@ -272,6 +287,38 @@ final class DemoPlayerEvents implements Listener {
                     event.entity().type().asString(),
                     stackName(event.item()),
                     event.preciseInteraction());
+        }
+    }
+
+    @Subscribe
+    public void onShearEntity(PlayerShearEntityEvent event) {
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} sheared {} with {}",
+                    event.player().name(),
+                    event.entity().type().asString(),
+                    stackName(event.tool()));
+        }
+    }
+
+    @Subscribe
+    public void onLeashEntity(PlayerLeashEntityEvent event) {
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} leashed {} to {} cause={}",
+                    event.player().name(),
+                    event.entity().type().asString(),
+                    event.holder().map(entity -> entity.type().asString()).orElse("none"),
+                    event.cause());
+        }
+    }
+
+    @Subscribe
+    public void onUnleashEntity(PlayerUnleashEntityEvent event) {
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} unleashed {} holder={} dropLead={}",
+                    event.player().name(),
+                    event.entity().type().asString(),
+                    event.holder().map(entity -> entity.type().asString()).orElse("none"),
+                    event.dropLead());
         }
     }
 

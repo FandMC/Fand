@@ -16,7 +16,7 @@ import java.util.Optional;
  * value vanilla intends to apply. Setting it to zero is equivalent to
  * cancelling. Negative values are clamped to zero by the runtime.
  */
-public final class EntityDamageEvent implements Event, Cancellable {
+public class EntityDamageEvent implements Event, Cancellable {
 
     private final LivingEntity entity;
     private final String cause;

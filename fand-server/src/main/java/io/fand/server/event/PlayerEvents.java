@@ -13,6 +13,8 @@ import io.fand.api.event.player.PlayerFoodLevelChangeEvent;
 import io.fand.api.event.player.PlayerGameModeChangeEvent;
 import io.fand.api.event.player.PlayerInteractEntityEvent;
 import io.fand.api.event.player.PlayerInteractEvent;
+import io.fand.api.event.player.PlayerLeashEntityEvent;
+import io.fand.api.event.player.PlayerFishEvent;
 import io.fand.api.event.player.PlayerItemConsumeEvent;
 import io.fand.api.event.player.PlayerItemDamageEvent;
 import io.fand.api.event.player.PlayerItemHeldEvent;
@@ -22,10 +24,12 @@ import io.fand.api.event.player.PlayerPickupItemEvent;
 import io.fand.api.event.player.PlayerPortalEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
 import io.fand.api.event.player.PlayerResourcePackStatusEvent;
+import io.fand.api.event.player.PlayerShearEntityEvent;
 import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
 import io.fand.api.event.player.PlayerToggleSneakEvent;
 import io.fand.api.event.player.PlayerToggleSprintEvent;
+import io.fand.api.event.player.PlayerUnleashEntityEvent;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
 import io.fand.server.block.FandBlock;
@@ -36,6 +40,7 @@ import io.fand.server.entity.FandPlayer;
 import io.fand.server.hooks.FandHooks;
 import io.fand.server.item.FandItemStacks;
 import io.fand.server.world.FandWorld;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -339,6 +344,94 @@ public final class PlayerEvents {
             bus.fire(event);
         } catch (RuntimeException failure) {
             LOGGER.warn("PlayerInteractEntityEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireShearEntity(
+            net.minecraft.world.entity.player.Player player,
+            net.minecraft.world.entity.Entity target,
+            InteractionHand hand,
+            net.minecraft.world.item.ItemStack tool
+    ) {
+        var bus = FandHooks.events();
+        if (!(player instanceof ServerPlayer serverPlayer) || !bus.hasListeners(PlayerShearEntityEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(serverPlayer.getUUID());
+        var fandTarget = FandHooks.wrapEntity(target);
+        if (fandPlayer == null || fandTarget == null) {
+            return true;
+        }
+        var event = new PlayerShearEntityEvent(
+                fandPlayer,
+                fandTarget,
+                hand(hand),
+                FandItemStacks.fromVanilla(tool));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerShearEntityEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireLeashEntity(
+            net.minecraft.world.entity.player.Player player,
+            net.minecraft.world.entity.Entity entity,
+            net.minecraft.world.entity.Entity holder,
+            PlayerLeashEntityEvent.Cause cause
+    ) {
+        var bus = FandHooks.events();
+        if (!(player instanceof ServerPlayer serverPlayer) || !bus.hasListeners(PlayerLeashEntityEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(serverPlayer.getUUID());
+        var fandEntity = FandHooks.wrapEntity(entity);
+        var fandHolder = FandHooks.wrapEntity(holder);
+        if (fandPlayer == null || fandEntity == null) {
+            return true;
+        }
+        var event = new PlayerLeashEntityEvent(
+                fandPlayer,
+                fandEntity,
+                Optional.ofNullable(fandHolder),
+                cause);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerLeashEntityEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireUnleashEntity(
+            net.minecraft.world.entity.player.Player player,
+            net.minecraft.world.entity.Entity entity,
+            net.minecraft.world.entity.@Nullable Entity holder,
+            boolean dropLead
+    ) {
+        var bus = FandHooks.events();
+        if (!(player instanceof ServerPlayer serverPlayer) || !bus.hasListeners(PlayerUnleashEntityEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(serverPlayer.getUUID());
+        var fandEntity = FandHooks.wrapEntity(entity);
+        if (fandPlayer == null || fandEntity == null) {
+            return true;
+        }
+        var event = new PlayerUnleashEntityEvent(
+                fandPlayer,
+                fandEntity,
+                Optional.ofNullable(holder).map(FandHooks::wrapEntity),
+                dropLead);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerUnleashEntityEvent listener failed", failure);
             return true;
         }
         return !event.cancelled();
@@ -767,6 +860,37 @@ public final class PlayerEvents {
         } catch (RuntimeException failure) {
             LOGGER.warn("PlayerClientBrandEvent listener failed", failure);
         }
+    }
+
+    public static boolean fireFish(
+            ServerPlayer player,
+            net.minecraft.world.entity.Entity hook,
+            PlayerFishEvent.State state,
+            Optional<net.minecraft.world.entity.Entity> caught,
+            List<net.minecraft.world.item.ItemStack> drops
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerFishEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        var fandHook = FandHooks.wrapEntity(hook);
+        if (fandPlayer == null || fandHook == null) {
+            return true;
+        }
+        var event = new PlayerFishEvent(
+                fandPlayer,
+                fandHook,
+                state,
+                caught.map(FandHooks::wrapEntity),
+                drops.stream().map(FandItemStacks::fromVanilla).toList());
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerFishEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
     }
 
     public static ServerLevel fireRespawn(
