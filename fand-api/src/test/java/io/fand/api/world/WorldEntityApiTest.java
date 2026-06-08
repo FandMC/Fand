@@ -11,10 +11,12 @@ import io.fand.api.item.ItemType;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.key.Key;
+import net.kyori.adventure.text.Component;
 import org.junit.jupiter.api.Test;
 
 final class WorldEntityApiTest {
@@ -52,6 +54,21 @@ final class WorldEntityApiTest {
         world.dropItem(world.at(0, 64, 0), diamond, 3).join();
 
         assertThat(world.lastDropped).isEqualTo(diamond.stack(3));
+    }
+
+    @Test
+    void dropItemOptionsOverloadBuildsPlainStack() {
+        var world = new TestWorld(List.of(), true);
+        var diamond = new TestItemType(Key.key("minecraft:diamond"), 64);
+        var options = io.fand.api.entity.EntitySpawnOptions.builder()
+                .pickupDelay(20)
+                .unlimitedLifetime(true)
+                .build();
+
+        world.dropItem(world.at(0, 64, 0), diamond, 3, options).join();
+
+        assertThat(world.lastDropped).isEqualTo(diamond.stack(3));
+        assertThat(world.lastOptions).isSameAs(options);
     }
 
     private record TestEntityType(Key key, boolean spawnable, boolean player) implements EntityType {
@@ -97,6 +114,83 @@ final class WorldEntityApiTest {
         }
 
         @Override
+        public Optional<Component> customName() {
+            return Optional.empty();
+        }
+
+        @Override
+        public void setCustomName(Component name) {
+        }
+
+        @Override
+        public boolean customNameVisible() {
+            return false;
+        }
+
+        @Override
+        public void setCustomNameVisible(boolean visible) {
+        }
+
+        @Override
+        public boolean glowing() {
+            return false;
+        }
+
+        @Override
+        public void setGlowing(boolean glowing) {
+        }
+
+        @Override
+        public boolean silent() {
+            return false;
+        }
+
+        @Override
+        public void setSilent(boolean silent) {
+        }
+
+        @Override
+        public boolean gravity() {
+            return true;
+        }
+
+        @Override
+        public void setGravity(boolean gravity) {
+        }
+
+        @Override
+        public boolean invulnerable() {
+            return false;
+        }
+
+        @Override
+        public void setInvulnerable(boolean invulnerable) {
+        }
+
+        @Override
+        public Set<String> scoreboardTags() {
+            return Set.of();
+        }
+
+        @Override
+        public void addScoreboardTag(String tag) {
+        }
+
+        @Override
+        public void removeScoreboardTag(String tag) {
+        }
+
+        @Override
+        public double width() {
+            return 0.0;
+        }
+
+        @Override
+        public double height() {
+            return 0.0;
+        }
+
+        @Override
         public CompletableFuture<Boolean> teleport(Location destination) {
             return CompletableFuture.completedFuture(true);
         }
@@ -113,6 +207,30 @@ final class WorldEntityApiTest {
         @Override
         public List<? extends Entity> passengers() {
             return List.of();
+        }
+
+        @Override
+        public CompletableFuture<Boolean> mount(Entity vehicle) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        @Override
+        public CompletableFuture<Boolean> addPassenger(Entity passenger) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        @Override
+        public CompletableFuture<Boolean> removePassenger(Entity passenger) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        @Override
+        public CompletableFuture<Boolean> dismount() {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        @Override
+        public void ejectPassengers() {
         }
 
         @Override
@@ -155,6 +273,7 @@ final class WorldEntityApiTest {
         private final List<Entity> entities;
         private final boolean supportsDrop;
         private ItemStack lastDropped;
+        private io.fand.api.entity.EntitySpawnOptions lastOptions;
 
         private TestWorld(List<Entity> entities) {
             this(entities, false);
@@ -273,11 +392,21 @@ final class WorldEntityApiTest {
 
         @Override
         public CompletableFuture<Optional<? extends ItemEntity>> dropItem(Location location, ItemStack item) {
+            return dropItem(location, item, io.fand.api.entity.EntitySpawnOptions.defaults());
+        }
+
+        @Override
+        public CompletableFuture<Optional<? extends ItemEntity>> dropItem(
+                Location location,
+                ItemStack item,
+                io.fand.api.entity.EntitySpawnOptions options
+        ) {
             if (supportsDrop) {
                 this.lastDropped = item;
+                this.lastOptions = options;
                 return CompletableFuture.completedFuture(Optional.empty());
             }
-            return World.super.dropItem(location, item);
+            return World.super.dropItem(location, item, options);
         }
     }
 }

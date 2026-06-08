@@ -58,6 +58,15 @@ public final class EntityRegistry {
         if (handle instanceof net.minecraft.world.entity.projectile.Projectile projectile) {
             return new FandProjectile(projectile, worldRegistry);
         }
+        if (handle instanceof net.minecraft.world.entity.TamableAnimal tameable) {
+            return new FandTameable(tameable, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.animal.Animal animal) {
+            return new FandAnimal(animal, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.AgeableMob ageable) {
+            return new FandAgeable(ageable, worldRegistry);
+        }
         if (handle instanceof net.minecraft.world.entity.Mob mob) {
             return new FandMob(mob, worldRegistry);
         }

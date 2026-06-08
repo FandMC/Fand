@@ -32,6 +32,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.Collection;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.sound.Sound;
@@ -43,6 +44,7 @@ import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 public final class FandPlayer implements Player {
 
@@ -319,6 +321,93 @@ public final class FandPlayer implements Player {
     }
 
     @Override
+    public Optional<Component> customName() {
+        return EntityStates.customName(bound.handle);
+    }
+
+    @Override
+    public void setCustomName(@Nullable Component name) {
+        runOnServerThread(() -> EntityStates.setCustomName(bound.handle, name));
+    }
+
+    @Override
+    public boolean customNameVisible() {
+        return EntityStates.customNameVisible(bound.handle);
+    }
+
+    @Override
+    public void setCustomNameVisible(boolean visible) {
+        runOnServerThread(() -> EntityStates.setCustomNameVisible(bound.handle, visible));
+    }
+
+    @Override
+    public boolean glowing() {
+        return EntityStates.glowing(bound.handle);
+    }
+
+    @Override
+    public void setGlowing(boolean glowing) {
+        runOnServerThread(() -> EntityStates.setGlowing(bound.handle, glowing));
+    }
+
+    @Override
+    public boolean silent() {
+        return EntityStates.silent(bound.handle);
+    }
+
+    @Override
+    public void setSilent(boolean silent) {
+        runOnServerThread(() -> EntityStates.setSilent(bound.handle, silent));
+    }
+
+    @Override
+    public boolean gravity() {
+        return EntityStates.gravity(bound.handle);
+    }
+
+    @Override
+    public void setGravity(boolean gravity) {
+        runOnServerThread(() -> EntityStates.setGravity(bound.handle, gravity));
+    }
+
+    @Override
+    public boolean invulnerable() {
+        return EntityStates.invulnerable(bound.handle);
+    }
+
+    @Override
+    public void setInvulnerable(boolean invulnerable) {
+        runOnServerThread(() -> EntityStates.setInvulnerable(bound.handle, invulnerable));
+    }
+
+    @Override
+    public Set<String> scoreboardTags() {
+        return EntityStates.scoreboardTags(bound.handle);
+    }
+
+    @Override
+    public void addScoreboardTag(String tag) {
+        Objects.requireNonNull(tag, "tag");
+        runOnServerThread(() -> EntityStates.addScoreboardTag(bound.handle, tag));
+    }
+
+    @Override
+    public void removeScoreboardTag(String tag) {
+        Objects.requireNonNull(tag, "tag");
+        runOnServerThread(() -> EntityStates.removeScoreboardTag(bound.handle, tag));
+    }
+
+    @Override
+    public double width() {
+        return EntityStates.width(bound.handle);
+    }
+
+    @Override
+    public double height() {
+        return EntityStates.height(bound.handle);
+    }
+
+    @Override
     public void remove() {
         kick(Component.text("Disconnected"));
     }
@@ -345,6 +434,50 @@ public final class FandPlayer implements Player {
         return bound.handle.getPassengers().stream()
                 .map(worldRegistry.entityRegistry()::wrap)
                 .toList();
+    }
+
+    @Override
+    public CompletableFuture<Boolean> mount(io.fand.api.entity.Entity vehicle) {
+        Objects.requireNonNull(vehicle, "vehicle");
+        return runOnServerThreadFuture(() -> bound.handle.startRiding(EntityHandles.unwrap(vehicle)));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> addPassenger(io.fand.api.entity.Entity passenger) {
+        Objects.requireNonNull(passenger, "passenger");
+        return runOnServerThreadFuture(() -> EntityHandles.unwrap(passenger).startRiding(bound.handle));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> removePassenger(io.fand.api.entity.Entity passenger) {
+        Objects.requireNonNull(passenger, "passenger");
+        return runOnServerThreadFuture(() -> {
+            var passengerHandle = EntityHandles.unwrap(passenger);
+            var handle = bound.handle;
+            if (passengerHandle.getVehicle() != handle) {
+                return false;
+            }
+            passengerHandle.stopRiding();
+            return passengerHandle.getVehicle() != handle;
+        });
+    }
+
+    @Override
+    public CompletableFuture<Boolean> dismount() {
+        return runOnServerThreadFuture(() -> {
+            var handle = bound.handle;
+            var vehicle = handle.getVehicle();
+            if (vehicle == null) {
+                return false;
+            }
+            handle.stopRiding();
+            return handle.getVehicle() != vehicle;
+        });
+    }
+
+    @Override
+    public void ejectPassengers() {
+        runOnServerThread(() -> bound.handle.ejectPassengers());
     }
 
     @Override
@@ -594,6 +727,29 @@ public final class FandPlayer implements Player {
         } else {
             server.executeIfPossible(task);
         }
+    }
+
+    private <T> CompletableFuture<T> runOnServerThreadFuture(Supplier<T> task) {
+        var server = bound.handle.level().getServer();
+        if (server == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Player is not attached to a server"));
+        }
+        if (server.isSameThread()) {
+            try {
+                return CompletableFuture.completedFuture(task.get());
+            } catch (Throwable failure) {
+                return CompletableFuture.failedFuture(failure);
+            }
+        }
+        var future = new CompletableFuture<T>();
+        server.executeIfPossible(() -> {
+            try {
+                future.complete(task.get());
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        });
+        return future;
     }
 
     @Override

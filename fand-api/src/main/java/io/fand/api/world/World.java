@@ -3,6 +3,7 @@ package io.fand.api.world;
 import io.fand.api.entity.Player;
 import io.fand.api.entity.Entity;
 import io.fand.api.entity.EntityKey;
+import io.fand.api.entity.EntitySpawnOptions;
 import io.fand.api.entity.EntityType;
 import io.fand.api.entity.EntityTypes;
 import io.fand.api.entity.ItemEntity;
@@ -137,6 +138,18 @@ public interface World extends ForwardingAudience {
      * type in this world.
      */
     default CompletableFuture<java.util.Optional<? extends Entity>> spawnEntity(Location location, EntityType type) {
+        return spawnEntity(location, type, EntitySpawnOptions.defaults());
+    }
+
+    /**
+     * Spawns an entity and applies {@code options} immediately after creation.
+     * Options that do not apply to the spawned entity type are ignored.
+     */
+    default CompletableFuture<java.util.Optional<? extends Entity>> spawnEntity(
+            Location location,
+            EntityType type,
+            EntitySpawnOptions options
+    ) {
         return CompletableFuture.failedFuture(new UnsupportedOperationException("Entity spawning is not supported"));
     }
 
@@ -145,11 +158,32 @@ public interface World extends ForwardingAudience {
         return spawnEntity(location, EntityTypes.of(type));
     }
 
+    /** Convenience overload for generated vanilla entity keys with spawn options. */
+    default CompletableFuture<java.util.Optional<? extends Entity>> spawnEntity(
+            Location location,
+            EntityKey type,
+            EntitySpawnOptions options
+    ) {
+        return spawnEntity(location, EntityTypes.of(type), options);
+    }
+
     /**
      * Drops an item stack at {@code location}. The future completes with the
      * dropped item entity, or empty when {@code item} is empty.
      */
     default CompletableFuture<java.util.Optional<? extends ItemEntity>> dropItem(Location location, ItemStack item) {
+        return dropItem(location, item, EntitySpawnOptions.defaults());
+    }
+
+    /**
+     * Drops an item stack and applies item/common entity options immediately
+     * after creation.
+     */
+    default CompletableFuture<java.util.Optional<? extends ItemEntity>> dropItem(
+            Location location,
+            ItemStack item,
+            EntitySpawnOptions options
+    ) {
         return CompletableFuture.failedFuture(new UnsupportedOperationException("Item dropping is not supported"));
     }
 
@@ -158,9 +192,29 @@ public interface World extends ForwardingAudience {
         return dropItem(location, type.stack(amount));
     }
 
+    /** Convenience overload for dropping a plain item stack with spawn options. */
+    default CompletableFuture<java.util.Optional<? extends ItemEntity>> dropItem(
+            Location location,
+            ItemType type,
+            int amount,
+            EntitySpawnOptions options
+    ) {
+        return dropItem(location, type.stack(amount), options);
+    }
+
     /** Convenience overload for generated vanilla item keys. */
     default CompletableFuture<java.util.Optional<? extends ItemEntity>> dropItem(Location location, ItemKey type, int amount) {
         return dropItem(location, ItemTypes.of(type), amount);
+    }
+
+    /** Convenience overload for generated vanilla item keys with spawn options. */
+    default CompletableFuture<java.util.Optional<? extends ItemEntity>> dropItem(
+            Location location,
+            ItemKey type,
+            int amount,
+            EntitySpawnOptions options
+    ) {
+        return dropItem(location, ItemTypes.of(type), amount, options);
     }
 
     /** Plays a sound at {@code location} for players in this world. Marshals to the server thread. */

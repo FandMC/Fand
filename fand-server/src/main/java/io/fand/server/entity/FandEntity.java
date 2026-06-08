@@ -11,10 +11,14 @@ import io.fand.server.world.WorldRegistry;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
+import net.kyori.adventure.text.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Thin handle around any vanilla entity for API consumers.
@@ -79,6 +83,93 @@ public class FandEntity implements io.fand.api.entity.Entity {
     }
 
     @Override
+    public Optional<Component> customName() {
+        return EntityStates.customName(handle);
+    }
+
+    @Override
+    public void setCustomName(@Nullable Component name) {
+        runOnServerThread(() -> EntityStates.setCustomName(handle, name));
+    }
+
+    @Override
+    public boolean customNameVisible() {
+        return EntityStates.customNameVisible(handle);
+    }
+
+    @Override
+    public void setCustomNameVisible(boolean visible) {
+        runOnServerThread(() -> EntityStates.setCustomNameVisible(handle, visible));
+    }
+
+    @Override
+    public boolean glowing() {
+        return EntityStates.glowing(handle);
+    }
+
+    @Override
+    public void setGlowing(boolean glowing) {
+        runOnServerThread(() -> EntityStates.setGlowing(handle, glowing));
+    }
+
+    @Override
+    public boolean silent() {
+        return EntityStates.silent(handle);
+    }
+
+    @Override
+    public void setSilent(boolean silent) {
+        runOnServerThread(() -> EntityStates.setSilent(handle, silent));
+    }
+
+    @Override
+    public boolean gravity() {
+        return EntityStates.gravity(handle);
+    }
+
+    @Override
+    public void setGravity(boolean gravity) {
+        runOnServerThread(() -> EntityStates.setGravity(handle, gravity));
+    }
+
+    @Override
+    public boolean invulnerable() {
+        return EntityStates.invulnerable(handle);
+    }
+
+    @Override
+    public void setInvulnerable(boolean invulnerable) {
+        runOnServerThread(() -> EntityStates.setInvulnerable(handle, invulnerable));
+    }
+
+    @Override
+    public Set<String> scoreboardTags() {
+        return EntityStates.scoreboardTags(handle);
+    }
+
+    @Override
+    public void addScoreboardTag(String tag) {
+        Objects.requireNonNull(tag, "tag");
+        runOnServerThread(() -> EntityStates.addScoreboardTag(handle, tag));
+    }
+
+    @Override
+    public void removeScoreboardTag(String tag) {
+        Objects.requireNonNull(tag, "tag");
+        runOnServerThread(() -> EntityStates.removeScoreboardTag(handle, tag));
+    }
+
+    @Override
+    public double width() {
+        return EntityStates.width(handle);
+    }
+
+    @Override
+    public double height() {
+        return EntityStates.height(handle);
+    }
+
+    @Override
     public CompletableFuture<Boolean> teleport(Location destination) {
         Objects.requireNonNull(destination, "destination");
         var server = handle.level().getServer();
@@ -137,6 +228,48 @@ public class FandEntity implements io.fand.api.entity.Entity {
     }
 
     @Override
+    public CompletableFuture<Boolean> mount(io.fand.api.entity.Entity vehicle) {
+        Objects.requireNonNull(vehicle, "vehicle");
+        return runOnServerThreadFuture(() -> handle.startRiding(EntityHandles.unwrap(vehicle)));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> addPassenger(io.fand.api.entity.Entity passenger) {
+        Objects.requireNonNull(passenger, "passenger");
+        return runOnServerThreadFuture(() -> EntityHandles.unwrap(passenger).startRiding(handle));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> removePassenger(io.fand.api.entity.Entity passenger) {
+        Objects.requireNonNull(passenger, "passenger");
+        return runOnServerThreadFuture(() -> {
+            var passengerHandle = EntityHandles.unwrap(passenger);
+            if (passengerHandle.getVehicle() != handle) {
+                return false;
+            }
+            passengerHandle.stopRiding();
+            return passengerHandle.getVehicle() != handle;
+        });
+    }
+
+    @Override
+    public CompletableFuture<Boolean> dismount() {
+        return runOnServerThreadFuture(() -> {
+            var vehicle = handle.getVehicle();
+            if (vehicle == null) {
+                return false;
+            }
+            handle.stopRiding();
+            return handle.getVehicle() != vehicle;
+        });
+    }
+
+    @Override
+    public void ejectPassengers() {
+        runOnServerThread(handle::ejectPassengers);
+    }
+
+    @Override
     public boolean onGround() {
         return handle.onGround();
     }
@@ -185,6 +318,26 @@ public class FandEntity implements io.fand.api.entity.Entity {
         } else {
             server.executeIfPossible(task);
         }
+    }
+
+    protected <T> CompletableFuture<T> runOnServerThreadFuture(Supplier<T> task) {
+        var server = handle.level().getServer();
+        if (server == null || server.isSameThread()) {
+            try {
+                return CompletableFuture.completedFuture(task.get());
+            } catch (Throwable failure) {
+                return CompletableFuture.failedFuture(failure);
+            }
+        }
+        var future = new CompletableFuture<T>();
+        server.executeIfPossible(() -> {
+            try {
+                future.complete(task.get());
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        });
+        return future;
     }
 
     private ServerLevel resolveLevel(World world) {

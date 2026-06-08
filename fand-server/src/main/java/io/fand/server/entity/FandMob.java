@@ -6,7 +6,7 @@ import io.fand.server.world.WorldRegistry;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
-public final class FandMob extends FandLivingEntity implements Mob {
+public class FandMob extends FandLivingEntity implements Mob {
 
     public FandMob(net.minecraft.world.entity.Mob handle, WorldRegistry worldRegistry) {
         super(handle, worldRegistry);

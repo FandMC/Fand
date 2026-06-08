@@ -6,6 +6,7 @@ import io.fand.api.command.CommandCompleter;
 import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
 import io.fand.api.command.CommandSpec;
+import io.fand.api.entity.EntitySpawnOptions;
 import io.fand.api.entity.EntityType;
 import io.fand.api.entity.Player;
 import io.fand.api.plugin.PluginContext;
@@ -30,11 +31,19 @@ final class SpawnEntityCommand implements CommandExecutor, CommandCompleter {
 
     @Override
     public void execute(CommandSender sender, String label, List<String> args) {
-        if (args.size() != 1 && args.size() != 2 && args.size() != 5 && args.size() != 6) {
-            sender.sendMessage(Component.text("Usage: /fandspawnentity <entity> [count] [x y z] [world]", NamedTextColor.RED));
+        int optionStart = EntitySpawnOptionParser.firstOptionIndex(args);
+        var positional = args.subList(0, optionStart);
+        if (positional.size() != 1 && positional.size() != 2 && positional.size() != 5 && positional.size() != 6) {
+            sender.sendMessage(Component.text(
+                    "Usage: /fandspawnentity <entity> [count] [x y z] [world] [options...]",
+                    NamedTextColor.RED));
             return;
         }
-        EntityType type = entityType(sender, args.get(0));
+        EntitySpawnOptions options = EntitySpawnOptionParser.parse(sender, args, optionStart);
+        if (options == null) {
+            return;
+        }
+        EntityType type = entityType(sender, positional.get(0));
         if (type == null) {
             return;
         }
@@ -43,25 +52,32 @@ final class SpawnEntityCommand implements CommandExecutor, CommandCompleter {
             return;
         }
 
-        int count = spawnCount(sender, args);
+        int count = spawnCount(sender, positional);
         if (count < 0) {
             return;
         }
-        Location location = spawnLocation(sender, args);
+        Location location = spawnLocation(sender, positional);
         if (location == null) {
             return;
         }
 
-        spawnNext(sender, type, location, count, 0);
+        spawnNext(sender, type, location, options, count, 0);
     }
 
-    private void spawnNext(CommandSender sender, EntityType type, Location location, int total, int spawnedCount) {
+    private void spawnNext(
+            CommandSender sender,
+            EntityType type,
+            Location location,
+            EntitySpawnOptions options,
+            int total,
+            int spawnedCount
+    ) {
         if (spawnedCount >= total) {
             sender.sendMessage(Component.text("Spawned " + spawnedCount + " x " + type.key().asString()
                     + " at " + compactLocation(location), NamedTextColor.GREEN));
             return;
         }
-        location.world().spawnEntity(location, type).whenComplete((spawned, failure) -> {
+        location.world().spawnEntity(location, type, options).whenComplete((spawned, failure) -> {
             if (failure != null) {
                 context.logger().warn("Entity spawn failed for {}", type.key().asString(), failure);
                 sender.sendMessage(Component.text("Entity spawn failed: " + failure.getMessage(), NamedTextColor.RED));
@@ -75,12 +91,15 @@ final class SpawnEntityCommand implements CommandExecutor, CommandCompleter {
             context.logger().info("/fandspawnentity by {} spawned {} uuid={} at {} {},{},{}",
                     sender.name(), type.key(), entity.uniqueId(), location.world().key(),
                     trim(location.x()), trim(location.y()), trim(location.z()));
-            spawnNext(sender, type, location, total, spawnedCount + 1);
+            spawnNext(sender, type, location, options, total, spawnedCount + 1);
         });
     }
 
     @Override
     public List<String> complete(CommandSender sender, String label, List<String> args) {
+        if (!args.isEmpty() && args.getLast().startsWith("--")) {
+            return matching(EntitySpawnOptionParser.FLAGS, args.getLast());
+        }
         if (args.size() <= 1) {
             return matching(SAMPLE_ENTITIES, args.isEmpty() ? "" : args.getLast());
         }

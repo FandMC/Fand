@@ -3,6 +3,7 @@ package io.fand.server.world;
 import io.fand.api.block.Block;
 import io.fand.api.entity.Entity;
 import io.fand.api.entity.ItemEntity;
+import io.fand.api.entity.EntitySpawnOptions;
 import io.fand.api.entity.EntityType;
 import io.fand.api.entity.Player;
 import io.fand.api.item.ItemStack;
@@ -14,6 +15,7 @@ import io.fand.api.world.particle.ParticleEffect;
 import io.fand.api.world.particle.ParticleEmission;
 import io.fand.api.world.sound.SoundEffect;
 import io.fand.server.block.FandBlock;
+import io.fand.server.entity.EntitySpawnOptionsApplier;
 import io.fand.server.entity.FandEntityType;
 import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.item.FandItemStacks;
@@ -226,8 +228,18 @@ public final class FandWorld implements World {
 
     @Override
     public CompletableFuture<Optional<? extends Entity>> spawnEntity(Location location, EntityType type) {
+        return spawnEntity(location, type, EntitySpawnOptions.defaults());
+    }
+
+    @Override
+    public CompletableFuture<Optional<? extends Entity>> spawnEntity(
+            Location location,
+            EntityType type,
+            EntitySpawnOptions options
+    ) {
         var checkedLocation = requireThisWorld(location);
         Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(options, "options");
         if (!(type instanceof FandEntityType fandType) || !type.spawnable()) {
             return CompletableFuture.completedFuture(Optional.empty());
         }
@@ -241,6 +253,7 @@ public final class FandWorld implements World {
                 }
                 entity.teleportTo(checkedLocation.x(), checkedLocation.y(), checkedLocation.z());
                 entity.forceSetRotation(checkedLocation.yaw(), false, checkedLocation.pitch(), false);
+                EntitySpawnOptionsApplier.apply(entity, options);
                 if (!handle.addFreshEntity(entity)) {
                     future.complete(Optional.empty());
                     return;
@@ -256,8 +269,18 @@ public final class FandWorld implements World {
 
     @Override
     public CompletableFuture<Optional<? extends ItemEntity>> dropItem(Location location, ItemStack item) {
+        return dropItem(location, item, EntitySpawnOptions.defaults());
+    }
+
+    @Override
+    public CompletableFuture<Optional<? extends ItemEntity>> dropItem(
+            Location location,
+            ItemStack item,
+            EntitySpawnOptions options
+    ) {
         var checkedLocation = requireThisWorld(location);
         Objects.requireNonNull(item, "item");
+        Objects.requireNonNull(options, "options");
         if (item.isEmpty()) {
             return CompletableFuture.completedFuture(Optional.empty());
         }
@@ -276,6 +299,7 @@ public final class FandWorld implements World {
                         checkedLocation.z(),
                         vanilla);
                 entity.setDefaultPickUpDelay();
+                EntitySpawnOptionsApplier.apply(entity, options);
                 if (!handle.addFreshEntity(entity)) {
                     future.complete(Optional.empty());
                     return;

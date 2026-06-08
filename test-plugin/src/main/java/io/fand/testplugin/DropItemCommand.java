@@ -6,6 +6,7 @@ import io.fand.api.command.CommandCompleter;
 import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
 import io.fand.api.command.CommandSpec;
+import io.fand.api.entity.EntitySpawnOptions;
 import io.fand.api.entity.Player;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
@@ -31,25 +32,33 @@ final class DropItemCommand implements CommandExecutor, CommandCompleter {
 
     @Override
     public void execute(CommandSender sender, String label, List<String> args) {
-        if (args.size() != 1 && args.size() != 2 && args.size() != 5 && args.size() != 6) {
-            sender.sendMessage(Component.text("Usage: /fanddropitem <item> [amount] [x y z] [world]", NamedTextColor.RED));
+        int optionStart = EntitySpawnOptionParser.firstOptionIndex(args);
+        var positional = args.subList(0, optionStart);
+        if (positional.size() != 1 && positional.size() != 2 && positional.size() != 5 && positional.size() != 6) {
+            sender.sendMessage(Component.text(
+                    "Usage: /fanddropitem <item> [amount] [x y z] [world] [options...]",
+                    NamedTextColor.RED));
             return;
         }
-        ItemType type = itemType(sender, args.get(0));
+        EntitySpawnOptions options = EntitySpawnOptionParser.parse(sender, args, optionStart);
+        if (options == null) {
+            return;
+        }
+        ItemType type = itemType(sender, positional.get(0));
         if (type == null) {
             return;
         }
-        int amount = amount(sender, args);
+        int amount = amount(sender, positional);
         if (amount < 0) {
             return;
         }
-        Location location = dropLocation(sender, args);
+        Location location = dropLocation(sender, positional);
         if (location == null) {
             return;
         }
 
         ItemStack item = type.stack(amount);
-        location.world().dropItem(location, item).whenComplete((dropped, failure) -> {
+        location.world().dropItem(location, item, options).whenComplete((dropped, failure) -> {
             if (failure != null) {
                 context.logger().warn("Item drop failed for {}", type.key().asString(), failure);
                 sender.sendMessage(Component.text("Item drop failed: " + failure.getMessage(), NamedTextColor.RED));
@@ -71,6 +80,9 @@ final class DropItemCommand implements CommandExecutor, CommandCompleter {
 
     @Override
     public List<String> complete(CommandSender sender, String label, List<String> args) {
+        if (!args.isEmpty() && args.getLast().startsWith("--")) {
+            return matching(EntitySpawnOptionParser.FLAGS, args.getLast());
+        }
         if (args.size() <= 1) {
             return matching(SAMPLE_ITEMS, args.isEmpty() ? "" : args.getLast());
         }
