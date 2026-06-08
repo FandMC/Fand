@@ -24,15 +24,22 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TaskScheduler.class);
     private static final int CANCELLED_COMPACTION_THRESHOLD = 1024;
-    private static final Comparator<MainTask> MAIN_TASK_ORDER = Comparator
+    private static final long WALL_CLOCK_TASK = -1L;
+    private static final Comparator<MainTask> TIMED_MAIN_TASK_ORDER = Comparator
             .comparingLong((MainTask task) -> task.dueNanos)
             .thenComparingLong(task -> task.sequence);
+    private static final Comparator<MainTask> TICK_MAIN_TASK_ORDER = Comparator
+            .comparingLong((MainTask task) -> task.dueTick)
+            .thenComparingLong(task -> task.sequence);
+    private static final Comparator<MainTask> READY_TASK_ORDER = Comparator.comparingLong(task -> task.sequence);
 
     private final Object mainLock = new Object();
-    private final PriorityQueue<MainTask> mainTasks = new PriorityQueue<>(MAIN_TASK_ORDER);
+    private final PriorityQueue<MainTask> timedMainTasks = new PriorityQueue<>(TIMED_MAIN_TASK_ORDER);
+    private final PriorityQueue<MainTask> tickMainTasks = new PriorityQueue<>(TICK_MAIN_TASK_ORDER);
     private final ScheduledExecutorService asyncExecutor;
     private final LongSupplier nanoTime;
     private final AtomicLong sequence = new AtomicLong();
+    private final AtomicLong currentTick = new AtomicLong();
     private final AtomicLong cancelledMainTasks = new AtomicLong();
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -60,12 +67,25 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
     }
 
     @Override
+    public Task runMainAfterTicks(Runnable task, long delayTicks) {
+        return scheduleMainTicks(task, delayTicks, 0L);
+    }
+
+    @Override
     public Task runMainRepeating(Runnable task, Duration initialDelay, Duration period) {
         var periodNanos = durationNanos(period, "period");
         if (periodNanos <= 0L) {
             throw new IllegalArgumentException("period must be positive");
         }
         return scheduleMain(task, initialDelay, periodNanos);
+    }
+
+    @Override
+    public Task runMainRepeatingTicks(Runnable task, long initialDelayTicks, long periodTicks) {
+        if (periodTicks <= 0L) {
+            throw new IllegalArgumentException("periodTicks must be positive");
+        }
+        return scheduleMainTicks(task, initialDelayTicks, periodTicks);
     }
 
     @Override
@@ -86,19 +106,15 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
     }
 
     public int tick() {
+        var tick = currentTick.incrementAndGet();
         var tickTime = nanoTime.getAsLong();
         List<MainTask> ready = new ArrayList<>();
         synchronized (mainLock) {
             compactCancelledMainTasksIfNeeded();
-            while (!mainTasks.isEmpty() && mainTasks.peek().dueNanos <= tickTime) {
-                var task = mainTasks.poll();
-                if (task.cancelled()) {
-                    task.discardCancellationCount();
-                } else {
-                    ready.add(task);
-                }
-            }
+            collectReadyTimedTasks(tickTime, ready);
+            collectReadyTickTasks(tick, ready);
         }
+        ready.sort(READY_TASK_ORDER);
 
         var executed = 0;
         for (var task : ready) {
@@ -109,7 +125,11 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
             executed++;
             runSafely(task.runnable);
             if (task.repeating() && !task.cancelled() && !closed.get()) {
-                task.dueNanos = saturatedAdd(nanoTime.getAsLong(), task.periodNanos);
+                if (task.tickBased()) {
+                    task.dueTick = saturatedAdd(currentTick.get(), task.periodTicks);
+                } else {
+                    task.dueNanos = saturatedAdd(nanoTime.getAsLong(), task.periodNanos);
+                }
                 enqueue(task);
             } else {
                 task.finish();
@@ -124,10 +144,14 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
             return;
         }
         synchronized (mainLock) {
-            for (var task : mainTasks) {
+            for (var task : timedMainTasks) {
                 task.cancelled.set(true);
             }
-            mainTasks.clear();
+            for (var task : tickMainTasks) {
+                task.cancelled.set(true);
+            }
+            timedMainTasks.clear();
+            tickMainTasks.clear();
             cancelledMainTasks.set(0L);
         }
         asyncExecutor.shutdownNow();
@@ -137,7 +161,37 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
         Objects.requireNonNull(runnable, "task");
         var delayNanos = durationNanos(delay, "delay");
         ensureOpen();
-        var task = new MainTask(this, runnable, saturatedAdd(nanoTime.getAsLong(), delayNanos), periodNanos, sequence.getAndIncrement());
+        var task = new MainTask(
+                this,
+                runnable,
+                WALL_CLOCK_TASK,
+                saturatedAdd(nanoTime.getAsLong(), delayNanos),
+                periodNanos,
+                0L,
+                sequence.getAndIncrement()
+        );
+        enqueue(task);
+        return task;
+    }
+
+    private Task scheduleMainTicks(Runnable runnable, long delayTicks, long periodTicks) {
+        Objects.requireNonNull(runnable, "task");
+        if (delayTicks < 0L) {
+            throw new IllegalArgumentException("delayTicks must not be negative");
+        }
+        if (delayTicks == Long.MAX_VALUE) {
+            throw new IllegalArgumentException("delayTicks is too large");
+        }
+        ensureOpen();
+        var task = new MainTask(
+                this,
+                runnable,
+                saturatedAdd(currentTick.get(), delayTicks + 1L),
+                0L,
+                0L,
+                periodTicks,
+                sequence.getAndIncrement()
+        );
         enqueue(task);
         return task;
     }
@@ -162,23 +216,52 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
                 task.cancelled.set(true);
                 return;
             }
-            mainTasks.add(task);
+            if (task.tickBased()) {
+                tickMainTasks.add(task);
+            } else {
+                timedMainTasks.add(task);
+            }
+        }
+    }
+
+    private void collectReadyTimedTasks(long tickTime, List<MainTask> ready) {
+        while (!timedMainTasks.isEmpty() && timedMainTasks.peek().dueNanos <= tickTime) {
+            collectReadyTask(timedMainTasks.poll(), ready);
+        }
+    }
+
+    private void collectReadyTickTasks(long tick, List<MainTask> ready) {
+        while (!tickMainTasks.isEmpty() && tickMainTasks.peek().dueTick <= tick) {
+            collectReadyTask(tickMainTasks.poll(), ready);
+        }
+    }
+
+    private static void collectReadyTask(MainTask task, List<MainTask> ready) {
+        if (task.cancelled()) {
+            task.discardCancellationCount();
+        } else {
+            ready.add(task);
         }
     }
 
     private void compactCancelledMainTasksIfNeeded() {
         var cancelled = cancelledMainTasks.get();
-        if (cancelled < CANCELLED_COMPACTION_THRESHOLD || cancelled <= mainTasks.size() / 2L) {
+        var totalQueued = timedMainTasks.size() + tickMainTasks.size();
+        if (cancelled < CANCELLED_COMPACTION_THRESHOLD || cancelled <= totalQueued / 2L) {
             return;
         }
-        var iterator = mainTasks.iterator();
-        while (iterator.hasNext()) {
-            var task = iterator.next();
-            if (task.cancelled()) {
-                iterator.remove();
-                task.discardCancellationCount();
+        removeCancelled(timedMainTasks);
+        removeCancelled(tickMainTasks);
+    }
+
+    private static void removeCancelled(PriorityQueue<MainTask> tasks) {
+        tasks.removeIf(task -> {
+            if (!task.cancelled()) {
+                return false;
             }
-        }
+            task.discardCancellationCount();
+            return true;
+        });
     }
 
     private void decrementCancelledMainTasks() {
@@ -247,17 +330,29 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
         private final TaskScheduler owner;
         private final Runnable runnable;
         private final long periodNanos;
+        private final long periodTicks;
         private final long sequence;
         private final AtomicBoolean cancelled = new AtomicBoolean(false);
         private final AtomicBoolean cancellationCounted = new AtomicBoolean(false);
         private final AtomicBoolean finished = new AtomicBoolean(false);
+        private long dueTick;
         private long dueNanos;
 
-        private MainTask(TaskScheduler owner, Runnable runnable, long dueNanos, long periodNanos, long sequence) {
+        private MainTask(
+                TaskScheduler owner,
+                Runnable runnable,
+                long dueTick,
+                long dueNanos,
+                long periodNanos,
+                long periodTicks,
+                long sequence
+        ) {
             this.owner = owner;
             this.runnable = runnable;
+            this.dueTick = dueTick;
             this.dueNanos = dueNanos;
             this.periodNanos = periodNanos;
+            this.periodTicks = periodTicks;
             this.sequence = sequence;
         }
 
@@ -298,8 +393,13 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
         }
 
         private boolean repeating() {
-            return periodNanos > 0L;
+            return periodNanos > 0L || periodTicks > 0L;
         }
+
+        private boolean tickBased() {
+            return dueTick != WALL_CLOCK_TASK;
+        }
+
     }
 
     private static final class AsyncTask implements Task {

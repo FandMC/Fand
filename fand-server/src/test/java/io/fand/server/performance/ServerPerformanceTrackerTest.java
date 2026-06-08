@@ -38,6 +38,20 @@ final class ServerPerformanceTrackerTest {
     }
 
     @Test
+    void reusesSnapshotUntilANewTickIsRecorded() {
+        var tracker = new ServerPerformanceTracker();
+
+        var first = tracker.snapshot();
+        var second = tracker.snapshot();
+        tracker.recordTick(0L, 25_000_000L);
+        var third = tracker.snapshot();
+
+        assertThat(second).isSameAs(first);
+        assertThat(third).isNotSameAs(first);
+        assertThat(tracker.snapshot()).isSameAs(third);
+    }
+
+    @Test
     void includesMeasuredTaskExecutionInMspt() {
         var tracker = new ServerPerformanceTracker();
 

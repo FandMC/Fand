@@ -20,6 +20,8 @@ public final class ServerPerformanceTracker {
     private long previousTickStartNanos = -1L;
     private long previousTickWorkNanos = -1L;
     private long tickCount;
+    private long snapshotTickCount = -1L;
+    private ServerPerformance cachedSnapshot;
 
     public synchronized void recordTick(long tickStartNanos, long tickDurationNanos) {
         recordTick(tickStartNanos, tickDurationNanos, 0L);
@@ -55,7 +57,10 @@ public final class ServerPerformanceTracker {
     }
 
     public synchronized ServerPerformance snapshot() {
-        return new ServerPerformance(
+        if (cachedSnapshot != null && snapshotTickCount == tickCount) {
+            return cachedSnapshot;
+        }
+        var snapshot = new ServerPerformance(
                 window(TickWindow.ONE_SECOND),
                 window(TickWindow.FIVE_SECONDS),
                 window(TickWindow.TEN_SECONDS),
@@ -65,6 +70,9 @@ public final class ServerPerformanceTracker {
                 window(TickWindow.FIFTEEN_MINUTES),
                 tickCount
         );
+        cachedSnapshot = snapshot;
+        snapshotTickCount = tickCount;
+        return snapshot;
     }
 
     private TickWindowSnapshot window(TickWindow window) {

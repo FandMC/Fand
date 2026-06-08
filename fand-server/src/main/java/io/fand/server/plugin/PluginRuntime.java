@@ -219,7 +219,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                     }
                     skipped++;
                     LOGGER.warn("Skipping plugin {} because dependency {} is disabled", loadedPlugin.descriptor.id(), unavailableDependency);
-                    loadedPlugin.context.close();
+                    discardLoadedPlugin(loadedPlugin);
                     continue;
                 }
                 try {
@@ -227,7 +227,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                     loadedPlugin.enabled = true;
                     enabledThisRun.push(loadedPlugin);
                 } catch (Throwable failure) {
-                    loadedPlugin.context.close();
+                    discardLoadedPlugin(loadedPlugin);
                     if (!options.continueOnEnableFailure()) {
                         throw new PluginLoadException("Failed to enable plugin '" + loadedPlugin.descriptor.id() + "'", failure);
                     }
@@ -473,6 +473,14 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             loadedPlugin.enabled = false;
             loadedPlugin.context.close();
         }
+    }
+
+    private void discardLoadedPlugin(LoadedPlugin loadedPlugin) {
+        loadedPlugin.enabled = false;
+        loadedPlugins.remove(loadedPlugin.descriptor.id(), loadedPlugin);
+        loadOrder.remove(loadedPlugin.descriptor.id());
+        loadedPlugin.context.close();
+        closeQuietly(loadedPlugin.classLoader, loadedPlugin.descriptor.id());
     }
 
     private void ensureOpen() {

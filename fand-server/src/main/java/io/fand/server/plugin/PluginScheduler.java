@@ -25,8 +25,18 @@ public final class PluginScheduler implements Scheduler {
     }
 
     @Override
+    public Task runMainAfterTicks(Runnable task, long delayTicks) {
+        return tracker.track(delegate.runMainAfterTicks(task, delayTicks));
+    }
+
+    @Override
     public Task runMainRepeating(Runnable task, Duration initialDelay, Duration period) {
         return tracker.track(delegate.runMainRepeating(task, initialDelay, period));
+    }
+
+    @Override
+    public Task runMainRepeatingTicks(Runnable task, long initialDelayTicks, long periodTicks) {
+        return tracker.track(delegate.runMainRepeatingTicks(task, initialDelayTicks, periodTicks));
     }
 
     @Override

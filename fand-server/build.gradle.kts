@@ -46,9 +46,35 @@ val log4jPlugins = sourceSets.create("log4jPlugins")
 configurations.named(log4jPlugins.compileClasspathConfigurationName) {
     extendsFrom(configurations.compileClasspath.get())
 }
+
+val integrationTestSourceSet = sourceSets.create("integrationTest") {
+    compileClasspath += sourceSets.main.get().output + configurations.testRuntimeClasspath.get()
+    runtimeClasspath += output + compileClasspath
+}
+
+configurations.named(integrationTestSourceSet.implementationConfigurationName) {
+    extendsFrom(configurations.testImplementation.get())
+}
+configurations.named(integrationTestSourceSet.runtimeOnlyConfigurationName) {
+    extendsFrom(configurations.testRuntimeOnly.get())
+}
+
 dependencies {
     log4jPlugins.annotationProcessorConfigurationName("org.apache.logging.log4j:log4j-core:2.25.2")
     "log4jPluginsCompileOnly"("org.apache.logging.log4j:log4j-core:2.25.2")
+}
+
+val integrationTest by tasks.registering(Test::class) {
+    description = "Runs Fand server integration tests."
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    testClassesDirs = integrationTestSourceSet.output.classesDirs
+    classpath = integrationTestSourceSet.runtimeClasspath
+    shouldRunAfter(tasks.test)
+    useJUnitPlatform()
+}
+
+tasks.check {
+    dependsOn(integrationTest)
 }
 
 paperweight {

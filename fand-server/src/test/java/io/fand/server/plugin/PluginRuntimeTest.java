@@ -219,6 +219,10 @@ final class PluginRuntimeTest {
             assertThat(manager.isEnabled("base")).isFalse();
             assertThat(manager.isEnabled("dependent")).isFalse();
             assertThat(manager.isEnabled("healthy")).isTrue();
+            assertThat(manager.byId("base")).isEmpty();
+            assertThat(manager.byId("dependent")).isEmpty();
+            assertThat(manager.byId("healthy")).isPresent();
+            assertThat(manager.loaded()).containsExactly(manager.byId("healthy").orElseThrow());
         } finally {
             manager.close();
         }
@@ -259,8 +263,9 @@ final class PluginRuntimeTest {
                 dispatcher.fire(new CleanupTestEvent());
                 scheduler.tick();
 
-                assertThat(manager.byId("broken")).isPresent();
+                assertThat(manager.byId("broken")).isEmpty();
                 assertThat(manager.isEnabled("broken")).isFalse();
+                assertThat(manager.loaded()).isEmpty();
                 assertThat(Files.exists(logFile)).isFalse();
             } finally {
                 manager.close();

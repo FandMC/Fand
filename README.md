@@ -55,6 +55,8 @@ The patched Minecraft code lives in `fand-server/src/minecraft/` after setup.
 - Harden plugin failure paths and resource cleanup
 - Reduce allocations and repeated runtime lookups in hot event patches
 - Clarify scheduler thread/tick semantics in public API docs
+- Expand integration tests from the current Gradle source set into full server
+  boot, plugin load, and shutdown validation
 - Stabilize local/CI build memory settings for paperweight workflows
 
 See `PROJECT_PROPOSAL.md` for the full roadmap and `CODING_STANDARDS.md` for

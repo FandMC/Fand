@@ -95,6 +95,43 @@ final class TaskSchedulerTest {
     }
 
     @Test
+    void delaysMainTasksByCompletedTicks() {
+        List<String> calls = new ArrayList<>();
+
+        scheduler.runMainAfterTicks(() -> calls.add("delayed"), 2L);
+
+        assertThat(scheduler.tick()).isZero();
+        assertThat(scheduler.tick()).isZero();
+        assertThat(scheduler.tick()).isEqualTo(1);
+        assertThat(calls).containsExactly("delayed");
+    }
+
+    @Test
+    void tickTasksAreNotBlockedByLaterWallClockTasks() {
+        List<String> calls = new ArrayList<>();
+
+        scheduler.runMainAfter(() -> calls.add("wall"), Duration.ofDays(1));
+        scheduler.runMainAfterTicks(() -> calls.add("tick"), 0L);
+
+        assertThat(scheduler.tick()).isEqualTo(1);
+        assertThat(calls).containsExactly("tick");
+    }
+
+    @Test
+    void reschedulesRepeatingMainTasksByTicks() {
+        List<Integer> calls = new ArrayList<>();
+
+        scheduler.runMainRepeatingTicks(() -> calls.add(calls.size()), 0L, 2L);
+
+        assertThat(scheduler.tick()).isEqualTo(1);
+        assertThat(scheduler.tick()).isZero();
+        assertThat(scheduler.tick()).isEqualTo(1);
+        assertThat(scheduler.tick()).isZero();
+        assertThat(scheduler.tick()).isEqualTo(1);
+        assertThat(calls).containsExactly(0, 1, 2);
+    }
+
+    @Test
     void cancelsMainTasksBeforeExecution() {
         List<String> calls = new ArrayList<>();
         var task = scheduler.runMain(() -> calls.add("cancelled"));
@@ -149,6 +186,12 @@ final class TaskSchedulerTest {
         assertThatThrownBy(() -> scheduler.runMainRepeating(() -> {}, Duration.ZERO, Duration.ZERO))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("period");
+        assertThatThrownBy(() -> scheduler.runMainAfterTicks(() -> {}, -1L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("delayTicks");
+        assertThatThrownBy(() -> scheduler.runMainRepeatingTicks(() -> {}, 0L, 0L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("periodTicks");
     }
 
     @Test
