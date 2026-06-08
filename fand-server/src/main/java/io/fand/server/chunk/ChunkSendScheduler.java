@@ -93,9 +93,6 @@ public final class ChunkSendScheduler implements AutoCloseable {
             }
             applied++;
         }
-        if (completed.isEmpty()) {
-            completedByLevel.remove(levelId, completed);
-        }
         return applied;
     }
 
