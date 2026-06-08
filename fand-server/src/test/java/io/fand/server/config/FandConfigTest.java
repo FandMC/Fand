@@ -25,6 +25,8 @@ final class FandConfigTest {
         assertThat(config.plugins.continueOnEnableFailure).isFalse();
         assertThat(config.plugins.logSummary).isTrue();
         assertThat(config.scheduler.asyncThreads).isZero();
+        assertThat(config.chunks.workerThreads).isZero();
+        assertThat(config.chunks.trackingDiffApplyBudget).isEqualTo(256);
         assertThat(config.console.gui.enabled).isTrue();
         assertThat(config.console.gui.theme).isEqualTo("system");
         assertThat(config.network.forwarding.mode).isEqualTo("none");
@@ -40,6 +42,9 @@ final class FandConfigTest {
                 .contains("logSummary: true")
                 .contains("scheduler:")
                 .contains("asyncThreads: 0")
+                .contains("chunks:")
+                .contains("workerThreads: 0")
+                .contains("trackingDiffApplyBudget: 256")
                 .contains("console:")
                 .contains("gui:")
                 .contains("enabled: true")
@@ -66,6 +71,10 @@ final class FandConfigTest {
                 scheduler:
                   asyncThreads: 6
 
+                chunks:
+                  workerThreads: 3
+                  trackingDiffApplyBudget: 64
+
                 console:
                   gui:
                     enabled: false
@@ -85,6 +94,8 @@ final class FandConfigTest {
         assertThat(config.plugins.continueOnEnableFailure).isTrue();
         assertThat(config.plugins.logSummary).isFalse();
         assertThat(config.scheduler.asyncThreads).isEqualTo(6);
+        assertThat(config.chunks.workerThreads).isEqualTo(3);
+        assertThat(config.chunks.trackingDiffApplyBudget).isEqualTo(64);
         assertThat(config.console.gui.enabled).isFalse();
         assertThat(config.console.gui.theme).isEqualTo("dark");
         assertThat(config.network.forwarding.mode).isEqualTo("velocity-modern");
