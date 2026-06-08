@@ -58,12 +58,12 @@ public final class FandHooks {
         Main.runtime().recordTick(tickStartNanos, tickDurationNanos, taskExecutionNanos);
     }
 
-    public static boolean submitChunkTrackingDiff(ChunkTrackingSnapshot snapshot) {
-        return Main.runtime().chunkSendScheduler().submitTrackingDiff(snapshot);
+    public static boolean submitChunkTrackingDiff(ServerLevel level, ChunkTrackingSnapshot snapshot) {
+        return Main.runtime().chunkSendScheduler().submitTrackingDiff(level.dimension().identifier().toString(), snapshot);
     }
 
-    public static int applyChunkTrackingDiffs(ChunkSendScheduler.TrackingDiffApplier applier) {
-        return Main.runtime().chunkSendScheduler().applyCompleted(applier);
+    public static int applyChunkTrackingDiffs(ServerLevel level, ChunkSendScheduler.TrackingDiffApplier applier) {
+        return Main.runtime().chunkSendScheduler().applyCompleted(level.dimension().identifier().toString(), applier);
     }
 
     public static boolean hasListeners(Class<? extends Event> type) {

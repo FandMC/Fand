@@ -1,8 +1,10 @@
 package io.fand.server.chunk;
 
 import io.fand.server.config.FandConfig;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -18,7 +20,7 @@ public final class ChunkSendScheduler implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ChunkSendScheduler.class);
     private static final int DEFAULT_MAX_AUTO_THREADS = 4;
 
-    private final ConcurrentLinkedQueue<ChunkTrackingDiff> completed = new ConcurrentLinkedQueue<>();
+    private final Map<String, ConcurrentLinkedQueue<ChunkTrackingDiff>> completedByLevel = new ConcurrentHashMap<>();
     private final AtomicLong submittedJobs = new AtomicLong();
     private final AtomicLong completedJobs = new AtomicLong();
     private final AtomicLong appliedJobs = new AtomicLong();
@@ -38,7 +40,8 @@ public final class ChunkSendScheduler implements AutoCloseable {
         this.applyBudget = config.trackingDiffApplyBudget;
     }
 
-    public boolean submitTrackingDiff(ChunkTrackingSnapshot snapshot) {
+    public boolean submitTrackingDiff(String levelId, ChunkTrackingSnapshot snapshot) {
+        Objects.requireNonNull(levelId, "levelId");
         Objects.requireNonNull(snapshot, "snapshot");
         if (closed.get()) {
             return false;
@@ -56,7 +59,7 @@ public final class ChunkSendScheduler implements AutoCloseable {
                         if (closed.get()) {
                             return;
                         }
-                        completed.add(diff);
+                        completedByLevel.computeIfAbsent(levelId, ignored -> new ConcurrentLinkedQueue<>()).add(diff);
                         completedJobs.incrementAndGet();
                         totalWorkerNanos.addAndGet(diff.workerNanos());
                     });
@@ -67,10 +70,15 @@ public final class ChunkSendScheduler implements AutoCloseable {
         }
     }
 
-    public int applyCompleted(TrackingDiffApplier applier) {
+    public int applyCompleted(String levelId, TrackingDiffApplier applier) {
+        Objects.requireNonNull(levelId, "levelId");
         Objects.requireNonNull(applier, "applier");
         int applied = 0;
         int budget = applyBudget;
+        var completed = completedByLevel.get(levelId);
+        if (completed == null) {
+            return 0;
+        }
         while (budget <= 0 || applied < budget) {
             var diff = completed.poll();
             if (diff == null) {
@@ -85,6 +93,9 @@ public final class ChunkSendScheduler implements AutoCloseable {
             }
             applied++;
         }
+        if (completed.isEmpty()) {
+            completedByLevel.remove(levelId, completed);
+        }
         return applied;
     }
 
@@ -95,7 +106,7 @@ public final class ChunkSendScheduler implements AutoCloseable {
                 appliedJobs.get(),
                 staleJobs.get(),
                 failedJobs.get(),
-                Math.max(0L, submittedJobs.get() - completedJobs.get() - failedJobs.get()) + completed.size(),
+                Math.max(0L, submittedJobs.get() - completedJobs.get() - failedJobs.get()) + completedQueueSize(),
                 enteredChunks.get(),
                 leftChunks.get(),
                 totalWorkerNanos.get()
@@ -117,7 +128,11 @@ public final class ChunkSendScheduler implements AutoCloseable {
             return;
         }
         worker.shutdownNow();
-        completed.clear();
+        completedByLevel.clear();
+    }
+
+    private long completedQueueSize() {
+        return completedByLevel.values().stream().mapToLong(ConcurrentLinkedQueue::size).sum();
     }
 
     private static ChunkTrackingDiff compute(ChunkTrackingSnapshot snapshot) {
