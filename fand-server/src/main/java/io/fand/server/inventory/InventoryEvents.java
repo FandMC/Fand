@@ -2,6 +2,7 @@ package io.fand.server.inventory;
 
 import io.fand.api.event.inventory.BrewEvent;
 import io.fand.api.event.inventory.BrewingStandFuelEvent;
+import io.fand.api.event.inventory.BlockCookEvent;
 import io.fand.api.event.inventory.ClickType;
 import io.fand.api.event.inventory.DragType;
 import io.fand.api.event.inventory.EnchantItemEvent;
@@ -9,6 +10,7 @@ import io.fand.api.event.inventory.EnchantmentOffer;
 import io.fand.api.event.inventory.FurnaceBurnEvent;
 import io.fand.api.event.inventory.FurnaceExtractEvent;
 import io.fand.api.event.inventory.FurnaceSmeltEvent;
+import io.fand.api.event.inventory.FurnaceStartSmeltEvent;
 import io.fand.api.event.inventory.HopperMoveItemEvent;
 import io.fand.api.event.inventory.HopperPickupItemEvent;
 import io.fand.api.event.inventory.InventoryClickEvent;
@@ -671,7 +673,7 @@ public final class InventoryEvents {
             net.minecraft.world.item.ItemStack result
     ) {
         var bus = FandHooks.events();
-        if (!bus.hasListeners(FurnaceSmeltEvent.class)) {
+        if (!bus.hasListeners(BlockCookEvent.class) && !bus.hasListeners(FurnaceSmeltEvent.class)) {
             return result;
         }
         var world = FandHooks.wrapWorld(level);
@@ -699,6 +701,37 @@ public final class InventoryEvents {
             LOGGER.warn("FurnaceSmeltEvent supplied an invalid result item", failure);
             return result;
         }
+    }
+
+    public static int fireFurnaceStartSmelt(
+            ServerLevel level,
+            net.minecraft.core.BlockPos pos,
+            Container inventory,
+            Optional<RecipeHolder<?>> recipe,
+            net.minecraft.world.item.ItemStack source,
+            int totalCookTime
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(FurnaceStartSmeltEvent.class)) {
+            return totalCookTime;
+        }
+        var world = FandHooks.wrapWorld(level);
+        if (world == null) {
+            return totalCookTime;
+        }
+        var event = new FurnaceStartSmeltEvent(
+                new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()),
+                new FandContainerInventory(inventory, InventoryType.FURNACE),
+                recipe.map(FandRecipes::fromVanilla),
+                FandItemStacks.fromVanilla(source),
+                totalCookTime);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("FurnaceStartSmeltEvent listener failed", failure);
+            return totalCookTime;
+        }
+        return event.cancelled() ? 0 : event.totalCookTime();
     }
 
     public static void fireFurnaceExtract(

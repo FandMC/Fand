@@ -132,7 +132,7 @@ index e0397dfeb3ce8bffcb1ef11be71e84eb84724dcc..a273d146575d1f36909a9643647a70b7
                  player.awardStat(Stats.CLEAN_SHULKER_BOX);
 -                LayeredCauldronBlock.lowerFillLevel(state, level, pos);
              }
-
+ 
              return InteractionResult.SUCCESS;
 @@ -284,11 +337,18 @@ public class CauldronInteractions {
              return InteractionResult.TRY_WITH_EMPTY_HAND;
@@ -152,7 +152,7 @@ index e0397dfeb3ce8bffcb1ef11be71e84eb84724dcc..a273d146575d1f36909a9643647a70b7
                  player.awardStat(Stats.CLEAN_BANNER);
 -                LayeredCauldronBlock.lowerFillLevel(state, level, pos);
              }
-
+ 
              return InteractionResult.SUCCESS;
 @@ -302,9 +362,16 @@ public class CauldronInteractions {
              return InteractionResult.TRY_WITH_EMPTY_HAND;
@@ -170,7 +170,7 @@ index e0397dfeb3ce8bffcb1ef11be71e84eb84724dcc..a273d146575d1f36909a9643647a70b7
                  player.awardStat(Stats.CLEAN_ARMOR);
 -                LayeredCauldronBlock.lowerFillLevel(state, level, pos);
              }
-
+ 
              return InteractionResult.SUCCESS;
 diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
 index 8eaf29fec7e30679b7cc1eb143be122797bd2121..f9ae61d37fdfa8eee84ff84b00fa0915b7d3364e 100644
@@ -192,7 +192,7 @@ index 8eaf29fec7e30679b7cc1eb143be122797bd2121..f9ae61d37fdfa8eee84ff84b00fa0915
              return entity;
 @@ -2190,7 +2195,12 @@ public abstract class Entity
                  boolean anyLeashed = false;
-
+ 
                  for (Leashable mob : mobsToLeash) {
 -                    if (mob.canHaveALeashAttachedTo(this)) {
 +                    if (mob.canHaveALeashAttachedTo(this)
@@ -206,7 +206,7 @@ index 8eaf29fec7e30679b7cc1eb143be122797bd2121..f9ae61d37fdfa8eee84ff84b00fa0915
                      }
 @@ -2205,23 +2215,30 @@ public abstract class Entity
          }
-
+ 
          ItemStack heldItem = player.getItemInHand(hand);
 -        if (heldItem.is(Items.SHEARS) && this.shearOffAllLeashConnections(player)) {
 +        if (heldItem.is(Items.SHEARS)
@@ -237,10 +237,10 @@ index 8eaf29fec7e30679b7cc1eb143be122797bd2121..f9ae61d37fdfa8eee84ff84b00fa0915
 +                        } else {
 +                            leashablex.removeLeash();
                          }
-
+ 
                          this.gameEvent(GameEvent.ENTITY_INTERACT, player);
 @@ -2239,9 +2256,19 @@ public abstract class Entity
-
+ 
                      if (leashablex.canHaveALeashAttachedTo(player)) {
                          if (leashablex.isLeashed()) {
 +                            if (!io.fand.server.event.PlayerEvents.fireUnleashEntity(player, this, leashablex.getLeashHolder(), true)) {
@@ -248,7 +248,7 @@ index 8eaf29fec7e30679b7cc1eb143be122797bd2121..f9ae61d37fdfa8eee84ff84b00fa0915
 +                            }
                              leashablex.dropLeash();
                          }
-
+ 
 +                        if (!io.fand.server.event.PlayerEvents.fireLeashEntity(
 +                            player,
 +                            this,
@@ -260,7 +260,7 @@ index 8eaf29fec7e30679b7cc1eb143be122797bd2121..f9ae61d37fdfa8eee84ff84b00fa0915
                          this.playSound(SoundEvents.LEAD_TIED);
                          itemStack.shrink(1);
 @@ -2265,14 +2292,23 @@ public abstract class Entity
-
+ 
      public boolean dropAllLeashConnections(final @Nullable Player player) {
          List<Leashable> leashables = Leashable.leashableLeashedTo(this);
 -        boolean dropped = !leashables.isEmpty();
@@ -275,7 +275,7 @@ index 8eaf29fec7e30679b7cc1eb143be122797bd2121..f9ae61d37fdfa8eee84ff84b00fa0915
 +                dropped = true;
 +            }
          }
-
+ 
          for (Leashable leashable : leashables) {
 +            if (player != null
 +                && !io.fand.server.event.PlayerEvents.fireUnleashEntity(player, (Entity)leashable, this, true)) {
@@ -284,7 +284,7 @@ index 8eaf29fec7e30679b7cc1eb143be122797bd2121..f9ae61d37fdfa8eee84ff84b00fa0915
              leashable.dropLeash();
 +            dropped = true;
          }
-
+ 
          if (dropped) {
 diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
 index d7bfe178a933ef2b93f1a9f42601be141906d468..84fb32ba8d2650b8c18cd45911a675f14685ec6c 100644
@@ -357,7 +357,7 @@ index 48f5336a4460c089ef352b185108c51c927f8e05..7de3cbc8a6dd416834ee124df9d621d9
 --- a/net/minecraft/world/entity/Mob.java
 +++ b/net/minecraft/world/entity/Mob.java
 @@ -527,6 +527,11 @@ public abstract class Mob extends LivingEntity implements Targeting, EquipmentUs
-
+ 
      protected void pickUpItem(final ServerLevel level, final ItemEntity entity) {
          ItemStack itemStack = entity.getItem();
 +        var fandPickup = io.fand.server.event.EntityEvents.fireEntityPickupItem(this, entity, itemStack);
@@ -395,7 +395,7 @@ index 3f2f2d096bfcf9b54f9570dc53678469c5f5d031..327f3c179f389bd512d14c420f5e05c4
 +                    }
                      level.destroyBlock(this.aboveFarmlandPos, true, body);
                  }
-
+ 
 @@ -119,6 +129,15 @@ public class HarvestFarmland extends Behavior<Villager> {
                          boolean ok = false;
                          if (!itemStack.isEmpty() && itemStack.is(ItemTags.VILLAGER_PLANTABLE_SEEDS) && itemStack.getItem() instanceof BlockItem blockItem) {
@@ -435,7 +435,7 @@ index b7cd7470f03b4807cf9767e98025018153bc7f83..555c52bf9e82892ba77be13996aee1a8
 +                    }
                      this.level.destroyBlock(pos, false);
                  }
-
+ 
                  this.mob.ate();
              } else {
                  BlockPos below = pos.below();
@@ -461,7 +461,7 @@ index 9a2e61a3c58d99a850be1e1986f0ea445f467434..e0a0d68ae85d3bad6118e7c68be9d346
 +++ b/net/minecraft/world/entity/animal/bee/Bee.java
 @@ -1008,6 +1008,16 @@ public class Bee extends Animal implements FlyingAnimal, NeutralMob {
                          }
-
+ 
                          if (growState != null) {
 +                            if (Bee.this.level() instanceof ServerLevel serverLevel
 +                                && !io.fand.server.event.EntityEvents.fireChangeBlock(
@@ -810,7 +810,7 @@ index 309d972c6536ce0628fcc76e6ac4143577a76bf1..de0d54d7b1bc88c1479a9941a6b2f0ef
 +                                    }
 +                                    level.setBlock(testPos, hostState, Block.UPDATE_ALL);
                                  }
-
+ 
                                  if (random.nextBoolean()) {
 diff --git a/net/minecraft/world/entity/monster/piglin/PiglinAi.java b/net/minecraft/world/entity/monster/piglin/PiglinAi.java
 index ff3a8c695de5df95ce98b46688ab7441bf743126..ec5f0e0a96b689d5b345aec87fdfbddac1f71335 100644
@@ -818,7 +818,7 @@ index ff3a8c695de5df95ce98b46688ab7441bf743126..ec5f0e0a96b689d5b345aec87fdfbdda
 +++ b/net/minecraft/world/entity/monster/piglin/PiglinAi.java
 @@ -336,6 +336,10 @@ public class PiglinAi {
      }
-
+ 
      protected static void pickUpItem(final ServerLevel level, final Piglin body, final ItemEntity itemEntity) {
 +        var fandPickup = io.fand.server.event.EntityEvents.fireEntityPickupItem(body, itemEntity, itemEntity.getItem());
 +        if (!fandPickup.allowed()) {
@@ -914,11 +914,11 @@ index 71372a7f81f43f1eb2422f855eabcfc9ce48d7fe..d2dd234e9670424b998b1b06c86272c8
 +                    return 0;
 +                }
                  CriteriaTriggers.FISHING_ROD_HOOKED.trigger((ServerPlayer)owner, rod, this, items);
-
+ 
                  for (ItemStack itemStack : items) {
 @@ -483,7 +510,23 @@ public class FishingHook extends Projectile {
              }
-
+ 
              if (this.onGround()) {
 +                if (owner instanceof ServerPlayer serverPlayer
 +                    && !io.fand.server.event.PlayerEvents.fireFish(
@@ -938,14 +938,14 @@ index 71372a7f81f43f1eb2422f855eabcfc9ce48d7fe..d2dd234e9670424b998b1b06c86272c8
 +                    Optional.empty(),
 +                    List.of());
              }
-
+ 
              this.discard();
 diff --git a/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownLingeringPotion.java b/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownLingeringPotion.java
 index 30d6cf54513fc8c0a67eac96f0d5e24fffd14559..ebc43cccd1c47cc6d8eb3f9cdf564d1f233419f7 100644
 --- a/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownLingeringPotion.java
 +++ b/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownLingeringPotion.java
 @@ -30,6 +30,9 @@ public class ThrownLingeringPotion extends AbstractThrownPotion {
-
+ 
      @Override
      public void onHitAsPotion(final ServerLevel level, final ItemStack potionItem, final HitResult hitResult) {
 +        if (!io.fand.server.event.EntityEvents.fireLingeringPotionSplash(this, level, potionItem, hitResult.getLocation())) {
@@ -960,7 +960,7 @@ index b01fc7ae3e886a6cd7704089a1d51519e08fb9b8..c59b676c9e1460694573d4a4bd063e51
 +++ b/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownSplashPotion.java
 @@ -1,6 +1,8 @@
  package net.minecraft.world.entity.projectile.throwableitemprojectile;
-
+ 
 +import java.util.LinkedHashMap;
  import java.util.List;
 +import java.util.Map;
@@ -972,7 +972,7 @@ index b01fc7ae3e886a6cd7704089a1d51519e08fb9b8..c59b676c9e1460694573d4a4bd063e51
          if (!entities.isEmpty()) {
              Entity effectSource = this.getEffectSource();
 +            Map<LivingEntity, Double> affectedEntities = new LinkedHashMap<>();
-
+ 
              for (LivingEntity entity : entities) {
                  if (entity.isAffectedByPotions()) {
                      double dist = potionAabb.distanceToSqr(entity.getBoundingBox().inflate(margin));
@@ -996,7 +996,7 @@ index b01fc7ae3e886a6cd7704089a1d51519e08fb9b8..c59b676c9e1460694573d4a4bd063e51
 +            for (Map.Entry<LivingEntity, Double> entry : fandAffectedEntities.entrySet()) {
 +                LivingEntity entity = entry.getKey();
 +                double scale = entry.getValue();
-
+ 
 -                        for (MobEffectInstance effectInstance : mobEffects) {
 -                            Holder<MobEffect> effect = effectInstance.getEffect();
 -                            if (effect.value().isInstantenous()) {
@@ -1031,7 +1031,7 @@ index ffb9f4b5a3e85b683c6354184832912d00e2d398..bb84159ccc7ce1225019f8720874aa49
 @@ -220,6 +220,11 @@ public abstract class Raider extends PatrollingMonster {
                  this.spawnAtLocation(level, current);
              }
-
+ 
 +            var fandPickup = io.fand.server.event.EntityEvents.fireEntityPickupItem(this, entity, itemStack);
 +            if (!fandPickup.allowed()) {
 +                return;
@@ -1078,7 +1078,7 @@ index b2294c1230efe59906fa07e84e1c39f6a0e52947..a3ee3c7f2ae837226bf290551b9f5078
                      level.levelEvent(LevelEvent.PARTICLES_AND_SOUND_PLANT_GROWTH, relative, 15);
 @@ -64,9 +66,21 @@ public class BoneMealItem extends Item {
      }
-
+ 
      public static boolean growCrop(final ItemStack itemStack, final Level level, final BlockPos pos) {
 +        return growCrop(itemStack, level, pos, null);
 +    }
@@ -1100,7 +1100,7 @@ index b2294c1230efe59906fa07e84e1c39f6a0e52947..a3ee3c7f2ae837226bf290551b9f5078
                  }
 @@ -81,10 +95,28 @@ public class BoneMealItem extends Item {
      }
-
+ 
      public static boolean growWaterPlant(final ItemStack itemStack, final Level level, final BlockPos pos, final @Nullable Direction clickedFace) {
 +        return growWaterPlant(itemStack, level, pos, clickedFace, null);
 +    }
@@ -1125,7 +1125,7 @@ index b2294c1230efe59906fa07e84e1c39f6a0e52947..a3ee3c7f2ae837226bf290551b9f5078
 +                    return false;
 +                }
                  RandomSource random = level.getRandom();
-
+ 
                  label80:
 diff --git a/net/minecraft/world/item/EnderEyeItem.java b/net/minecraft/world/item/EnderEyeItem.java
 index b8a091a417c0433cf85f4a556e1899e17be359fc..7709815ee354825af9c3db7a933185406a2ac879 100644
@@ -1133,7 +1133,7 @@ index b8a091a417c0433cf85f4a556e1899e17be359fc..7709815ee354825af9c3db7a93318540
 +++ b/net/minecraft/world/item/EnderEyeItem.java
 @@ -1,6 +1,8 @@
  package net.minecraft.world.item;
-
+ 
  import net.minecraft.advancements.CriteriaTriggers;
 +import java.util.ArrayList;
 +import java.util.List;
@@ -1160,7 +1160,7 @@ index b8a091a417c0433cf85f4a556e1899e17be359fc..7709815ee354825af9c3db7a93318540
 +                        io.fand.api.event.block.PortalCreateEvent.Cause.END_EYE)) {
 +                    return InteractionResult.SUCCESS;
 +                }
-
+ 
                  for (int x = 0; x < 3; x++) {
                      for (int z = 0; z < 3; z++) {
 diff --git a/net/minecraft/world/item/FishingRodItem.java b/net/minecraft/world/item/FishingRodItem.java
@@ -1184,7 +1184,7 @@ index 3e8c36f7807c5f2beb8fbb949402a72833c023f7..4b5417a683083f8cad11ed1c4d8bc8b3
 +                }
 +                Projectile.spawnProjectile(hook, serverLevel, itemStack);
              }
-
+ 
              player.awardStat(Stats.ITEM_USED.get(this));
 diff --git a/net/minecraft/world/item/LeadItem.java b/net/minecraft/world/item/LeadItem.java
 index 863cab9e42b794524f2b13a8d70921c47778b376..80062fbed71ddc6d514be8db5749f3bd5d7f350e 100644
@@ -1192,7 +1192,7 @@ index 863cab9e42b794524f2b13a8d70921c47778b376..80062fbed71ddc6d514be8db5749f3bd
 +++ b/net/minecraft/world/item/LeadItem.java
 @@ -44,7 +44,12 @@ public class LeadItem extends Item {
              boolean anyLeashed = false;
-
+ 
              for (Leashable leashable : entitiesToLeash) {
 -                if (leashable.canHaveALeashAttachedTo(activeKnot)) {
 +                if (leashable.canHaveALeashAttachedTo(activeKnot)
@@ -1220,7 +1220,7 @@ index 0d58c1bdeb1a95300751cffd689873c413189f0c..f32aee9ab019cf398b04984c0bcf95fc
 @@ -102,25 +102,53 @@ public class LayeredCauldronBlock extends AbstractCauldronBlock {
          effectApplier.apply(InsideBlockEffectType.EXTINGUISH);
      }
-
+ 
 -    private void handleEntityOnFireInside(final BlockState state, final Level level, final BlockPos pos) {
 +    private void handleEntityOnFireInside(final BlockState state, final Level level, final BlockPos pos, final Entity entity) {
          if (this.precipitationType == Biome.Precipitation.SNOW) {
@@ -1236,7 +1236,7 @@ index 0d58c1bdeb1a95300751cffd689873c413189f0c..f32aee9ab019cf398b04984c0bcf95fc
 +            lowerFillLevel(state, level, pos, entity, io.fand.api.event.block.CauldronLevelChangeEvent.Cause.ENTITY_EXTINGUISH);
          }
      }
-
+ 
      public static void lowerFillLevel(final BlockState state, final Level level, final BlockPos pos) {
 +        lowerFillLevel(state, level, pos, null, io.fand.api.event.block.CauldronLevelChangeEvent.Cause.UNKNOWN);
 +    }
@@ -1257,7 +1257,7 @@ index 0d58c1bdeb1a95300751cffd689873c413189f0c..f32aee9ab019cf398b04984c0bcf95fc
          level.gameEvent(GameEvent.BLOCK_CHANGE, pos, GameEvent.Context.of(newState));
 +        return true;
      }
-
+ 
      @Override
      public void handlePrecipitation(final BlockState state, final Level level, final BlockPos pos, final Biome.Precipitation precipitation) {
          if (CauldronBlock.shouldHandlePrecipitation(level, precipitation) && state.getValue(LEVEL) != 3 && precipitation == this.precipitationType) {
@@ -1313,7 +1313,7 @@ index f547e0a5a40796ad471dc0e9a41307d063554016..b0710064726a840e4aafddf12c71d4ff
                      this.fizz(level, pos);
                      return false;
                  }
-
+ 
                  if (isOverSoulSoil && level.getBlockState(neighbourPos).is(Blocks.BLUE_ICE)) {
 -                    level.setBlockAndUpdate(pos, Blocks.BASALT.defaultBlockState());
 +                    BlockState newState = Blocks.BASALT.defaultBlockState();
@@ -1336,7 +1336,7 @@ index aa050a9483378ef3fc7628b96269ed6405652b05..016d82d5fc2419caa3fc11158ed83712
 +++ b/net/minecraft/world/level/block/SpongeBlock.java
 @@ -1,8 +1,11 @@
  package net.minecraft.world.level.block;
-
+ 
  import com.mojang.serialization.MapCodec;
 +import java.util.ArrayList;
 +import java.util.List;
@@ -1348,7 +1348,7 @@ index aa050a9483378ef3fc7628b96269ed6405652b05..016d82d5fc2419caa3fc11158ed83712
  import net.minecraft.tags.FluidTags;
 @@ -52,6 +55,13 @@ public class SpongeBlock extends Block {
      }
-
+ 
      private boolean removeWaterBreadthFirstSearch(final Level level, final BlockPos startPos) {
 +        if (level instanceof ServerLevel serverLevel) {
 +            List<BlockPos> absorbedPositions = collectAbsorbedWater(level, startPos);
@@ -1405,7 +1405,7 @@ index 29dc789b863f4339b362c690ae55bbb77c51ee57..80c9fde6076217f8e32db37a10bf1d2a
 +                setChanged(level, pos, selfState);
 +            }
          }
-
+ 
          boolean brewable = isBrewable(level.potionBrewing(), entity.items);
 diff --git a/net/minecraft/world/level/block/entity/HopperBlockEntity.java b/net/minecraft/world/level/block/entity/HopperBlockEntity.java
 index 5fb273ab47ca67dd3e7d6d2ab67061d2b95b8d16..710cae0039f70b479cf988c353cfad250e130365 100644
@@ -1424,7 +1424,7 @@ index 5fb273ab47ca67dd3e7d6d2ab67061d2b95b8d16..710cae0039f70b479cf988c353cfad25
          if (!fandPickup.allowed()) {
              return false;
 @@ -286,6 +291,11 @@ public class HopperBlockEntity extends RandomizableContainerBlockEntity implemen
-
+ 
      public static ItemStack addItem(final @Nullable Container from, final Container container, ItemStack itemStack, final @Nullable Direction direction) {
          if (from != null && !itemStack.isEmpty()) {
 +            var fandHopperMove = io.fand.server.inventory.InventoryEvents.fireHopperMoveItem(from, container, itemStack);
@@ -1441,7 +1441,7 @@ index 9958c1533759ad3bd4d31d2e892a8ecbc2f021f3..a22e3f892c6ad9f5956c3e82c0527372
 +++ b/net/minecraft/world/level/material/FlowingFluid.java
 @@ -260,8 +260,17 @@ public abstract class FlowingFluid extends Fluid {
      protected abstract boolean canConvertToSource(ServerLevel level);
-
+ 
      protected void spreadTo(final LevelAccessor level, final BlockPos pos, final BlockState state, final Direction direction, final FluidState target) {
 +        BlockPos sourcePos = pos.relative(direction.getOpposite());
          if (level instanceof ServerLevel serverLevel
@@ -1464,7 +1464,7 @@ index 175a34daea97b7d261f91c6fd187c126007af7f1..1247b47f564c1b8703c1c9fa57c38e3f
 +++ b/net/minecraft/world/level/portal/PortalForcer.java
 @@ -1,6 +1,8 @@
  package net.minecraft.world.level.portal;
-
+ 
  import java.util.Comparator;
 +import java.util.ArrayList;
 +import java.util.List;
@@ -1474,7 +1474,7 @@ index 175a34daea97b7d261f91c6fd187c126007af7f1..1247b47f564c1b8703c1c9fa57c38e3f
 @@ -135,6 +137,23 @@ public class PortalForcer {
              }
          }
-
+ 
 +        List<BlockPos> fandPortalBlocks = new ArrayList<>();
 +        for (int width = -1; width < 3; width++) {
 +            for (int height = -1; height < 4; height++) {
@@ -1501,14 +1501,14 @@ index e7634a5695b82a222183d2d1c1dcf26f91850839..6aaa8ba16c190a37a3df1a409e1c172f
 +++ b/net/minecraft/world/level/portal/PortalShape.java
 @@ -1,5 +1,7 @@
  package net.minecraft.world.level.portal;
-
+ 
 +import java.util.ArrayList;
 +import java.util.List;
  import java.util.Optional;
  import java.util.function.Predicate;
  import net.minecraft.core.BlockPos;
 @@ -188,8 +190,18 @@ public class PortalShape {
-
+ 
      public void createPortalBlocks(final LevelAccessor level) {
          BlockState portalState = Blocks.NETHER_PORTAL.defaultBlockState().setValue(NetherPortalBlock.AXIS, this.axis);
 +        List<BlockPos> portalBlocks = new ArrayList<>();
@@ -1525,5 +1525,5 @@ index e7634a5695b82a222183d2d1c1dcf26f91850839..6aaa8ba16c190a37a3df1a409e1c172f
 +        }
 +        portalBlocks.forEach(pos -> level.setBlock(pos, portalState, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE));
      }
-
+ 
      public boolean isComplete() {

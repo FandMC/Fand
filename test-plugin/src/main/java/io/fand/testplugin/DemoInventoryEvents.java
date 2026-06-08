@@ -6,10 +6,12 @@ import io.fand.api.event.Listener;
 import io.fand.api.event.Subscribe;
 import io.fand.api.event.inventory.BrewEvent;
 import io.fand.api.event.inventory.BrewingStandFuelEvent;
+import io.fand.api.event.inventory.BlockCookEvent;
 import io.fand.api.event.inventory.CraftItemEvent;
 import io.fand.api.event.inventory.EnchantItemEvent;
 import io.fand.api.event.inventory.FurnaceBurnEvent;
 import io.fand.api.event.inventory.FurnaceExtractEvent;
+import io.fand.api.event.inventory.FurnaceStartSmeltEvent;
 import io.fand.api.event.inventory.FurnaceSmeltEvent;
 import io.fand.api.event.inventory.HopperMoveItemEvent;
 import io.fand.api.event.inventory.HopperPickupItemEvent;
@@ -223,6 +225,27 @@ final class DemoInventoryEvents implements Listener {
             logger.info("Furnace burn: {},{},{} fuel={} burnTime={}",
                     event.block().x(), event.block().y(), event.block().z(),
                     stackName(event.fuel()), event.burnTime());
+        }
+    }
+
+    @Subscribe
+    public void onFurnaceStartSmelt(FurnaceStartSmeltEvent event) {
+        if (context.config().getBoolean("features.log-workstation-events", false)) {
+            logger.info("Furnace start smelt: {},{},{} source={} recipe={} totalCookTime={}",
+                    event.block().x(), event.block().y(), event.block().z(),
+                    stackName(event.source()),
+                    event.recipe().map(recipe -> recipe.key().asString()).orElse("none"),
+                    event.totalCookTime());
+        }
+    }
+
+    @Subscribe
+    public void onBlockCook(BlockCookEvent event) {
+        if (context.config().getBoolean("features.log-workstation-events", false)) {
+            logger.info("Block cook: {},{},{} source={} result={}",
+                    event.block().x(), event.block().y(), event.block().z(),
+                    stackName(event.source()),
+                    stackName(event.result()));
         }
     }
 

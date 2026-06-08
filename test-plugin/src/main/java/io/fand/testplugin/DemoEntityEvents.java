@@ -7,7 +7,11 @@ import io.fand.api.event.Listener;
 import io.fand.api.event.Subscribe;
 import io.fand.api.event.entity.EntityBreedEvent;
 import io.fand.api.event.entity.EntityChangeBlockEvent;
+import io.fand.api.event.entity.EntityCombustByBlockEvent;
+import io.fand.api.event.entity.EntityCombustByEntityEvent;
 import io.fand.api.event.entity.EntityCombustEvent;
+import io.fand.api.event.entity.EntityCreatePortalEvent;
+import io.fand.api.event.entity.EntityDamageByBlockEvent;
 import io.fand.api.event.entity.EntityDamageByEntityEvent;
 import io.fand.api.event.entity.EntityDeathEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
@@ -15,7 +19,9 @@ import io.fand.api.event.entity.EntityDropItemEvent;
 import io.fand.api.event.entity.EntityExplodeEvent;
 import io.fand.api.event.entity.EntityMountEvent;
 import io.fand.api.event.entity.EntityPickupItemEvent;
+import io.fand.api.event.entity.EntityPortalEnterEvent;
 import io.fand.api.event.entity.EntityPortalEvent;
+import io.fand.api.event.entity.EntityPortalExitEvent;
 import io.fand.api.event.entity.EntityPotionEffectEvent;
 import io.fand.api.event.entity.EntityRegainHealthEvent;
 import io.fand.api.event.entity.EntityRemoveEvent;
@@ -24,6 +30,7 @@ import io.fand.api.event.entity.EntityShootBowEvent;
 import io.fand.api.event.entity.EntitySpawnEvent;
 import io.fand.api.event.entity.EntityTameEvent;
 import io.fand.api.event.entity.EntityTargetEvent;
+import io.fand.api.event.entity.EntityTargetLivingEntityEvent;
 import io.fand.api.event.entity.EntityTeleportEvent;
 import io.fand.api.event.entity.EntityTransformEvent;
 import io.fand.api.event.entity.ExplosionPrimeEvent;
@@ -145,6 +152,32 @@ final class DemoEntityEvents implements Listener {
     }
 
     @Subscribe
+    public void onEntityPortalEnter(EntityPortalEnterEvent event) {
+        if (context.config().getBoolean("features.log-entity-teleports", false)) {
+            logger.info("Entity portal enter: {} at {}",
+                    event.entity().type().asString(), compactLocation(event.location()));
+        }
+    }
+
+    @Subscribe
+    public void onEntityPortalExit(EntityPortalExitEvent event) {
+        if (context.config().getBoolean("features.log-entity-teleports", false)) {
+            logger.info("Entity portal exit: {} {} -> {} after={}",
+                    event.entity().type().asString(),
+                    compactLocation(event.from()),
+                    compactLocation(event.to()),
+                    compactLocation(event.after()));
+        }
+    }
+
+    @Subscribe
+    public void onEntityCreatePortal(EntityCreatePortalEvent event) {
+        if (context.config().getBoolean("features.log-entity-teleports", false)) {
+            logger.info("Entity created portal: {} blocks={}", event.entity().type().asString(), event.blocks().size());
+        }
+    }
+
+    @Subscribe
     public void onExplosionPrime(ExplosionPrimeEvent event) {
         if (context.config().getBoolean("protections.limit-explosion-radius", true) && event.radius() > 8.0F) {
             event.setRadius(8.0F);
@@ -173,6 +206,30 @@ final class DemoEntityEvents implements Listener {
     }
 
     @Subscribe
+    public void onEntityCombustByBlock(EntityCombustByBlockEvent event) {
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            logger.info("Entity combust by block: {} block={},{},{} duration={} cause={}",
+                    event.entity().type().asString(),
+                    event.combuster().x(),
+                    event.combuster().y(),
+                    event.combuster().z(),
+                    trim(event.durationSeconds()),
+                    event.cause());
+        }
+    }
+
+    @Subscribe
+    public void onEntityCombustByEntity(EntityCombustByEntityEvent event) {
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            logger.info("Entity combust by entity: {} source={} duration={} cause={}",
+                    event.entity().type().asString(),
+                    event.combuster().type().asString(),
+                    trim(event.durationSeconds()),
+                    event.cause());
+        }
+    }
+
+    @Subscribe
     public void onEntityRegainHealth(EntityRegainHealthEvent event) {
         if (context.config().getBoolean("features.log-entity-detail-events", false)) {
             logger.info("Entity heal: {} amount={} cause={}",
@@ -186,6 +243,19 @@ final class DemoEntityEvents implements Listener {
             logger.info("Entity attacked: {} <- {} cause={} amount={}",
                     event.entity().type().asString(),
                     event.damager().type().asString(),
+                    event.cause(),
+                    trim(event.amount()));
+        }
+    }
+
+    @Subscribe
+    public void onEntityDamageByBlock(EntityDamageByBlockEvent event) {
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            logger.info("Entity block damage: {} <- {},{},{} cause={} amount={}",
+                    event.entity().type().asString(),
+                    event.damager().x(),
+                    event.damager().y(),
+                    event.damager().z(),
                     event.cause(),
                     trim(event.amount()));
         }
@@ -229,6 +299,16 @@ final class DemoEntityEvents implements Listener {
             logger.info("Entity target: {} -> {} cause={}",
                     event.entity().type().asString(),
                     event.target().map(entity -> entity.type().asString()).orElse("none"),
+                    event.cause());
+        }
+    }
+
+    @Subscribe
+    public void onEntityTargetLiving(EntityTargetLivingEntityEvent event) {
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            logger.info("Entity target living: {} -> {} cause={}",
+                    event.entity().type().asString(),
+                    event.livingTarget().type().asString(),
                     event.cause());
         }
     }

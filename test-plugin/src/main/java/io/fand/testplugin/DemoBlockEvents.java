@@ -7,6 +7,7 @@ import io.fand.api.event.Listener;
 import io.fand.api.event.Subscribe;
 import io.fand.api.event.block.BlockBreakEvent;
 import io.fand.api.event.block.BlockBurnEvent;
+import io.fand.api.event.block.BlockCanBuildEvent;
 import io.fand.api.event.block.BlockChangeEvent;
 import io.fand.api.event.block.BlockDispenseEvent;
 import io.fand.api.event.block.BlockExplodeEvent;
@@ -16,6 +17,7 @@ import io.fand.api.event.block.BlockFormEvent;
 import io.fand.api.event.block.BlockFromToEvent;
 import io.fand.api.event.block.BlockGrowEvent;
 import io.fand.api.event.block.BlockIgniteEvent;
+import io.fand.api.event.block.BlockMultiPlaceEvent;
 import io.fand.api.event.block.BlockPhysicsEvent;
 import io.fand.api.event.block.BlockPistonExtendEvent;
 import io.fand.api.event.block.BlockPistonPushEvent;
@@ -57,6 +59,33 @@ final class DemoBlockEvents implements Listener {
                 && blockName(event.placedType()).equals("minecraft:tnt")) {
             event.setCancelled(true);
             event.player().sendMessage(Component.text("test-plugin cancelled TNT placement.", NamedTextColor.RED));
+        }
+    }
+
+    @Subscribe
+    public void onBlockCanBuild(BlockCanBuildEvent event) {
+        if (context.config().getBoolean("features.log-block-detail-events", false)) {
+            logger.info("Block can-build: {},{},{} type={} player={} item={} buildable={}",
+                    event.block().x(),
+                    event.block().y(),
+                    event.block().z(),
+                    blockName(event.blockType()),
+                    event.player().map(player -> player.name()).orElse("none"),
+                    stackName(event.item()),
+                    event.buildable());
+        }
+    }
+
+    @Subscribe
+    public void onBlockMultiPlace(BlockMultiPlaceEvent event) {
+        if (context.config().getBoolean("features.log-block-detail-events", false)) {
+            logger.info("{} placed multi-block {} at {},{},{} blocks={}",
+                    event.player().name(),
+                    blockName(event.placedType()),
+                    event.block().x(),
+                    event.block().y(),
+                    event.block().z(),
+                    event.blocks().size());
         }
     }
 

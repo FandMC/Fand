@@ -13,7 +13,7 @@ import java.util.Objects;
  * Cancelling the event aborts the placement; the placing item is not consumed
  * and the client view is resynced.
  */
-public final class BlockPlaceEvent implements Event, Cancellable {
+public class BlockPlaceEvent implements Event, Cancellable {
 
     private final Player player;
     private final Block block;

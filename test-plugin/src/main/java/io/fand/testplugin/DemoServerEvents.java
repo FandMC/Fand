@@ -2,7 +2,9 @@ package io.fand.testplugin;
 
 import io.fand.api.event.Listener;
 import io.fand.api.event.Subscribe;
+import io.fand.api.event.player.AsyncPlayerPreLoginEvent;
 import io.fand.api.event.player.PlayerLoginEvent;
+import io.fand.api.event.player.PlayerPreLoginEvent;
 import io.fand.api.event.server.ServerListPingEvent;
 import io.fand.api.plugin.PluginContext;
 import net.kyori.adventure.text.Component;
@@ -17,6 +19,20 @@ final class DemoServerEvents implements Listener {
     DemoServerEvents(PluginContext context) {
         this.context = context;
         this.logger = context.logger();
+    }
+
+    @Subscribe
+    public void onAsyncPlayerPreLogin(AsyncPlayerPreLoginEvent event) {
+        if (context.config().getBoolean("features.log-server-events", false)) {
+            logger.info("Async pre-login check: {} {} result={}", event.name(), event.address(), event.result());
+        }
+    }
+
+    @Subscribe
+    public void onPlayerPreLogin(PlayerPreLoginEvent event) {
+        if (context.config().getBoolean("features.log-server-events", false)) {
+            logger.info("Pre-login check: {} {} result={}", event.name(), event.address(), event.result());
+        }
     }
 
     @Subscribe

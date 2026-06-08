@@ -9,7 +9,7 @@ import java.util.Optional;
 /**
  * Fired on the server thread before a mob changes its current target.
  */
-public final class EntityTargetEvent implements Event, Cancellable {
+public class EntityTargetEvent implements Event, Cancellable {
 
     private final LivingEntity entity;
     private final Optional<LivingEntity> oldTarget;

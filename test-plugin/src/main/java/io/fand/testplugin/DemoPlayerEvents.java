@@ -8,14 +8,18 @@ import io.fand.api.event.Listener;
 import io.fand.api.event.Subscribe;
 import io.fand.api.event.entity.EntityDamageEvent;
 import io.fand.api.event.player.PlayerAdvancementDoneEvent;
+import io.fand.api.event.player.PlayerArmorStandManipulateEvent;
 import io.fand.api.event.player.PlayerBedEnterEvent;
 import io.fand.api.event.player.PlayerBedLeaveEvent;
 import io.fand.api.event.player.PlayerBucketEmptyEvent;
 import io.fand.api.event.player.PlayerBucketFillEvent;
+import io.fand.api.event.player.PlayerChangedMainHandEvent;
 import io.fand.api.event.player.PlayerChangedWorldEvent;
 import io.fand.api.event.player.PlayerClientBrandEvent;
 import io.fand.api.event.player.PlayerDeathEvent;
 import io.fand.api.event.player.PlayerDropItemEvent;
+import io.fand.api.event.player.PlayerEditBookEvent;
+import io.fand.api.event.player.PlayerEggThrowEvent;
 import io.fand.api.event.player.PlayerExperienceChangeEvent;
 import io.fand.api.event.player.PlayerFoodLevelChangeEvent;
 import io.fand.api.event.player.PlayerGameModeChangeEvent;
@@ -27,18 +31,22 @@ import io.fand.api.event.player.PlayerItemDamageEvent;
 import io.fand.api.event.player.PlayerItemHeldEvent;
 import io.fand.api.event.player.PlayerKickEvent;
 import io.fand.api.event.player.PlayerLeashEntityEvent;
+import io.fand.api.event.player.PlayerLevelChangeEvent;
 import io.fand.api.event.player.PlayerLocaleChangeEvent;
 import io.fand.api.event.player.PlayerMoveEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
 import io.fand.api.event.player.PlayerPortalEvent;
+import io.fand.api.event.player.PlayerRecipeDiscoverEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
 import io.fand.api.event.player.PlayerResourcePackStatusEvent;
 import io.fand.api.event.player.PlayerShearEntityEvent;
+import io.fand.api.event.player.PlayerStatisticIncrementEvent;
 import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
 import io.fand.api.event.player.PlayerToggleSneakEvent;
 import io.fand.api.event.player.PlayerToggleSprintEvent;
 import io.fand.api.event.player.PlayerUnleashEntityEvent;
+import io.fand.api.event.player.PlayerVelocityEvent;
 import io.fand.api.plugin.PluginContext;
 import java.util.Set;
 import java.util.UUID;
@@ -124,6 +132,13 @@ final class DemoPlayerEvents implements Listener {
     }
 
     @Subscribe
+    public void onLevelChange(PlayerLevelChangeEvent event) {
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} level {} -> {}", event.player().name(), event.oldLevel(), event.newLevel());
+        }
+    }
+
+    @Subscribe
     public void onMove(PlayerMoveEvent event) {
         if (context.config().getBoolean("features.log-player-move-events", false)) {
             logger.info("{} moved {} -> {}",
@@ -136,6 +151,40 @@ final class DemoPlayerEvents implements Listener {
         if (isKitNavigator(event.offHandItem())) {
             event.setCancelled(true);
             event.player().sendMessage(Component.text("The kit navigator cannot be moved to off-hand.", NamedTextColor.YELLOW));
+        }
+    }
+
+    @Subscribe
+    public void onVelocity(PlayerVelocityEvent event) {
+        double speedSquared = event.x() * event.x() + event.y() * event.y() + event.z() * event.z();
+        if (context.config().getBoolean("protections.limit-player-velocity", true) && speedSquared > 100.0) {
+            event.setVelocity(0.0, Math.min(event.y(), 1.0), 0.0);
+            event.player().sendActionBar(Component.text("Extreme velocity was limited by the test plugin.", NamedTextColor.YELLOW));
+        }
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} velocity {},{},{}", event.player().name(), trim(event.x()), trim(event.y()), trim(event.z()));
+        }
+    }
+
+    @Subscribe
+    public void onChangedMainHand(PlayerChangedMainHandEvent event) {
+        if (context.config().getBoolean("features.log-player-state-events", false)) {
+            logger.info("{} main hand {} -> {}", event.player().name(), event.oldMainHand(), event.newMainHand());
+        }
+    }
+
+    @Subscribe
+    public void onStatisticIncrement(PlayerStatisticIncrementEvent event) {
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} stat {} {} -> {}",
+                    event.player().name(), event.statistic().asString(), event.previousValue(), event.newValue());
+        }
+    }
+
+    @Subscribe
+    public void onRecipeDiscover(PlayerRecipeDiscoverEvent event) {
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} discovered recipes {}", event.player().name(), event.recipes().size());
         }
     }
 
@@ -319,6 +368,37 @@ final class DemoPlayerEvents implements Listener {
                     event.entity().type().asString(),
                     event.holder().map(entity -> entity.type().asString()).orElse("none"),
                     event.dropLead());
+        }
+    }
+
+    @Subscribe
+    public void onArmorStandManipulate(PlayerArmorStandManipulateEvent event) {
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} armor stand slot={} playerItem={} standItem={}",
+                    event.player().name(),
+                    event.slot(),
+                    stackName(event.playerItem()),
+                    stackName(event.armorStandItem()));
+        }
+    }
+
+    @Subscribe
+    public void onEditBook(PlayerEditBookEvent event) {
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} edited book slot={} signing={} title={} new={}",
+                    event.player().name(),
+                    event.slot(),
+                    event.signing(),
+                    event.title().orElse(""),
+                    stackName(event.newBook()));
+        }
+    }
+
+    @Subscribe
+    public void onEggThrow(PlayerEggThrowEvent event) {
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} egg throw hatching={} count={}",
+                    event.player().name(), event.hatching(), event.hatchCount());
         }
     }
 

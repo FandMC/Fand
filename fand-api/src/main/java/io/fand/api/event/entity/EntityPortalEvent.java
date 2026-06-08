@@ -12,7 +12,7 @@ import java.util.Objects;
  * <p>Listeners may cancel the portal transfer or replace the destination.
  * Player portal transfers use {@link io.fand.api.event.player.PlayerPortalEvent}.
  */
-public final class EntityPortalEvent implements Event, Cancellable {
+public class EntityPortalEvent implements Event, Cancellable {
 
     private final Entity entity;
     private final Location from;

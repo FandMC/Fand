@@ -1,16 +1,22 @@
 package io.fand.server.event;
 
 import io.fand.api.event.entity.EntityCombustEvent;
+import io.fand.api.event.entity.EntityCombustByBlockEvent;
+import io.fand.api.event.entity.EntityCombustByEntityEvent;
 import io.fand.api.event.entity.EntityBreedEvent;
 import io.fand.api.event.entity.EntityChangeBlockEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
 import io.fand.api.event.entity.EntityDropItemEvent;
+import io.fand.api.event.entity.EntityCreatePortalEvent;
+import io.fand.api.event.entity.EntityDamageByBlockEvent;
 import io.fand.api.event.entity.EntityDamageByEntityEvent;
 import io.fand.api.event.entity.EntityDamageEvent;
 import io.fand.api.event.entity.EntityExplodeEvent;
 import io.fand.api.event.entity.EntityMountEvent;
 import io.fand.api.event.entity.EntityPickupItemEvent;
 import io.fand.api.event.entity.EntityPortalEvent;
+import io.fand.api.event.entity.EntityPortalEnterEvent;
+import io.fand.api.event.entity.EntityPortalExitEvent;
 import io.fand.api.event.entity.EntityPotionEffectEvent;
 import io.fand.api.event.entity.EntityRegainHealthEvent;
 import io.fand.api.event.entity.EntityRemoveEvent;
@@ -19,6 +25,7 @@ import io.fand.api.event.entity.EntityShootBowEvent;
 import io.fand.api.event.entity.EntitySpawnEvent;
 import io.fand.api.event.entity.EntityTameEvent;
 import io.fand.api.event.entity.EntityTargetEvent;
+import io.fand.api.event.entity.EntityTargetLivingEntityEvent;
 import io.fand.api.event.entity.EntityTeleportEvent;
 import io.fand.api.event.entity.EntityTransformEvent;
 import io.fand.api.event.entity.EntityDeathEvent;
@@ -89,6 +96,7 @@ public final class EntityEvents {
     private static final Logger LOGGER = LoggerFactory.getLogger(EntityEvents.class);
     private static final ThreadLocal<EntityRegainHealthEvent.Cause> NEXT_HEAL_CAUSE = new ThreadLocal<>();
     private static final ThreadLocal<EntityTeleportEvent.Cause> NEXT_TELEPORT_CAUSE = new ThreadLocal<>();
+    private static final ThreadLocal<BlockPos> NEXT_BLOCK_DAMAGE_SOURCE = new ThreadLocal<>();
 
     private EntityEvents() {
     }
@@ -152,7 +160,8 @@ public final class EntityEvents {
         var bus = FandHooks.events();
         boolean hasGenericListeners = bus.hasListeners(EntityDamageEvent.class);
         boolean hasByEntityListeners = bus.hasListeners(EntityDamageByEntityEvent.class);
-        if (!hasGenericListeners && !hasByEntityListeners) {
+        boolean hasByBlockListeners = bus.hasListeners(EntityDamageByBlockEvent.class);
+        if (!hasGenericListeners && !hasByEntityListeners && !hasByBlockListeners) {
             return damage;
         }
         var victim = FandHooks.wrapLivingEntity(entity);
@@ -165,17 +174,27 @@ public final class EntityEvents {
         var attacker = Optional.ofNullable(source.getEntity())
                 .filter(candidate -> candidate instanceof net.minecraft.world.entity.LivingEntity)
                 .map(candidate -> FandHooks.wrapLivingEntity((net.minecraft.world.entity.LivingEntity) candidate));
-        if (attacker.isEmpty() && !hasGenericListeners) {
+        BlockPos explicitBlockSource = NEXT_BLOCK_DAMAGE_SOURCE.get();
+        var blockSource = !(entity.level() instanceof ServerLevel serverLevel)
+                ? Optional.<io.fand.api.block.Block>empty()
+                : Optional.ofNullable(explicitBlockSource)
+                        .or(() -> Optional.ofNullable(source.sourcePositionRaw()).map(net.minecraft.core.BlockPos::containing))
+                        .flatMap(pos -> Optional.ofNullable(FandHooks.wrapWorld(serverLevel))
+                                .map(world -> new FandBlock(world, pos.getX(), pos.getY(), pos.getZ())));
+        if (attacker.isEmpty() && blockSource.isEmpty() && !hasGenericListeners) {
             return damage;
         }
         var cause = source.typeHolder().unwrapKey().map(key -> key.identifier().toString()).orElse("minecraft:generic");
         EntityDamageEvent event = attacker
                 .<EntityDamageEvent>map(damager -> new EntityDamageByEntityEvent(victim, cause, damage, damager, directEntity))
+                .or(() -> blockSource.map(block -> new EntityDamageByBlockEvent(victim, cause, damage, block)))
                 .orElseGet(() -> new EntityDamageEvent(victim, cause, damage, directEntity, Optional.empty()));
         FandHooks.fireOrLog(
                 bus,
                 event,
-                event instanceof EntityDamageByEntityEvent ? "EntityDamageByEntityEvent" : "EntityDamageEvent");
+                event instanceof EntityDamageByEntityEvent
+                        ? "EntityDamageByEntityEvent"
+                        : event instanceof EntityDamageByBlockEvent ? "EntityDamageByBlockEvent" : "EntityDamageEvent");
         if (event.cancelled()) {
             return null;
         }
@@ -184,6 +203,20 @@ public final class EntityEvents {
             adjusted = 0.0;
         }
         return (float) adjusted;
+    }
+
+    public static boolean withBlockDamageSource(BlockPos sourcePos, java.util.function.BooleanSupplier task) {
+        BlockPos previous = NEXT_BLOCK_DAMAGE_SOURCE.get();
+        NEXT_BLOCK_DAMAGE_SOURCE.set(Objects.requireNonNull(sourcePos, "sourcePos"));
+        try {
+            return task.getAsBoolean();
+        } finally {
+            if (previous == null) {
+                NEXT_BLOCK_DAMAGE_SOURCE.remove();
+            } else {
+                NEXT_BLOCK_DAMAGE_SOURCE.set(previous);
+            }
+        }
     }
 
     public static boolean fireSpawn(net.minecraft.world.entity.Entity entity, EntitySpawnEvent.Cause cause) {
@@ -248,22 +281,50 @@ public final class EntityEvents {
             int ticks,
             EntityCombustEvent.Cause cause
     ) {
+        return fireCombust(entity, ticks, cause, null, null);
+    }
+
+    public static int fireCombust(
+            net.minecraft.world.entity.Entity entity,
+            int ticks,
+            EntityCombustEvent.Cause cause,
+            net.minecraft.world.entity.@Nullable Entity sourceEntity,
+            @Nullable BlockPos sourceBlock
+    ) {
         if (ticks <= 0) {
             return ticks;
         }
         var bus = FandHooks.events();
-        if (!bus.hasListeners(EntityCombustEvent.class)) {
+        boolean hasGeneric = bus.hasListeners(EntityCombustEvent.class);
+        boolean hasByEntity = sourceEntity != null && bus.hasListeners(EntityCombustByEntityEvent.class);
+        boolean hasByBlock = sourceBlock != null && bus.hasListeners(EntityCombustByBlockEvent.class);
+        if (!hasGeneric && !hasByEntity && !hasByBlock) {
             return ticks;
         }
         var fandEntity = FandHooks.wrapEntity(entity);
         if (fandEntity == null) {
             return ticks;
         }
-        var event = new EntityCombustEvent(fandEntity, Optional.empty(), cause, ticks / 20.0F);
+        EntityCombustEvent event;
+        if (sourceEntity != null) {
+            var combuster = FandHooks.wrapEntity(sourceEntity);
+            if (combuster == null) {
+                return ticks;
+            }
+            event = new EntityCombustByEntityEvent(fandEntity, combuster, cause, ticks / 20.0F);
+        } else if (sourceBlock != null && entity.level() instanceof ServerLevel level) {
+            var world = FandHooks.wrapWorld(level);
+            if (world == null) {
+                return ticks;
+            }
+            event = new EntityCombustByBlockEvent(fandEntity, new FandBlock(world, sourceBlock.getX(), sourceBlock.getY(), sourceBlock.getZ()), cause, ticks / 20.0F);
+        } else {
+            event = new EntityCombustEvent(fandEntity, Optional.empty(), cause, ticks / 20.0F);
+        }
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {
-            LOGGER.warn("EntityCombustEvent listener failed", failure);
+            LOGGER.warn("{} listener failed", event.getClass().getSimpleName(), failure);
             return ticks;
         }
         return event.cancelled() ? 0 : Math.max(0, Math.round(event.durationSeconds() * 20.0F));
@@ -432,7 +493,9 @@ public final class EntityEvents {
             EntityTargetEvent.Cause cause
     ) {
         var bus = FandHooks.events();
-        if (!bus.hasListeners(EntityTargetEvent.class)) {
+        boolean hasGeneric = bus.hasListeners(EntityTargetEvent.class);
+        boolean hasLiving = target != null && bus.hasListeners(EntityTargetLivingEntityEvent.class);
+        if (!hasGeneric && !hasLiving) {
             return new TargetResult(true, target);
         }
         var fandEntity = FandHooks.wrapLivingEntity(entity);
@@ -443,11 +506,13 @@ public final class EntityEvents {
                 .map(FandHooks::wrapLivingEntity);
         Optional<io.fand.api.entity.LivingEntity> newTarget = Optional.ofNullable(target)
                 .map(FandHooks::wrapLivingEntity);
-        var event = new EntityTargetEvent(fandEntity, oldTarget, newTarget, cause);
+        EntityTargetEvent event = newTarget
+                .<EntityTargetEvent>map(living -> new EntityTargetLivingEntityEvent(fandEntity, oldTarget, living, cause))
+                .orElseGet(() -> new EntityTargetEvent(fandEntity, oldTarget, Optional.empty(), cause));
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {
-            LOGGER.warn("EntityTargetEvent listener failed", failure);
+            LOGGER.warn("{} listener failed", event.getClass().getSimpleName(), failure);
             return new TargetResult(true, target);
         }
         if (event.cancelled()) {
@@ -624,6 +689,100 @@ public final class EntityEvents {
                 transition.asPassenger(),
                 java.util.Set.of(),
                 transition.postTeleportTransition());
+    }
+
+    public static void firePortalEnter(net.minecraft.world.entity.Entity entity, BlockPos pos) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(EntityPortalEnterEvent.class) || !(entity.level() instanceof ServerLevel level)) {
+            return;
+        }
+        var fandEntity = FandHooks.wrapEntity(entity);
+        var world = FandHooks.wrapWorld(level);
+        if (fandEntity == null || world == null) {
+            return;
+        }
+        try {
+            bus.fire(new EntityPortalEnterEvent(
+                    fandEntity,
+                    new Location(world, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, entity.getYRot(), entity.getXRot())));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityPortalEnterEvent listener failed", failure);
+        }
+    }
+
+    public static @Nullable TeleportTransition firePortalExit(
+            net.minecraft.world.entity.Entity entity,
+            TeleportTransition transition
+    ) {
+        if (entity instanceof net.minecraft.server.level.ServerPlayer) {
+            return transition;
+        }
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(EntityPortalExitEvent.class)) {
+            return transition;
+        }
+        var fandEntity = FandHooks.wrapEntity(entity);
+        var fromWorld = entity.level() instanceof ServerLevel serverLevel ? FandHooks.wrapWorld(serverLevel) : null;
+        var toWorld = FandHooks.wrapWorld(transition.newLevel());
+        if (fandEntity == null || fromWorld == null || toWorld == null) {
+            return transition;
+        }
+        PositionMoveRotation absolute = PositionMoveRotation.calculateAbsolute(
+                PositionMoveRotation.of(entity),
+                PositionMoveRotation.of(transition),
+                transition.relatives());
+        var from = new Location(fromWorld, entity.getX(), entity.getY(), entity.getZ(), entity.getYRot(), entity.getXRot());
+        var to = new Location(toWorld, absolute.position().x, absolute.position().y, absolute.position().z, absolute.yRot(), absolute.xRot());
+        var event = new EntityPortalExitEvent(fandEntity, from, to, to);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityPortalExitEvent listener failed", failure);
+            return transition;
+        }
+        if (event.cancelled()) {
+            return null;
+        }
+        if (sameLocation(to, event.after())) {
+            return transition;
+        }
+        ServerLevel level = resolveLevel(event.after().world(), transition.newLevel());
+        if (level == null) {
+            LOGGER.warn("EntityPortalExitEvent targeted an unloaded world: {}", event.after().world().key().asString());
+            return transition;
+        }
+        return new TeleportTransition(
+                level,
+                new Vec3(event.after().x(), event.after().y(), event.after().z()),
+                transition.deltaMovement(),
+                event.after().yaw(),
+                event.after().pitch(),
+                transition.missingRespawnBlock(),
+                transition.asPassenger(),
+                java.util.Set.of(),
+                transition.postTeleportTransition());
+    }
+
+    public static boolean fireCreatePortal(net.minecraft.world.entity.Entity entity, ServerLevel level, List<BlockPos> positions) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(EntityCreatePortalEvent.class)) {
+            return true;
+        }
+        var fandEntity = FandHooks.wrapEntity(entity);
+        var world = FandHooks.wrapWorld(level);
+        if (fandEntity == null || world == null) {
+            return true;
+        }
+        var event = new EntityCreatePortalEvent(
+                fandEntity,
+                positions.stream().map(pos -> new FandBlock(world, pos.getX(), pos.getY(), pos.getZ())).toList());
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityCreatePortalEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
     }
 
     public static boolean fireItemDespawn(net.minecraft.world.entity.item.ItemEntity entity, int age) {

@@ -1,6 +1,7 @@
 package io.fand.server.event;
 
 import io.fand.api.event.block.BlockBurnEvent;
+import io.fand.api.event.block.BlockCanBuildEvent;
 import io.fand.api.event.block.BlockChangeEvent;
 import io.fand.api.event.block.BlockDispenseEvent;
 import io.fand.api.event.block.BlockExplodeEvent;
@@ -11,10 +12,12 @@ import io.fand.api.event.block.BlockFace;
 import io.fand.api.event.block.BlockFromToEvent;
 import io.fand.api.event.block.BlockGrowEvent;
 import io.fand.api.event.block.BlockIgniteEvent;
+import io.fand.api.event.block.BlockMultiPlaceEvent;
 import io.fand.api.event.block.BlockPhysicsEvent;
 import io.fand.api.event.block.BlockPistonExtendEvent;
 import io.fand.api.event.block.BlockPistonPushEvent;
 import io.fand.api.event.block.BlockPistonRetractEvent;
+import io.fand.api.event.block.BlockPlaceEvent;
 import io.fand.api.event.block.BlockRedstoneEvent;
 import io.fand.api.event.block.BlockSpreadEvent;
 import io.fand.api.event.block.CauldronLevelChangeEvent;
@@ -23,15 +26,21 @@ import io.fand.api.event.block.LeavesDecayEvent;
 import io.fand.api.event.block.PortalCreateEvent;
 import io.fand.api.event.block.SignChangeEvent;
 import io.fand.api.event.block.SpongeAbsorbEvent;
+import io.fand.api.event.world.StructureGrowEvent;
+import io.fand.api.component.DataComponentMap;
+import io.fand.api.world.Location;
 import io.fand.server.entity.FandPlayer;
 import io.fand.server.block.FandBlock;
 import io.fand.server.block.FandBlockType;
+import io.fand.server.component.BlockComponentStorage;
 import io.fand.server.hooks.FandHooks;
 import io.fand.server.item.FandItemStacks;
 import io.fand.server.world.FandWorld;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.BooleanSupplier;
 import net.minecraft.core.BlockPos;
@@ -53,6 +62,10 @@ public final class BlockEvents {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockEvents.class);
     private static final ThreadLocal<IgniteContext> IGNITE_CONTEXT = new ThreadLocal<>();
+    private static final ThreadLocal<StructureGrowContext> STRUCTURE_GROW_CONTEXT = new ThreadLocal<>();
+    private static final int STRUCTURE_GROW_RADIUS = 16;
+    private static final int STRUCTURE_GROW_BELOW = 1;
+    private static final int STRUCTURE_GROW_ABOVE = 40;
 
     private BlockEvents() {
     }
@@ -67,6 +80,84 @@ public final class BlockEvents {
                 IGNITE_CONTEXT.remove();
             } else {
                 IGNITE_CONTEXT.set(previous);
+            }
+        }
+    }
+
+    public static boolean withStructureGrowContext(@Nullable ServerPlayer player, boolean fromBonemeal, BooleanSupplier task) {
+        StructureGrowContext previous = STRUCTURE_GROW_CONTEXT.get();
+        StructureGrowContext current = new StructureGrowContext(player, fromBonemeal);
+        STRUCTURE_GROW_CONTEXT.set(current);
+        try {
+            return task.getAsBoolean() && !current.cancelled();
+        } finally {
+            if (previous == null) {
+                STRUCTURE_GROW_CONTEXT.remove();
+            } else {
+                STRUCTURE_GROW_CONTEXT.set(previous);
+            }
+        }
+    }
+
+    public static boolean hasStructureGrowListeners() {
+        return FandHooks.hasListeners(StructureGrowEvent.class);
+    }
+
+    public static @Nullable StructureGrowSnapshot captureStructureGrow(ServerLevel level, BlockPos origin) {
+        if (!hasStructureGrowListeners()) {
+            return null;
+        }
+        Map<BlockPos, BlockState> states = new LinkedHashMap<>();
+        Map<BlockPos, DataComponentMap> components = new LinkedHashMap<>();
+        BlockPos min = origin.offset(-STRUCTURE_GROW_RADIUS, -STRUCTURE_GROW_BELOW, -STRUCTURE_GROW_RADIUS);
+        BlockPos max = origin.offset(STRUCTURE_GROW_RADIUS, STRUCTURE_GROW_ABOVE, STRUCTURE_GROW_RADIUS);
+        for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
+            BlockPos immutable = pos.immutable();
+            states.put(immutable, level.getBlockState(immutable));
+            components.put(immutable, BlockComponentStorage.snapshot(level, immutable));
+        }
+        return new StructureGrowSnapshot(states, components);
+    }
+
+    public static boolean finishStructureGrow(ServerLevel level, BlockPos origin, @Nullable StructureGrowSnapshot snapshot) {
+        if (snapshot == null) {
+            return true;
+        }
+        List<BlockPos> changedPositions = new ArrayList<>();
+        for (Map.Entry<BlockPos, BlockState> entry : snapshot.states().entrySet()) {
+            if (!level.getBlockState(entry.getKey()).equals(entry.getValue())) {
+                changedPositions.add(entry.getKey());
+            }
+        }
+        if (changedPositions.isEmpty()) {
+            return true;
+        }
+        StructureGrowContext context = STRUCTURE_GROW_CONTEXT.get();
+        boolean allowed = fireStructureGrow(
+                level,
+                origin,
+                context == null ? null : context.player(),
+                context != null && context.fromBonemeal(),
+                changedPositions);
+        if (allowed) {
+            return true;
+        }
+        if (context != null) {
+            context.cancel();
+        }
+        restoreStructureGrow(level, snapshot);
+        return false;
+    }
+
+    public static void restoreStructureGrow(ServerLevel level, StructureGrowSnapshot snapshot) {
+        for (Map.Entry<BlockPos, BlockState> entry : snapshot.states().entrySet()) {
+            BlockPos pos = entry.getKey();
+            level.setBlock(pos, entry.getValue(), Block.UPDATE_ALL);
+            DataComponentMap components = snapshot.components().getOrDefault(pos, DataComponentMap.EMPTY);
+            if (components.isEmpty()) {
+                BlockComponentStorage.clear(level, pos);
+            } else {
+                BlockComponentStorage.put(level, pos, components);
             }
         }
     }
@@ -262,6 +353,104 @@ public final class BlockEvents {
             bus.fire(event);
         } catch (RuntimeException failure) {
             LOGGER.warn("BlockIgniteEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireCanBuild(
+            ServerLevel level,
+            BlockPos pos,
+            @Nullable ServerPlayer player,
+            net.minecraft.world.item.ItemStack itemStack,
+            BlockState stateForPlacement,
+            boolean buildable
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(BlockCanBuildEvent.class)) {
+            return buildable;
+        }
+        var world = FandHooks.wrapWorld(level);
+        if (world == null) {
+            return buildable;
+        }
+        Optional<io.fand.api.entity.Player> fandPlayer = Optional.ofNullable(player)
+                .map(serverPlayer -> FandHooks.findPlayer(serverPlayer.getUUID()));
+        var event = new BlockCanBuildEvent(
+                fandPlayer,
+                block(world, pos),
+                FandBlockType.of(stateForPlacement.getBlock()),
+                FandItemStacks.fromVanilla(itemStack),
+                buildable);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("BlockCanBuildEvent listener failed", failure);
+            return buildable;
+        }
+        return event.buildable();
+    }
+
+    public static boolean firePlace(
+            ServerLevel level,
+            BlockPos pos,
+            ServerPlayer player,
+            BlockState placedState,
+            BlockState replacedState
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(BlockPlaceEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        var world = FandHooks.wrapWorld(level);
+        if (fandPlayer == null || world == null) {
+            return true;
+        }
+        var event = new BlockPlaceEvent(
+                fandPlayer,
+                block(world, pos),
+                FandBlockType.of(placedState.getBlock()),
+                FandBlockType.of(replacedState.getBlock()));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("BlockPlaceEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireMultiPlace(
+            ServerLevel level,
+            BlockPos primaryPos,
+            ServerPlayer player,
+            BlockState placedState,
+            BlockState replacedState,
+            List<BlockPos> positions
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(BlockMultiPlaceEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        var world = FandHooks.wrapWorld(level);
+        if (fandPlayer == null || world == null) {
+            return true;
+        }
+        var event = new BlockMultiPlaceEvent(
+                fandPlayer,
+                block(world, primaryPos),
+                FandBlockType.of(placedState.getBlock()),
+                FandBlockType.of(replacedState.getBlock()),
+                positions.stream()
+                        .map(pos -> block(world, pos))
+                        .map(io.fand.api.block.Block.class::cast)
+                        .toList());
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("BlockMultiPlaceEvent listener failed", failure);
             return true;
         }
         return !event.cancelled();
@@ -518,6 +707,40 @@ public final class BlockEvents {
         return !event.cancelled();
     }
 
+    public static boolean fireStructureGrow(
+            ServerLevel level,
+            BlockPos origin,
+            @Nullable ServerPlayer player,
+            boolean fromBonemeal,
+            List<BlockPos> positions
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(StructureGrowEvent.class)) {
+            return true;
+        }
+        var world = FandHooks.wrapWorld(level);
+        if (world == null) {
+            return true;
+        }
+        Optional<io.fand.api.entity.Player> fandPlayer = Optional.ofNullable(player)
+                .map(serverPlayer -> FandHooks.findPlayer(serverPlayer.getUUID()));
+        var event = new StructureGrowEvent(
+                new Location(world, origin.getX() + 0.5, origin.getY(), origin.getZ() + 0.5, 0.0F, 0.0F),
+                fandPlayer,
+                fromBonemeal,
+                positions.stream()
+                        .map(pos -> block(world, pos))
+                        .map(io.fand.api.block.Block.class::cast)
+                        .toList());
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("StructureGrowEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
     public static boolean fireSpongeAbsorb(ServerLevel level, BlockPos spongePos, List<BlockPos> absorbedPositions) {
         var bus = FandHooks.events();
         if (!bus.hasListeners(SpongeAbsorbEvent.class)) {
@@ -671,5 +894,36 @@ public final class BlockEvents {
     }
 
     private record IgniteContext(BlockIgniteEvent.Cause cause, @Nullable BlockPos sourcePos) {
+    }
+
+    private static final class StructureGrowContext {
+
+        private final @Nullable ServerPlayer player;
+        private final boolean fromBonemeal;
+        private boolean cancelled;
+
+        private StructureGrowContext(@Nullable ServerPlayer player, boolean fromBonemeal) {
+            this.player = player;
+            this.fromBonemeal = fromBonemeal;
+        }
+
+        private @Nullable ServerPlayer player() {
+            return player;
+        }
+
+        private boolean fromBonemeal() {
+            return fromBonemeal;
+        }
+
+        private boolean cancelled() {
+            return cancelled;
+        }
+
+        private void cancel() {
+            this.cancelled = true;
+        }
+    }
+
+    public record StructureGrowSnapshot(Map<BlockPos, BlockState> states, Map<BlockPos, DataComponentMap> components) {
     }
 }

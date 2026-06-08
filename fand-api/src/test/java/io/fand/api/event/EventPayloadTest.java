@@ -9,6 +9,7 @@ import io.fand.api.entity.Player;
 import io.fand.api.block.Block;
 import io.fand.api.block.BlockType;
 import io.fand.api.event.block.BlockBurnEvent;
+import io.fand.api.event.block.BlockCanBuildEvent;
 import io.fand.api.event.block.BlockChangeEvent;
 import io.fand.api.event.block.BlockDispenseEvent;
 import io.fand.api.event.block.BlockExplodeEvent;
@@ -20,9 +21,11 @@ import io.fand.api.event.block.BlockIgniteEvent;
 import io.fand.api.event.block.BlockPhysicsEvent;
 import io.fand.api.event.block.BlockFace;
 import io.fand.api.event.block.BlockFromToEvent;
+import io.fand.api.event.block.BlockMultiPlaceEvent;
 import io.fand.api.event.block.BlockPistonExtendEvent;
 import io.fand.api.event.block.BlockPistonPushEvent;
 import io.fand.api.event.block.BlockPistonRetractEvent;
+import io.fand.api.event.block.BlockPlaceEvent;
 import io.fand.api.event.block.BlockRedstoneEvent;
 import io.fand.api.event.block.BlockSpreadEvent;
 import io.fand.api.event.block.CauldronLevelChangeEvent;
@@ -35,16 +38,22 @@ import io.fand.api.event.command.CommandExecuteEvent;
 import io.fand.api.event.command.TabCompleteEvent;
 import io.fand.api.event.entity.EntityBreedEvent;
 import io.fand.api.event.entity.EntityChangeBlockEvent;
+import io.fand.api.event.entity.EntityCombustByBlockEvent;
+import io.fand.api.event.entity.EntityCombustByEntityEvent;
 import io.fand.api.event.entity.EntityCombustEvent;
 import io.fand.api.event.entity.EntityDamageByEntityEvent;
+import io.fand.api.event.entity.EntityDamageByBlockEvent;
 import io.fand.api.event.entity.EntityDamageEvent;
 import io.fand.api.event.entity.EntityDeathEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
 import io.fand.api.event.entity.EntityDropItemEvent;
 import io.fand.api.event.entity.EntityExplodeEvent;
+import io.fand.api.event.entity.EntityCreatePortalEvent;
 import io.fand.api.event.entity.EntityMountEvent;
 import io.fand.api.event.entity.EntityPickupItemEvent;
+import io.fand.api.event.entity.EntityPortalEnterEvent;
 import io.fand.api.event.entity.EntityPortalEvent;
+import io.fand.api.event.entity.EntityPortalExitEvent;
 import io.fand.api.event.entity.EntityPotionEffectEvent;
 import io.fand.api.event.entity.EntityRegainHealthEvent;
 import io.fand.api.event.entity.EntityRemoveEvent;
@@ -53,6 +62,7 @@ import io.fand.api.event.entity.EntityShootBowEvent;
 import io.fand.api.event.entity.EntitySpawnEvent;
 import io.fand.api.event.entity.EntityTameEvent;
 import io.fand.api.event.entity.EntityTargetEvent;
+import io.fand.api.event.entity.EntityTargetLivingEntityEvent;
 import io.fand.api.event.entity.EntityTeleportEvent;
 import io.fand.api.event.entity.EntityTransformEvent;
 import io.fand.api.event.entity.ExplosionPrimeEvent;
@@ -68,11 +78,13 @@ import io.fand.api.event.entity.ProjectileHitEvent;
 import io.fand.api.event.entity.ProjectileLaunchEvent;
 import io.fand.api.event.inventory.BrewEvent;
 import io.fand.api.event.inventory.BrewingStandFuelEvent;
+import io.fand.api.event.inventory.BlockCookEvent;
 import io.fand.api.event.inventory.CraftItemEvent;
 import io.fand.api.event.inventory.EnchantItemEvent;
 import io.fand.api.event.inventory.EnchantmentOffer;
 import io.fand.api.event.inventory.FurnaceBurnEvent;
 import io.fand.api.event.inventory.FurnaceExtractEvent;
+import io.fand.api.event.inventory.FurnaceStartSmeltEvent;
 import io.fand.api.event.inventory.FurnaceSmeltEvent;
 import io.fand.api.event.inventory.HopperMoveItemEvent;
 import io.fand.api.event.inventory.HopperPickupItemEvent;
@@ -91,16 +103,22 @@ import io.fand.api.event.inventory.PrepareItemCraftEvent;
 import io.fand.api.event.inventory.PrepareTradeEvent;
 import io.fand.api.event.inventory.PrepareSmithingEvent;
 import io.fand.api.recipe.Recipe;
+import io.fand.api.recipe.RecipeType;
+import io.fand.api.event.player.AsyncPlayerPreLoginEvent;
 import io.fand.api.event.player.PlayerAdvancementDoneEvent;
+import io.fand.api.event.player.PlayerArmorStandManipulateEvent;
 import io.fand.api.event.player.PlayerBedEnterEvent;
 import io.fand.api.event.player.PlayerBedLeaveEvent;
 import io.fand.api.event.player.PlayerBucketEmptyEvent;
 import io.fand.api.event.player.PlayerBucketFillEvent;
+import io.fand.api.event.player.PlayerChangedMainHandEvent;
 import io.fand.api.event.player.PlayerChangedWorldEvent;
 import io.fand.api.event.player.PlayerCommandPreprocessEvent;
 import io.fand.api.event.player.PlayerClientBrandEvent;
 import io.fand.api.event.player.PlayerDeathEvent;
 import io.fand.api.event.player.PlayerDropItemEvent;
+import io.fand.api.event.player.PlayerEditBookEvent;
+import io.fand.api.event.player.PlayerEggThrowEvent;
 import io.fand.api.event.player.PlayerExperienceChangeEvent;
 import io.fand.api.event.player.PlayerFoodLevelChangeEvent;
 import io.fand.api.event.player.PlayerGameModeChangeEvent;
@@ -112,19 +130,24 @@ import io.fand.api.event.player.PlayerItemDamageEvent;
 import io.fand.api.event.player.PlayerItemHeldEvent;
 import io.fand.api.event.player.PlayerKickEvent;
 import io.fand.api.event.player.PlayerLeashEntityEvent;
+import io.fand.api.event.player.PlayerLevelChangeEvent;
 import io.fand.api.event.player.PlayerLocaleChangeEvent;
 import io.fand.api.event.player.PlayerLoginEvent;
 import io.fand.api.event.player.PlayerMoveEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
 import io.fand.api.event.player.PlayerPortalEvent;
+import io.fand.api.event.player.PlayerPreLoginEvent;
+import io.fand.api.event.player.PlayerRecipeDiscoverEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
 import io.fand.api.event.player.PlayerResourcePackStatusEvent;
 import io.fand.api.event.player.PlayerShearEntityEvent;
+import io.fand.api.event.player.PlayerStatisticIncrementEvent;
 import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
 import io.fand.api.event.player.PlayerToggleSneakEvent;
 import io.fand.api.event.player.PlayerToggleSprintEvent;
 import io.fand.api.event.player.PlayerUnleashEntityEvent;
+import io.fand.api.event.player.PlayerVelocityEvent;
 import io.fand.api.event.permission.PermissionCheckEvent;
 import io.fand.api.event.server.ServerListPingEvent;
 import io.fand.api.event.vehicle.VehicleCreateEvent;
@@ -135,6 +158,7 @@ import io.fand.api.event.vehicle.VehicleMoveEvent;
 import io.fand.api.event.world.ChunkLoadEvent;
 import io.fand.api.event.world.ChunkUnloadEvent;
 import io.fand.api.event.world.SpawnChangeEvent;
+import io.fand.api.event.world.StructureGrowEvent;
 import io.fand.api.event.world.ThunderChangeEvent;
 import io.fand.api.event.world.TimeSkipEvent;
 import io.fand.api.event.world.WeatherChangeEvent;
@@ -584,6 +608,59 @@ final class EventPayloadTest {
     }
 
     @Test
+    void newlySpecializedEntityEventsCarryTypedSourcesAndPortalState() {
+        var entity = proxy(Entity.class);
+        var living = proxy(LivingEntity.class);
+        var oldTarget = proxy(LivingEntity.class);
+        var target = proxy(LivingEntity.class);
+        var sourceEntity = proxy(Entity.class);
+        var block = proxy(Block.class);
+        var from = location("minecraft:overworld", 0, 64, 0);
+        var to = location("minecraft:the_nether", 1, 80, 1);
+        var after = location("minecraft:the_end", 2, 90, 2);
+
+        var targetEvent = new EntityTargetLivingEntityEvent(
+                living,
+                Optional.of(oldTarget),
+                target,
+                EntityTargetEvent.Cause.TARGET_ATTACKED_ENTITY);
+        var byBlockDamage = new EntityDamageByBlockEvent(living, "minecraft:cactus", 2.0, block);
+        byBlockDamage.setAmount(3.5);
+        byBlockDamage.setCancelled(true);
+        var combustBlock = new EntityCombustByBlockEvent(entity, block, EntityCombustEvent.Cause.FIRE, -1.0F);
+        combustBlock.setDurationSeconds(4.0F);
+        var combustEntity = new EntityCombustByEntityEvent(entity, sourceEntity, EntityCombustEvent.Cause.ATTACK, 2.0F);
+        combustEntity.setCancelled(true);
+        var portalEnter = new EntityPortalEnterEvent(entity, from);
+        var portalExit = new EntityPortalExitEvent(entity, from, to, to);
+        portalExit.setAfter(after);
+        portalExit.setCancelled(true);
+        var createPortal = new EntityCreatePortalEvent(entity, List.of(block));
+        createPortal.setCancelled(true);
+
+        assertThat(targetEvent).isInstanceOf(EntityTargetEvent.class);
+        assertThat(targetEvent.oldTarget()).contains(oldTarget);
+        assertThat(targetEvent.target()).contains(target);
+        assertThat(targetEvent.livingTarget()).isSameAs(target);
+        assertThat(byBlockDamage).isInstanceOf(EntityDamageEvent.class);
+        assertThat(byBlockDamage.damager()).isSameAs(block);
+        assertThat(byBlockDamage.amount()).isEqualTo(3.5);
+        assertThat(byBlockDamage.cancelled()).isTrue();
+        assertThat(combustBlock.combuster()).isSameAs(block);
+        assertThat(combustBlock.source()).isEmpty();
+        assertThat(combustBlock.durationSeconds()).isEqualTo(4.0F);
+        assertThat(combustEntity.combuster()).isSameAs(sourceEntity);
+        assertThat(combustEntity.source()).contains(sourceEntity);
+        assertThat(combustEntity.cancelled()).isTrue();
+        assertThat(portalEnter.location()).isSameAs(from);
+        assertThat(portalExit).isInstanceOf(EntityPortalEvent.class);
+        assertThat(portalExit.after()).isSameAs(after);
+        assertThat(portalExit.cancelled()).isTrue();
+        assertThat(createPortal.blocks()).containsExactly(block);
+        assertThat(createPortal.cancelled()).isTrue();
+    }
+
+    @Test
     void playerItemAndStateEventsCarryMutableFields() {
         var player = proxy(Player.class);
         var stone = stack("minecraft:stone", 1);
@@ -690,6 +767,92 @@ final class EventPayloadTest {
         assertThat(kick.cancelled()).isTrue();
         assertThat(gameMode.fromGameMode()).isEqualTo(GameMode.SURVIVAL);
         assertThat(gameMode.toGameMode()).isEqualTo(GameMode.ADVENTURE);
+    }
+
+    @Test
+    void newPlayerLifecycleAndStateEventsCarryMutableFields() {
+        var player = proxy(Player.class);
+        var entity = proxy(Entity.class);
+        var address = InetSocketAddress.createUnresolved("127.0.0.1", 25565);
+        var id = java.util.UUID.randomUUID();
+        var previousBook = stack("minecraft:writable_book", 1);
+        var signedBook = stack("minecraft:written_book", 1);
+        var recipe = new TestRecipe(Key.key("fand:test_recipe"), RecipeType.SHAPELESS, signedBook);
+
+        var asyncPreLogin = new AsyncPlayerPreLoginEvent(
+                id,
+                "Steve",
+                address,
+                AsyncPlayerPreLoginEvent.Result.ALLOWED,
+                Component.text("ok"));
+        asyncPreLogin.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, Component.text("no"));
+        asyncPreLogin.allow();
+        var preLogin = new PlayerPreLoginEvent(
+                id,
+                "Alex",
+                address,
+                PlayerPreLoginEvent.Result.ALLOWED,
+                Component.text("ok"));
+        preLogin.disallow(PlayerPreLoginEvent.Result.KICK_WHITELIST, Component.text("whitelist"));
+        var armorStand = new PlayerArmorStandManipulateEvent(
+                player,
+                entity,
+                PlayerArmorStandManipulateEvent.EquipmentSlot.HEAD,
+                stack("minecraft:diamond_helmet", 1),
+                ItemStack.EMPTY);
+        armorStand.setCancelled(true);
+        var editBook = new PlayerEditBookEvent(player, 3, previousBook, previousBook, Optional.of("Demo"), true);
+        editBook.setNewBook(signedBook);
+        editBook.setCancelled(true);
+        var egg = new PlayerEggThrowEvent(player, entity, false, -3);
+        egg.setHatching(true);
+        egg.setHatchCount(5);
+        var level = new PlayerLevelChangeEvent(player, 1, 7);
+        var velocity = new PlayerVelocityEvent(player, 1.0, 2.0, 3.0);
+        velocity.setVelocity(-1.0, 0.0, 0.5);
+        velocity.setCancelled(true);
+        var mainHand = new PlayerChangedMainHandEvent(
+                player,
+                PlayerChangedMainHandEvent.MainHand.LEFT,
+                PlayerChangedMainHandEvent.MainHand.RIGHT);
+        var statistic = new PlayerStatisticIncrementEvent(player, Key.key("minecraft:custom/jump"), 10, 11);
+        statistic.setNewValue(-1);
+        statistic.setCancelled(true);
+        var recipeDiscover = new PlayerRecipeDiscoverEvent(player, List.of(recipe));
+        recipeDiscover.setCancelled(true);
+
+        assertThat(asyncPreLogin.uniqueId()).isEqualTo(id);
+        assertThat(asyncPreLogin.address()).isSameAs(address);
+        assertThat(asyncPreLogin.result()).isEqualTo(AsyncPlayerPreLoginEvent.Result.ALLOWED);
+        assertThat(asyncPreLogin.kickMessage()).isEqualTo(Component.text("no"));
+        assertThat(preLogin.name()).isEqualTo("Alex");
+        assertThat(preLogin.result()).isEqualTo(PlayerPreLoginEvent.Result.KICK_WHITELIST);
+        assertThat(preLogin.kickMessage()).isEqualTo(Component.text("whitelist"));
+        assertThat(armorStand.slot()).isEqualTo(PlayerArmorStandManipulateEvent.EquipmentSlot.HEAD);
+        assertThat(armorStand.playerItem().type().key()).isEqualTo(Key.key("minecraft:diamond_helmet"));
+        assertThat(armorStand.cancelled()).isTrue();
+        assertThat(editBook.slot()).isEqualTo(3);
+        assertThat(editBook.previousBook()).isSameAs(previousBook);
+        assertThat(editBook.newBook()).isSameAs(signedBook);
+        assertThat(editBook.title()).contains("Demo");
+        assertThat(editBook.signing()).isTrue();
+        assertThat(editBook.cancelled()).isTrue();
+        assertThat(egg.hatching()).isTrue();
+        assertThat(egg.hatchCount()).isEqualTo(5);
+        assertThat(level.oldLevel()).isEqualTo(1);
+        assertThat(level.newLevel()).isEqualTo(7);
+        assertThat(velocity.x()).isEqualTo(-1.0);
+        assertThat(velocity.y()).isZero();
+        assertThat(velocity.z()).isEqualTo(0.5);
+        assertThat(velocity.cancelled()).isTrue();
+        assertThat(mainHand.oldMainHand()).isEqualTo(PlayerChangedMainHandEvent.MainHand.LEFT);
+        assertThat(mainHand.newMainHand()).isEqualTo(PlayerChangedMainHandEvent.MainHand.RIGHT);
+        assertThat(statistic.statistic()).isEqualTo(Key.key("minecraft:custom/jump"));
+        assertThat(statistic.previousValue()).isEqualTo(10);
+        assertThat(statistic.newValue()).isZero();
+        assertThat(statistic.cancelled()).isTrue();
+        assertThat(recipeDiscover.recipes()).containsExactly(recipe);
+        assertThat(recipeDiscover.cancelled()).isTrue();
     }
 
     @Test
@@ -1188,6 +1351,62 @@ final class EventPayloadTest {
         assertThat(permission.effectiveResult()).isTrue();
     }
 
+    @Test
+    void newlyAddedBlockInventoryAndWorldEventsCarryMutableFields() {
+        var player = proxy(Player.class);
+        var block = proxy(Block.class);
+        var otherBlock = proxy(Block.class);
+        var placedType = new TestBlockType(Key.key("minecraft:oak_door"));
+        var replacedType = new TestBlockType(Key.key("minecraft:air"));
+        var inventory = proxy(Inventory.class);
+        var source = stack("minecraft:raw_iron", 1);
+        var result = stack("minecraft:iron_ingot", 1);
+        var replacement = stack("minecraft:gold_ingot", 1);
+        var recipe = new TestRecipe(Key.key("minecraft:iron_ingot_from_smelting_raw_iron"), RecipeType.SMELTING, result);
+        var location = location("minecraft:overworld", 10, 64, 10);
+
+        var canBuild = new BlockCanBuildEvent(Optional.of(player), block, placedType, source, false);
+        canBuild.setBuildable(true);
+        var multiPlace = new BlockMultiPlaceEvent(player, block, placedType, replacedType, List.of(block, otherBlock));
+        multiPlace.setCancelled(true);
+        var cook = new BlockCookEvent(block, inventory, source, result);
+        cook.setResult(replacement);
+        cook.setCancelled(true);
+        var smelt = new FurnaceSmeltEvent(block, inventory, Optional.of(recipe), source, result);
+        smelt.setResult(replacement);
+        smelt.setCancelled(true);
+        var startSmelt = new FurnaceStartSmeltEvent(block, inventory, Optional.of(recipe), source, -20);
+        startSmelt.setTotalCookTime(80);
+        startSmelt.setCancelled(true);
+        var grow = new StructureGrowEvent(location, Optional.of(player), true, List.of(block, otherBlock));
+        grow.setCancelled(true);
+
+        assertThat(canBuild.player()).contains(player);
+        assertThat(canBuild.block()).isSameAs(block);
+        assertThat(canBuild.blockType()).isSameAs(placedType);
+        assertThat(canBuild.item()).isSameAs(source);
+        assertThat(canBuild.buildable()).isTrue();
+        assertThat(multiPlace).isInstanceOf(BlockPlaceEvent.class);
+        assertThat(multiPlace.blocks()).containsExactly(block, otherBlock);
+        assertThat(multiPlace.placedType()).isSameAs(placedType);
+        assertThat(multiPlace.replacedType()).isSameAs(replacedType);
+        assertThat(multiPlace.cancelled()).isTrue();
+        assertThat(cook.result()).isSameAs(replacement);
+        assertThat(cook.cancelled()).isTrue();
+        assertThat(smelt).isInstanceOf(BlockCookEvent.class);
+        assertThat(smelt.recipe()).contains(recipe);
+        assertThat(smelt.result()).isSameAs(replacement);
+        assertThat(smelt.cancelled()).isTrue();
+        assertThat(startSmelt.recipe()).contains(recipe);
+        assertThat(startSmelt.totalCookTime()).isEqualTo(80);
+        assertThat(startSmelt.cancelled()).isTrue();
+        assertThat(grow.location()).isSameAs(location);
+        assertThat(grow.player()).contains(player);
+        assertThat(grow.fromBonemeal()).isTrue();
+        assertThat(grow.blocks()).containsExactly(block, otherBlock);
+        assertThat(grow.cancelled()).isTrue();
+    }
+
     private static <T> T proxy(Class<T> type) {
         Object instance = Proxy.newProxyInstance(
                 type.getClassLoader(),
@@ -1213,6 +1432,13 @@ final class EventPayloadTest {
     }
 
     private record TestBlockType(Key key) implements BlockType {
+    }
+
+    private record TestRecipe(Key key, RecipeType type, ItemStack result) implements Recipe {
+        @Override
+        public Optional<String> group() {
+            return Optional.empty();
+        }
     }
 
     private record TestWorld(Key key) implements World {

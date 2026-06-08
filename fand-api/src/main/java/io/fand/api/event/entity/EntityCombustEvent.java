@@ -9,7 +9,7 @@ import java.util.Optional;
 /**
  * Fired on the server thread before an entity is set on fire.
  */
-public final class EntityCombustEvent implements Event, Cancellable {
+public class EntityCombustEvent implements Event, Cancellable {
 
     private final Entity entity;
     private final Optional<Entity> source;

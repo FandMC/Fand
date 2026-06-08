@@ -16,6 +16,16 @@ import io.fand.api.event.EventBus;
 import io.fand.api.event.EventListener;
 import io.fand.api.event.EventPriority;
 import io.fand.api.event.EventSubscription;
+import io.fand.api.event.Subscribe;
+import io.fand.api.event.player.PlayerJoinEvent;
+import io.fand.api.event.world.ChunkLoadEvent;
+import io.fand.api.event.world.ChunkUnloadEvent;
+import io.fand.api.event.world.ThunderChangeEvent;
+import io.fand.api.event.world.WeatherChangeEvent;
+import io.fand.api.event.world.WorldLoadEvent;
+import io.fand.api.event.world.WorldSaveEvent;
+import io.fand.api.event.world.WorldUnloadEvent;
+import io.fand.api.lifecycle.ServerStartedEvent;
 import io.fand.api.inventory.InventoryType;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
@@ -145,6 +155,36 @@ final class TestPluginTest {
                 .doesNotHaveDuplicates();
         assertThat(SelfTestCommand.expectedEvents()).extracting(event -> event.type().getName())
                 .doesNotHaveDuplicates();
+    }
+
+    @Test
+    void selfTestListenerMetadataMatchesDemoListenerMethods() {
+        var subscribed = subscribedEventTypes(
+                DemoBlockEvents.class,
+                DemoCommandEvents.class,
+                DemoEntityEvents.class,
+                DemoInventoryEvents.class,
+                DemoPermissionEvents.class,
+                DemoPlayerEvents.class,
+                DemoServerEvents.class,
+                DemoWorldEvents.class);
+        var inlineSubscriptions = Set.<Class<? extends Event>>of(
+                ServerStartedEvent.class,
+                WorldLoadEvent.class,
+                WorldUnloadEvent.class,
+                WorldSaveEvent.class,
+                WeatherChangeEvent.class,
+                ThunderChangeEvent.class,
+                ChunkLoadEvent.class,
+                ChunkUnloadEvent.class,
+                PlayerJoinEvent.class);
+        var covered = new java.util.LinkedHashSet<>(subscribed);
+        covered.addAll(inlineSubscriptions);
+
+        assertThat(SelfTestCommand.expectedEvents())
+                .allSatisfy(event -> assertThat(covered)
+                        .as(event.type().getSimpleName())
+                        .contains(event.type()));
     }
 
     @Test
@@ -340,6 +380,27 @@ final class TestPluginTest {
 
     private static ItemStack stack(String key) {
         return new ItemStack(new TestItemType(Key.key(key), 64), 1);
+    }
+
+    private static Set<Class<? extends Event>> subscribedEventTypes(Class<?>... listenerTypes) {
+        var subscribed = new java.util.LinkedHashSet<Class<? extends Event>>();
+        for (var listenerType : listenerTypes) {
+            for (var method : listenerType.getDeclaredMethods()) {
+                if (method.getAnnotation(Subscribe.class) == null) {
+                    continue;
+                }
+                assertThat(method.getParameterCount())
+                        .as(listenerType.getSimpleName() + "#" + method.getName())
+                        .isEqualTo(1);
+                assertThat(Event.class.isAssignableFrom(method.getParameterTypes()[0]))
+                        .as(listenerType.getSimpleName() + "#" + method.getName())
+                        .isTrue();
+                @SuppressWarnings("unchecked")
+                var eventType = (Class<? extends Event>) method.getParameterTypes()[0];
+                subscribed.add(eventType);
+            }
+        }
+        return subscribed;
     }
 
     private record TestItemType(Key key, int maxStackSize) implements ItemType {
