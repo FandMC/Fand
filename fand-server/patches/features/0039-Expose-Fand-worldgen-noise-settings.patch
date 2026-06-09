@@ -1,0 +1,21 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Tue, 9 Jun 2026 21:54:07 +0800
+Subject: [PATCH] Expose Fand worldgen noise settings
+
+
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index a7c6517d2dca80f4180f646eb300713a5a105603..549f3dccc722d8e19af934e3d3a35b766379061d 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -183,7 +183,9 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         this.level = level;
+         RegistryAccess registryAccess = level.registryAccess();
+         long levelSeed = level.getSeed();
+-        if (generator instanceof NoiseBasedChunkGenerator noiseGenerator) {
++        if (generator instanceof io.fand.server.world.FandNoiseSettingsSource fandNoiseGenerator) {
++            this.randomState = RandomState.create(fandNoiseGenerator.fand$noiseGeneratorSettings().value(), registryAccess.lookupOrThrow(Registries.NOISE), levelSeed);
++        } else if (generator instanceof NoiseBasedChunkGenerator noiseGenerator) {
+             this.randomState = RandomState.create(noiseGenerator.generatorSettings().value(), registryAccess.lookupOrThrow(Registries.NOISE), levelSeed);
+         } else {
+             this.randomState = RandomState.create(NoiseGeneratorSettings.dummy(), registryAccess.lookupOrThrow(Registries.NOISE), levelSeed);

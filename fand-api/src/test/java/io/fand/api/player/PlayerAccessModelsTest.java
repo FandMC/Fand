@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.fand.api.world.WorldCreateOptions;
 import io.fand.api.world.WorldTemplate;
+import io.fand.api.world.generation.GenerationMode;
+import io.fand.api.world.generation.WorldGeneratorSettings;
 import java.time.Instant;
 import java.util.UUID;
 import net.kyori.adventure.text.Component;
@@ -87,13 +89,35 @@ final class PlayerAccessModelsTest {
 
         assertThat(template.template()).isEqualTo(WorldTemplate.NETHER);
         assertThat(template.generator()).isEmpty();
+        assertThat(template.generatorSettings().mode()).isEqualTo(GenerationMode.TEMPLATE);
         assertThat(template.isVoidWorld()).isFalse();
         assertThat(generated.generator()).isPresent();
+        assertThat(generated.generatorSettings().mode()).isEqualTo(GenerationMode.CUSTOM);
         assertThat(generated.isVoidWorld()).isFalse();
+        var vanillaGenerated = WorldCreateOptions.vanillaGenerated(chunk -> { });
+        assertThat(vanillaGenerated.generator()).isPresent();
+        assertThat(vanillaGenerated.generatorSettings().mode()).isEqualTo(GenerationMode.VANILLA);
+        assertThat(vanillaGenerated.generatorSettings().usesVanillaNoisePipeline()).isTrue();
         assertThat(voidWorld.template()).isEqualTo(WorldTemplate.OVERWORLD);
+        assertThat(voidWorld.generatorSettings().mode()).isEqualTo(GenerationMode.EMPTY);
         assertThat(voidWorld.isVoidWorld()).isTrue();
         assertThatThrownBy(() -> generated.voidWorld(true))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("mutually exclusive");
+    }
+
+    @Test
+    void generatedWorldOptionsKeepExplicitSettings() {
+        var settings = WorldGeneratorSettings.builder()
+                .worldHeight(0, 128)
+                .seaLevel(32)
+                .build();
+
+        var generated = WorldCreateOptions.generated(chunk -> { }, settings);
+
+        assertThat(generated.generatorSettings()).isSameAs(settings);
+        assertThat(generated.generatorSettings().minY()).isEqualTo(0);
+        assertThat(generated.generatorSettings().height()).isEqualTo(128);
+        assertThat(generated.generatorSettings().seaLevel()).isEqualTo(32);
     }
 }

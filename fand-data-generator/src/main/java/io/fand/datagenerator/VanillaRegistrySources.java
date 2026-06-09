@@ -109,6 +109,122 @@ final class VanillaRegistrySources {
         return registryKeyFields("net/minecraft/world/level/biome/Biomes.java", "ResourceKey<Biome>");
     }
 
+    List<KeyEntry> configuredFeatureKeys() throws IOException {
+        return registryKeyFieldsInFiles("net/minecraft/data/worldgen/features", "ResourceKey<ConfiguredFeature", true);
+    }
+
+    List<KeyEntry> placedFeatureKeys() throws IOException {
+        return registryKeyFieldsInFiles("net/minecraft/data/worldgen/placement", "ResourceKey<PlacedFeature>", true);
+    }
+
+    List<KeyEntry> configuredCarverKeys() throws IOException {
+        return registryKeyFields("net/minecraft/data/worldgen/Carvers.java", "ResourceKey<ConfiguredWorldCarver");
+    }
+
+    List<KeyEntry> structureKeys() throws IOException {
+        return registryKeyFields("net/minecraft/world/level/levelgen/structure/BuiltinStructures.java", "ResourceKey<Structure>");
+    }
+
+    List<KeyEntry> structureSetKeys() throws IOException {
+        return registryKeyFields("net/minecraft/world/level/levelgen/structure/BuiltinStructureSets.java", "ResourceKey<StructureSet>");
+    }
+
+    List<KeyEntry> dimensionTypeKeys() throws IOException {
+        return registryKeyFields("net/minecraft/world/level/dimension/BuiltinDimensionTypes.java", "ResourceKey<DimensionType>");
+    }
+
+    List<KeyEntry> noiseSettingsKeys() throws IOException {
+        return registryKeyFields("net/minecraft/world/level/levelgen/NoiseGeneratorSettings.java", "ResourceKey<NoiseGeneratorSettings>");
+    }
+
+    List<KeyEntry> densityFunctionKeys() throws IOException {
+        return registryKeyFields("net/minecraft/world/level/levelgen/NoiseRouterData.java", "ResourceKey<DensityFunction>");
+    }
+
+    List<KeyEntry> templatePoolKeys() throws IOException {
+        return registryKeyFieldsInFiles("net/minecraft/data/worldgen", "ResourceKey<StructureTemplatePool>", true);
+    }
+
+    List<KeyEntry> structureProcessorListKeys() throws IOException {
+        return registryKeyFields("net/minecraft/data/worldgen/ProcessorLists.java", "ResourceKey<StructureProcessorList>");
+    }
+
+    List<KeyEntry> flatLevelPresetKeys() throws IOException {
+        return registryKeyFields(
+                "net/minecraft/world/level/levelgen/flat/FlatLevelGeneratorPresets.java",
+                "ResourceKey<FlatLevelGeneratorPreset>");
+    }
+
+    List<KeyEntry> multiNoiseBiomeSourcePresetKeys() throws IOException {
+        return registryKeyFields(
+                "net/minecraft/world/level/biome/MultiNoiseBiomeSourceParameterLists.java",
+                "ResourceKey<MultiNoiseBiomeSourceParameterList>");
+    }
+
+    List<KeyEntry> noiseKeys() throws IOException {
+        return registryKeyFields("net/minecraft/world/level/levelgen/Noises.java", "ResourceKey<NormalNoise.NoiseParameters>");
+    }
+
+    List<KeyEntry> worldPresetKeys() throws IOException {
+        return registryKeyFields(
+                "net/minecraft/world/level/levelgen/presets/WorldPresets.java",
+                "ResourceKey<WorldPreset>");
+    }
+
+    List<KeyEntry> biomeSourceTypeKeys() throws IOException {
+        return registryCallKeys("net/minecraft/world/level/biome/BiomeSources.java");
+    }
+
+    List<KeyEntry> chunkGeneratorTypeKeys() throws IOException {
+        return registryCallKeys("net/minecraft/world/level/chunk/ChunkGenerators.java");
+    }
+
+    List<KeyEntry> featureTypeKeys() throws IOException {
+        return registryCallKeys("net/minecraft/world/level/levelgen/feature/Feature.java");
+    }
+
+    List<KeyEntry> carverTypeKeys() throws IOException {
+        return registryCallKeys("net/minecraft/world/level/levelgen/carver/WorldCarver.java");
+    }
+
+    List<KeyEntry> placementModifierTypeKeys() throws IOException {
+        return registryCallKeys("net/minecraft/world/level/levelgen/placement/PlacementModifierType.java");
+    }
+
+    List<KeyEntry> structureTypeKeys() throws IOException {
+        return registryCallKeys("net/minecraft/world/level/levelgen/structure/StructureType.java");
+    }
+
+    List<KeyEntry> structurePlacementTypeKeys() throws IOException {
+        return registryCallKeys("net/minecraft/world/level/levelgen/structure/placement/StructurePlacementType.java");
+    }
+
+    List<KeyEntry> structurePoolElementTypeKeys() throws IOException {
+        return registryCallKeys("net/minecraft/world/level/levelgen/structure/pools/StructurePoolElementType.java");
+    }
+
+    List<KeyEntry> poolAliasBindingTypeKeys() throws IOException {
+        return registryCallKeys("net/minecraft/world/level/levelgen/structure/pools/alias/PoolAliasBindings.java");
+    }
+
+    List<KeyEntry> structureProcessorTypeKeys() throws IOException {
+        return registryCallKeys("net/minecraft/world/level/levelgen/structure/templatesystem/StructureProcessorType.java");
+    }
+
+    List<KeyEntry> materialConditionTypeKeys() throws IOException {
+        return registryCallKeys(
+                "net/minecraft/world/level/levelgen/SurfaceRules.java",
+                "public interface ConditionSource",
+                "protected static final class Context");
+    }
+
+    List<KeyEntry> materialRuleTypeKeys() throws IOException {
+        return registryCallKeys(
+                "net/minecraft/world/level/levelgen/SurfaceRules.java",
+                "public interface RuleSource",
+                "private record SequenceRule");
+    }
+
     List<KeyEntry> damageTypeKeys() throws IOException {
         return registryKeyFields("net/minecraft/world/damagesource/DamageTypes.java", "ResourceKey<DamageType>");
     }
@@ -319,6 +435,48 @@ final class VanillaRegistrySources {
                     .or(() -> KeyExtractors.firstSoundSetKey(field.initializer()))
                     .map(KeyNames::vanillaKey)
                     .ifPresent(key -> entries.add(field.name(), key));
+        }
+        return entries.sorted();
+    }
+
+    private List<KeyEntry> registryKeyFieldsInFiles(String relativeRoot, String typeNeedle) throws IOException {
+        return registryKeyFieldsInFiles(relativeRoot, typeNeedle, false);
+    }
+
+    private List<KeyEntry> registryKeyFieldsInFiles(String relativeRoot, String typeNeedle, boolean nameFromKey) throws IOException {
+        var entries = new EntryCollector();
+        for (var file : sources.files(relativeRoot, ".java")) {
+            for (var field : sources.staticFields(sources.relativePath(file))) {
+                if (!field.type().contains(typeNeedle)) {
+                    continue;
+                }
+                KeyExtractors.firstRegistryKeyId(field.initializer())
+                        .map(KeyNames::vanillaKey)
+                        .ifPresent(key -> entries.add(nameFromKey ? KeyNames.keyToEnumName(key) : field.name(), key));
+            }
+        }
+        return entries.sorted();
+    }
+
+    private List<KeyEntry> registryCallKeys(String relativePath) throws IOException {
+        return registryCallKeys(relativePath, null, null);
+    }
+
+    private List<KeyEntry> registryCallKeys(String relativePath, String startNeedle, String stopBefore) throws IOException {
+        var entries = new EntryCollector();
+        var source = read(relativePath);
+        int start = startNeedle == null ? 0 : source.indexOf(startNeedle);
+        if (start < 0) {
+            throw new IllegalStateException("Cannot find " + startNeedle + " in " + relativePath);
+        }
+        int end = stopBefore == null ? source.length() : source.indexOf(stopBefore, start);
+        if (end < 0) {
+            end = source.length();
+        }
+        var matcher = KeyExtractors.stringKeyMatcher(source.substring(start, end));
+        while (matcher.find()) {
+            var path = matcher.group(1);
+            entries.add(KeyNames.keyToEnumName(path), KeyNames.vanillaKey(path));
         }
         return entries.sorted();
     }

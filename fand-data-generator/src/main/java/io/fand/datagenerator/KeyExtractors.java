@@ -16,7 +16,8 @@ final class KeyExtractors {
     private static final Pattern CREATE_KEY_PATTERN = Pattern.compile(
             "\\bcreateKey\\s*\\(\\s*\"([^\"]+)\"");
     private static final Pattern STRING_KEY_ARGUMENT_PATTERN = Pattern.compile(
-            "\\b(?:register\\w*|createKey|createId|create|registryKey|key)\\s*\\(\\s*\"([^\"]+)\"");
+            "\\b(?:(?:register\\w*|createKey|createId|create|registryKey|key)\\s*\\(\\s*"
+                    + "|(?:Registry|SurfaceRules)\\.register\\s*\\(\\s*[^,]+\\s*,\\s*)\"([^\"]+)\"");
     private static final Pattern CUSTOM_STAT_PATTERN = Pattern.compile(
             "\\bmakeCustomStat\\s*\\(\\s*\"([^\"]+)\"");
     private static final Pattern DEFAULT_NAMESPACE_IDENTIFIER_PATTERN = Pattern.compile(
@@ -104,5 +105,9 @@ final class KeyExtractors {
 
     static Matcher soundSetMatcher(String source) {
         return SOUND_SET_PATTERN.matcher(source);
+    }
+
+    static Matcher stringKeyMatcher(String source) {
+        return STRING_KEY_ARGUMENT_PATTERN.matcher(source);
     }
 }

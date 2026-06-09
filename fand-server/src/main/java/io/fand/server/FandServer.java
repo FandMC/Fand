@@ -23,6 +23,8 @@ import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldCreateOptions;
 import io.fand.api.world.WorldTemplate;
+import io.fand.api.world.generation.GenerationMode;
+import io.fand.api.world.generation.VanillaBiomeSource;
 import io.fand.server.block.FandCustomBlockRegistry;
 import io.fand.server.command.BuiltinCommands;
 import io.fand.server.chunk.ChunkSendScheduler;
@@ -54,13 +56,18 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.biome.Biomes;
+import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.dimension.LevelStem;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.kyori.adventure.key.Key;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -439,7 +446,7 @@ public final class FandServer implements Server, AutoCloseable {
             return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is stopping"));
         }
         return server.submit(() -> {
-            var level = server.fand$createDynamicLevel(dimensionKey(key), levelStem(server, options));
+            var level = server.fand$createDynamicLevel(dimensionKey(key), levelStem(server, key, options));
             World world = registry.wrap(level);
             events.fire(new WorldLoadEvent(world));
             return world;
@@ -596,7 +603,7 @@ public final class FandServer implements Server, AutoCloseable {
         return ResourceKey.create(Registries.LEVEL_STEM, identifier(template.key()));
     }
 
-    private static LevelStem levelStem(MinecraftServer server, WorldCreateOptions options) {
+    private static LevelStem levelStem(MinecraftServer server, Key worldKey, WorldCreateOptions options) {
         var template = templateKey(options.template());
         if (options.isVoidWorld()) {
             return server.fand$voidLevelStem(template);
@@ -610,8 +617,71 @@ public final class FandServer implements Server, AutoCloseable {
         if (generator == null) {
             return base;
         }
-        var biome = server.registryAccess().lookupOrThrow(Registries.BIOME).getOrThrow(Biomes.PLAINS);
-        return new LevelStem(base.type(), new io.fand.server.world.FandWorldGeneratorSource(biome, generator));
+        if (options.generatorSettings().mode() == GenerationMode.TEMPLATE) {
+            return base;
+        }
+        var settings = options.generatorSettings();
+        var biomes = server.registryAccess().lookupOrThrow(Registries.BIOME);
+        Holder<DimensionType> dimensionType = base.type();
+        var dimensionTypeOverride = settings.dimensionType();
+        if (dimensionTypeOverride.isPresent()) {
+            var key = dimensionTypeOverride.get();
+            dimensionType = server.registryAccess().lookupOrThrow(Registries.DIMENSION_TYPE)
+                    .get(dimensionTypeKey(key))
+                    .orElseThrow(() -> new IllegalArgumentException("Dimension type is not available: " + key.asString()));
+        }
+        long seed = server.getWorldGenSettings().options().seed();
+        if (settings.usesVanillaNoisePipeline()) {
+            BiomeSource biomeSource = settings.biomeSource() == VanillaBiomeSource.TEMPLATE
+                    ? base.generator().getBiomeSource()
+                    : new io.fand.server.world.FandBiomeSource(
+                            biomes,
+                            settings.biomeProvider(),
+                            biomes.getOrThrow(Biomes.PLAINS));
+            return new LevelStem(
+                    dimensionType,
+                    new io.fand.server.world.FandVanillaWorldGeneratorSource(
+                            worldKey,
+                            seed,
+                            biomes,
+                            biomeSource,
+                            noiseSettings(server, base, settings.noiseSettings().orElse(null)),
+                            generator,
+                            settings));
+        }
+        return new LevelStem(
+                dimensionType,
+                new io.fand.server.world.FandWorldGeneratorSource(
+                        worldKey,
+                        seed,
+                        biomes,
+                        generator,
+                        settings));
+    }
+
+    private static Holder<NoiseGeneratorSettings> noiseSettings(
+            MinecraftServer server,
+            LevelStem base,
+            @Nullable Key override
+    ) {
+        if (override != null) {
+            return server.registryAccess().lookupOrThrow(Registries.NOISE_SETTINGS)
+                    .get(noiseSettingsKey(override))
+                    .orElseThrow(() -> new IllegalArgumentException("Noise settings are not available: " + override.asString()));
+        }
+        if (base.generator() instanceof NoiseBasedChunkGenerator noiseGenerator) {
+            return noiseGenerator.generatorSettings();
+        }
+        return server.registryAccess().lookupOrThrow(Registries.NOISE_SETTINGS)
+                .getOrThrow(NoiseGeneratorSettings.OVERWORLD);
+    }
+
+    private static ResourceKey<DimensionType> dimensionTypeKey(Key key) {
+        return ResourceKey.create(Registries.DIMENSION_TYPE, identifier(key));
+    }
+
+    private static ResourceKey<NoiseGeneratorSettings> noiseSettingsKey(Key key) {
+        return ResourceKey.create(Registries.NOISE_SETTINGS, identifier(key));
     }
 
     private static Identifier identifier(Key key) {

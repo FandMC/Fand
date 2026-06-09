@@ -1,7 +1,9 @@
 package io.fand.api.world;
 
 import io.fand.api.block.BlockType;
+import io.fand.api.world.generation.GeneratorContext;
 import java.util.Objects;
+import net.kyori.adventure.key.Key;
 
 /**
  * Mutable chunk-generation target passed to custom world generators.
@@ -18,6 +20,52 @@ public interface GeneratedChunk {
     int minY();
 
     int maxY();
+
+    default int minX() {
+        return chunkX() << 4;
+    }
+
+    default int maxX() {
+        return minX() + 15;
+    }
+
+    default int minZ() {
+        return chunkZ() << 4;
+    }
+
+    default int maxZ() {
+        return minZ() + 15;
+    }
+
+    default GeneratorContext context() {
+        return GeneratorContext.unknown();
+    }
+
+    default boolean contains(int x, int y, int z) {
+        return x >= minX() && x <= maxX()
+                && z >= minZ() && z <= maxZ()
+                && y >= minY() && y <= maxY();
+    }
+
+    BlockType blockType(int x, int y, int z);
+
+    /**
+     * Returns the biome stored for the 4x4x4 biome cell containing the block.
+     */
+    default Key biomeAt(int x, int y, int z) {
+        throw new UnsupportedOperationException("Biome reads are not available for this generated chunk");
+    }
+
+    /**
+     * Sets the biome for the 4x4x4 biome cell containing the block.
+     */
+    default void setBiome(int x, int y, int z, Key biome) {
+        throw new UnsupportedOperationException("Biome writes are not available for this generated chunk");
+    }
+
+    default void setBiome(int x, int y, int z, io.fand.api.VanillaKey biome) {
+        setBiome(x, y, z, Objects.requireNonNull(biome, "biome").key());
+    }
 
     default void setBlock(int x, int y, int z, BlockType type) {
         setBlock(x, y, z, type, BlockUpdateMode.SILENT);
