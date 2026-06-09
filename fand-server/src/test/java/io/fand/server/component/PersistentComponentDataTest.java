@@ -50,4 +50,15 @@ class PersistentComponentDataTest {
 
         assertThat(decoded.get("demo").get(LABEL)).contains("machine");
     }
+
+    @Test
+    void indexesIdsByComponentKey() {
+        var data = new PersistentComponentData();
+        data.put("one", DataComponentMap.of(LABEL, "machine"));
+        data.put("two", DataComponentMap.of(COUNT, 2));
+        data.put("three", DataComponentMap.empty().with(LABEL, "other").with(COUNT, 3));
+
+        assertThat(data.idsWith(LABEL.key())).containsExactly("one", "three");
+        assertThat(data.entries().keySet()).containsExactly("one", "three", "two");
+    }
 }

@@ -1,6 +1,7 @@
 package io.fand.server.world;
 
 import io.fand.api.block.Block;
+import io.fand.api.component.DataComponentKey;
 import io.fand.api.entity.Entity;
 import io.fand.api.entity.ItemEntity;
 import io.fand.api.entity.EntitySpawnOptions;
@@ -23,6 +24,7 @@ import io.fand.api.world.particle.ParticleEffect;
 import io.fand.api.world.particle.ParticleEmission;
 import io.fand.api.world.sound.SoundEffect;
 import io.fand.server.block.FandBlock;
+import io.fand.server.component.BlockComponentStorage;
 import io.fand.server.entity.EntitySpawnOptionsApplier;
 import io.fand.server.entity.FandEntityType;
 import io.fand.server.entity.PlayerRegistry;
@@ -676,6 +678,22 @@ public final class FandWorld implements World {
             int entities = loaded ? countEntitiesInBox(chunkBox(chunkX, chunkZ), entity -> true) : 0;
             return new ChunkSnapshot(this, chunkX, chunkZ, loaded, forceLoaded, entities);
         });
+    }
+
+    @Override
+    public Collection<? extends Block> blocksWith(DataComponentKey<?> key) {
+        Objects.requireNonNull(key, "key");
+        return callOnServerThread(() -> BlockComponentStorage.positionsWith(handle, key).stream()
+                .map(pos -> new FandBlock(this, pos.getX(), pos.getY(), pos.getZ()))
+                .toList());
+    }
+
+    @Override
+    public Collection<? extends Block> blocksWith(DataComponentKey<?> key, int chunkX, int chunkZ) {
+        Objects.requireNonNull(key, "key");
+        return callOnServerThread(() -> BlockComponentStorage.positionsWith(handle, key, new ChunkPos(chunkX, chunkZ)).stream()
+                .map(pos -> new FandBlock(this, pos.getX(), pos.getY(), pos.getZ()))
+                .toList());
     }
 
     @Override

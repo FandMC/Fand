@@ -5,9 +5,11 @@ import com.google.gson.JsonParser;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import io.fand.api.component.DataComponentMap;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import net.kyori.adventure.key.Key;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.datafix.DataFixTypes;
@@ -44,6 +46,7 @@ public final class PersistentComponentData extends SavedData {
     }
 
     private final Map<String, Map<String, String>> values;
+    private final Map<String, Set<String>> componentIndex = new HashMap<>();
 
     public PersistentComponentData() {
         this(Map.of());
@@ -53,7 +56,9 @@ public final class PersistentComponentData extends SavedData {
         this.values = new HashMap<>();
         values.forEach((id, components) -> {
             if (!components.isEmpty()) {
-                this.values.put(id, new HashMap<>(components));
+                var copy = new HashMap<>(components);
+                this.values.put(id, copy);
+                index(id, copy.keySet());
             }
         });
     }
@@ -68,6 +73,23 @@ public final class PersistentComponentData extends SavedData {
         return new DataComponentMap(decoded);
     }
 
+    public Map<String, DataComponentMap> entries() {
+        var entries = new LinkedHashMap<String, DataComponentMap>();
+        values.keySet().stream().sorted().forEach(id -> entries.put(id, get(id)));
+        return Collections.unmodifiableMap(entries);
+    }
+
+    public Set<String> idsWith(Key componentKey) {
+        var ids = componentIndex.get(componentKey.asString());
+        if (ids == null || ids.isEmpty()) {
+            return Set.of();
+        }
+        java.util.LinkedHashSet<String> sorted = ids.stream()
+                .sorted()
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+        return Collections.unmodifiableSet(sorted);
+    }
+
     public void put(String id, DataComponentMap components) {
         if (components.isEmpty()) {
             clear(id);
@@ -75,14 +97,34 @@ public final class PersistentComponentData extends SavedData {
         }
         var encoded = new HashMap<String, String>();
         components.values().forEach((key, value) -> encoded.put(key.asString(), value.toString()));
+        unindex(id);
         values.put(id, encoded);
+        index(id, encoded.keySet());
         setDirty();
     }
 
     public void clear(String id) {
         if (values.remove(id) != null) {
+            unindex(id);
             setDirty();
         }
+    }
+
+    private void index(String id, Iterable<String> keys) {
+        for (var key : keys) {
+            componentIndex.computeIfAbsent(key, ignored -> new java.util.LinkedHashSet<>()).add(id);
+        }
+    }
+
+    private void unindex(String id) {
+        var emptyKeys = new java.util.ArrayList<String>();
+        componentIndex.forEach((key, ids) -> {
+            ids.remove(id);
+            if (ids.isEmpty()) {
+                emptyKeys.add(key);
+            }
+        });
+        emptyKeys.forEach(componentIndex::remove);
     }
 
     private Map<String, Map<String, String>> serialized() {

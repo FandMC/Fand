@@ -157,11 +157,12 @@ public final class WorldEvents {
 
     private static void fireChunkLoad(ServerLevel level, ChunkPos pos) {
         var bus = FandHooks.events();
-        if (!bus.hasListeners(ChunkLoadEvent.class)) {
-            return;
-        }
         var world = FandHooks.wrapWorld(level);
         if (world == null) {
+            return;
+        }
+        FandHooks.customBlocks().handleChunkLoaded(world, pos.x(), pos.z());
+        if (!bus.hasListeners(ChunkLoadEvent.class)) {
             return;
         }
         try {
@@ -173,11 +174,12 @@ public final class WorldEvents {
 
     private static void fireChunkUnload(ServerLevel level, ChunkPos pos) {
         var bus = FandHooks.events();
-        if (!bus.hasListeners(ChunkUnloadEvent.class)) {
-            return;
-        }
         var world = FandHooks.wrapWorld(level);
         if (world == null) {
+            return;
+        }
+        FandHooks.customBlocks().handleChunkUnloaded(world, pos.x(), pos.z());
+        if (!bus.hasListeners(ChunkUnloadEvent.class)) {
             return;
         }
         try {

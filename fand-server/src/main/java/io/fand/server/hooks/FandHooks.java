@@ -140,6 +140,10 @@ public final class FandHooks {
         return Main.runtime().guiThemes();
     }
 
+    public static io.fand.server.block.FandCustomBlockRegistry customBlocks() {
+        return Main.runtime().customBlockRegistry();
+    }
+
     public static ForwardedPlayerInfo parseBungeeLegacyForwarding(String hostName, String playerName) {
         return ProxyForwarding.parseBungeeLegacy(hostName, playerName);
     }

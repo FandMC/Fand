@@ -2,12 +2,16 @@ package io.fand.api.plugin;
 
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.config.Configuration;
+import io.fand.api.customblock.CustomBlockRegistry;
+import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.event.EventBus;
+import io.fand.api.gui.GuiService;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
+import io.fand.api.storage.PluginStorage;
 import java.nio.file.Path;
 import org.slf4j.Logger;
 
@@ -39,8 +43,20 @@ public interface PluginContext {
     /** Packet registry scoped to this plugin's lifecycle. */
     PacketRegistry packets();
 
+    /** Custom item registry scoped to this plugin's lifecycle and namespace. */
+    CustomItemRegistry customItems();
+
+    /** Custom block registry scoped to this plugin's lifecycle and namespace. */
+    CustomBlockRegistry customBlocks();
+
+    /** Lightweight GUI service scoped to this plugin's lifecycle. */
+    GuiService guis();
+
     /** Scheduler scoped to this plugin's lifecycle. */
     Scheduler scheduler();
+
+    /** Persistent JSON/KV gameplay storage scoped to this plugin. */
+    PluginStorage storage();
 
     /** Writable data directory unique to this plugin. Created on first access. */
     Path dataDirectory();

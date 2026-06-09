@@ -1,9 +1,12 @@
 package io.fand.api;
 
 import io.fand.api.command.CommandRegistry;
+import io.fand.api.customblock.CustomBlockRegistry;
+import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.entity.EntityKey;
 import io.fand.api.entity.Player;
 import io.fand.api.event.EventBus;
+import io.fand.api.gui.GuiService;
 import io.fand.api.lifecycle.LifecyclePhase;
 import io.fand.api.performance.ServerPerformance;
 import io.fand.api.packet.PacketRegistry;
@@ -64,6 +67,15 @@ public interface Server extends ForwardingAudience {
 
     /** Global packet registry. Prefer {@link io.fand.api.plugin.PluginContext#packets()} for plugin-owned registrations. */
     PacketRegistry packets();
+
+    /** Global custom item registry. Prefer {@link io.fand.api.plugin.PluginContext#customItems()} for plugin-owned registrations. */
+    CustomItemRegistry customItems();
+
+    /** Global custom block registry. Prefer {@link io.fand.api.plugin.PluginContext#customBlocks()} for plugin-owned registrations. */
+    CustomBlockRegistry customBlocks();
+
+    /** Lightweight GUI routing service. */
+    GuiService guis();
 
     /** Main-thread and async task scheduler. */
     Scheduler scheduler();

@@ -1,7 +1,10 @@
 package io.fand.server.component;
 
 import io.fand.api.component.DataComponentContainer;
+import io.fand.api.component.DataComponentKey;
 import io.fand.api.component.DataComponentMap;
+import java.util.Collection;
+import java.util.List;
 import java.util.Objects;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -27,6 +30,34 @@ public final class BlockComponentStorage {
         }
         var data = level.getDataStorage().get(PersistentComponentData.blockType());
         return data == null ? DataComponentMap.EMPTY : data.get(Long.toString(pos.asLong()));
+    }
+
+    public static Collection<BlockPos> positionsWith(ServerLevel level, DataComponentKey<?> key) {
+        Objects.requireNonNull(key, "key");
+        return positionsWith(level, key, null);
+    }
+
+    public static Collection<BlockPos> positionsWith(ServerLevel level, DataComponentKey<?> key, net.minecraft.world.level.ChunkPos chunk) {
+        Objects.requireNonNull(key, "key");
+        var server = level.getServer();
+        if (server == null || !server.isSameThread()) {
+            return List.of();
+        }
+        var data = level.getDataStorage().get(PersistentComponentData.blockType());
+        if (data == null) {
+            return List.of();
+        }
+        var positions = new java.util.ArrayList<BlockPos>();
+        for (var id : data.idsWith(key.key())) {
+            try {
+                var pos = BlockPos.of(Long.parseLong(id));
+                if (chunk == null || (pos.getX() >> 4) == chunk.x() && (pos.getZ() >> 4) == chunk.z()) {
+                    positions.add(pos);
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return java.util.Collections.unmodifiableList(positions);
     }
 
     public static void clearIfBlockChanged(

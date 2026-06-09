@@ -7,6 +7,7 @@ import io.fand.api.entity.EntitySpawnOptions;
 import io.fand.api.entity.EntityType;
 import io.fand.api.entity.EntityTypes;
 import io.fand.api.entity.ItemEntity;
+import io.fand.api.component.DataComponentKey;
 import io.fand.api.item.ItemKey;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
@@ -544,6 +545,18 @@ public interface World extends ForwardingAudience {
     /** Lightweight chunk state snapshot. */
     default ChunkSnapshot chunkSnapshot(int chunkX, int chunkZ) {
         return new ChunkSnapshot(this, chunkX, chunkZ, chunkLoaded(chunkX, chunkZ), chunkForceLoaded(chunkX, chunkZ), entityCount(chunkX, chunkZ));
+    }
+
+    /** Snapshot of persisted component-bearing blocks in this world. */
+    default Collection<? extends io.fand.api.block.Block> blocksWith(DataComponentKey<?> key) {
+        java.util.Objects.requireNonNull(key, "key");
+        return java.util.List.of();
+    }
+
+    /** Snapshot of persisted component-bearing blocks in a chunk. */
+    default Collection<? extends io.fand.api.block.Block> blocksWith(DataComponentKey<?> key, int chunkX, int chunkZ) {
+        java.util.Objects.requireNonNull(key, "key");
+        return java.util.List.of();
     }
 
     /** Builds a {@link Location} in this world. */

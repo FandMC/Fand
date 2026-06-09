@@ -3,9 +3,12 @@ package io.fand.server;
 import io.fand.api.Fand;
 import io.fand.api.Server;
 import io.fand.api.command.CommandRegistry;
+import io.fand.api.customblock.CustomBlockRegistry;
+import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.event.world.WorldLoadEvent;
 import io.fand.api.event.world.WorldUnloadEvent;
+import io.fand.api.gui.GuiService;
 import io.fand.api.lifecycle.LifecyclePhase;
 import io.fand.api.lifecycle.ServerStartedEvent;
 import io.fand.api.lifecycle.ServerStartingEvent;
@@ -19,6 +22,7 @@ import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldTemplate;
+import io.fand.server.block.FandCustomBlockRegistry;
 import io.fand.server.command.BuiltinCommands;
 import io.fand.server.chunk.ChunkSendScheduler;
 import io.fand.server.chunk.ChunkTrackingMetrics;
@@ -29,6 +33,8 @@ import io.fand.server.config.FandConfig;
 import io.fand.server.entity.EntityRegistry;
 import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.event.EventDispatcher;
+import io.fand.server.gui.FandGuiService;
+import io.fand.server.item.FandCustomItemRegistry;
 import io.fand.server.network.ProxyForwardingSettings;
 import io.fand.server.network.packet.PacketRegistryImpl;
 import io.fand.server.permission.PermissionManager;
@@ -71,6 +77,9 @@ public final class FandServer implements Server, AutoCloseable {
     private final FandRecipeRegistry recipes;
     private final FandScoreboardService scoreboard;
     private final PacketRegistryImpl packets;
+    private final FandCustomItemRegistry customItems;
+    private final FandCustomBlockRegistry customBlocks;
+    private final FandGuiService guis;
     private final PluginRuntime plugins;
     private final PlayerRegistry players;
     private final FandPlayerAccessService playerAccess;
@@ -107,6 +116,9 @@ public final class FandServer implements Server, AutoCloseable {
         this.recipes = new FandRecipeRegistry();
         this.scoreboard = new FandScoreboardService(minecraftServer::get);
         this.packets = new PacketRegistryImpl();
+        this.customItems = new FandCustomItemRegistry();
+        this.customBlocks = new FandCustomBlockRegistry(events);
+        this.guis = new FandGuiService(events);
         this.players = new PlayerRegistry(permissions);
         this.playerAccess = new FandPlayerAccessService(minecraftServer::get);
         this.performance = new ServerPerformanceTracker();
@@ -122,6 +134,9 @@ public final class FandServer implements Server, AutoCloseable {
                 recipes,
                 scoreboard,
                 packets,
+                customItems,
+                customBlocks,
+                guis,
                 ConfigReloader.toPluginOptions(initialConfig)
         );
         this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, chunks, guiThemes);
@@ -214,6 +229,9 @@ public final class FandServer implements Server, AutoCloseable {
     public void tickScheduler() {
         scheduler.tick();
         recipes.tick();
+        for (var world : worlds()) {
+            customBlocks.tick(world);
+        }
     }
 
     public ChunkSendScheduler chunkSendScheduler() {
@@ -284,6 +302,25 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public PacketRegistry packets() {
         return packets;
+    }
+
+    @Override
+    public CustomItemRegistry customItems() {
+        return customItems;
+    }
+
+    @Override
+    public CustomBlockRegistry customBlocks() {
+        return customBlocks;
+    }
+
+    public FandCustomBlockRegistry customBlockRegistry() {
+        return customBlocks;
+    }
+
+    @Override
+    public GuiService guis() {
+        return guis;
     }
 
     public PacketRegistryImpl packetRegistry() {
@@ -521,6 +558,7 @@ public final class FandServer implements Server, AutoCloseable {
         plugins.disablePlugins();
         plugins.close();
         packets.close();
+        guis.close();
         chunks.close();
         scheduler.close();
         guiThemes.close();

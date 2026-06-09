@@ -3,7 +3,10 @@ package io.fand.server.plugin;
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import io.fand.api.command.CommandRegistry;
+import io.fand.api.customblock.CustomBlockRegistry;
+import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.event.EventBus;
+import io.fand.api.gui.GuiService;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.Plugin;
@@ -13,6 +16,9 @@ import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.server.recipe.FandRecipeRegistry;
+import io.fand.server.block.FandCustomBlockRegistry;
+import io.fand.server.gui.FandGuiService;
+import io.fand.server.item.FandCustomItemRegistry;
 import io.fand.server.network.packet.PacketRegistryImpl;
 import io.fand.server.scoreboard.FandScoreboardService;
 import java.io.IOException;
@@ -53,6 +59,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final RecipeRegistry recipeRegistry;
     private final ScoreboardService scoreboardService;
     private final PacketRegistry packetRegistry;
+    private final CustomItemRegistry customItemRegistry;
+    private final CustomBlockRegistry customBlockRegistry;
+    private final GuiService guiService;
+    private final boolean closeGuiService;
     private final Scheduler scheduler;
     private volatile Options options;
     private final ConcurrentHashMap<String, LoadedPlugin> loadedPlugins = new ConcurrentHashMap<>();
@@ -81,6 +91,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new FandRecipeRegistry(),
                 unavailableScoreboardService(),
                 new PacketRegistryImpl(),
+                new FandCustomItemRegistry(),
+                new FandCustomBlockRegistry(eventBus),
+                new FandGuiService(eventBus),
+                true,
                 Options.defaults()
         );
     }
@@ -106,6 +120,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new FandRecipeRegistry(),
                 unavailableScoreboardService(),
                 new PacketRegistryImpl(),
+                new FandCustomItemRegistry(),
+                new FandCustomBlockRegistry(eventBus),
+                new FandGuiService(eventBus),
+                true,
                 options
         );
     }
@@ -132,6 +150,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 recipeRegistry,
                 unavailableScoreboardService(),
                 new PacketRegistryImpl(),
+                new FandCustomItemRegistry(),
+                new FandCustomBlockRegistry(eventBus),
+                new FandGuiService(eventBus),
+                true,
                 options
         );
     }
@@ -147,6 +169,45 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             RecipeRegistry recipeRegistry,
             ScoreboardService scoreboardService,
             PacketRegistry packetRegistry,
+            CustomItemRegistry customItemRegistry,
+            CustomBlockRegistry customBlockRegistry,
+            GuiService guiService,
+            Options options
+    ) {
+        this(
+                pluginsDirectory,
+                dataDirectoryRoot,
+                parentClassLoader,
+                commandRegistry,
+                eventBus,
+                permissions,
+                scheduler,
+                recipeRegistry,
+                scoreboardService,
+                packetRegistry,
+                customItemRegistry,
+                customBlockRegistry,
+                guiService,
+                false,
+                options
+        );
+    }
+
+    private PluginRuntime(
+            Path pluginsDirectory,
+            Path dataDirectoryRoot,
+            ClassLoader parentClassLoader,
+            CommandRegistry commandRegistry,
+            EventBus eventBus,
+            PermissionService permissions,
+            Scheduler scheduler,
+            RecipeRegistry recipeRegistry,
+            ScoreboardService scoreboardService,
+            PacketRegistry packetRegistry,
+            CustomItemRegistry customItemRegistry,
+            CustomBlockRegistry customBlockRegistry,
+            GuiService guiService,
+            boolean closeGuiService,
             Options options
     ) {
         this.pluginsDirectory = pluginsDirectory;
@@ -158,6 +219,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.recipeRegistry = recipeRegistry;
         this.scoreboardService = scoreboardService;
         this.packetRegistry = packetRegistry;
+        this.customItemRegistry = customItemRegistry;
+        this.customBlockRegistry = customBlockRegistry;
+        this.guiService = guiService;
+        this.closeGuiService = closeGuiService;
         this.scheduler = scheduler;
         this.options = options;
     }
@@ -201,6 +266,9 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                         new PluginRecipeRegistry(recipeRegistry, resources, artifact.descriptor.id()),
                         new PluginScoreboardService(scoreboardService, resources, artifact.descriptor.id()),
                         new PluginPacketRegistry(packetRegistry, resources),
+                        new PluginCustomItemRegistry(customItemRegistry, resources, artifact.descriptor.id()),
+                        new PluginCustomBlockRegistry(customBlockRegistry, resources, artifact.descriptor.id()),
+                        new PluginGuiService(guiService, resources),
                         new PluginScheduler(scheduler, resources),
                         dataDirectoryRoot.resolve(artifact.descriptor.id()),
                         resources,
@@ -346,6 +414,13 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         loadOrder.clear();
         loaded = false;
         enabled = false;
+        if (closeGuiService && guiService instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception failure) {
+                LOGGER.warn("Failed to close plugin runtime GUI service", failure);
+            }
+        }
     }
 
     private List<PluginArtifact> discoverArtifacts() throws IOException {

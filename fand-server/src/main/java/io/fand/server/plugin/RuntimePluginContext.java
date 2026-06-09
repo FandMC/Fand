@@ -2,7 +2,10 @@ package io.fand.server.plugin;
 
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.config.Configuration;
+import io.fand.api.customblock.CustomBlockRegistry;
+import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.event.EventBus;
+import io.fand.api.gui.GuiService;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.PluginContext;
@@ -10,6 +13,7 @@ import io.fand.api.plugin.PluginDescriptor;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
+import io.fand.api.storage.PluginStorage;
 import io.fand.server.config.YamlConfiguration;
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,11 +35,15 @@ public final class RuntimePluginContext implements PluginContext {
     private final RecipeRegistry recipes;
     private final ScoreboardService scoreboard;
     private final PacketRegistry packets;
+    private final CustomItemRegistry customItems;
+    private final CustomBlockRegistry customBlocks;
+    private final GuiService guis;
     private final Scheduler scheduler;
     private final Path dataDirectory;
     private final PluginResourceTracker resources;
     private final ClassLoader pluginClassLoader;
     private volatile YamlConfiguration config;
+    private volatile PluginStorage storage;
 
     public RuntimePluginContext(
             PluginDescriptor descriptor,
@@ -46,6 +54,9 @@ public final class RuntimePluginContext implements PluginContext {
             RecipeRegistry recipes,
             ScoreboardService scoreboard,
             PacketRegistry packets,
+            CustomItemRegistry customItems,
+            CustomBlockRegistry customBlocks,
+            GuiService guis,
             Scheduler scheduler,
             Path dataDirectory,
             PluginResourceTracker resources,
@@ -59,6 +70,9 @@ public final class RuntimePluginContext implements PluginContext {
         this.recipes = recipes;
         this.scoreboard = scoreboard;
         this.packets = packets;
+        this.customItems = customItems;
+        this.customBlocks = customBlocks;
+        this.guis = guis;
         this.scheduler = scheduler;
         this.dataDirectory = dataDirectory;
         this.resources = resources;
@@ -106,8 +120,37 @@ public final class RuntimePluginContext implements PluginContext {
     }
 
     @Override
+    public CustomItemRegistry customItems() {
+        return customItems;
+    }
+
+    @Override
+    public CustomBlockRegistry customBlocks() {
+        return customBlocks;
+    }
+
+    @Override
+    public GuiService guis() {
+        return guis;
+    }
+
+    @Override
     public Scheduler scheduler() {
         return scheduler;
+    }
+
+    @Override
+    public PluginStorage storage() {
+        var existing = storage;
+        if (existing != null) {
+            return existing;
+        }
+        synchronized (this) {
+            if (storage == null) {
+                storage = new FandPluginStorage(dataDirectory());
+            }
+            return storage;
+        }
     }
 
     @Override
