@@ -15,6 +15,9 @@ import org.jspecify.annotations.Nullable;
  */
 public final class WorldGeneratorSettings {
 
+    private static final int MIN_WORLD_Y = -2032;
+    private static final int MAX_WORLD_Y_EXCLUSIVE = 2032;
+
     private final GenerationMode mode;
     private final BiomeProvider biomeProvider;
     private final VanillaBiomeSource biomeSource;
@@ -71,16 +74,18 @@ public final class WorldGeneratorSettings {
         this.includedStructureSets = Set.copyOf(includedStructureSets);
         this.excludedStructureSets = Set.copyOf(excludedStructureSets);
         this.dimensionType = dimensionType;
+        if (height <= 0 || (height & 15) != 0) {
+            throw new IllegalArgumentException("height must be positive and divisible by 16");
+        }
+        validateWorldHeight(minY, height);
+        long maxY = (long) minY + height - 1L;
+        if (spawnHeight != null && (spawnHeight < minY || spawnHeight > maxY)) {
+            throw new IllegalArgumentException("spawnHeight must be inside the world height");
+        }
         this.seaLevel = seaLevel;
         this.minY = minY;
         this.height = height;
         this.spawnHeight = spawnHeight;
-        if (height <= 0 || (height & 15) != 0) {
-            throw new IllegalArgumentException("height must be positive and divisible by 16");
-        }
-        if (spawnHeight != null && (spawnHeight < minY || spawnHeight > maxY())) {
-            throw new IllegalArgumentException("spawnHeight must be inside the world height");
-        }
     }
 
     public static WorldGeneratorSettings empty() {
@@ -454,6 +459,17 @@ public final class WorldGeneratorSettings {
                 result.add(Objects.requireNonNull(key, "keys cannot contain null"));
             }
             return Set.copyOf(result);
+        }
+    }
+
+    private static void validateWorldHeight(int minY, int height) {
+        if ((minY & 15) != 0) {
+            throw new IllegalArgumentException("minY must be divisible by 16");
+        }
+        long maxYExclusive = (long) minY + height;
+        if (minY < MIN_WORLD_Y || maxYExclusive > MAX_WORLD_Y_EXCLUSIVE) {
+            throw new IllegalArgumentException(
+                    "world height must stay within " + MIN_WORLD_Y + ".." + (MAX_WORLD_Y_EXCLUSIVE - 1));
         }
     }
 }

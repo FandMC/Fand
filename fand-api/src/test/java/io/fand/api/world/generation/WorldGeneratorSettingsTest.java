@@ -107,6 +107,26 @@ final class WorldGeneratorSettingsTest {
     }
 
     @Test
+    void builderRejectsSectionMisalignedWorldHeight() {
+        assertThatThrownBy(() -> WorldGeneratorSettings.builder().worldHeight(1, 16).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("minY");
+    }
+
+    @Test
+    void builderRejectsWorldHeightOutsideMinecraftBounds() {
+        assertThatThrownBy(() -> WorldGeneratorSettings.builder().worldHeight(-2048, 16).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("world height");
+        assertThatThrownBy(() -> WorldGeneratorSettings.builder().worldHeight(0, 4080).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("world height");
+        assertThatThrownBy(() -> WorldGeneratorSettings.builder().worldHeight(Integer.MAX_VALUE - 15, 16).build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("world height");
+    }
+
+    @Test
     void biomeProviderCanDeclareMultiplePossibleBiomes() {
         var settings = WorldGeneratorSettings.builder()
                 .biomeProvider(new BiomeProvider() {
