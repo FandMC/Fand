@@ -9,29 +9,38 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import net.kyori.adventure.key.Key;
+import org.jspecify.annotations.Nullable;
 
 /** Typed value for {@code minecraft:profile}. */
-public record ItemProfile(
-        Optional<String> name,
-        Optional<UUID> id,
-        List<ItemProfile.Property> properties,
-        Optional<Key> texture,
-        Optional<Key> cape,
-        Optional<Key> elytra,
-        Optional<String> model) implements ItemComponentData {
+public final class ItemProfile implements ItemComponentData {
 
-    public ItemProfile {
-        name = Objects.requireNonNull(name, "name");
-        id = Objects.requireNonNull(id, "id");
-        properties = List.copyOf(Objects.requireNonNull(properties, "properties"));
-        texture = Objects.requireNonNull(texture, "texture");
-        cape = Objects.requireNonNull(cape, "cape");
-        elytra = Objects.requireNonNull(elytra, "elytra");
-        model = Objects.requireNonNull(model, "model");
+    private final @Nullable String name;
+    private final @Nullable UUID id;
+    private final List<ItemProfile.Property> properties;
+    private final @Nullable Key texture;
+    private final @Nullable Key cape;
+    private final @Nullable Key elytra;
+    private final @Nullable String model;
+
+    public ItemProfile(
+            @Nullable String name,
+            @Nullable UUID id,
+            List<ItemProfile.Property> properties,
+            @Nullable Key texture,
+            @Nullable Key cape,
+            @Nullable Key elytra,
+            @Nullable String model) {
+        this.name = name;
+        this.id = id;
+        this.properties = List.copyOf(Objects.requireNonNull(properties, "properties"));
+        this.texture = texture;
+        this.cape = cape;
+        this.elytra = elytra;
+        this.model = model;
     }
 
     public static ItemProfile named(String name) {
-        return new ItemProfile(Optional.of(name), Optional.empty(), List.of(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
+        return new ItemProfile(Objects.requireNonNull(name, "name"), null, List.of(), null, null, null, null);
     }
 
     public static ItemProfile fromJson(JsonElement value) {
@@ -41,33 +50,107 @@ public record ItemProfile(
         }
         var object = ItemComponentJson.object(value, "profile");
         return new ItemProfile(
-                ItemComponentJson.optionalString(object, "name"),
-                ItemComponentJson.optionalString(object, "id").map(UUID::fromString),
+                ItemComponentJson.optionalString(object, "name").orElse(null),
+                ItemComponentJson.optionalString(object, "id").map(UUID::fromString).orElse(null),
                 propertiesFromJson(object.get("properties")),
-                ItemComponentJson.optionalKey(object, "texture"),
-                ItemComponentJson.optionalKey(object, "cape"),
-                ItemComponentJson.optionalKey(object, "elytra"),
-                ItemComponentJson.optionalString(object, "model"));
+                ItemComponentJson.optionalKey(object, "texture").orElse(null),
+                ItemComponentJson.optionalKey(object, "cape").orElse(null),
+                ItemComponentJson.optionalKey(object, "elytra").orElse(null),
+                ItemComponentJson.optionalString(object, "model").orElse(null));
+    }
+
+    public Optional<String> name() {
+        return Optional.ofNullable(name);
+    }
+
+    public Optional<UUID> id() {
+        return Optional.ofNullable(id);
+    }
+
+    public List<ItemProfile.Property> properties() {
+        return properties;
+    }
+
+    public Optional<Key> texture() {
+        return Optional.ofNullable(texture);
+    }
+
+    public Optional<Key> cape() {
+        return Optional.ofNullable(cape);
+    }
+
+    public Optional<Key> elytra() {
+        return Optional.ofNullable(elytra);
+    }
+
+    public Optional<String> model() {
+        return Optional.ofNullable(model);
     }
 
     @Override
     public JsonElement toJson() {
-        if (name.isPresent() && id.isEmpty() && properties.isEmpty() && texture.isEmpty() && cape.isEmpty() && elytra.isEmpty() && model.isEmpty()) {
-            return new JsonPrimitive(name.orElseThrow());
+        if (name != null && id == null && properties.isEmpty() && texture == null && cape == null && elytra == null && model == null) {
+            return new JsonPrimitive(name);
         }
         var json = new JsonObject();
-        name.ifPresent(value -> json.addProperty("name", value));
-        id.ifPresent(value -> json.addProperty("id", value.toString()));
+        if (name != null) {
+            json.addProperty("name", name);
+        }
+        if (id != null) {
+            json.addProperty("id", id.toString());
+        }
         if (!properties.isEmpty()) {
             var propertyArray = new com.google.gson.JsonArray();
             properties.forEach(property -> propertyArray.add(property.toJson()));
             json.add("properties", propertyArray);
         }
-        texture.ifPresent(value -> json.addProperty("texture", value.asString()));
-        cape.ifPresent(value -> json.addProperty("cape", value.asString()));
-        elytra.ifPresent(value -> json.addProperty("elytra", value.asString()));
-        model.ifPresent(value -> json.addProperty("model", value));
+        if (texture != null) {
+            json.addProperty("texture", texture.asString());
+        }
+        if (cape != null) {
+            json.addProperty("cape", cape.asString());
+        }
+        if (elytra != null) {
+            json.addProperty("elytra", elytra.asString());
+        }
+        if (model != null) {
+            json.addProperty("model", model);
+        }
         return json;
+    }
+
+    @Override
+    public boolean equals(@Nullable Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof ItemProfile that)) {
+            return false;
+        }
+        return Objects.equals(name, that.name)
+                && Objects.equals(id, that.id)
+                && properties.equals(that.properties)
+                && Objects.equals(texture, that.texture)
+                && Objects.equals(cape, that.cape)
+                && Objects.equals(elytra, that.elytra)
+                && Objects.equals(model, that.model);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(name, id, properties, texture, cape, elytra, model);
+    }
+
+    @Override
+    public String toString() {
+        return "ItemProfile[name=" + name()
+                + ", id=" + id()
+                + ", properties=" + properties
+                + ", texture=" + texture()
+                + ", cape=" + cape()
+                + ", elytra=" + elytra()
+                + ", model=" + model()
+                + "]";
     }
 
     private static List<Property> propertiesFromJson(JsonElement value) {
@@ -97,28 +180,46 @@ public record ItemProfile(
     }
 
     /** Mojang profile property entry, usually used for signed skin textures. */
-    public record Property(String name, String value, Optional<String> signature) implements ItemComponentData {
+    public static final class Property implements ItemComponentData {
 
-        public Property {
-            name = Objects.requireNonNull(name, "name");
-            value = Objects.requireNonNull(value, "value");
-            signature = Objects.requireNonNull(signature, "signature");
+        private final String name;
+        private final String value;
+        private final @Nullable String signature;
+
+        public Property(String name, String value, @Nullable String signature) {
+            this.name = Objects.requireNonNull(name, "name");
+            this.value = Objects.requireNonNull(value, "value");
+            this.signature = signature;
         }
 
         public static Property unsigned(String name, String value) {
-            return new Property(name, value, Optional.empty());
+            return new Property(name, value, null);
         }
 
         public static Property signed(String name, String value, String signature) {
-            return new Property(name, value, Optional.of(signature));
+            return new Property(name, value, Objects.requireNonNull(signature, "signature"));
         }
 
         public static Property fromJson(JsonElement value) {
             var object = ItemComponentJson.object(value, "profile property");
             return new Property(
-                    ItemComponentJson.optionalString(object, "name").orElseThrow(() -> new IllegalArgumentException("profile property name is required")),
-                    ItemComponentJson.optionalString(object, "value").orElseThrow(() -> new IllegalArgumentException("profile property value is required")),
-                    ItemComponentJson.optionalString(object, "signature"));
+                    ItemComponentJson.optionalString(object, "name")
+                            .orElseThrow(() -> new IllegalArgumentException("profile property name is required")),
+                    ItemComponentJson.optionalString(object, "value")
+                            .orElseThrow(() -> new IllegalArgumentException("profile property value is required")),
+                    ItemComponentJson.optionalString(object, "signature").orElse(null));
+        }
+
+        public String name() {
+            return name;
+        }
+
+        public String value() {
+            return value;
+        }
+
+        public Optional<String> signature() {
+            return Optional.ofNullable(signature);
         }
 
         @Override
@@ -126,8 +227,33 @@ public record ItemProfile(
             var json = new JsonObject();
             json.addProperty("name", name);
             json.addProperty("value", value);
-            signature.ifPresent(value -> json.addProperty("signature", value));
+            if (signature != null) {
+                json.addProperty("signature", signature);
+            }
             return json;
+        }
+
+        @Override
+        public boolean equals(@Nullable Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof Property that)) {
+                return false;
+            }
+            return name.equals(that.name)
+                    && value.equals(that.value)
+                    && Objects.equals(signature, that.signature);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(name, value, signature);
+        }
+
+        @Override
+        public String toString() {
+            return "Property[name=" + name + ", value=" + value + ", signature=" + signature() + "]";
         }
     }
 }

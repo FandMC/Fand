@@ -2,6 +2,8 @@ package io.fand.fandclip;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -59,5 +61,18 @@ final class FandclipTest {
                 "--enable-native-access=ALL-UNNAMED",
                 "--sun-misc-unsafe-memory-access=allow")))
                 .isFalse();
+    }
+
+    @Test
+    void clipManifestFallsBackWhenMetadataCannotBeRead() {
+        assertThat(ClipManifest.load(new FailingInputStream())).isEmpty();
+    }
+
+    private static final class FailingInputStream extends InputStream {
+
+        @Override
+        public int read() throws IOException {
+            throw new IOException("manifest unavailable");
+        }
     }
 }

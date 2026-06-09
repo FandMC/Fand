@@ -23,8 +23,8 @@ final class EventHookSourceTest {
     void projectileEventsPreserveShooterPayload() throws IOException {
         var source = read("src/main/java/io/fand/server/event/EntityEvents.java");
 
-        assertThat(source).contains("Optional.ofNullable(projectile.getOwner()).map(FandHooks::wrapEntity)");
-        assertThat(source).contains("Optional.ofNullable(potion.getOwner()).map(FandHooks::wrapEntity)");
+        assertThat(source).contains("projectile.getOwner() == null ? null : FandHooks.wrapEntity(projectile.getOwner())");
+        assertThat(source).contains("potion.getOwner() == null ? null : FandHooks.wrapEntity(potion.getOwner())");
     }
 
     @Test
@@ -50,6 +50,6 @@ final class EventHookSourceTest {
     }
 
     private static String read(String path) throws IOException {
-        return Files.readString(Path.of(path), StandardCharsets.UTF_8);
+        return Files.readString(Path.of(path), StandardCharsets.UTF_8).replace("\r\n", "\n");
     }
 }

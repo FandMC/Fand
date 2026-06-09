@@ -7,20 +7,21 @@ import io.fand.api.event.Event;
 import io.fand.api.item.ItemStack;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread when vanilla checks whether a block can be placed.
  */
 public final class BlockCanBuildEvent implements Event {
 
-    private final Optional<Player> player;
+    private final @Nullable Player player;
     private final Block block;
     private final BlockType blockType;
     private final ItemStack item;
     private boolean buildable;
 
-    public BlockCanBuildEvent(Optional<Player> player, Block block, BlockType blockType, ItemStack item, boolean buildable) {
-        this.player = Objects.requireNonNull(player, "player");
+    public BlockCanBuildEvent(@Nullable Player player, Block block, BlockType blockType, ItemStack item, boolean buildable) {
+        this.player = player;
         this.block = Objects.requireNonNull(block, "block");
         this.blockType = Objects.requireNonNull(blockType, "blockType");
         this.item = Objects.requireNonNull(item, "item");
@@ -28,7 +29,7 @@ public final class BlockCanBuildEvent implements Event {
     }
 
     public Optional<Player> player() {
-        return player;
+        return Optional.ofNullable(player);
     }
 
     public Block block() {

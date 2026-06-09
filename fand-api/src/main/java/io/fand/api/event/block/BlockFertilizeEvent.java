@@ -7,27 +7,28 @@ import io.fand.api.event.Event;
 import io.fand.api.item.ItemStack;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before bonemeal-style fertilization is applied.
  */
 public final class BlockFertilizeEvent implements Event, Cancellable {
 
-    private final Optional<Player> player;
+    private final @Nullable Player player;
     private final Block block;
     private final ItemStack item;
     private final Cause cause;
     private boolean cancelled;
 
-    public BlockFertilizeEvent(Optional<Player> player, Block block, ItemStack item, Cause cause) {
-        this.player = Objects.requireNonNull(player, "player");
+    public BlockFertilizeEvent(@Nullable Player player, Block block, ItemStack item, Cause cause) {
+        this.player = player;
         this.block = Objects.requireNonNull(block, "block");
         this.item = Objects.requireNonNull(item, "item");
         this.cause = Objects.requireNonNull(cause, "cause");
     }
 
     public Optional<Player> player() {
-        return player;
+        return Optional.ofNullable(player);
     }
 
     public Block block() {

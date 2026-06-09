@@ -3,6 +3,7 @@ package io.fand.api.event.inventory;
 import java.util.Objects;
 import java.util.Optional;
 import net.kyori.adventure.key.Key;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Mutable enchanting-table offer shown in one of the three enchantment rows.
@@ -11,13 +12,13 @@ public final class EnchantmentOffer {
 
     private final int slot;
     private int cost;
-    private Optional<Key> enchantment;
+    private @Nullable Key enchantment;
     private int level;
 
-    public EnchantmentOffer(int slot, int cost, Optional<Key> enchantment, int level) {
+    public EnchantmentOffer(int slot, int cost, @Nullable Key enchantment, int level) {
         this.slot = slot;
         this.cost = Math.max(0, cost);
-        this.enchantment = Objects.requireNonNull(enchantment, "enchantment");
+        this.enchantment = enchantment;
         this.level = Math.max(0, level);
     }
 
@@ -34,11 +35,11 @@ public final class EnchantmentOffer {
     }
 
     public Optional<Key> enchantment() {
-        return enchantment;
+        return Optional.ofNullable(enchantment);
     }
 
-    public void setEnchantment(Optional<Key> enchantment) {
-        this.enchantment = Objects.requireNonNull(enchantment, "enchantment");
+    public void setEnchantment(@Nullable Key enchantment) {
+        this.enchantment = enchantment;
     }
 
     public int level() {

@@ -2,7 +2,7 @@ package io.fand.api.event.entity;
 
 import io.fand.api.entity.LivingEntity;
 import java.util.Objects;
-import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Typed target-change event fired when the new target is a living entity.
@@ -13,10 +13,10 @@ public final class EntityTargetLivingEntityEvent extends EntityTargetEvent {
 
     public EntityTargetLivingEntityEvent(
             LivingEntity entity,
-            Optional<LivingEntity> oldTarget,
+            @Nullable LivingEntity oldTarget,
             LivingEntity target,
             Cause cause) {
-        super(entity, oldTarget, Optional.of(Objects.requireNonNull(target, "target")), cause);
+        super(entity, oldTarget, Objects.requireNonNull(target, "target"), cause);
         this.target = target;
     }
 

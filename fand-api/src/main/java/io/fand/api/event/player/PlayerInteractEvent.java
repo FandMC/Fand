@@ -7,6 +7,7 @@ import io.fand.api.event.Event;
 import io.fand.api.item.ItemStack;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread when a player right-clicks. The interaction may be
@@ -33,19 +34,19 @@ public final class PlayerInteractEvent implements Event, Cancellable {
     private final Player player;
     private final Action action;
     private final Hand hand;
-    private final Optional<Block> block;
+    private final @Nullable Block block;
     private final ItemStack item;
     private boolean cancelled;
 
-    public PlayerInteractEvent(Player player, Action action, Hand hand, Optional<Block> block) {
+    public PlayerInteractEvent(Player player, Action action, Hand hand, @Nullable Block block) {
         this(player, action, hand, block, ItemStack.EMPTY);
     }
 
-    public PlayerInteractEvent(Player player, Action action, Hand hand, Optional<Block> block, ItemStack item) {
+    public PlayerInteractEvent(Player player, Action action, Hand hand, @Nullable Block block, ItemStack item) {
         this.player = Objects.requireNonNull(player, "player");
         this.action = Objects.requireNonNull(action, "action");
         this.hand = Objects.requireNonNull(hand, "hand");
-        this.block = Objects.requireNonNull(block, "block");
+        this.block = block;
         this.item = Objects.requireNonNull(item, "item");
     }
 
@@ -63,7 +64,7 @@ public final class PlayerInteractEvent implements Event, Cancellable {
 
     /** Block targeted by the interaction; empty for {@link Action#RIGHT_CLICK_AIR}. */
     public Optional<Block> block() {
-        return block;
+        return Optional.ofNullable(block);
     }
 
     /** Item in the interacting hand when the event fired; empty for bare-hand interactions. */

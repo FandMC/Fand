@@ -4,6 +4,7 @@ import io.fand.api.event.Event;
 import io.fand.api.permission.PermissionSubject;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired when the permission service resolves a permission node.
@@ -13,7 +14,7 @@ public final class PermissionCheckEvent implements Event {
     private final PermissionSubject subject;
     private final String node;
     private final boolean defaultResult;
-    private Optional<Boolean> result = Optional.empty();
+    private @Nullable Boolean result;
 
     public PermissionCheckEvent(PermissionSubject subject, String node, boolean defaultResult) {
         this.subject = Objects.requireNonNull(subject, "subject");
@@ -34,22 +35,22 @@ public final class PermissionCheckEvent implements Event {
     }
 
     public Optional<Boolean> result() {
-        return result;
+        return Optional.ofNullable(result);
     }
 
-    public void setResult(Optional<Boolean> result) {
-        this.result = Objects.requireNonNull(result, "result");
+    public void setResult(@Nullable Boolean result) {
+        this.result = result;
     }
 
     public void allow() {
-        this.result = Optional.of(true);
+        this.result = true;
     }
 
     public void deny() {
-        this.result = Optional.of(false);
+        this.result = false;
     }
 
     public boolean effectiveResult() {
-        return result.orElse(defaultResult);
+        return result == null ? defaultResult : result;
     }
 }

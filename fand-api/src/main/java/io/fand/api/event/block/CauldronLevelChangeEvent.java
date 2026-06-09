@@ -7,6 +7,7 @@ import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before a cauldron changes fill state.
@@ -18,7 +19,7 @@ public final class CauldronLevelChangeEvent implements Event, Cancellable {
     private final BlockType newType;
     private final int oldLevel;
     private final int newLevel;
-    private final Optional<Entity> entity;
+    private final @Nullable Entity entity;
     private final Cause cause;
     private boolean cancelled;
 
@@ -28,7 +29,7 @@ public final class CauldronLevelChangeEvent implements Event, Cancellable {
             BlockType newType,
             int oldLevel,
             int newLevel,
-            Optional<Entity> entity,
+            @Nullable Entity entity,
             Cause cause
     ) {
         this.block = Objects.requireNonNull(block, "block");
@@ -36,7 +37,7 @@ public final class CauldronLevelChangeEvent implements Event, Cancellable {
         this.newType = Objects.requireNonNull(newType, "newType");
         this.oldLevel = clampLevel(oldLevel);
         this.newLevel = clampLevel(newLevel);
-        this.entity = Objects.requireNonNull(entity, "entity");
+        this.entity = entity;
         this.cause = Objects.requireNonNull(cause, "cause");
     }
 
@@ -61,7 +62,7 @@ public final class CauldronLevelChangeEvent implements Event, Cancellable {
     }
 
     public Optional<Entity> entity() {
-        return entity;
+        return Optional.ofNullable(entity);
     }
 
     public Cause cause() {

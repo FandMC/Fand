@@ -6,6 +6,7 @@ import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before a fire block is created.
@@ -15,14 +16,14 @@ public final class BlockIgniteEvent implements Event, Cancellable {
     private final Block block;
     private final BlockType ignitedType;
     private final Cause cause;
-    private final Optional<Block> sourceBlock;
+    private final @Nullable Block sourceBlock;
     private boolean cancelled;
 
-    public BlockIgniteEvent(Block block, BlockType ignitedType, Cause cause, Optional<Block> sourceBlock) {
+    public BlockIgniteEvent(Block block, BlockType ignitedType, Cause cause, @Nullable Block sourceBlock) {
         this.block = Objects.requireNonNull(block, "block");
         this.ignitedType = Objects.requireNonNull(ignitedType, "ignitedType");
         this.cause = Objects.requireNonNull(cause, "cause");
-        this.sourceBlock = Objects.requireNonNull(sourceBlock, "sourceBlock");
+        this.sourceBlock = sourceBlock;
     }
 
     public Block block() {
@@ -38,7 +39,7 @@ public final class BlockIgniteEvent implements Event, Cancellable {
     }
 
     public Optional<Block> sourceBlock() {
-        return sourceBlock;
+        return Optional.ofNullable(sourceBlock);
     }
 
     @Override

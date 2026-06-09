@@ -194,7 +194,7 @@ final class EventPayloadTest {
                 player,
                 PlayerInteractEvent.Action.RIGHT_CLICK_AIR,
                 PlayerInteractEvent.Hand.MAIN_HAND,
-                Optional.empty(),
+                null,
                 item);
 
         assertThat(event.player()).isSameAs(player);
@@ -208,7 +208,7 @@ final class EventPayloadTest {
                 proxy(Player.class),
                 PlayerInteractEvent.Action.RIGHT_CLICK_AIR,
                 PlayerInteractEvent.Hand.MAIN_HAND,
-                Optional.empty());
+                null);
 
         assertThat(event.item()).isEqualTo(ItemStack.EMPTY);
     }
@@ -326,7 +326,7 @@ final class EventPayloadTest {
         var direct = proxy(LivingEntity.class);
         var attacker = proxy(LivingEntity.class);
 
-        var event = new EntityDamageEvent(victim, "minecraft:player_attack", 4.0, Optional.of(direct), Optional.of(attacker));
+        var event = new EntityDamageEvent(victim, "minecraft:player_attack", 4.0, direct, attacker);
 
         assertThat(event.entity()).isSameAs(victim);
         assertThat(event.directEntity()).contains(direct);
@@ -345,7 +345,7 @@ final class EventPayloadTest {
                 "minecraft:player_attack",
                 6.0,
                 attacker,
-                Optional.of(direct));
+                direct);
         event.setAmount(2.5);
         event.setCancelled(true);
 
@@ -464,7 +464,7 @@ final class EventPayloadTest {
         var victim = proxy(LivingEntity.class);
         var attacker = proxy(LivingEntity.class);
 
-        var event = new EntityDeathEvent(victim, "minecraft:mob_attack", Optional.empty(), Optional.of(attacker));
+        var event = new EntityDeathEvent(victim, "minecraft:mob_attack", null, attacker);
 
         assertThat(event.entity()).isSameAs(victim);
         assertThat(event.cause()).isEqualTo("minecraft:mob_attack");
@@ -509,7 +509,7 @@ final class EventPayloadTest {
         var entity = proxy(Entity.class);
         var location = location("minecraft:overworld", 1, 2, 3);
 
-        var event = new ExplosionPrimeEvent(location, Optional.of(entity), 4.0F, true);
+        var event = new ExplosionPrimeEvent(location, entity, 4.0F, true);
         event.setRadius(-1.0F);
         event.setFire(false);
         event.setCancelled(true);
@@ -529,13 +529,13 @@ final class EventPayloadTest {
         var location = location("minecraft:overworld", 1, 2, 3);
         var projectileHit = new ProjectileHitEvent(
                 projectile,
-                Optional.of(hitEntity),
-                Optional.of(hitBlock),
+                hitEntity,
+                hitBlock,
                 location,
                 ProjectileHitEvent.HitType.ENTITY);
         var combust = new EntityCombustEvent(
                 hitEntity,
-                Optional.of(projectile),
+                projectile,
                 EntityCombustEvent.Cause.PROJECTILE,
                 5.0F);
         combust.setDurationSeconds(-1.0F);
@@ -572,24 +572,24 @@ final class EventPayloadTest {
 
         var target = new EntityTargetEvent(
                 entity,
-                Optional.of(oldTarget),
-                Optional.of(newTarget),
+                oldTarget,
+                newTarget,
                 EntityTargetEvent.Cause.CLOSEST_ENTITY);
-        target.setTarget(Optional.of(replacement));
+        target.setTarget(replacement);
         target.setCancelled(true);
         var effect = new EntityPotionEffectEvent(
                 entity,
                 Key.key("minecraft:speed"),
-                Optional.empty(),
-                Optional.of(new EntityPotionEffectEvent.Effect(120, 1, false, true, true)),
-                Optional.of(vehicle),
+                null,
+                new EntityPotionEffectEvent.Effect(120, 1, false, true, true),
+                vehicle,
                 EntityPotionEffectEvent.Action.ADDED);
         effect.setCancelled(true);
         var mount = new EntityMountEvent(vehicle, entity);
         mount.setCancelled(true);
         var dismount = new EntityDismountEvent(vehicle, entity);
         var tame = new EntityTameEvent(entity, player);
-        var breed = new EntityBreedEvent(entity, replacement, Optional.of(player), child);
+        var breed = new EntityBreedEvent(entity, replacement, player, child);
 
         assertThat(target.oldTarget()).contains(oldTarget);
         assertThat(target.target()).contains(replacement);
@@ -621,7 +621,7 @@ final class EventPayloadTest {
 
         var targetEvent = new EntityTargetLivingEntityEvent(
                 living,
-                Optional.of(oldTarget),
+                oldTarget,
                 target,
                 EntityTargetEvent.Cause.TARGET_ATTACKED_ENTITY);
         var byBlockDamage = new EntityDamageByBlockEvent(living, "minecraft:cactus", 2.0, block);
@@ -801,7 +801,7 @@ final class EventPayloadTest {
                 stack("minecraft:diamond_helmet", 1),
                 ItemStack.EMPTY);
         armorStand.setCancelled(true);
-        var editBook = new PlayerEditBookEvent(player, 3, previousBook, previousBook, Optional.of("Demo"), true);
+        var editBook = new PlayerEditBookEvent(player, 3, previousBook, previousBook, "Demo", true);
         editBook.setNewBook(signedBook);
         editBook.setCancelled(true);
         var egg = new PlayerEggThrowEvent(player, entity, false, -3);
@@ -884,7 +884,7 @@ final class EventPayloadTest {
         burn.setCancelled(true);
         var fade = new BlockFadeEvent(block, oldType, newType, BlockFadeEvent.Cause.MELT);
         var grow = new BlockGrowEvent(block, oldType, newType, BlockGrowEvent.Cause.BONEMEAL);
-        var ignite = new BlockIgniteEvent(block, newType, BlockIgniteEvent.Cause.SPREAD, Optional.of(sourceBlock));
+        var ignite = new BlockIgniteEvent(block, newType, BlockIgniteEvent.Cause.SPREAD, sourceBlock);
         ignite.setCancelled(true);
         var spread = new BlockSpreadEvent(sourceBlock, block, oldType, newType, BlockSpreadEvent.Cause.FIRE);
         var leaves = new LeavesDecayEvent(block, oldType);
@@ -969,9 +969,9 @@ final class EventPayloadTest {
         var stone = stack("minecraft:stone", 1);
         var diamond = stack("minecraft:diamond", 1);
 
-        var prepare = new PrepareItemCraftEvent(player, inventory, Optional.of(recipe), stone);
+        var prepare = new PrepareItemCraftEvent(player, inventory, recipe, stone);
         prepare.setResult(diamond);
-        var craft = new CraftItemEvent(player, inventory, Optional.of(recipe), diamond, ClickType.QUICK_MOVE);
+        var craft = new CraftItemEvent(player, inventory, recipe, diamond, ClickType.QUICK_MOVE);
         craft.setCancelled(true);
 
         assertThat(prepare.player()).isSameAs(player);
@@ -992,7 +992,7 @@ final class EventPayloadTest {
         var stone = stack("minecraft:stone", 1);
         var diamond = stack("minecraft:diamond", 1);
         var coal = stack("minecraft:coal", 1);
-        var offer = new EnchantmentOffer(0, -3, Optional.of(Key.key("minecraft:sharpness")), -2);
+        var offer = new EnchantmentOffer(0, -3, Key.key("minecraft:sharpness"), -2);
         offer.setCost(5);
         offer.setLevel(2);
 
@@ -1000,15 +1000,15 @@ final class EventPayloadTest {
         var enchant = new EnchantItemEvent(player, inventory, stone, diamond, 0, 3, 2, List.of(offer));
         enchant.setResultItem(stone);
         enchant.setCancelled(true);
-        var anvil = new PrepareAnvilEvent(player, inventory, stone, diamond, stone, 7, Optional.of("Demo"));
+        var anvil = new PrepareAnvilEvent(player, inventory, stone, diamond, stone, 7, "Demo");
         anvil.setResult(diamond);
         anvil.setCost(4);
-        var smithing = new PrepareSmithingEvent(player, inventory, Optional.of(recipe), stone, stone, diamond, stone);
+        var smithing = new PrepareSmithingEvent(player, inventory, recipe, stone, stone, diamond, stone);
         smithing.setResult(diamond);
         var burn = new FurnaceBurnEvent(block, inventory, coal, -1);
         burn.setBurnTime(200);
         burn.setCancelled(true);
-        var smelt = new FurnaceSmeltEvent(block, inventory, Optional.of(recipe), stone, diamond);
+        var smelt = new FurnaceSmeltEvent(block, inventory, recipe, stone, diamond);
         smelt.setResult(stone);
         smelt.setCancelled(true);
         var extract = new FurnaceExtractEvent(player, inventory, diamond, 3);
@@ -1073,7 +1073,7 @@ final class EventPayloadTest {
         var explode = new EntityExplodeEvent(entity, location, affected);
         explode.affectedBlocks().removeLast();
         explode.setCancelled(true);
-        var launch = new ProjectileLaunchEvent(projectile, Optional.of(entity), arrow);
+        var launch = new ProjectileLaunchEvent(projectile, entity, arrow);
         launch.setCancelled(true);
         var shoot = new EntityShootBowEvent(shooter, bow, arrow, projectile, -1.0F);
         shoot.setCancelled(true);
@@ -1170,9 +1170,9 @@ final class EventPayloadTest {
         itemDespawn.setCancelled(true);
         var itemMerge = new ItemMergeEvent(entity, vehicle, stone, diamond);
         itemMerge.setCancelled(true);
-        var hangingPlace = new HangingPlaceEvent(Optional.of(player), entity, block, BlockFace.NORTH, stone);
+        var hangingPlace = new HangingPlaceEvent(player, entity, block, BlockFace.NORTH, stone);
         hangingPlace.setCancelled(true);
-        var hangingBreak = new HangingBreakEvent(entity, Optional.of(vehicle), HangingBreakEvent.Cause.ENTITY);
+        var hangingBreak = new HangingBreakEvent(entity, vehicle, HangingBreakEvent.Cause.ENTITY);
         hangingBreak.setCancelled(true);
         var frame = new PlayerItemFrameChangeEvent(player, entity, PlayerItemFrameChangeEvent.Action.ROTATE, stone, 9);
         frame.setItem(diamond);
@@ -1189,7 +1189,7 @@ final class EventPayloadTest {
 
         var vehicleCreate = new VehicleCreateEvent(vehicle);
         vehicleCreate.setCancelled(true);
-        var vehicleDestroy = new VehicleDestroyEvent(vehicle, Optional.of(entity));
+        var vehicleDestroy = new VehicleDestroyEvent(vehicle, entity);
         vehicleDestroy.setCancelled(true);
         var vehicleEnter = new VehicleEnterEvent(vehicle, player);
         vehicleEnter.setCancelled(true);
@@ -1255,7 +1255,7 @@ final class EventPayloadTest {
         form.setCancelled(true);
         var fromTo = new BlockFromToEvent(sourceBlock, block, oldType, newType, BlockFace.DOWN, BlockFromToEvent.Cause.FLUID_FLOW);
         fromTo.setCancelled(true);
-        var fertilize = new BlockFertilizeEvent(Optional.of(player), block, stone, BlockFertilizeEvent.Cause.BONE_MEAL);
+        var fertilize = new BlockFertilizeEvent(player, block, stone, BlockFertilizeEvent.Cause.BONE_MEAL);
         fertilize.setCancelled(true);
         var sponge = new SpongeAbsorbEvent(block, List.of(sourceBlock));
         sponge.setCancelled(true);
@@ -1265,7 +1265,7 @@ final class EventPayloadTest {
                 newType,
                 -1,
                 9,
-                Optional.of(entity),
+                entity,
                 CauldronLevelChangeEvent.Cause.BUCKET_EMPTY);
         cauldron.setCancelled(true);
 
@@ -1286,18 +1286,18 @@ final class EventPayloadTest {
         changeBlock.setCancelled(true);
         var potionTargets = new java.util.LinkedHashMap<LivingEntity, Double>();
         potionTargets.put(living, 0.75);
-        var potionSplash = new PotionSplashEvent(entity, stone, location, Optional.of(entity), potionTargets);
+        var potionSplash = new PotionSplashEvent(entity, stone, location, entity, potionTargets);
         potionSplash.affectedEntities().put(proxy(LivingEntity.class), 0.25);
         potionSplash.setCancelled(true);
-        var lingering = new LingeringPotionSplashEvent(entity, stone, location, Optional.empty());
+        var lingering = new LingeringPotionSplashEvent(entity, stone, location, null);
         lingering.setCancelled(true);
-        var fish = new PlayerFishEvent(player, entity, PlayerFishEvent.State.CAUGHT_FISH, Optional.empty(), List.of(stone));
+        var fish = new PlayerFishEvent(player, entity, PlayerFishEvent.State.CAUGHT_FISH, null, List.of(stone));
         fish.setCancelled(true);
         var shear = new PlayerShearEntityEvent(player, entity, PlayerInteractEvent.Hand.MAIN_HAND, stone);
         shear.setCancelled(true);
-        var leash = new PlayerLeashEntityEvent(player, entity, Optional.of(entity), PlayerLeashEntityEvent.Cause.FENCE);
+        var leash = new PlayerLeashEntityEvent(player, entity, entity, PlayerLeashEntityEvent.Cause.FENCE);
         leash.setCancelled(true);
-        var unleash = new PlayerUnleashEntityEvent(player, entity, Optional.of(entity), true);
+        var unleash = new PlayerUnleashEntityEvent(player, entity, entity, true);
         unleash.setCancelled(true);
         var permission = new PermissionCheckEvent(proxy(io.fand.api.permission.PermissionSubject.class), "fand.test", false);
         permission.allow();
@@ -1365,20 +1365,20 @@ final class EventPayloadTest {
         var recipe = new TestRecipe(Key.key("minecraft:iron_ingot_from_smelting_raw_iron"), RecipeType.SMELTING, result);
         var location = location("minecraft:overworld", 10, 64, 10);
 
-        var canBuild = new BlockCanBuildEvent(Optional.of(player), block, placedType, source, false);
+        var canBuild = new BlockCanBuildEvent(player, block, placedType, source, false);
         canBuild.setBuildable(true);
         var multiPlace = new BlockMultiPlaceEvent(player, block, placedType, replacedType, List.of(block, otherBlock));
         multiPlace.setCancelled(true);
         var cook = new BlockCookEvent(block, inventory, source, result);
         cook.setResult(replacement);
         cook.setCancelled(true);
-        var smelt = new FurnaceSmeltEvent(block, inventory, Optional.of(recipe), source, result);
+        var smelt = new FurnaceSmeltEvent(block, inventory, recipe, source, result);
         smelt.setResult(replacement);
         smelt.setCancelled(true);
-        var startSmelt = new FurnaceStartSmeltEvent(block, inventory, Optional.of(recipe), source, -20);
+        var startSmelt = new FurnaceStartSmeltEvent(block, inventory, recipe, source, -20);
         startSmelt.setTotalCookTime(80);
         startSmelt.setCancelled(true);
-        var grow = new StructureGrowEvent(location, Optional.of(player), true, List.of(block, otherBlock));
+        var grow = new StructureGrowEvent(location, player, true, List.of(block, otherBlock));
         grow.setCancelled(true);
 
         assertThat(canBuild.player()).contains(player);

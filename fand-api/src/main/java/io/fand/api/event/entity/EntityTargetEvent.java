@@ -5,6 +5,7 @@ import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before a mob changes its current target.
@@ -12,19 +13,19 @@ import java.util.Optional;
 public class EntityTargetEvent implements Event, Cancellable {
 
     private final LivingEntity entity;
-    private final Optional<LivingEntity> oldTarget;
-    private Optional<LivingEntity> target;
+    private final @Nullable LivingEntity oldTarget;
+    private @Nullable LivingEntity target;
     private final Cause cause;
     private boolean cancelled;
 
     public EntityTargetEvent(
             LivingEntity entity,
-            Optional<LivingEntity> oldTarget,
-            Optional<LivingEntity> target,
+            @Nullable LivingEntity oldTarget,
+            @Nullable LivingEntity target,
             Cause cause) {
         this.entity = Objects.requireNonNull(entity, "entity");
-        this.oldTarget = Objects.requireNonNull(oldTarget, "oldTarget");
-        this.target = Objects.requireNonNull(target, "target");
+        this.oldTarget = oldTarget;
+        this.target = target;
         this.cause = Objects.requireNonNull(cause, "cause");
     }
 
@@ -33,15 +34,15 @@ public class EntityTargetEvent implements Event, Cancellable {
     }
 
     public Optional<LivingEntity> oldTarget() {
-        return oldTarget;
+        return Optional.ofNullable(oldTarget);
     }
 
     public Optional<LivingEntity> target() {
-        return target;
+        return Optional.ofNullable(target);
     }
 
-    public void setTarget(Optional<LivingEntity> target) {
-        this.target = Objects.requireNonNull(target, "target");
+    public void setTarget(@Nullable LivingEntity target) {
+        this.target = target;
     }
 
     public Cause cause() {

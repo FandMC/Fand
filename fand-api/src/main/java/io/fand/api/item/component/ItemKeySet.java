@@ -8,22 +8,26 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import net.kyori.adventure.key.Key;
+import org.jspecify.annotations.Nullable;
 
 /** Typed holder-set value used by registry-backed vanilla item components. */
-public record ItemKeySet(Optional<Key> tag, List<Key> values) implements ItemComponentData {
+public final class ItemKeySet implements ItemComponentData {
 
-    public static final ItemKeySet EMPTY = new ItemKeySet(Optional.empty(), List.of());
+    public static final ItemKeySet EMPTY = new ItemKeySet(null, List.of());
 
-    public ItemKeySet {
-        tag = Objects.requireNonNull(tag, "tag");
-        values = List.copyOf(Objects.requireNonNull(values, "values"));
-        if (tag.isPresent() && !values.isEmpty()) {
+    private final @Nullable Key tag;
+    private final List<Key> values;
+
+    public ItemKeySet(@Nullable Key tag, List<Key> values) {
+        this.tag = tag;
+        this.values = List.copyOf(Objects.requireNonNull(values, "values"));
+        if (tag != null && !values.isEmpty()) {
             throw new IllegalArgumentException("ItemKeySet must contain either a tag or values, not both");
         }
     }
 
     public static ItemKeySet of(Key value) {
-        return new ItemKeySet(Optional.empty(), List.of(Objects.requireNonNull(value, "value")));
+        return new ItemKeySet(null, List.of(Objects.requireNonNull(value, "value")));
     }
 
     public static ItemKeySet of(VanillaKey value) {
@@ -43,11 +47,11 @@ public record ItemKeySet(Optional<Key> tag, List<Key> values) implements ItemCom
     }
 
     public static ItemKeySet of(List<Key> values) {
-        return new ItemKeySet(Optional.empty(), values);
+        return new ItemKeySet(null, values);
     }
 
     public static ItemKeySet tag(Key tag) {
-        return new ItemKeySet(Optional.of(Objects.requireNonNull(tag, "tag")), List.of());
+        return new ItemKeySet(Objects.requireNonNull(tag, "tag"), List.of());
     }
 
     public static ItemKeySet fromJson(JsonElement value) {
@@ -70,17 +74,25 @@ public record ItemKeySet(Optional<Key> tag, List<Key> values) implements ItemCom
     }
 
     public boolean isTag() {
-        return tag.isPresent();
+        return tag != null;
     }
 
     public boolean isEmpty() {
-        return tag.isEmpty() && values.isEmpty();
+        return tag == null && values.isEmpty();
+    }
+
+    public Optional<Key> tag() {
+        return Optional.ofNullable(tag);
+    }
+
+    public List<Key> values() {
+        return values;
     }
 
     @Override
     public JsonElement toJson() {
-        if (tag.isPresent()) {
-            return new JsonPrimitive("#" + tag.orElseThrow().asString());
+        if (tag != null) {
+            return new JsonPrimitive("#" + tag.asString());
         }
         if (values.size() == 1) {
             return new JsonPrimitive(values.getFirst().asString());
@@ -88,5 +100,26 @@ public record ItemKeySet(Optional<Key> tag, List<Key> values) implements ItemCom
         var array = new JsonArray();
         values.forEach(value -> array.add(value.asString()));
         return array;
+    }
+
+    @Override
+    public boolean equals(@Nullable Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof ItemKeySet that)) {
+            return false;
+        }
+        return Objects.equals(tag, that.tag) && values.equals(that.values);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(tag, values);
+    }
+
+    @Override
+    public String toString() {
+        return "ItemKeySet[tag=" + tag() + ", values=" + values + "]";
     }
 }

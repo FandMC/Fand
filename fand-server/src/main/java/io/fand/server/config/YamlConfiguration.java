@@ -18,6 +18,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -30,6 +32,8 @@ import org.yaml.snakeyaml.representer.Representer;
  * round-tripped through SnakeYAML's representer.
  */
 public final class YamlConfiguration implements Configuration {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(YamlConfiguration.class);
 
     private final Path file;
     private MapSection root;
@@ -127,7 +131,8 @@ public final class YamlConfiguration implements Configuration {
         } catch (IOException ex) {
             try {
                 Files.deleteIfExists(tmp);
-            } catch (IOException ignored) {
+            } catch (IOException cleanupFailure) {
+                LOGGER.warn("Failed to delete temp config file {}", tmp, cleanupFailure);
             }
             throw new ConfigurationException("Failed to save config " + file, ex);
         }
@@ -282,7 +287,7 @@ public final class YamlConfiguration implements Configuration {
             if (v instanceof String s) {
                 try {
                     return Integer.parseInt(s);
-                } catch (NumberFormatException ignored) {
+                } catch (NumberFormatException invalidNumber) {
                 }
             }
             return defaultValue;
@@ -297,7 +302,7 @@ public final class YamlConfiguration implements Configuration {
             if (v instanceof String s) {
                 try {
                     return Long.parseLong(s);
-                } catch (NumberFormatException ignored) {
+                } catch (NumberFormatException invalidNumber) {
                 }
             }
             return defaultValue;
@@ -312,7 +317,7 @@ public final class YamlConfiguration implements Configuration {
             if (v instanceof String s) {
                 try {
                     return Double.parseDouble(s);
-                } catch (NumberFormatException ignored) {
+                } catch (NumberFormatException invalidNumber) {
                 }
             }
             return defaultValue;

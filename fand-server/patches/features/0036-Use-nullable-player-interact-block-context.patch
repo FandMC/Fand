@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Tue, 9 Jun 2026 00:00:00 +0800
+Subject: [PATCH] Use nullable player interact block context
+
+
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 0000000000000000000000000000000000000000..0000000000000000000000000000000000000000 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -1400,8 +1400,9 @@ public class ServerGamePacketListenerImpl
+                                     var fandPlayer = io.fand.server.hooks.FandHooks.findPlayer(this.player.getUUID());
+                                     if (fandPlayer != null) {
+                                         var fandWorld = io.fand.server.hooks.FandHooks.wrapWorld(level);
+-                                        var fandBlock = fandWorld == null ? java.util.Optional.<io.fand.api.block.Block>empty()
+-                                                : java.util.Optional.<io.fand.api.block.Block>of(new io.fand.server.block.FandBlock(fandWorld, pos.getX(), pos.getY(), pos.getZ()));
++                                        io.fand.api.block.Block fandBlock = fandWorld == null
++                                                ? null
++                                                : new io.fand.server.block.FandBlock(fandWorld, pos.getX(), pos.getY(), pos.getZ());
+                                         var fandHand = hand == net.minecraft.world.InteractionHand.OFF_HAND
+                                                 ? io.fand.api.event.player.PlayerInteractEvent.Hand.OFF_HAND
+                                                 : io.fand.api.event.player.PlayerInteractEvent.Hand.MAIN_HAND;
+@@ -1494,6 +1494,6 @@ public class ServerGamePacketListenerImpl
+                                         io.fand.api.event.player.PlayerInteractEvent.Action.RIGHT_CLICK_AIR,
+                                         fandHand,
+-                                        java.util.Optional.empty(),
++                                        null,
+                                         io.fand.server.item.FandItemStacks.fromVanilla(itemStack)),
+                                 "PlayerInteractEvent");
+                         if (fandInteractEvent.cancelled()) {

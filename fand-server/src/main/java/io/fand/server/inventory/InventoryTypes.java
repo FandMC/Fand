@@ -56,7 +56,7 @@ final class InventoryTypes {
         MenuType<?> type;
         try {
             type = menu.getType();
-        } catch (UnsupportedOperationException ignored) {
+        } catch (UnsupportedOperationException unsupportedMenu) {
             return InventoryType.UNKNOWN;
         }
         return resolve(type);

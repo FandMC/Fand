@@ -6,6 +6,7 @@ import io.fand.api.event.Event;
 import io.fand.api.item.ItemStack;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before a projectile entity is added to the world.
@@ -13,13 +14,13 @@ import java.util.Optional;
 public final class ProjectileLaunchEvent implements Event, Cancellable {
 
     private final Entity projectile;
-    private final Optional<Entity> shooter;
+    private final @Nullable Entity shooter;
     private final ItemStack item;
     private boolean cancelled;
 
-    public ProjectileLaunchEvent(Entity projectile, Optional<Entity> shooter, ItemStack item) {
+    public ProjectileLaunchEvent(Entity projectile, @Nullable Entity shooter, ItemStack item) {
         this.projectile = Objects.requireNonNull(projectile, "projectile");
-        this.shooter = Objects.requireNonNull(shooter, "shooter");
+        this.shooter = shooter;
         this.item = Objects.requireNonNull(item, "item");
     }
 
@@ -28,7 +29,7 @@ public final class ProjectileLaunchEvent implements Event, Cancellable {
     }
 
     public Optional<Entity> shooter() {
-        return shooter;
+        return Optional.ofNullable(shooter);
     }
 
     public ItemStack item() {

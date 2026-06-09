@@ -6,6 +6,7 @@ import io.fand.api.inventory.Inventory;
 import io.fand.api.item.ItemStack;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before an anvil result is shown.
@@ -18,7 +19,7 @@ public final class PrepareAnvilEvent implements Event {
     private final ItemStack secondItem;
     private ItemStack result;
     private int cost;
-    private final Optional<String> renameText;
+    private final @Nullable String renameText;
 
     public PrepareAnvilEvent(
             Player player,
@@ -27,14 +28,14 @@ public final class PrepareAnvilEvent implements Event {
             ItemStack secondItem,
             ItemStack result,
             int cost,
-            Optional<String> renameText) {
+            @Nullable String renameText) {
         this.player = Objects.requireNonNull(player, "player");
         this.inventory = Objects.requireNonNull(inventory, "inventory");
         this.firstItem = Objects.requireNonNull(firstItem, "firstItem");
         this.secondItem = Objects.requireNonNull(secondItem, "secondItem");
         this.result = Objects.requireNonNull(result, "result");
         this.cost = Math.max(0, cost);
-        this.renameText = Objects.requireNonNull(renameText, "renameText");
+        this.renameText = renameText;
     }
 
     public Player player() {
@@ -70,6 +71,6 @@ public final class PrepareAnvilEvent implements Event {
     }
 
     public Optional<String> renameText() {
-        return renameText;
+        return Optional.ofNullable(renameText);
     }
 }

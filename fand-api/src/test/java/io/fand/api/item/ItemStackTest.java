@@ -59,9 +59,8 @@ import io.fand.api.world.DamageTypeKey;
 import io.fand.api.world.sound.JukeboxSongKey;
 import io.fand.api.world.sound.SoundKey;
 import java.lang.reflect.Method;
-import java.util.Map;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import net.kyori.adventure.key.Key;
@@ -138,7 +137,7 @@ class ItemStackTest {
 
     @Test
     void readsAndWritesExpandedComponents() {
-        var haste = new ItemEffectInstance(Key.key("minecraft:haste"), 200, 1, false, true, true, Optional.empty());
+        var haste = new ItemEffectInstance(Key.key("minecraft:haste"), 200, 1, false, true, true, null);
         var consumeEffects = List.<ItemConsumeEffect>of(
                 new ItemConsumeEffect.ApplyEffects(List.of(haste), 0.75F),
                 new ItemConsumeEffect.PlaySound(Key.key("minecraft:block.amethyst_block.chime")));
@@ -158,20 +157,20 @@ class ItemStackTest {
                 "spawn",
                 new ItemMapDecorations.Entry(Key.key("minecraft:red_marker"), 12.5D, -4.25D, 90.0F));
         var potionContents = new ItemPotionContents(
-                Optional.of(Key.key("minecraft:strong_healing")),
-                Optional.of(0xCC33AA),
+                Key.key("minecraft:strong_healing"),
+                0xCC33AA,
                 List.of(haste),
-                Optional.of("fand_boost"));
+                "fand_boost");
         var bannerPatterns = new ItemBannerPatterns(List.of(
                 new ItemBannerPatterns.Layer(Key.key("minecraft:stripe_downright"), ItemDyeColor.YELLOW)));
         var profile = new ItemProfile(
-                Optional.of("tester"),
-                Optional.empty(),
+                "tester",
+                null,
                 List.of(ItemProfile.Property.signed("textures", "skin-value", "skin-signature")),
-                Optional.of(Key.key("minecraft:entity/player/wide/steve")),
-                Optional.empty(),
-                Optional.empty(),
-                Optional.of("wide"));
+                Key.key("minecraft:entity/player/wide/steve"),
+                null,
+                null,
+                "wide");
         var containerLoot = new ItemContainerLoot(Key.key("minecraft:chests/simple_dungeon"), 7L);
         var fireworkExplosion = new ItemFireworkExplosion(
                 ItemFireworkShape.STAR,
@@ -192,7 +191,7 @@ class ItemStackTest {
                         false,
                         consumeEffects))
                 .withUseRemainder(ItemTemplate.of(Key.key("minecraft:bowl")))
-                .withUseCooldown(new ItemUseCooldown(1.25F, Optional.of(Key.key("fand:test"))))
+                .withUseCooldown(new ItemUseCooldown(1.25F, Key.key("fand:test")))
                 .withAttributeModifiers(attributeModifiers)
                 .withTool(tool)
                 .withWeapon(new ItemWeapon(2, 5.0F))
@@ -227,7 +226,7 @@ class ItemStackTest {
                 false,
                 consumeEffects));
         assertThat(stack.useRemainder()).contains(ItemTemplate.of(Key.key("minecraft:bowl")));
-        assertThat(stack.useCooldown()).contains(new ItemUseCooldown(1.25F, Optional.of(Key.key("fand:test"))));
+        assertThat(stack.useCooldown()).contains(new ItemUseCooldown(1.25F, Key.key("fand:test")));
         assertThat(stack.attributeModifiers()).contains(attributeModifiers);
         assertThat(stack.tool()).contains(tool);
         assertThat(stack.weapon()).contains(new ItemWeapon(2, 5.0F));

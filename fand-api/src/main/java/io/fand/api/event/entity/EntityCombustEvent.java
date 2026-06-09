@@ -5,6 +5,7 @@ import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before an entity is set on fire.
@@ -12,14 +13,14 @@ import java.util.Optional;
 public class EntityCombustEvent implements Event, Cancellable {
 
     private final Entity entity;
-    private final Optional<Entity> source;
+    private final @Nullable Entity source;
     private final Cause cause;
     private float durationSeconds;
     private boolean cancelled;
 
-    public EntityCombustEvent(Entity entity, Optional<Entity> source, Cause cause, float durationSeconds) {
+    public EntityCombustEvent(Entity entity, @Nullable Entity source, Cause cause, float durationSeconds) {
         this.entity = Objects.requireNonNull(entity, "entity");
-        this.source = Objects.requireNonNull(source, "source");
+        this.source = source;
         this.cause = Objects.requireNonNull(cause, "cause");
         this.durationSeconds = Math.max(0.0F, durationSeconds);
     }
@@ -29,7 +30,7 @@ public class EntityCombustEvent implements Event, Cancellable {
     }
 
     public Optional<Entity> source() {
-        return source;
+        return Optional.ofNullable(source);
     }
 
     public Cause cause() {

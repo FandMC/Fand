@@ -6,6 +6,7 @@ import io.fand.api.event.Event;
 import io.fand.api.world.Location;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread when a projectile collides with a block or entity.
@@ -13,21 +14,21 @@ import java.util.Optional;
 public final class ProjectileHitEvent implements Event {
 
     private final Entity projectile;
-    private final Optional<Entity> hitEntity;
-    private final Optional<Block> hitBlock;
+    private final @Nullable Entity hitEntity;
+    private final @Nullable Block hitBlock;
     private final Location hitLocation;
     private final HitType hitType;
 
     public ProjectileHitEvent(
             Entity projectile,
-            Optional<Entity> hitEntity,
-            Optional<Block> hitBlock,
+            @Nullable Entity hitEntity,
+            @Nullable Block hitBlock,
             Location hitLocation,
             HitType hitType
     ) {
         this.projectile = Objects.requireNonNull(projectile, "projectile");
-        this.hitEntity = Objects.requireNonNull(hitEntity, "hitEntity");
-        this.hitBlock = Objects.requireNonNull(hitBlock, "hitBlock");
+        this.hitEntity = hitEntity;
+        this.hitBlock = hitBlock;
         this.hitLocation = Objects.requireNonNull(hitLocation, "hitLocation");
         this.hitType = Objects.requireNonNull(hitType, "hitType");
     }
@@ -37,11 +38,11 @@ public final class ProjectileHitEvent implements Event {
     }
 
     public Optional<Entity> hitEntity() {
-        return hitEntity;
+        return Optional.ofNullable(hitEntity);
     }
 
     public Optional<Block> hitBlock() {
-        return hitBlock;
+        return Optional.ofNullable(hitBlock);
     }
 
     public Location hitLocation() {

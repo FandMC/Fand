@@ -7,6 +7,7 @@ import io.fand.api.item.ItemStack;
 import io.fand.api.world.Location;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread before a lingering potion creates its area effect
@@ -17,14 +18,14 @@ public final class LingeringPotionSplashEvent implements Event, Cancellable {
     private final Entity potion;
     private final ItemStack item;
     private final Location location;
-    private final Optional<Entity> source;
+    private final @Nullable Entity source;
     private boolean cancelled;
 
-    public LingeringPotionSplashEvent(Entity potion, ItemStack item, Location location, Optional<Entity> source) {
+    public LingeringPotionSplashEvent(Entity potion, ItemStack item, Location location, @Nullable Entity source) {
         this.potion = Objects.requireNonNull(potion, "potion");
         this.item = Objects.requireNonNull(item, "item");
         this.location = Objects.requireNonNull(location, "location");
-        this.source = Objects.requireNonNull(source, "source");
+        this.source = source;
     }
 
     public Entity potion() {
@@ -40,7 +41,7 @@ public final class LingeringPotionSplashEvent implements Event, Cancellable {
     }
 
     public Optional<Entity> source() {
-        return source;
+        return Optional.ofNullable(source);
     }
 
     @Override

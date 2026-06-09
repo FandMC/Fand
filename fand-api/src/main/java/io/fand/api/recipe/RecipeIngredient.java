@@ -6,25 +6,29 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import net.kyori.adventure.key.Key;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An ingredient accepted by a recipe slot.
  */
-public record RecipeIngredient(Optional<Key> tag, List<Key> items) {
+public final class RecipeIngredient {
 
-    public RecipeIngredient {
-        tag = Objects.requireNonNull(tag, "tag");
-        items = List.copyOf(Objects.requireNonNull(items, "items"));
-        if (tag.isPresent() && !items.isEmpty()) {
+    private final @Nullable Key tag;
+    private final List<Key> items;
+
+    public RecipeIngredient(@Nullable Key tag, List<Key> items) {
+        this.tag = tag;
+        this.items = List.copyOf(Objects.requireNonNull(items, "items"));
+        if (tag != null && !items.isEmpty()) {
             throw new IllegalArgumentException("RecipeIngredient must contain either a tag or items, not both");
         }
-        if (tag.isEmpty() && items.isEmpty()) {
+        if (tag == null && items.isEmpty()) {
             throw new IllegalArgumentException("RecipeIngredient must contain a tag or at least one item");
         }
     }
 
     public static RecipeIngredient tag(Key tag) {
-        return new RecipeIngredient(Optional.of(Objects.requireNonNull(tag, "tag")), List.of());
+        return new RecipeIngredient(Objects.requireNonNull(tag, "tag"), List.of());
     }
 
     public static RecipeIngredient tag(String tag) {
@@ -60,10 +64,39 @@ public record RecipeIngredient(Optional<Key> tag, List<Key> items) {
     }
 
     public static RecipeIngredient ofKeys(List<Key> items) {
-        return new RecipeIngredient(Optional.empty(), items);
+        return new RecipeIngredient(null, items);
+    }
+
+    public Optional<Key> tag() {
+        return Optional.ofNullable(tag);
+    }
+
+    public List<Key> items() {
+        return items;
     }
 
     public boolean isTag() {
-        return tag.isPresent();
+        return tag != null;
+    }
+
+    @Override
+    public boolean equals(@Nullable Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof RecipeIngredient that)) {
+            return false;
+        }
+        return Objects.equals(tag, that.tag) && items.equals(that.items);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(tag, items);
+    }
+
+    @Override
+    public String toString() {
+        return "RecipeIngredient[tag=" + tag() + ", items=" + items + "]";
     }
 }

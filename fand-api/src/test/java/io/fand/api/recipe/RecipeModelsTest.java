@@ -122,7 +122,7 @@ final class RecipeModelsTest {
         assertThat(RecipeIngredient.tag(Key.key("minecraft:planks")).isTag()).isTrue();
         assertThat(RecipeIngredient.ofKeys(List.of(Key.key("minecraft:stone"), Key.key("minecraft:cobblestone"))).items())
                 .containsExactly(Key.key("minecraft:stone"), Key.key("minecraft:cobblestone"));
-        assertThatThrownBy(() -> new RecipeIngredient(Optional.of(Key.key("minecraft:planks")), List.of(Key.key("minecraft:stone"))))
+        assertThatThrownBy(() -> new RecipeIngredient(Key.key("minecraft:planks"), List.of(Key.key("minecraft:stone"))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("either a tag or items");
         assertThatThrownBy(() -> RecipeIngredient.ofKeys(List.of()))

@@ -6,17 +6,21 @@ import java.util.Objects;
 import java.util.Optional;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
+import org.jspecify.annotations.Nullable;
 
 /** Filterable Adventure component value used by written books. */
-public record ItemFilterableComponent(Component raw, Optional<Component> filtered) implements ItemComponentData {
+public final class ItemFilterableComponent implements ItemComponentData {
 
-    public ItemFilterableComponent {
-        raw = Objects.requireNonNull(raw, "raw");
-        filtered = Objects.requireNonNull(filtered, "filtered");
+    private final Component raw;
+    private final @Nullable Component filtered;
+
+    public ItemFilterableComponent(Component raw, @Nullable Component filtered) {
+        this.raw = Objects.requireNonNull(raw, "raw");
+        this.filtered = filtered;
     }
 
     public static ItemFilterableComponent of(Component raw) {
-        return new ItemFilterableComponent(raw, Optional.empty());
+        return new ItemFilterableComponent(raw, null);
     }
 
     public static ItemFilterableComponent fromJson(JsonElement value) {
@@ -27,17 +31,25 @@ public record ItemFilterableComponent(Component raw, Optional<Component> filtere
         var object = value.getAsJsonObject();
         return new ItemFilterableComponent(
                 deserialize(object.get("raw")),
-                object.has("filtered") ? Optional.of(deserialize(object.get("filtered"))) : Optional.empty());
+                object.has("filtered") ? deserialize(object.get("filtered")) : null);
+    }
+
+    public Component raw() {
+        return raw;
+    }
+
+    public Optional<Component> filtered() {
+        return Optional.ofNullable(filtered);
     }
 
     @Override
     public JsonElement toJson() {
-        if (filtered.isEmpty()) {
+        if (filtered == null) {
             return serialize(raw);
         }
         var json = new JsonObject();
         json.add("raw", serialize(raw));
-        json.add("filtered", serialize(filtered.orElseThrow()));
+        json.add("filtered", serialize(filtered));
         return json;
     }
 
@@ -47,5 +59,26 @@ public record ItemFilterableComponent(Component raw, Optional<Component> filtere
 
     private static Component deserialize(JsonElement component) {
         return GsonComponentSerializer.gson().deserializeFromTree(component);
+    }
+
+    @Override
+    public boolean equals(@Nullable Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof ItemFilterableComponent that)) {
+            return false;
+        }
+        return raw.equals(that.raw) && Objects.equals(filtered, that.filtered);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(raw, filtered);
+    }
+
+    @Override
+    public String toString() {
+        return "ItemFilterableComponent[raw=" + raw + ", filtered=" + filtered() + "]";
     }
 }

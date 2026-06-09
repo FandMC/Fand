@@ -406,10 +406,11 @@ public final class InventoryEvents {
         var offers = new ArrayList<EnchantmentOffer>();
         var holders = access.lookupOrThrow(Registries.ENCHANTMENT).asHolderIdMap();
         for (int slot = 0; slot < costs.length; slot++) {
-            Optional<Key> enchantment = Optional.ofNullable(holders.byId(enchantClue[slot]))
+            var enchantment = Optional.ofNullable(holders.byId(enchantClue[slot]))
                     .flatMap(Holder::unwrapKey)
                     .map(ResourceKey::identifier)
-                    .map(InventoryEvents::key);
+                    .map(InventoryEvents::key)
+                    .orElse(null);
             offers.add(new EnchantmentOffer(slot, costs[slot], enchantment, levelClue[slot]));
         }
         var event = new PrepareItemEnchantEvent(
@@ -459,7 +460,10 @@ public final class InventoryEvents {
                 .map(enchantment -> new EnchantmentOffer(
                         button,
                         xpCost,
-                        enchantment.enchantment().unwrapKey().map(ResourceKey::identifier).map(InventoryEvents::key),
+                        enchantment.enchantment().unwrapKey()
+                                .map(ResourceKey::identifier)
+                                .map(InventoryEvents::key)
+                                .orElse(null),
                         enchantment.level()))
                 .toList();
         var event = new EnchantItemEvent(
@@ -512,7 +516,7 @@ public final class InventoryEvents {
                 FandItemStacks.fromVanilla(secondItem),
                 FandItemStacks.fromVanilla(result),
                 cost,
-                renameText);
+                renameText.orElse(null));
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {
@@ -547,7 +551,7 @@ public final class InventoryEvents {
         var event = new PrepareSmithingEvent(
                 fandPlayer,
                 new ContainerMenuView(menu),
-                recipe.map(FandRecipes::fromVanilla),
+                recipe.map(FandRecipes::fromVanilla).orElse(null),
                 FandItemStacks.fromVanilla(templateItem),
                 FandItemStacks.fromVanilla(baseItem),
                 FandItemStacks.fromVanilla(additionItem),
@@ -683,7 +687,7 @@ public final class InventoryEvents {
         var event = new FurnaceSmeltEvent(
                 new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()),
                 new FandContainerInventory(inventory, InventoryType.FURNACE),
-                recipe.map(FandRecipes::fromVanilla),
+                recipe.map(FandRecipes::fromVanilla).orElse(null),
                 FandItemStacks.fromVanilla(source),
                 FandItemStacks.fromVanilla(result));
         try {
@@ -722,7 +726,7 @@ public final class InventoryEvents {
         var event = new FurnaceStartSmeltEvent(
                 new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()),
                 new FandContainerInventory(inventory, InventoryType.FURNACE),
-                recipe.map(FandRecipes::fromVanilla),
+                recipe.map(FandRecipes::fromVanilla).orElse(null),
                 FandItemStacks.fromVanilla(source),
                 totalCookTime);
         try {

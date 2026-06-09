@@ -10,7 +10,8 @@ import java.util.Properties;
  */
 final class ClipManifest {
 
-    private static final Properties PROPS = load();
+    private static final System.Logger LOGGER = System.getLogger(ClipManifest.class.getName());
+    private static final Properties PROPS = loadResource();
 
     private ClipManifest() {}
 
@@ -22,13 +23,25 @@ final class ClipManifest {
         return PROPS.getProperty("fandVersion", "0.0.0-dev");
     }
 
-    private static Properties load() {
-        Properties p = new Properties();
+    private static Properties loadResource() {
         try (InputStream in = ClipManifest.class.getResourceAsStream("/clip-manifest.properties")) {
-            if (in != null) p.load(in);
-        } catch (IOException ignored) {
-            // fall back to defaults
+            return load(in);
+        } catch (IOException failure) {
+            LOGGER.log(System.Logger.Level.WARNING, "Failed to close fandclip manifest metadata", failure);
+            return new Properties();
         }
-        return p;
+    }
+
+    static Properties load(InputStream input) {
+        var properties = new Properties();
+        if (input == null) {
+            return properties;
+        }
+        try {
+            properties.load(input);
+        } catch (IOException failure) {
+            LOGGER.log(System.Logger.Level.WARNING, "Failed to read fandclip manifest metadata", failure);
+        }
+        return properties;
     }
 }

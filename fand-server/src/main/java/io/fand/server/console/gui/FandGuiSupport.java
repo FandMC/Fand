@@ -10,6 +10,8 @@ import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Entry point the patched vanilla server GUI calls into for theming.
@@ -26,6 +28,8 @@ import javax.swing.SwingUtilities;
  * read immutable theme data and are safe from any thread.
  */
 public final class FandGuiSupport {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(FandGuiSupport.class);
 
     private FandGuiSupport() {
     }
@@ -89,8 +93,8 @@ public final class FandGuiSupport {
         return () -> {
             try {
                 handle.close();
-            } catch (Exception ignored) {
-                // Listener removal cannot fail; ignore to keep finalizers quiet.
+            } catch (Exception failure) {
+                LOGGER.warn("Failed to remove GUI theme listener", failure);
             }
         };
     }

@@ -6,6 +6,7 @@ import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Fired on the server thread after vanilla creates a breeding offspring entity
@@ -15,14 +16,14 @@ public final class EntityBreedEvent implements Event, Cancellable {
 
     private final LivingEntity parent;
     private final LivingEntity partner;
-    private final Optional<Player> breeder;
+    private final @Nullable Player breeder;
     private final LivingEntity child;
     private boolean cancelled;
 
-    public EntityBreedEvent(LivingEntity parent, LivingEntity partner, Optional<Player> breeder, LivingEntity child) {
+    public EntityBreedEvent(LivingEntity parent, LivingEntity partner, @Nullable Player breeder, LivingEntity child) {
         this.parent = Objects.requireNonNull(parent, "parent");
         this.partner = Objects.requireNonNull(partner, "partner");
-        this.breeder = Objects.requireNonNull(breeder, "breeder");
+        this.breeder = breeder;
         this.child = Objects.requireNonNull(child, "child");
     }
 
@@ -35,7 +36,7 @@ public final class EntityBreedEvent implements Event, Cancellable {
     }
 
     public Optional<Player> breeder() {
-        return breeder;
+        return Optional.ofNullable(breeder);
     }
 
     public LivingEntity child() {
