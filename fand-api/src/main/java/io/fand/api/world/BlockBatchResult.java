@@ -9,7 +9,8 @@ public record BlockBatchResult(int requested, int changed, int skipped, int fail
         if (requested < 0 || changed < 0 || skipped < 0 || failed < 0) {
             throw new IllegalArgumentException("batch result counters must not be negative");
         }
-        if (changed + skipped + failed > requested) {
+        long completed = (long) changed + skipped + failed;
+        if (completed > requested) {
             throw new IllegalArgumentException("changed + skipped + failed cannot exceed requested");
         }
     }

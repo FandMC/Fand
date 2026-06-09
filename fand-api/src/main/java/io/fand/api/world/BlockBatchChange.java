@@ -23,6 +23,11 @@ public record BlockBatchChange(int x, int y, int z, BlockType type, DataComponen
     }
 
     public BlockBatchChange offset(int dx, int dy, int dz) {
-        return new BlockBatchChange(x + dx, y + dy, z + dz, type, components);
+        return new BlockBatchChange(
+                Math.addExact(x, dx),
+                Math.addExact(y, dy),
+                Math.addExact(z, dz),
+                type,
+                components);
     }
 }
