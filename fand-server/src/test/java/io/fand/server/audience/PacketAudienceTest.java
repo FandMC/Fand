@@ -3,7 +3,6 @@ package io.fand.server.audience;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
-import java.util.OptionalLong;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.sound.Sound;
 import net.minecraft.sounds.SoundSource;
@@ -40,7 +39,7 @@ class PacketAudienceTest {
     @Test
     void seedOfDefaultsToZeroWhenAbsent() {
         var sound = Sound.sound(Key.key("entity.experience_orb.pickup"), Sound.Source.PLAYER, 1.0F, 1.0F);
-        assertThat(sound.seed()).isEqualTo(OptionalLong.empty());
+        assertThat(sound.seed()).isEmpty();
         assertThat(PacketAudience.seedOf(sound)).isEqualTo(0L);
     }
 

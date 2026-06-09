@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Player identity lookup and server access-list controls.
@@ -24,10 +25,10 @@ public interface PlayerAccessService {
     boolean banned(PlayerProfile profile);
 
     default boolean ban(PlayerProfile profile, String source, String reason) {
-        return ban(profile, source, reason, Optional.empty());
+        return ban(profile, source, reason, null);
     }
 
-    boolean ban(PlayerProfile profile, String source, String reason, Optional<Instant> expires);
+    boolean ban(PlayerProfile profile, String source, String reason, @Nullable Instant expires);
 
     boolean pardon(PlayerProfile profile);
 

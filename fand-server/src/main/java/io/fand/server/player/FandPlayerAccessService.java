@@ -19,6 +19,7 @@ import net.minecraft.server.players.ServerOpListEntry;
 import net.minecraft.server.players.UserBanListEntry;
 import net.minecraft.server.players.UserWhiteListEntry;
 import net.minecraft.util.Util;
+import org.jspecify.annotations.Nullable;
 
 public final class FandPlayerAccessService implements PlayerAccessService {
 
@@ -69,12 +70,11 @@ public final class FandPlayerAccessService implements PlayerAccessService {
     }
 
     @Override
-    public boolean ban(PlayerProfile profile, String source, String reason, Optional<Instant> expires) {
+    public boolean ban(PlayerProfile profile, String source, String reason, @Nullable Instant expires) {
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(reason, "reason");
-        Objects.requireNonNull(expires, "expires");
         var vanilla = PlayerProfiles.toVanilla(profile);
-        var expiry = expires.map(Date::from).orElse(null);
+        var expiry = expires == null ? null : Date.from(expires);
         return callOnServerThread(() -> {
             var bans = server().getPlayerList().getBans();
             var entry = new UserBanListEntry(vanilla, new Date(), source, expiry, reason);
@@ -201,8 +201,8 @@ public final class FandPlayerAccessService implements PlayerAccessService {
                 PlayerProfiles.fromVanilla(user),
                 entry.getCreated().toInstant(),
                 entry.getSource(),
-                Optional.ofNullable(entry.getExpires()).map(Date::toInstant),
-                Optional.ofNullable(entry.getReason())));
+                entry.getExpires() == null ? null : entry.getExpires().toInstant(),
+                entry.getReason()));
     }
 
     private Optional<OperatorEntry> operatorEntry(ServerOpListEntry entry) {
