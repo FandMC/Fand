@@ -19,6 +19,10 @@ public final class Main {
         return local;
     }
 
+    public static @Nullable FandServer runtimeOrNull() {
+        return runtime;
+    }
+
     static void bind(FandServer server) {
         synchronized (Main.class) {
             if (runtime != null) {
@@ -39,15 +43,17 @@ public final class Main {
     public static void main(String[] args) {
         var server = new FandServer();
         bind(server);
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+        Runtime.getRuntime().addShutdownHook(new Thread(server::close, "Fand-Shutdown"));
+        try {
+            server.start();
+            net.minecraft.server.Main.main(args);
+            server.awaitMinecraftServerStop();
+        } finally {
             try {
                 server.close();
             } finally {
                 unbind(server);
             }
-        }, "Fand-Shutdown"));
-        server.start();
-        net.minecraft.server.Main.main(args);
-        server.awaitMinecraftServerStop();
+        }
     }
 }

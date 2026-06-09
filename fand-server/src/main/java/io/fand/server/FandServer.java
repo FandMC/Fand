@@ -227,6 +227,9 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     public void tickScheduler() {
+        if (phase.get() == LifecyclePhase.STOPPING || phase.get() == LifecyclePhase.STOPPED) {
+            return;
+        }
         scheduler.tick();
         recipes.tick();
         for (var world : worlds()) {
@@ -542,11 +545,17 @@ public final class FandServer implements Server, AutoCloseable {
 
     @Override
     public void close() {
-        var current = phase.getAndSet(LifecyclePhase.STOPPING);
-        if (current == LifecyclePhase.STOPPED) {
-            phase.set(LifecyclePhase.STOPPED);
-            return;
+        LifecyclePhase current;
+        while (true) {
+            current = phase.get();
+            if (current == LifecyclePhase.STOPPING || current == LifecyclePhase.STOPPED) {
+                return;
+            }
+            if (phase.compareAndSet(current, LifecyclePhase.STOPPING)) {
+                break;
+            }
         }
+
         if (current == LifecyclePhase.RUNNING || current == LifecyclePhase.STARTING) {
             try {
                 events.fire(new ServerStoppingEvent(this, null));
@@ -563,9 +572,7 @@ public final class FandServer implements Server, AutoCloseable {
         scheduler.close();
         guiThemes.close();
         performance.close();
-        if (current != LifecyclePhase.BOOTSTRAP) {
-            Fand.unbind(this);
-        }
+        Fand.unbind(this);
         phase.set(LifecyclePhase.STOPPED);
         LOGGER.info("Fand runtime stopped");
     }

@@ -2,10 +2,17 @@ package io.fand.server.hooks;
 
 import io.fand.api.event.Event;
 import io.fand.api.event.EventBus;
+import io.fand.api.event.EventListener;
+import io.fand.api.event.EventPriority;
+import io.fand.api.event.EventSubscription;
 import io.fand.api.entity.Entity;
 import io.fand.api.entity.LivingEntity;
 import io.fand.api.entity.Player;
+import io.fand.api.lifecycle.LifecyclePhase;
+import io.fand.api.performance.MetricStatistics;
 import io.fand.api.performance.ServerPerformance;
+import io.fand.api.performance.TickWindow;
+import io.fand.api.performance.TickWindowSnapshot;
 import io.fand.server.chunk.ChunkSendScheduler;
 import io.fand.server.chunk.ChunkTrackingSnapshot;
 import io.fand.server.FandServer;
@@ -20,6 +27,8 @@ import io.fand.server.network.VelocityForwardingQueryAnswerPayload;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.WorldRegistry;
 import java.net.SocketAddress;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.network.ConnectionProtocol;
@@ -49,28 +58,72 @@ import org.slf4j.LoggerFactory;
 public final class FandHooks {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FandHooks.class);
+    private static final EventSubscription NOOP_SUBSCRIPTION = new EventSubscription() {
+        @Override
+        public boolean active() {
+            return false;
+        }
+
+        @Override
+        public void unregister() {
+        }
+    };
+    private static final EventBus NOOP_EVENTS = new EventBus() {
+        @Override
+        public <E extends Event> EventSubscription subscribe(Class<E> type, EventPriority priority, EventListener<E> listener) {
+            return NOOP_SUBSCRIPTION;
+        }
+
+        @Override
+        public <E extends Event> E fire(E event) {
+            return event;
+        }
+
+        @Override
+        public boolean hasListeners(Class<? extends Event> type) {
+            return false;
+        }
+
+        @Override
+        public <E extends Event> CompletableFuture<E> fireAsync(E event, Executor executor) {
+            return CompletableFuture.completedFuture(event);
+        }
+    };
+    private static final ServerPerformance EMPTY_PERFORMANCE = emptyPerformance();
+    private static final io.fand.server.block.FandCustomBlockRegistry NOOP_CUSTOM_BLOCKS =
+            new io.fand.server.block.FandCustomBlockRegistry(NOOP_EVENTS);
+    private static final io.fand.server.console.gui.GuiThemeService FALLBACK_GUI_THEMES =
+            new io.fand.server.console.gui.GuiThemeService(io.fand.server.console.gui.GuiTheme.SYSTEM);
 
     private FandHooks() {
     }
 
     public static EventBus events() {
-        return Main.runtime().events();
+        var runtime = activeRuntime();
+        return runtime == null ? NOOP_EVENTS : runtime.events();
     }
 
     public static ServerPerformance performance() {
-        return Main.runtime().performance();
+        var runtime = activeRuntime();
+        return runtime == null ? EMPTY_PERFORMANCE : runtime.performance();
     }
 
     public static void recordTickPerformance(long tickStartNanos, long tickDurationNanos, long taskExecutionNanos) {
-        Main.runtime().recordTick(tickStartNanos, tickDurationNanos, taskExecutionNanos);
+        var runtime = activeRuntime();
+        if (runtime != null) {
+            runtime.recordTick(tickStartNanos, tickDurationNanos, taskExecutionNanos);
+        }
     }
 
     public static boolean submitChunkTrackingDiff(ServerLevel level, ChunkTrackingSnapshot snapshot) {
-        return Main.runtime().chunkSendScheduler().submitTrackingDiff(level.dimension().identifier().toString(), snapshot);
+        var runtime = activeRuntime();
+        return runtime != null
+                && runtime.chunkSendScheduler().submitTrackingDiff(level.dimension().identifier().toString(), snapshot);
     }
 
     public static int applyChunkTrackingDiffs(ServerLevel level, ChunkSendScheduler.TrackingDiffApplier applier) {
-        return Main.runtime().chunkSendScheduler().applyCompleted(level.dimension().identifier().toString(), applier);
+        var runtime = activeRuntime();
+        return runtime == null ? 0 : runtime.chunkSendScheduler().applyCompleted(level.dimension().identifier().toString(), applier);
     }
 
     public static boolean hasListeners(Class<? extends Event> type) {
@@ -99,49 +152,59 @@ public final class FandHooks {
     }
 
     public static @Nullable FandPlayer findPlayer(UUID id) {
-        return Main.runtime().playerRegistry().findOrNull(id);
+        var runtime = Main.runtimeOrNull();
+        return runtime == null ? null : runtime.playerRegistry().findOrNull(id);
     }
 
     public static Optional<WorldRegistry> worlds() {
-        return Optional.ofNullable(Main.runtime().worldRegistryOrNull());
+        var runtime = Main.runtimeOrNull();
+        return runtime == null ? Optional.empty() : Optional.ofNullable(runtime.worldRegistryOrNull());
     }
 
     public static @Nullable FandWorld wrapWorld(ServerLevel level) {
-        var registry = Main.runtime().worldRegistryOrNull();
+        var runtime = Main.runtimeOrNull();
+        var registry = runtime == null ? null : runtime.worldRegistryOrNull();
         return registry == null ? null : registry.wrap(level);
     }
 
     public static @Nullable LivingEntity wrapLivingEntity(
             net.minecraft.world.entity.LivingEntity entity
     ) {
-        var registry = Main.runtime().entityRegistryOrNull();
+        var runtime = Main.runtimeOrNull();
+        var registry = runtime == null ? null : runtime.entityRegistryOrNull();
         var wrapped = registry == null ? null : registry.wrap(entity);
         return wrapped instanceof LivingEntity living ? living : null;
     }
 
     public static @Nullable Entity wrapEntity(net.minecraft.world.entity.Entity entity) {
-        var registry = Main.runtime().entityRegistryOrNull();
+        var runtime = Main.runtimeOrNull();
+        var registry = runtime == null ? null : runtime.entityRegistryOrNull();
         return registry == null ? null : registry.wrap(entity);
     }
 
     public static Optional<EntityRegistry> entities() {
-        return Optional.ofNullable(Main.runtime().entityRegistryOrNull());
+        var runtime = Main.runtimeOrNull();
+        return runtime == null ? Optional.empty() : Optional.ofNullable(runtime.entityRegistryOrNull());
     }
 
     public static ProxyForwardingMode proxyForwardingMode() {
-        return Main.runtime().proxyForwarding().mode();
+        var runtime = activeRuntime();
+        return runtime == null ? ProxyForwardingMode.NONE : runtime.proxyForwarding().mode();
     }
 
     public static boolean consoleGuiEnabled() {
-        return Main.runtime().consoleGuiEnabled();
+        var runtime = activeRuntime();
+        return runtime != null && runtime.consoleGuiEnabled();
     }
 
     public static io.fand.server.console.gui.GuiThemeService guiThemes() {
-        return Main.runtime().guiThemes();
+        var runtime = activeRuntime();
+        return runtime == null ? FALLBACK_GUI_THEMES : runtime.guiThemes();
     }
 
     public static io.fand.server.block.FandCustomBlockRegistry customBlocks() {
-        return Main.runtime().customBlockRegistry();
+        var runtime = activeRuntime();
+        return runtime == null ? NOOP_CUSTOM_BLOCKS : runtime.customBlockRegistry();
     }
 
     public static ForwardedPlayerInfo parseBungeeLegacyForwarding(String hostName, String playerName) {
@@ -157,8 +220,12 @@ public final class FandHooks {
             Packet<?> packet,
             @Nullable SocketAddress remoteAddress
     ) {
+        var runtime = activeRuntime();
+        if (runtime == null) {
+            return packet;
+        }
         try {
-            return Main.runtime().packetRegistry().interceptInbound(listener, player(listener), remoteAddress, packet);
+            return runtime.packetRegistry().interceptInbound(listener, player(listener), remoteAddress, packet);
         } catch (RuntimeException failure) {
             LOGGER.warn("Fand inbound packet hook failed for {}", packet.type(), failure);
             return packet;
@@ -172,12 +239,47 @@ public final class FandHooks {
             Packet<?> packet,
             @Nullable SocketAddress remoteAddress
     ) {
+        var runtime = activeRuntime();
+        if (runtime == null) {
+            return packet;
+        }
         try {
-            return Main.runtime().packetRegistry().interceptOutbound(protocol, flow, player(listener), remoteAddress, packet);
+            return runtime.packetRegistry().interceptOutbound(protocol, flow, player(listener), remoteAddress, packet);
         } catch (RuntimeException failure) {
             LOGGER.warn("Fand outbound packet hook failed for {}", packet.type(), failure);
             return packet;
         }
+    }
+
+    private static @Nullable FandServer activeRuntime() {
+        var runtime = Main.runtimeOrNull();
+        if (runtime == null) {
+            return null;
+        }
+        var phase = runtime.phase();
+        return phase == LifecyclePhase.STOPPING || phase == LifecyclePhase.STOPPED ? null : runtime;
+    }
+
+    private static ServerPerformance emptyPerformance() {
+        return new ServerPerformance(
+                emptyWindow(TickWindow.ONE_SECOND),
+                emptyWindow(TickWindow.FIVE_SECONDS),
+                emptyWindow(TickWindow.TEN_SECONDS),
+                emptyWindow(TickWindow.FIFTEEN_SECONDS),
+                emptyWindow(TickWindow.ONE_MINUTE),
+                emptyWindow(TickWindow.FIVE_MINUTES),
+                emptyWindow(TickWindow.FIFTEEN_MINUTES),
+                0L);
+    }
+
+    private static TickWindowSnapshot emptyWindow(TickWindow window) {
+        return new TickWindowSnapshot(
+                window,
+                new MetricStatistics(20.0, 20.0, 20.0, 20.0),
+                new MetricStatistics(50.0, 50.0, 50.0, 50.0),
+                new MetricStatistics(0.0, 0.0, 0.0, 0.0),
+                0.0,
+                0);
     }
 
     private static Optional<? extends Player> player(@Nullable PacketListener listener) {
