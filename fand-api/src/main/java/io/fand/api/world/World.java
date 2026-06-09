@@ -609,6 +609,10 @@ public interface World extends ForwardingAudience {
         int maxX = Math.max(min.blockX(), max.blockX());
         int maxY = Math.max(min.blockY(), max.blockY());
         int maxZ = Math.max(min.blockZ(), max.blockZ());
+        long requested = blockVolume(minX, minY, minZ, maxX, maxY, maxZ);
+        if (requested > Integer.MAX_VALUE) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("batch contains too many blocks: " + requested));
+        }
         var changes = new java.util.ArrayList<BlockBatchChange>();
         for (int y = minY; y <= maxY; y++) {
             for (int z = minZ; z <= maxZ; z++) {
@@ -703,5 +707,9 @@ public interface World extends ForwardingAudience {
         double dy = a.y() - b.y();
         double dz = a.z() - b.z();
         return dx * dx + dy * dy + dz * dz;
+    }
+
+    private static long blockVolume(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        return ((long) maxX - minX + 1L) * ((long) maxY - minY + 1L) * ((long) maxZ - minZ + 1L);
     }
 }

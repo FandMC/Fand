@@ -45,6 +45,15 @@ final class WorldBlockBatchApiTest {
     }
 
     @Test
+    void defaultFillRejectsOversizedCuboidsBeforeAllocatingChanges() {
+        var world = new TestWorld(true);
+
+        assertThat(world.fillBlocks(world.at(0, 0, 0), world.at(Integer.MAX_VALUE, 0, 0), STONE))
+                .isCompletedExceptionally();
+        assertThat(world.changes).isEmpty();
+    }
+
+    @Test
     void defaultPasteOffsetsClipboardFromOrigin() {
         var world = new TestWorld(true);
         var clipboard = BlockClipboard.of(2, 1, 1, List.of(

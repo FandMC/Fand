@@ -20,6 +20,8 @@ final class BlockBatchModelsTest {
 
         assertThat(change.components()).isEqualTo(DataComponentMap.EMPTY);
         assertThat(change.offset(10, 20, 30)).isEqualTo(BlockBatchChange.of(11, 22, 33, STONE));
+        assertThatThrownBy(() -> BlockBatchChange.of(Integer.MAX_VALUE, 0, 0, STONE).offset(1, 0, 0))
+                .isInstanceOf(ArithmeticException.class);
     }
 
     @Test
@@ -36,6 +38,8 @@ final class BlockBatchModelsTest {
     void blockResultRejectsImpossibleCounters() {
         assertThat(BlockBatchResult.empty()).isEqualTo(new BlockBatchResult(0, 0, 0, 0));
         assertThatThrownBy(() -> new BlockBatchResult(1, 1, 1, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new BlockBatchResult(Integer.MAX_VALUE, Integer.MAX_VALUE, 1, 0))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
