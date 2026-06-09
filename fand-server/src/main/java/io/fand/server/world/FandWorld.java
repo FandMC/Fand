@@ -2,6 +2,7 @@ package io.fand.server.world;
 
 import io.fand.api.block.Block;
 import io.fand.api.component.DataComponentKey;
+import io.fand.api.component.DataComponentMap;
 import io.fand.api.entity.Entity;
 import io.fand.api.entity.ItemEntity;
 import io.fand.api.entity.EntitySpawnOptions;
@@ -9,6 +10,10 @@ import io.fand.api.entity.EntityType;
 import io.fand.api.entity.Player;
 import io.fand.api.event.block.BlockFace;
 import io.fand.api.item.ItemStack;
+import io.fand.api.world.BlockBatchChange;
+import io.fand.api.world.BlockBatchOptions;
+import io.fand.api.world.BlockBatchResult;
+import io.fand.api.world.BlockClipboard;
 import io.fand.api.world.BlockRayTraceResult;
 import io.fand.api.world.ChunkSnapshot;
 import io.fand.api.world.Difficulty;
@@ -24,16 +29,20 @@ import io.fand.api.world.particle.ParticleEffect;
 import io.fand.api.world.particle.ParticleEmission;
 import io.fand.api.world.sound.SoundEffect;
 import io.fand.server.block.FandBlock;
+import io.fand.server.block.FandBlockType;
 import io.fand.server.component.BlockComponentStorage;
 import io.fand.server.entity.EntitySpawnOptionsApplier;
 import io.fand.server.entity.FandEntityType;
 import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.item.FandItemStacks;
+import io.fand.server.scheduler.TaskScheduler;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -70,20 +79,31 @@ public final class FandWorld implements World {
     private final Key key;
     private final @Nullable PlayerRegistry players;
     private final @Nullable WorldRegistry worldRegistry;
+    private final @Nullable TaskScheduler scheduler;
     private final WorldBorder worldBorder;
 
     public FandWorld(ServerLevel handle) {
-        this(handle, null, null);
+        this(handle, null, null, null);
     }
 
     public FandWorld(ServerLevel handle, @Nullable PlayerRegistry players) {
-        this(handle, players, null);
+        this(handle, players, null, null);
     }
 
     public FandWorld(ServerLevel handle, @Nullable PlayerRegistry players, @Nullable WorldRegistry worldRegistry) {
+        this(handle, players, worldRegistry, null);
+    }
+
+    public FandWorld(
+            ServerLevel handle,
+            @Nullable PlayerRegistry players,
+            @Nullable WorldRegistry worldRegistry,
+            @Nullable TaskScheduler scheduler
+    ) {
         this.handle = handle;
         this.players = players;
         this.worldRegistry = worldRegistry;
+        this.scheduler = scheduler;
         this.worldBorder = new FandWorldBorder(handle);
         var identifier = handle.dimension().identifier();
         this.key = Key.key(identifier.getNamespace(), identifier.getPath());
@@ -697,6 +717,85 @@ public final class FandWorld implements World {
     }
 
     @Override
+    public CompletableFuture<BlockBatchResult> setBlocks(Collection<BlockBatchChange> changes) {
+        return setBlocks(changes, BlockBatchOptions.defaults());
+    }
+
+    @Override
+    public CompletableFuture<BlockBatchResult> setBlocks(
+            Collection<BlockBatchChange> changes,
+            BlockBatchOptions options
+    ) {
+        Objects.requireNonNull(changes, "changes");
+        Objects.requireNonNull(options, "options");
+        if (changes.isEmpty()) {
+            return CompletableFuture.completedFuture(BlockBatchResult.empty());
+        }
+        var snapshot = List.copyOf(changes);
+        return runBlockBatch(snapshot.size(), snapshot.iterator(), options);
+    }
+
+    @Override
+    public CompletableFuture<BlockBatchResult> fillBlocks(Location min, Location max, io.fand.api.block.BlockType type) {
+        return fillBlocks(min, max, type, DataComponentMap.EMPTY, BlockBatchOptions.defaults());
+    }
+
+    @Override
+    public CompletableFuture<BlockBatchResult> fillBlocks(
+            Location min,
+            Location max,
+            io.fand.api.block.BlockType type,
+            DataComponentMap components,
+            BlockBatchOptions options
+    ) {
+        var checkedMin = requireThisWorld(min);
+        var checkedMax = requireThisWorld(max);
+        Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(components, "components");
+        Objects.requireNonNull(options, "options");
+        int minX = Math.min(checkedMin.blockX(), checkedMax.blockX());
+        int minY = Math.min(checkedMin.blockY(), checkedMax.blockY());
+        int minZ = Math.min(checkedMin.blockZ(), checkedMax.blockZ());
+        int maxX = Math.max(checkedMin.blockX(), checkedMax.blockX());
+        int maxY = Math.max(checkedMin.blockY(), checkedMax.blockY());
+        int maxZ = Math.max(checkedMin.blockZ(), checkedMax.blockZ());
+        long requested = volume(minX, minY, minZ, maxX, maxY, maxZ);
+        if (requested == 0L) {
+            return CompletableFuture.completedFuture(BlockBatchResult.empty());
+        }
+        if (requested > Integer.MAX_VALUE) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("batch contains too many blocks: " + requested));
+        }
+        return runBlockBatch(
+                (int) requested,
+                new FillBlockIterator(minX, minY, minZ, maxX, maxY, maxZ, type, components),
+                options);
+    }
+
+    @Override
+    public CompletableFuture<BlockBatchResult> pasteBlocks(Location origin, BlockClipboard clipboard) {
+        return pasteBlocks(origin, clipboard, BlockBatchOptions.defaults());
+    }
+
+    @Override
+    public CompletableFuture<BlockBatchResult> pasteBlocks(
+            Location origin,
+            BlockClipboard clipboard,
+            BlockBatchOptions options
+    ) {
+        var checkedOrigin = requireThisWorld(origin);
+        Objects.requireNonNull(clipboard, "clipboard");
+        Objects.requireNonNull(options, "options");
+        if (clipboard.empty()) {
+            return CompletableFuture.completedFuture(BlockBatchResult.empty());
+        }
+        return runBlockBatch(
+                clipboard.blocks().size(),
+                new OffsetBlockIterator(clipboard.blocks().iterator(), checkedOrigin.blockX(), checkedOrigin.blockY(), checkedOrigin.blockZ()),
+                options);
+    }
+
+    @Override
     public Block blockAt(int x, int y, int z) {
         return new FandBlock(this, x, y, z);
     }
@@ -714,6 +813,81 @@ public final class FandWorld implements World {
     @Override
     public String toString() {
         return "FandWorld(" + key.asString() + ")";
+    }
+
+    private CompletableFuture<BlockBatchResult> runBlockBatch(
+            int requested,
+            Iterator<BlockBatchChange> changes,
+            BlockBatchOptions options
+    ) {
+        Objects.requireNonNull(changes, "changes");
+        Objects.requireNonNull(options, "options");
+        if (scheduler == null) {
+            return runOnServerThreadFuture(() -> applyBlockBatchInline(requested, changes, options));
+        }
+        var future = new CompletableFuture<BlockBatchResult>();
+        try {
+            scheduler.runMain(new BlockBatchRunner(requested, changes, options, future));
+        } catch (RejectedExecutionException failure) {
+            future.completeExceptionally(failure);
+        }
+        return future;
+    }
+
+    private BlockBatchResult applyBlockBatchInline(
+            int requested,
+            Iterator<BlockBatchChange> changes,
+            BlockBatchOptions options
+    ) {
+        int changed = 0;
+        int skipped = 0;
+        int failed = 0;
+        while (changes.hasNext()) {
+            try {
+                if (applyBlockChange(changes.next(), options)) {
+                    changed++;
+                } else {
+                    skipped++;
+                }
+            } catch (RuntimeException failure) {
+                failed++;
+            }
+        }
+        return new BlockBatchResult(requested, changed, skipped, failed);
+    }
+
+    private boolean applyBlockChange(BlockBatchChange change, BlockBatchOptions options) {
+        Objects.requireNonNull(change, "change");
+        var block = FandBlockType.unwrap(change.type());
+        var state = block.defaultBlockState();
+        var pos = new BlockPos(change.x(), change.y(), change.z());
+        if (options.skipUnchanged()) {
+            var currentState = handle.getBlockState(pos);
+            if (currentState.getBlock() == block && BlockComponentStorage.snapshot(handle, pos).equals(change.components())) {
+                return false;
+            }
+        }
+        if (!handle.setBlock(pos, state, blockUpdateFlags(options))) {
+            throw new IllegalStateException("Failed to set block at " + pos.toShortString());
+        }
+        if (change.components().isEmpty()) {
+            BlockComponentStorage.clear(handle, pos);
+        } else {
+            BlockComponentStorage.put(handle, pos, change.components());
+        }
+        return true;
+    }
+
+    private int blockUpdateFlags(BlockBatchOptions options) {
+        return switch (options.updateMode()) {
+            case NORMAL -> net.minecraft.world.level.block.Block.UPDATE_ALL;
+            case CLIENTS_ONLY -> net.minecraft.world.level.block.Block.UPDATE_CLIENTS;
+            case SILENT -> net.minecraft.world.level.block.Block.UPDATE_NONE;
+        };
+    }
+
+    private long volume(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        return ((long) maxX - minX + 1L) * ((long) maxY - minY + 1L) * ((long) maxZ - minZ + 1L);
     }
 
     private Location requireThisWorld(Location location) {
@@ -805,7 +979,8 @@ public final class FandWorld implements World {
         }
         var fallbackRegistry = new WorldRegistry(
                 handle.getServer(),
-                players != null ? players : new PlayerRegistry(new io.fand.server.permission.PermissionManager())
+                players != null ? players : new PlayerRegistry(new io.fand.server.permission.PermissionManager()),
+                scheduler
         );
         return fallbackRegistry.entityRegistry().wrap(entity);
     }
@@ -817,7 +992,7 @@ public final class FandWorld implements World {
         if (worldRegistry != null) {
             return worldRegistry.wrap(level);
         }
-        return new FandWorld(level, players);
+        return new FandWorld(level, players, null, scheduler);
     }
 
     private Collection<? extends Entity> streamEntities(Iterable<net.minecraft.world.entity.Entity> entities) {
@@ -1167,6 +1342,173 @@ public final class FandWorld implements World {
     }
 
     private record RayHit(double x, double y, double z, double distanceSquared) {
+    }
+
+    private final class BlockBatchRunner implements Runnable {
+
+        private final int requested;
+        private final Iterator<BlockBatchChange> changes;
+        private final BlockBatchOptions options;
+        private final CompletableFuture<BlockBatchResult> future;
+        private int changed;
+        private int skipped;
+        private int failed;
+
+        private BlockBatchRunner(
+                int requested,
+                Iterator<BlockBatchChange> changes,
+                BlockBatchOptions options,
+                CompletableFuture<BlockBatchResult> future
+        ) {
+            this.requested = requested;
+            this.changes = changes;
+            this.options = options;
+            this.future = future;
+        }
+
+        @Override
+        public void run() {
+            if (future.isDone()) {
+                return;
+            }
+            try {
+                applySlice();
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+                return;
+            }
+            if (!changes.hasNext()) {
+                future.complete(new BlockBatchResult(requested, changed, skipped, failed));
+                return;
+            }
+            scheduleNextSlice();
+        }
+
+        private void applySlice() {
+            int remaining = options.maxBlocksPerTick();
+            while (remaining > 0 && changes.hasNext()) {
+                var change = changes.next();
+                try {
+                    if (applyBlockChange(change, options)) {
+                        changed++;
+                    } else {
+                        skipped++;
+                    }
+                } catch (RuntimeException failure) {
+                    failed++;
+                }
+                remaining--;
+            }
+        }
+
+        private void scheduleNextSlice() {
+            if (scheduler != null) {
+                try {
+                    scheduler.runMainAfterTicks(this, 0L);
+                } catch (RejectedExecutionException failure) {
+                    future.completeExceptionally(failure);
+                }
+                return;
+            }
+            runOnServerThread(this);
+        }
+    }
+
+    private static final class FillBlockIterator implements Iterator<BlockBatchChange> {
+
+        private final int minX;
+        private final int minY;
+        private final int minZ;
+        private final int maxX;
+        private final int maxY;
+        private final int maxZ;
+        private final io.fand.api.block.BlockType type;
+        private final DataComponentMap components;
+        private int x;
+        private int y;
+        private int z;
+        private boolean hasNext = true;
+
+        private FillBlockIterator(
+                int minX,
+                int minY,
+                int minZ,
+                int maxX,
+                int maxY,
+                int maxZ,
+                io.fand.api.block.BlockType type,
+                DataComponentMap components
+        ) {
+            this.minX = minX;
+            this.minY = minY;
+            this.minZ = minZ;
+            this.maxX = maxX;
+            this.maxY = maxY;
+            this.maxZ = maxZ;
+            this.type = type;
+            this.components = components;
+            this.x = minX;
+            this.y = minY;
+            this.z = minZ;
+        }
+
+        @Override
+        public boolean hasNext() {
+            return hasNext;
+        }
+
+        @Override
+        public BlockBatchChange next() {
+            if (!hasNext) {
+                throw new java.util.NoSuchElementException();
+            }
+            var change = BlockBatchChange.of(x, y, z, type, components);
+            advance();
+            return change;
+        }
+
+        private void advance() {
+            if (x < maxX) {
+                x++;
+                return;
+            }
+            x = minX;
+            if (z < maxZ) {
+                z++;
+                return;
+            }
+            z = minZ;
+            if (y < maxY) {
+                y++;
+                return;
+            }
+            hasNext = false;
+        }
+    }
+
+    private static final class OffsetBlockIterator implements Iterator<BlockBatchChange> {
+
+        private final Iterator<BlockBatchChange> source;
+        private final int offsetX;
+        private final int offsetY;
+        private final int offsetZ;
+
+        private OffsetBlockIterator(Iterator<BlockBatchChange> source, int offsetX, int offsetY, int offsetZ) {
+            this.source = source;
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+            this.offsetZ = offsetZ;
+        }
+
+        @Override
+        public boolean hasNext() {
+            return source.hasNext();
+        }
+
+        @Override
+        public BlockBatchChange next() {
+            return source.next().offset(offsetX, offsetY, offsetZ);
+        }
     }
 
     private ClipContext.Block blockMode(RayTraceBlockMode mode) {

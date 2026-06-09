@@ -199,7 +199,7 @@ public final class FandServer implements Server, AutoCloseable {
         if (!minecraftServer.compareAndSet(null, server)) {
             throw new IllegalStateException("Minecraft server is already attached");
         }
-        var registry = new WorldRegistry(server, players);
+        var registry = new WorldRegistry(server, players, scheduler);
         worlds.set(registry);
         entities.set(registry.entityRegistry());
         players.bindWorldRegistry(registry);

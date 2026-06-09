@@ -1,5 +1,7 @@
 package io.fand.api.world;
 
+import io.fand.api.block.BlockType;
+import io.fand.api.component.DataComponentMap;
 import io.fand.api.entity.Player;
 import io.fand.api.entity.Entity;
 import io.fand.api.entity.EntityKey;
@@ -557,6 +559,89 @@ public interface World extends ForwardingAudience {
     default Collection<? extends io.fand.api.block.Block> blocksWith(DataComponentKey<?> key, int chunkX, int chunkZ) {
         java.util.Objects.requireNonNull(key, "key");
         return java.util.List.of();
+    }
+
+    /**
+     * Applies block changes asynchronously. Implementations backed by a live
+     * Minecraft world must perform the actual mutation on the server thread.
+     */
+    default CompletableFuture<BlockBatchResult> setBlocks(Collection<BlockBatchChange> changes) {
+        return setBlocks(changes, BlockBatchOptions.defaults());
+    }
+
+    /**
+     * Applies block changes asynchronously using the supplied scheduling and
+     * update policy.
+     */
+    default CompletableFuture<BlockBatchResult> setBlocks(
+            Collection<BlockBatchChange> changes,
+            BlockBatchOptions options
+    ) {
+        java.util.Objects.requireNonNull(changes, "changes");
+        java.util.Objects.requireNonNull(options, "options");
+        if (changes.isEmpty()) {
+            return CompletableFuture.completedFuture(BlockBatchResult.empty());
+        }
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Batch block operations are not supported"));
+    }
+
+    /** Fills the inclusive cuboid formed by {@code min} and {@code max}. */
+    default CompletableFuture<BlockBatchResult> fillBlocks(Location min, Location max, BlockType type) {
+        return fillBlocks(min, max, type, DataComponentMap.EMPTY, BlockBatchOptions.defaults());
+    }
+
+    /** Fills the inclusive cuboid formed by {@code min} and {@code max}. */
+    default CompletableFuture<BlockBatchResult> fillBlocks(
+            Location min,
+            Location max,
+            BlockType type,
+            DataComponentMap components,
+            BlockBatchOptions options
+    ) {
+        requireSameWorld(min, this, "min");
+        requireSameWorld(max, this, "max");
+        java.util.Objects.requireNonNull(type, "type");
+        java.util.Objects.requireNonNull(components, "components");
+        java.util.Objects.requireNonNull(options, "options");
+        int minX = Math.min(min.blockX(), max.blockX());
+        int minY = Math.min(min.blockY(), max.blockY());
+        int minZ = Math.min(min.blockZ(), max.blockZ());
+        int maxX = Math.max(min.blockX(), max.blockX());
+        int maxY = Math.max(min.blockY(), max.blockY());
+        int maxZ = Math.max(min.blockZ(), max.blockZ());
+        var changes = new java.util.ArrayList<BlockBatchChange>();
+        for (int y = minY; y <= maxY; y++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                for (int x = minX; x <= maxX; x++) {
+                    changes.add(BlockBatchChange.of(x, y, z, type, components));
+                }
+            }
+        }
+        return setBlocks(changes, options);
+    }
+
+    /** Pastes an in-memory relative block clipboard at {@code origin}. */
+    default CompletableFuture<BlockBatchResult> pasteBlocks(Location origin, BlockClipboard clipboard) {
+        return pasteBlocks(origin, clipboard, BlockBatchOptions.defaults());
+    }
+
+    /** Pastes an in-memory relative block clipboard at {@code origin}. */
+    default CompletableFuture<BlockBatchResult> pasteBlocks(
+            Location origin,
+            BlockClipboard clipboard,
+            BlockBatchOptions options
+    ) {
+        requireSameWorld(origin, this, "origin");
+        java.util.Objects.requireNonNull(clipboard, "clipboard");
+        java.util.Objects.requireNonNull(options, "options");
+        var changes = new java.util.ArrayList<BlockBatchChange>(clipboard.blocks().size());
+        int originX = origin.blockX();
+        int originY = origin.blockY();
+        int originZ = origin.blockZ();
+        for (var block : clipboard.blocks()) {
+            changes.add(block.offset(originX, originY, originZ));
+        }
+        return setBlocks(changes, options);
     }
 
     /** Builds a {@link Location} in this world. */
