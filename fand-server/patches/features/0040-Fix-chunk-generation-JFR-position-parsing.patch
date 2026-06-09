@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: bedkillerspacex-boop <bedkillerspacex@gmail.com>
+Date: Tue, 9 Jun 2026 21:47:18 +0800
+Subject: [PATCH] Fix chunk generation JFR position parsing
+
+
+diff --git a/net/minecraft/util/profiling/jfr/stats/ChunkGenStat.java b/net/minecraft/util/profiling/jfr/stats/ChunkGenStat.java
+index c0f7b2cb5e71d05fcc58e9291d0d345d2ea93388..8d6211d7782c10779da0074cdc9e05df1fee0e96 100644
+--- a/net/minecraft/util/profiling/jfr/stats/ChunkGenStat.java
++++ b/net/minecraft/util/profiling/jfr/stats/ChunkGenStat.java
+@@ -10,7 +10,7 @@ public record ChunkGenStat(@Override Duration duration, ChunkPos chunkPos, Colum
+     public static ChunkGenStat from(final RecordedEvent event) {
+         return new ChunkGenStat(
+             event.getDuration(),
+-            new ChunkPos(event.getInt("chunkPosX"), event.getInt("chunkPosX")),
++            new ChunkPos(event.getInt("chunkPosX"), event.getInt("chunkPosZ")),
+             new ColumnPos(event.getInt("worldPosX"), event.getInt("worldPosZ")),
+             ChunkStatus.byName(event.getString("status")),
+             event.getString("level")
