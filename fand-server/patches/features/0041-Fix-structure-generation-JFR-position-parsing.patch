@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: bedkillerspacex-boop <bedkillerspacex@gmail.com>
+Date: Tue, 9 Jun 2026 21:57:06 +0800
+Subject: [PATCH] Fix structure generation JFR position parsing
+
+
+diff --git a/net/minecraft/util/profiling/jfr/stats/StructureGenStat.java b/net/minecraft/util/profiling/jfr/stats/StructureGenStat.java
+index 03d298f7f734086c847705166ca5eb6e2f10e377..220be81887b834f762e7b082b638d16e31f362c4 100644
+--- a/net/minecraft/util/profiling/jfr/stats/StructureGenStat.java
++++ b/net/minecraft/util/profiling/jfr/stats/StructureGenStat.java
+@@ -8,7 +8,7 @@ public record StructureGenStat(@Override Duration duration, ChunkPos chunkPos, S
+     public static StructureGenStat from(final RecordedEvent event) {
+         return new StructureGenStat(
+             event.getDuration(),
+-            new ChunkPos(event.getInt("chunkPosX"), event.getInt("chunkPosX")),
++            new ChunkPos(event.getInt("chunkPosX"), event.getInt("chunkPosZ")),
+             event.getString("structure"),
+             event.getString("level"),
+             event.getBoolean("success")
