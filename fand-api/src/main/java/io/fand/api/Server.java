@@ -8,9 +8,11 @@ import io.fand.api.lifecycle.LifecyclePhase;
 import io.fand.api.performance.ServerPerformance;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.permission.PermissionService;
+import io.fand.api.player.PlayerAccessService;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
+import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldTemplate;
 import java.util.Collection;
@@ -57,6 +59,9 @@ public interface Server extends ForwardingAudience {
     /** Global recipe registry. Registration and removal marshal to the server thread. */
     RecipeRegistry recipes();
 
+    /** Global persistent vanilla scoreboard service. */
+    ScoreboardService scoreboard();
+
     /** Global packet registry. Prefer {@link io.fand.api.plugin.PluginContext#packets()} for plugin-owned registrations. */
     PacketRegistry packets();
 
@@ -74,6 +79,9 @@ public interface Server extends ForwardingAudience {
 
     /** Snapshot of all currently online players. The returned collection is a copy. */
     Collection<? extends Player> players();
+
+    /** Profile lookup and server access-list controls for offline and online players. */
+    PlayerAccessService playerAccess();
 
     /** Looks up an online player by uuid. */
     Optional<? extends Player> player(UUID uniqueId);

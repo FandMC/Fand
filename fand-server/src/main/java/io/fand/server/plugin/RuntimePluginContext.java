@@ -9,6 +9,7 @@ import io.fand.api.plugin.PluginContext;
 import io.fand.api.plugin.PluginDescriptor;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
+import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.server.config.YamlConfiguration;
 import java.io.IOException;
 import java.io.InputStream;
@@ -28,6 +29,7 @@ public final class RuntimePluginContext implements PluginContext {
     private final PermissionService permissions;
     private final CommandRegistry commands;
     private final RecipeRegistry recipes;
+    private final ScoreboardService scoreboard;
     private final PacketRegistry packets;
     private final Scheduler scheduler;
     private final Path dataDirectory;
@@ -42,6 +44,7 @@ public final class RuntimePluginContext implements PluginContext {
             PermissionService permissions,
             CommandRegistry commands,
             RecipeRegistry recipes,
+            ScoreboardService scoreboard,
             PacketRegistry packets,
             Scheduler scheduler,
             Path dataDirectory,
@@ -54,6 +57,7 @@ public final class RuntimePluginContext implements PluginContext {
         this.permissions = permissions;
         this.commands = commands;
         this.recipes = recipes;
+        this.scoreboard = scoreboard;
         this.packets = packets;
         this.scheduler = scheduler;
         this.dataDirectory = dataDirectory;
@@ -89,6 +93,11 @@ public final class RuntimePluginContext implements PluginContext {
     @Override
     public RecipeRegistry recipes() {
         return recipes;
+    }
+
+    @Override
+    public ScoreboardService scoreboard() {
+        return scoreboard;
     }
 
     @Override

@@ -17,6 +17,8 @@ final class KeyExtractors {
             "\\bcreateKey\\s*\\(\\s*\"([^\"]+)\"");
     private static final Pattern STRING_KEY_ARGUMENT_PATTERN = Pattern.compile(
             "\\b(?:register\\w*|createKey|createId|create|registryKey|key)\\s*\\(\\s*\"([^\"]+)\"");
+    private static final Pattern CUSTOM_STAT_PATTERN = Pattern.compile(
+            "\\bmakeCustomStat\\s*\\(\\s*\"([^\"]+)\"");
     private static final Pattern DEFAULT_NAMESPACE_IDENTIFIER_PATTERN = Pattern.compile(
             "\\bIdentifier\\.withDefaultNamespace\\s*\\(\\s*\"([^\"]+)\"");
     private static final Pattern TEMPERATURE_VARIANT_PATTERN = Pattern.compile(
@@ -70,6 +72,11 @@ final class KeyExtractors {
         }
 
         return Optional.empty();
+    }
+
+    static Optional<String> firstCustomStatId(String initializer) {
+        var matcher = CUSTOM_STAT_PATTERN.matcher(initializer);
+        return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
     }
 
     static Optional<String> firstSoundSetKey(String initializer) {

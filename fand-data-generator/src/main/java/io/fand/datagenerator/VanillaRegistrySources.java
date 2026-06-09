@@ -101,6 +101,10 @@ final class VanillaRegistrySources {
         return registryEntries("net/minecraft/world/level/gameevent/GameEvent.java", "GameEvent");
     }
 
+    List<KeyEntry> gameRuleKeys() throws IOException {
+        return registryEntries("net/minecraft/world/level/gamerules/GameRules.java", "GameRule<");
+    }
+
     List<KeyEntry> biomeKeys() throws IOException {
         return registryKeyFields("net/minecraft/world/level/biome/Biomes.java", "ResourceKey<Biome>");
     }
@@ -224,6 +228,19 @@ final class VanillaRegistrySources {
 
     List<KeyEntry> recipeTypeKeys() throws IOException {
         return registryEntries("net/minecraft/world/item/crafting/RecipeType.java", "RecipeType<");
+    }
+
+    List<KeyEntry> statisticKeys() throws IOException {
+        var entries = new EntryCollector();
+        for (var field : staticFields("net/minecraft/stats/Stats.java")) {
+            if (!field.type().equals("Identifier")) {
+                continue;
+            }
+            KeyExtractors.firstCustomStatId(field.initializer())
+                    .map(KeyNames::vanillaKey)
+                    .ifPresent(key -> entries.add(field.name(), key));
+        }
+        return entries.sorted();
     }
 
     List<KeyEntry> wolfVariantKeys() throws IOException {

@@ -11,8 +11,10 @@ import io.fand.api.plugin.PluginDescriptor;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
+import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.server.recipe.FandRecipeRegistry;
 import io.fand.server.network.packet.PacketRegistryImpl;
+import io.fand.server.scoreboard.FandScoreboardService;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.lang.reflect.InvocationTargetException;
@@ -49,6 +51,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final EventBus eventBus;
     private final PermissionService permissions;
     private final RecipeRegistry recipeRegistry;
+    private final ScoreboardService scoreboardService;
     private final PacketRegistry packetRegistry;
     private final Scheduler scheduler;
     private volatile Options options;
@@ -76,6 +79,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 permissions,
                 scheduler,
                 new FandRecipeRegistry(),
+                unavailableScoreboardService(),
                 new PacketRegistryImpl(),
                 Options.defaults()
         );
@@ -100,6 +104,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 permissions,
                 scheduler,
                 new FandRecipeRegistry(),
+                unavailableScoreboardService(),
                 new PacketRegistryImpl(),
                 options
         );
@@ -125,6 +130,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 permissions,
                 scheduler,
                 recipeRegistry,
+                unavailableScoreboardService(),
                 new PacketRegistryImpl(),
                 options
         );
@@ -139,6 +145,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             PermissionService permissions,
             Scheduler scheduler,
             RecipeRegistry recipeRegistry,
+            ScoreboardService scoreboardService,
             PacketRegistry packetRegistry,
             Options options
     ) {
@@ -149,6 +156,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.eventBus = eventBus;
         this.permissions = permissions;
         this.recipeRegistry = recipeRegistry;
+        this.scoreboardService = scoreboardService;
         this.packetRegistry = packetRegistry;
         this.scheduler = scheduler;
         this.options = options;
@@ -191,6 +199,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                         permissions,
                         new PluginCommandRegistry(commandRegistry, resources, artifact.descriptor.id()),
                         new PluginRecipeRegistry(recipeRegistry, resources, artifact.descriptor.id()),
+                        new PluginScoreboardService(scoreboardService, resources, artifact.descriptor.id()),
                         new PluginPacketRegistry(packetRegistry, resources),
                         new PluginScheduler(scheduler, resources),
                         dataDirectoryRoot.resolve(artifact.descriptor.id()),
@@ -493,6 +502,12 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         } catch (MalformedURLException ex) {
             throw new PluginLoadException("Invalid plugin path " + jarPath, ex);
         }
+    }
+
+    private static ScoreboardService unavailableScoreboardService() {
+        return new FandScoreboardService(() -> {
+            throw new IllegalStateException("Minecraft server is not attached");
+        });
     }
 
     private void disablePlugin(LoadedPlugin loadedPlugin) {

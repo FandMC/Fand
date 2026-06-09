@@ -7,6 +7,7 @@ import io.fand.api.packet.PacketRegistry;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
+import io.fand.api.scoreboard.ScoreboardService;
 import java.nio.file.Path;
 import org.slf4j.Logger;
 
@@ -31,6 +32,9 @@ public interface PluginContext {
 
     /** Recipe registry scoped to this plugin's lifecycle. */
     RecipeRegistry recipes();
+
+    /** Persistent scoreboard service scoped to this plugin's lifecycle. */
+    ScoreboardService scoreboard();
 
     /** Packet registry scoped to this plugin's lifecycle. */
     PacketRegistry packets();

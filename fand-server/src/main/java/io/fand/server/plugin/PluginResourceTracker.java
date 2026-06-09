@@ -5,6 +5,7 @@ import io.fand.api.event.EventSubscription;
 import io.fand.api.packet.PacketRegistration;
 import io.fand.api.recipe.RecipeRegistration;
 import io.fand.api.scheduler.Task;
+import io.fand.api.scoreboard.ScoreboardRegistration;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -16,6 +17,7 @@ final class PluginResourceTracker {
     private final Set<TrackedSubscription> subscriptions = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCommandRegistration> commandRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedRecipeRegistration> recipeRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedScoreboardRegistration> scoreboardRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPacketRegistration> packetRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedTask> tasks = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private boolean closed;
@@ -100,6 +102,22 @@ final class PluginResourceTracker {
         return tracked;
     }
 
+    TrackedScoreboardRegistration track(ScoreboardRegistration delegate) {
+        var tracked = new TrackedScoreboardRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                scoreboardRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.unregisterFromTracker();
+        }
+        return tracked;
+    }
+
     void release(TrackedSubscription subscription) {
         synchronized (lock) {
             subscriptions.remove(subscription);
@@ -124,6 +142,12 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedScoreboardRegistration registration) {
+        synchronized (lock) {
+            scoreboardRegistrations.remove(registration);
+        }
+    }
+
     void release(TrackedPacketRegistration registration) {
         synchronized (lock) {
             packetRegistrations.remove(registration);
@@ -134,6 +158,7 @@ final class PluginResourceTracker {
         List<TrackedSubscription> subscriptionsToClose;
         List<TrackedCommandRegistration> commandRegistrationsToClose;
         List<TrackedRecipeRegistration> recipeRegistrationsToClose;
+        List<TrackedScoreboardRegistration> scoreboardRegistrationsToClose;
         List<TrackedPacketRegistration> packetRegistrationsToClose;
         List<TrackedTask> tasksToClose;
         synchronized (lock) {
@@ -144,11 +169,13 @@ final class PluginResourceTracker {
             subscriptionsToClose = new ArrayList<>(subscriptions);
             commandRegistrationsToClose = new ArrayList<>(commandRegistrations);
             recipeRegistrationsToClose = new ArrayList<>(recipeRegistrations);
+            scoreboardRegistrationsToClose = new ArrayList<>(scoreboardRegistrations);
             packetRegistrationsToClose = new ArrayList<>(packetRegistrations);
             tasksToClose = new ArrayList<>(tasks);
             subscriptions.clear();
             commandRegistrations.clear();
             recipeRegistrations.clear();
+            scoreboardRegistrations.clear();
             packetRegistrations.clear();
             tasks.clear();
         }
@@ -159,6 +186,9 @@ final class PluginResourceTracker {
             registration.unregisterFromTracker();
         }
         for (var registration : recipeRegistrationsToClose) {
+            registration.unregisterFromTracker();
+        }
+        for (var registration : scoreboardRegistrationsToClose) {
             registration.unregisterFromTracker();
         }
         for (var registration : packetRegistrationsToClose) {
@@ -327,6 +357,47 @@ final class PluginResourceTracker {
         TrackedPacketRegistration(PluginResourceTracker owner, PacketRegistration delegate) {
             this.owner = owner;
             this.delegate = delegate;
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void unregister() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.unregister();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void unregisterFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.unregister();
+            }
+        }
+    }
+
+    static final class TrackedScoreboardRegistration implements ScoreboardRegistration {
+
+        private final PluginResourceTracker owner;
+        private final ScoreboardRegistration delegate;
+        private volatile boolean released;
+
+        TrackedScoreboardRegistration(PluginResourceTracker owner, ScoreboardRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public String name() {
+            return delegate.name();
         }
 
         @Override

@@ -4,14 +4,22 @@ import io.fand.api.command.CommandSender;
 import io.fand.api.inventory.Inventory;
 import io.fand.api.inventory.InventoryType;
 import io.fand.api.permission.PermissionSubject;
+import io.fand.api.player.ResourcePackRequest;
+import io.fand.api.player.RespawnLocation;
+import io.fand.api.player.StatisticKey;
+import io.fand.api.recipe.Recipe;
 import io.fand.api.scoreboard.Sidebar;
 import io.fand.api.world.Location;
 import io.fand.api.world.particle.ParticleEffect;
 import io.fand.api.world.particle.ParticleEmission;
 import io.fand.api.world.sound.SoundEffect;
+import java.util.Collection;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A player connected to the server. Instances are thin handles backed by the
@@ -65,6 +73,29 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
 
     /** Clears the tab-list header and footer previously sent to this player. */
     void clearTabList();
+
+    /** Custom tab-list row display name, if one is set. */
+    Optional<Component> tabListDisplayName();
+
+    /** Sets or clears this player's tab-list row display name and syncs viewers. */
+    void setTabListDisplayName(@Nullable Component displayName);
+
+    /** Sort order for this player's tab-list row. Lower values appear first. */
+    int tabListOrder();
+
+    /** Sets this player's tab-list row sort order and syncs viewers. */
+    void setTabListOrder(int order);
+
+    /** Pushes a resource-pack request to this player. */
+    void sendResourcePack(ResourcePackRequest request);
+
+    /** Removes the resource pack with {@code id}, or all pushed packs when empty. */
+    void removeResourcePack(Optional<UUID> id);
+
+    /** Convenience overload that removes every pushed resource pack. */
+    default void removeResourcePacks() {
+        removeResourcePack(Optional.empty());
+    }
 
     /** Shows or replaces this player's transient sidebar scoreboard. */
     void showSidebar(Sidebar sidebar);
@@ -144,6 +175,43 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
      * already flying forces them to drop. Marshals to the server thread.
      */
     void setAllowFlight(boolean allow);
+
+    /** Personal respawn location, if one is set. */
+    Optional<RespawnLocation> respawnLocation();
+
+    /** Sets or clears this player's personal respawn location. */
+    void setRespawnLocation(@Nullable RespawnLocation location);
+
+    /** Sends a compass/spawn-target marker to the client without changing server respawn data. */
+    void sendCompassTarget(Location location);
+
+    /** Reads a vanilla custom statistic value. */
+    int statistic(Key key);
+
+    /** Convenience overload for generated vanilla statistic keys. */
+    default int statistic(StatisticKey key) {
+        return statistic(key.key());
+    }
+
+    /** Sets a vanilla custom statistic value and syncs it to the client. */
+    void setStatistic(Key key, int value);
+
+    /** Convenience overload for generated vanilla statistic keys. */
+    default void setStatistic(StatisticKey key, int value) {
+        setStatistic(key.key(), value);
+    }
+
+    /** Adds {@code delta} to a vanilla custom statistic and syncs it to the client. */
+    default void incrementStatistic(Key key, int delta) {
+        long value = (long) statistic(key) + delta;
+        setStatistic(key, (int) Math.max(0L, Math.min(Integer.MAX_VALUE, value)));
+    }
+
+    /** Grants one or more recipes to this player's recipe book. */
+    int discoverRecipes(Collection<? extends Recipe> recipes);
+
+    /** Removes one or more recipes from this player's recipe book. */
+    int undiscoverRecipes(Collection<? extends Recipe> recipes);
 
     /**
      * Opens a transient container of the given {@code type} for this player,

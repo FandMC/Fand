@@ -62,7 +62,7 @@ public final class FandRecipes {
         };
     }
 
-    static ResourceKey<net.minecraft.world.item.crafting.Recipe<?>> recipeKey(Key key) {
+    public static ResourceKey<net.minecraft.world.item.crafting.Recipe<?>> recipeKey(Key key) {
         return ResourceKey.create(Registries.RECIPE, id(key));
     }
 
