@@ -3,7 +3,6 @@ package io.fand.api.world.sound;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.util.OptionalLong;
 import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +19,7 @@ final class SoundEffectTest {
         assertThat(sound.category()).isEqualTo(SoundCategory.PLAYER);
         assertThat(sound.volume()).isEqualTo(0.75F);
         assertThat(sound.pitch()).isEqualTo(1.25F);
-        assertThat(sound.seed()).isEqualTo(OptionalLong.of(42L));
+        assertThat(sound.seed()).hasValue(42L);
         assertThat(sound.withoutSeed().seed()).isEmpty();
         assertThat(Sounds.effect("minecraft:ui.toast.challenge_complete", SoundCategory.MASTER).key())
                 .isEqualTo(SoundKey.UI_TOAST_CHALLENGE_COMPLETE.key());

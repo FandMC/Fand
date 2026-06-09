@@ -91,12 +91,12 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     /** Pushes a resource-pack request to this player. */
     void sendResourcePack(ResourcePackRequest request);
 
-    /** Removes the resource pack with {@code id}, or all pushed packs when empty. */
-    void removeResourcePack(Optional<UUID> id);
+    /** Removes the resource pack with {@code id}, or all pushed packs when {@code null}. */
+    void removeResourcePack(@Nullable UUID id);
 
     /** Convenience overload that removes every pushed resource pack. */
     default void removeResourcePacks() {
-        removeResourcePack(Optional.empty());
+        removeResourcePack(null);
     }
 
     /** Shows or replaces this player's transient sidebar scoreboard. */

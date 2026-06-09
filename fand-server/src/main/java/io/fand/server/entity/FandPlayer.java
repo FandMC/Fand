@@ -700,12 +700,11 @@ public final class FandPlayer implements Player {
     }
 
     @Override
-    public void removeResourcePack(Optional<UUID> id) {
-        Objects.requireNonNull(id, "id");
+    public void removeResourcePack(@Nullable UUID id) {
         runOnServerThread(() -> {
             var handle = bound.handle;
             if (handle.connection != null) {
-                handle.connection.send(new ClientboundResourcePackPopPacket(id));
+                handle.connection.send(new ClientboundResourcePackPopPacket(Optional.ofNullable(id)));
             }
         });
     }
