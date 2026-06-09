@@ -1,0 +1,226 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Tue, 9 Jun 2026 19:40:10 +0800
+Subject: [PATCH] Expose world status and profile hooks
+
+
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index 360bac4ca63e51e2e2b0e1ab4042e65c56ec718c..a5e1ff8d6904569eedcb2930538934727235a142 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -169,10 +169,13 @@ import net.minecraft.world.level.gamerules.GameRuleMap;
+ import net.minecraft.world.level.gamerules.GameRuleTypeVisitor;
+ import net.minecraft.world.level.gamerules.GameRules;
+ import net.minecraft.world.level.levelgen.Heightmap;
++import net.minecraft.world.level.levelgen.FlatLevelSource;
+ import net.minecraft.world.level.levelgen.PatrolSpawner;
+ import net.minecraft.world.level.levelgen.PhantomSpawner;
+ import net.minecraft.world.level.levelgen.WorldGenSettings;
+ import net.minecraft.world.level.levelgen.WorldOptions;
++import net.minecraft.world.level.levelgen.flat.FlatLevelGeneratorSettings;
++import net.minecraft.world.level.levelgen.flat.FlatLayerInfo;
+ import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
+ import net.minecraft.world.level.saveddata.WeatherData;
+ import net.minecraft.world.level.storage.CommandStorage;
+@@ -1101,13 +1104,18 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     private ServerStatus buildServerStatus() {
+         ServerStatus.Players players = this.buildPlayerStatus();
+         var fandStatus = io.fand.server.event.ServerEvents.fireServerListPing(
+-            this, Component.nullToEmpty(this.getMotd()), players, this.hidesOnlinePlayers()
++            this,
++            Component.nullToEmpty(this.getMotd()),
++            players,
++            Optional.of(ServerStatus.Version.current()),
++            Optional.ofNullable(this.statusIcon),
++            this.hidesOnlinePlayers()
+         );
+         return new ServerStatus(
+             fandStatus.motd(),
+             Optional.of(fandStatus.players()),
+-            Optional.of(ServerStatus.Version.current()),
+-            Optional.ofNullable(this.statusIcon),
++            fandStatus.version(),
++            fandStatus.icon(),
+             this.enforceSecureProfile()
+         );
+     }
+@@ -1266,6 +1274,15 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     }
+ 
+     public ServerLevel fand$createDynamicLevel(final ResourceKey<Level> dimension, final ResourceKey<LevelStem> template) {
++        Registry<LevelStem> dimensions = this.registries.compositeAccess().lookupOrThrow(Registries.LEVEL_STEM);
++        LevelStem levelStem = dimensions.getValue(template);
++        if (levelStem == null) {
++            throw new IllegalArgumentException("World template is not available: " + template.identifier());
++        }
++        return this.fand$createDynamicLevel(dimension, levelStem);
++    }
++
++    public ServerLevel fand$createDynamicLevel(final ResourceKey<Level> dimension, final LevelStem levelStem) {
+         if (!this.isSameThread()) {
+             throw new IllegalStateException("Dynamic worlds must be created on the server thread");
+         }
+@@ -1273,12 +1290,6 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+             throw new IllegalArgumentException("World is already loaded: " + dimension.identifier());
+         }
+ 
+-        Registry<LevelStem> dimensions = this.registries.compositeAccess().lookupOrThrow(Registries.LEVEL_STEM);
+-        LevelStem levelStem = dimensions.getValue(template);
+-        if (levelStem == null) {
+-            throw new IllegalArgumentException("World template is not available: " + template.identifier());
+-        }
+-
+         ServerLevelData levelData = new DerivedLevelData(this.worldData, this.worldData.overworldData());
+         boolean isDebug = this.worldData.isDebugWorld();
+         long biomeZoomSeed = BiomeManager.obfuscateSeed(this.worldGenSettings.options().seed());
+@@ -1300,6 +1311,20 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         return level;
+     }
+ 
++    public LevelStem fand$voidLevelStem(final ResourceKey<LevelStem> template) {
++        Registry<LevelStem> dimensions = this.registries.compositeAccess().lookupOrThrow(Registries.LEVEL_STEM);
++        LevelStem base = dimensions.getValue(template);
++        if (base == null) {
++            throw new IllegalArgumentException("World template is not available: " + template.identifier());
++        }
++        var biomes = this.registryAccess().lookupOrThrow(Registries.BIOME);
++        var structureSets = this.registryAccess().lookupOrThrow(Registries.STRUCTURE_SET);
++        var placedFeatures = this.registryAccess().lookupOrThrow(Registries.PLACED_FEATURE);
++        var flat = FlatLevelGeneratorSettings.getDefault(biomes, structureSets, placedFeatures)
++            .withBiomeAndLayers(java.util.List.of(new FlatLayerInfo(1, net.minecraft.world.level.block.Blocks.AIR)), Optional.empty(), biomes.getOrThrow(net.minecraft.world.level.biome.Biomes.THE_VOID));
++        return new LevelStem(base.type(), new FlatLevelSource(flat));
++    }
++
+     public boolean fand$unloadDynamicLevel(final ResourceKey<Level> dimension) {
+         if (!this.isSameThread()) {
+             throw new IllegalStateException("Dynamic worlds must be unloaded on the server thread");
+diff --git a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+index d0bbfb6b7e04baa1fcf8fe9d8ee3771f240226a4..3faf1f66a8bd27f8b03da1598e83c20cea0c732d 100644
+--- a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+@@ -46,7 +46,7 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private static final Component DISCONNECT_REASON_INVALID_DATA = Component.translatable("multiplayer.disconnect.invalid_player_data");
+     private static final Component DISCONNECT_REASON_CONFIGURATION_ERROR = Component.translatable("multiplayer.disconnect.configuration_error");
+-    private final GameProfile gameProfile;
++    private GameProfile gameProfile;
+     private final Queue<ConfigurationTask> configurationTasks = new ConcurrentLinkedQueue<>();
+     private @Nullable ConfigurationTask currentTask;
+     private ClientInformation clientInformation;
+@@ -169,11 +169,12 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+                 return;
+             }
+ 
+-            Component loginError = playerList.canPlayerLogin(this.connection.getRemoteAddress(), new NameAndId(this.gameProfile));
+-            if (loginError != null) {
+-                this.disconnect(loginError);
++            var login = playerList.canPlayerLogin(this.connection.getRemoteAddress(), this.gameProfile);
++            if (login.reason() != null) {
++                this.disconnect(login.reason());
+                 return;
+             }
++            this.gameProfile = login.profile();
+ 
+             Objects.requireNonNull(this.prepareSpawnTask).spawnPlayer(this.connection, this.createCookie(this.clientInformation));
+         } catch (Exception var4) {
+diff --git a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+index 1b0c65c8ae0d1bd68fc7f74449a323de1baaf5af..4cecbdb573e71305413a414275f6f77c1cb4819f 100644
+--- a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+@@ -196,24 +196,24 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+     }
+ 
+     private void startClientVerification(final GameProfile profile) {
+-        Component fandAsyncPreLoginReason = io.fand.server.event.ServerEvents.fireAsyncPreLogin(
++        var fandAsyncPreLogin = io.fand.server.event.ServerEvents.fireAsyncPreLogin(
+             this.server,
+             this.connection.getRemoteAddress(),
+-            new NameAndId(profile)
++            profile
+         );
+-        if (fandAsyncPreLoginReason != null) {
+-            this.disconnect(fandAsyncPreLoginReason);
++        if (fandAsyncPreLogin.reason() != null) {
++            this.disconnect(fandAsyncPreLogin.reason());
+             return;
+         }
+-        this.authenticatedProfile = profile;
++        this.authenticatedProfile = fandAsyncPreLogin.profile();
+         this.state = ServerLoginPacketListenerImpl.State.VERIFYING;
+     }
+ 
+     private void verifyLoginAndFinishConnectionSetup(final GameProfile profile) {
+         PlayerList playerList = this.server.getPlayerList();
+-        Component error = playerList.canPlayerLogin(this.connection.getRemoteAddress(), new NameAndId(profile));
+-        if (error != null) {
+-            this.disconnect(error);
++        var login = playerList.canPlayerLogin(this.connection.getRemoteAddress(), profile);
++        if (login.reason() != null) {
++            this.disconnect(login.reason());
+         } else {
+             if (this.server.getCompressionThreshold() >= 0 && !this.connection.isMemoryConnection()) {
+                 this.connection
+@@ -223,11 +223,14 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+                     );
+             }
+ 
+-            boolean waitForDisconnection = playerList.disconnectAllPlayersWithProfile(profile.id());
++            GameProfile finalProfile = login.profile();
++            this.authenticatedProfile = finalProfile;
++            this.requestedUsername = finalProfile.name();
++            boolean waitForDisconnection = playerList.disconnectAllPlayersWithProfile(finalProfile.id());
+             if (waitForDisconnection) {
+                 this.state = ServerLoginPacketListenerImpl.State.WAITING_FOR_DUPE_DISCONNECT;
+             } else {
+-                this.finishLoginAndWaitForClient(profile);
++                this.finishLoginAndWaitForClient(finalProfile);
+             }
+         }
+     }
+diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
+index 96c28268ab600adb8a4df6dc22b17405cfb53d5b..e8f5c3b9bab9fbc6b4558d33cd09537558d8012c 100644
+--- a/net/minecraft/server/players/PlayerList.java
++++ b/net/minecraft/server/players/PlayerList.java
+@@ -368,7 +368,8 @@ public abstract class PlayerList {
+         this.broadcastAll(new ClientboundPlayerInfoRemovePacket(List.of(player.getUUID())));
+     }
+ 
+-    public @Nullable Component canPlayerLogin(final SocketAddress address, final NameAndId nameAndId) {
++    public io.fand.server.event.ServerEvents.LoginResult canPlayerLogin(final SocketAddress address, final GameProfile profile) {
++        NameAndId nameAndId = new NameAndId(profile);
+         Component reason;
+         if (this.bans.isBanned(nameAndId)) {
+             UserBanListEntry ban = this.bans.get(nameAndId);
+@@ -393,7 +394,7 @@ public abstract class PlayerList {
+                 ? Component.translatable("multiplayer.disconnect.server_full")
+                 : null;
+         }
+-        return io.fand.server.event.ServerEvents.fireLogin(this.server, address, nameAndId, reason);
++        return io.fand.server.event.ServerEvents.fireLogin(this.server, address, profile, reason);
+     }
+ 
+     public boolean disconnectAllPlayersWithProfile(final UUID playerId) {
+diff --git a/net/minecraft/world/entity/player/Player.java b/net/minecraft/world/entity/player/Player.java
+index dfa9436d5ccef103eeea939ef1fcf16590167120..77fcc134651ed06ca422546e9f89ab7a4e8ad3a2 100644
+--- a/net/minecraft/world/entity/player/Player.java
++++ b/net/minecraft/world/entity/player/Player.java
+@@ -165,7 +165,7 @@ public abstract class Player extends Avatar implements ContainerUser {
+     protected int enchantmentSeed = 0;
+     protected final float defaultFlySpeed = 0.02F;
+     private int lastLevelUpTime;
+-    private final GameProfile gameProfile;
++    private GameProfile gameProfile;
+     private boolean reducedDebugInfo;
+     private ItemStack lastItemInMainHand = ItemStack.EMPTY;
+     private final ItemCooldowns cooldowns = this.createItemCooldowns();
+@@ -1267,6 +1267,10 @@ public abstract class Player extends Avatar implements ContainerUser {
+         return this.gameProfile;
+     }
+ 
++    public void fand$setGameProfile(final GameProfile gameProfile) {
++        this.gameProfile = gameProfile;
++    }
++
+     public NameAndId nameAndId() {
+         return new NameAndId(this.gameProfile);
+     }

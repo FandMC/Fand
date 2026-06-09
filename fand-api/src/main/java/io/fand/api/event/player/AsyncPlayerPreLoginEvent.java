@@ -1,6 +1,7 @@
 package io.fand.api.event.player;
 
 import io.fand.api.event.Event;
+import io.fand.api.player.PlayerProfile;
 import java.net.SocketAddress;
 import java.util.Objects;
 import java.util.UUID;
@@ -14,26 +15,32 @@ import net.kyori.adventure.text.Component;
  */
 public final class AsyncPlayerPreLoginEvent implements Event {
 
-    private final UUID uniqueId;
-    private final String name;
     private final SocketAddress address;
+    private PlayerProfile profile;
     private Result result;
     private Component kickMessage;
 
     public AsyncPlayerPreLoginEvent(UUID uniqueId, String name, SocketAddress address, Result result, Component kickMessage) {
-        this.uniqueId = Objects.requireNonNull(uniqueId, "uniqueId");
-        this.name = Objects.requireNonNull(name, "name");
+        this.profile = new PlayerProfile(uniqueId, name);
         this.address = Objects.requireNonNull(address, "address");
         this.result = Objects.requireNonNull(result, "result");
         this.kickMessage = Objects.requireNonNull(kickMessage, "kickMessage");
     }
 
     public UUID uniqueId() {
-        return uniqueId;
+        return profile.uniqueId();
     }
 
     public String name() {
-        return name;
+        return profile.name();
+    }
+
+    public PlayerProfile profile() {
+        return profile;
+    }
+
+    public void setProfile(PlayerProfile profile) {
+        this.profile = Objects.requireNonNull(profile, "profile");
     }
 
     public SocketAddress address() {

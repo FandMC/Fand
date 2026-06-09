@@ -21,6 +21,7 @@ import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.world.World;
+import io.fand.api.world.WorldCreateOptions;
 import io.fand.api.world.WorldTemplate;
 import io.fand.server.block.FandCustomBlockRegistry;
 import io.fand.server.command.BuiltinCommands;
@@ -57,6 +58,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.dimension.LevelStem;
 import net.kyori.adventure.key.Key;
@@ -421,8 +423,13 @@ public final class FandServer implements Server, AutoCloseable {
 
     @Override
     public CompletableFuture<World> createWorld(Key key, WorldTemplate template) {
+        return createWorld(key, WorldCreateOptions.of(template));
+    }
+
+    @Override
+    public CompletableFuture<World> createWorld(Key key, WorldCreateOptions options) {
         Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(template, "template");
+        Objects.requireNonNull(options, "options");
         var server = minecraftServer.get();
         var registry = worlds.get();
         if (server == null || registry == null) {
@@ -432,7 +439,7 @@ public final class FandServer implements Server, AutoCloseable {
             return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is stopping"));
         }
         return server.submit(() -> {
-            var level = server.fand$createDynamicLevel(dimensionKey(key), templateKey(template));
+            var level = server.fand$createDynamicLevel(dimensionKey(key), levelStem(server, options));
             World world = registry.wrap(level);
             events.fire(new WorldLoadEvent(world));
             return world;
@@ -587,6 +594,24 @@ public final class FandServer implements Server, AutoCloseable {
 
     private static ResourceKey<LevelStem> templateKey(WorldTemplate template) {
         return ResourceKey.create(Registries.LEVEL_STEM, identifier(template.key()));
+    }
+
+    private static LevelStem levelStem(MinecraftServer server, WorldCreateOptions options) {
+        var template = templateKey(options.template());
+        if (options.isVoidWorld()) {
+            return server.fand$voidLevelStem(template);
+        }
+        var generator = options.generator().orElse(null);
+        var dimensions = server.registryAccess().lookupOrThrow(Registries.LEVEL_STEM);
+        var base = dimensions.getValue(template);
+        if (base == null) {
+            throw new IllegalArgumentException("World template is not available: " + template.identifier());
+        }
+        if (generator == null) {
+            return base;
+        }
+        var biome = server.registryAccess().lookupOrThrow(Registries.BIOME).getOrThrow(Biomes.PLAINS);
+        return new LevelStem(base.type(), new io.fand.server.world.FandWorldGeneratorSource(biome, generator));
     }
 
     private static Identifier identifier(Key key) {

@@ -3,6 +3,8 @@ package io.fand.api.player;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.fand.api.world.WorldCreateOptions;
+import io.fand.api.world.WorldTemplate;
 import java.time.Instant;
 import java.util.UUID;
 import net.kyori.adventure.text.Component;
@@ -54,5 +56,44 @@ final class PlayerAccessModelsTest {
         assertThatThrownBy(() -> ResourcePackRequest.of("https://example.com/pack.zip", "a".repeat(41)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("hash length");
+    }
+
+    @Test
+    void playerProfileCarriesSkinWithoutLeakingTextureValue() {
+        var skin = new PlayerSkin(" texture-value ", " signature-value ");
+        var profile = new PlayerProfile(UUID.randomUUID(), " Steve ", skin);
+
+        assertThat(profile.name()).isEqualTo("Steve");
+        assertThat(profile.skin()).contains(skin);
+        assertThat(profile.skinOrNull()).isSameAs(skin);
+        assertThat(profile.withSkin(null).skin()).isEmpty();
+        assertThat(skin.value()).isEqualTo("texture-value");
+        assertThat(skin.signature()).contains("signature-value");
+        assertThat(skin.toString()).doesNotContain("texture-value");
+    }
+
+    @Test
+    void playerSkinRejectsBlankTextureValue() {
+        assertThatThrownBy(() -> PlayerSkin.unsigned(" "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("value cannot be blank");
+    }
+
+    @Test
+    void worldCreateOptionsSeparateVoidAndGeneratorModes() {
+        var template = WorldCreateOptions.of(WorldTemplate.NETHER);
+        var generated = WorldCreateOptions.generated(chunk -> { });
+        var voidWorld = WorldCreateOptions.voidWorld();
+
+        assertThat(template.template()).isEqualTo(WorldTemplate.NETHER);
+        assertThat(template.generator()).isEmpty();
+        assertThat(template.isVoidWorld()).isFalse();
+        assertThat(generated.generator()).isPresent();
+        assertThat(generated.isVoidWorld()).isFalse();
+        assertThat(voidWorld.template()).isEqualTo(WorldTemplate.OVERWORLD);
+        assertThat(voidWorld.isVoidWorld()).isTrue();
+        assertThatThrownBy(() -> generated.voidWorld(true))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("mutually exclusive");
     }
 }

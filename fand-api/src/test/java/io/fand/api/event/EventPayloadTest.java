@@ -149,7 +149,9 @@ import io.fand.api.event.player.PlayerToggleSprintEvent;
 import io.fand.api.event.player.PlayerUnleashEntityEvent;
 import io.fand.api.event.player.PlayerVelocityEvent;
 import io.fand.api.event.permission.PermissionCheckEvent;
+import io.fand.api.event.server.ServerListIcon;
 import io.fand.api.event.server.ServerListPingEvent;
+import io.fand.api.event.server.ServerListVersion;
 import io.fand.api.event.vehicle.VehicleCreateEvent;
 import io.fand.api.event.vehicle.VehicleDestroyEvent;
 import io.fand.api.event.vehicle.VehicleEnterEvent;
@@ -168,6 +170,8 @@ import io.fand.api.event.world.WorldUnloadEvent;
 import io.fand.api.inventory.Inventory;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
+import io.fand.api.player.PlayerProfile;
+import io.fand.api.player.PlayerSkin;
 import io.fand.api.world.Difficulty;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
@@ -785,6 +789,9 @@ final class EventPayloadTest {
                 address,
                 AsyncPlayerPreLoginEvent.Result.ALLOWED,
                 Component.text("ok"));
+        var asyncSkin = new PlayerSkin("textures-async", "sig-async");
+        var asyncProfile = new PlayerProfile(java.util.UUID.randomUUID(), "AsyncSkin", asyncSkin);
+        asyncPreLogin.setProfile(asyncProfile);
         asyncPreLogin.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, Component.text("no"));
         asyncPreLogin.allow();
         var preLogin = new PlayerPreLoginEvent(
@@ -793,6 +800,8 @@ final class EventPayloadTest {
                 address,
                 PlayerPreLoginEvent.Result.ALLOWED,
                 Component.text("ok"));
+        var preProfile = new PlayerProfile(java.util.UUID.randomUUID(), "PreSkin", PlayerSkin.unsigned("textures-pre"));
+        preLogin.setProfile(preProfile);
         preLogin.disallow(PlayerPreLoginEvent.Result.KICK_WHITELIST, Component.text("whitelist"));
         var armorStand = new PlayerArmorStandManipulateEvent(
                 player,
@@ -821,11 +830,15 @@ final class EventPayloadTest {
         var recipeDiscover = new PlayerRecipeDiscoverEvent(player, List.of(recipe));
         recipeDiscover.setCancelled(true);
 
-        assertThat(asyncPreLogin.uniqueId()).isEqualTo(id);
+        assertThat(asyncPreLogin.uniqueId()).isEqualTo(asyncProfile.uniqueId());
+        assertThat(asyncPreLogin.name()).isEqualTo("AsyncSkin");
+        assertThat(asyncPreLogin.profile().skin()).contains(asyncSkin);
         assertThat(asyncPreLogin.address()).isSameAs(address);
         assertThat(asyncPreLogin.result()).isEqualTo(AsyncPlayerPreLoginEvent.Result.ALLOWED);
         assertThat(asyncPreLogin.kickMessage()).isEqualTo(Component.text("no"));
-        assertThat(preLogin.name()).isEqualTo("Alex");
+        assertThat(preLogin.uniqueId()).isEqualTo(preProfile.uniqueId());
+        assertThat(preLogin.name()).isEqualTo("PreSkin");
+        assertThat(preLogin.profile().skin()).contains(PlayerSkin.unsigned("textures-pre"));
         assertThat(preLogin.result()).isEqualTo(PlayerPreLoginEvent.Result.KICK_WHITELIST);
         assertThat(preLogin.kickMessage()).isEqualTo(Component.text("whitelist"));
         assertThat(armorStand.slot()).isEqualTo(PlayerArmorStandManipulateEvent.EquipmentSlot.HEAD);
@@ -1105,12 +1118,27 @@ final class EventPayloadTest {
                 address,
                 PlayerLoginEvent.Result.ALLOWED,
                 Component.text("ok"));
+        var loginProfile = new PlayerProfile(java.util.UUID.randomUUID(), "LoginSkin", new PlayerSkin("textures-login", "sig-login"));
+        login.setProfile(loginProfile);
         login.disallow(PlayerLoginEvent.Result.KICK_OTHER, Component.text("no"));
-        var ping = new ServerListPingEvent(Component.text("old"), 2, 20, false);
+        var sampleProfile = new PlayerProfile(java.util.UUID.randomUUID(), "Sample");
+        var iconBytes = new byte[] {1, 2, 3};
+        var ping = new ServerListPingEvent(
+                Component.text("old"),
+                2,
+                20,
+                false,
+                new ServerListIcon(iconBytes),
+                new ServerListVersion("Fand", 999),
+                List.of(sampleProfile));
+        iconBytes[0] = 9;
         ping.setMotd(Component.text("new"));
         ping.setOnlinePlayers(-1);
         ping.setMaxPlayers(40);
         ping.setHidePlayers(true);
+        ping.setIcon(new ServerListIcon(new byte[] {4, 5, 6}));
+        ping.setVersion(new ServerListVersion("Custom", 1000));
+        ping.setSamplePlayers(List.of(loginProfile));
         var previous = location("minecraft:overworld", 0, 64, 0);
         var next = location("minecraft:overworld", 10, 70, 10);
         var spawn = new SpawnChangeEvent(previous, next);
@@ -1121,12 +1149,18 @@ final class EventPayloadTest {
         skip.setCancelled(true);
 
         assertThat(login.address()).isSameAs(address);
+        assertThat(login.uniqueId()).isEqualTo(loginProfile.uniqueId());
+        assertThat(login.name()).isEqualTo("LoginSkin");
+        assertThat(login.profile().skin()).contains(new PlayerSkin("textures-login", "sig-login"));
         assertThat(login.result()).isEqualTo(PlayerLoginEvent.Result.KICK_OTHER);
         assertThat(login.kickMessage()).isEqualTo(Component.text("no"));
         assertThat(ping.motd()).isEqualTo(Component.text("new"));
         assertThat(ping.onlinePlayers()).isZero();
         assertThat(ping.maxPlayers()).isEqualTo(40);
         assertThat(ping.hidePlayers()).isTrue();
+        assertThat(ping.icon().orElseThrow().pngBytes()).containsExactly((byte) 4, (byte) 5, (byte) 6);
+        assertThat(ping.version()).isEqualTo(new ServerListVersion("Custom", 1000));
+        assertThat(ping.samplePlayers()).containsExactly(loginProfile);
         assertThat(spawn.previousSpawn()).isSameAs(previous);
         assertThat(spawn.newSpawn()).isSameAs(previous);
         assertThat(spawn.cancelled()).isTrue();

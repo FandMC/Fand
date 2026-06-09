@@ -17,6 +17,7 @@ import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.world.World;
+import io.fand.api.world.WorldCreateOptions;
 import io.fand.api.world.WorldTemplate;
 import java.util.Collection;
 import java.util.Optional;
@@ -121,6 +122,17 @@ public interface Server extends ForwardingAudience {
      * template is unavailable in the active dimension registry.
      */
     CompletableFuture<? extends World> createWorld(Key key, WorldTemplate template);
+
+    /**
+     * Creates and loads a dynamic world using explicit generation options.
+     *
+     * <p>Use {@link WorldCreateOptions#voidWorld()} for empty worlds and
+     * {@link WorldCreateOptions#generated(io.fand.api.world.WorldGenerator)}
+     * for plugin-provided chunk generation.
+     */
+    default CompletableFuture<? extends World> createWorld(Key key, WorldCreateOptions options) {
+        return createWorld(key, options.template());
+    }
 
     /**
      * Saves and unloads a dynamic world. Vanilla base dimensions cannot be

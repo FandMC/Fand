@@ -8,6 +8,8 @@ import io.fand.api.item.ItemStack;
 import io.fand.api.permission.PermissionSubject;
 import io.fand.api.player.ResourcePackRequest;
 import io.fand.api.player.RespawnLocation;
+import io.fand.api.player.PlayerProfile;
+import io.fand.api.player.PlayerSkin;
 import io.fand.api.player.StatisticKey;
 import io.fand.api.recipe.Recipe;
 import io.fand.api.scoreboard.Sidebar;
@@ -52,6 +54,29 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
      * first settings packet.
      */
     ClientSettings clientSettings();
+
+    /** Current profile identity and texture data used for this player. */
+    default PlayerProfile profile() {
+        return new PlayerProfile(uniqueId(), name());
+    }
+
+    /** Current skin texture, if one is present on the player's profile. */
+    default Optional<PlayerSkin> skin() {
+        return profile().skin();
+    }
+
+    /**
+     * Replaces the player's skin texture and refreshes player-info packets for
+     * online viewers.
+     */
+    default void setSkin(@Nullable PlayerSkin skin) {
+        throw new UnsupportedOperationException("Player skin changes are not supported");
+    }
+
+    /** Resends the player's current profile/skin to online viewers. */
+    default void refreshSkin() {
+        setSkin(skin().orElse(null));
+    }
 
     /** Disconnects the player with the given reason. No-op if already offline. */
     void kick(Component reason);

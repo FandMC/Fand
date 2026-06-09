@@ -15,6 +15,8 @@ import io.fand.api.item.ItemType;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.component.ItemEquipmentSlot;
 import io.fand.api.permission.PermissionService;
+import io.fand.api.player.PlayerProfile;
+import io.fand.api.player.PlayerSkin;
 import io.fand.api.player.ResourcePackRequest;
 import io.fand.api.player.RespawnLocation;
 import io.fand.api.recipe.Recipe;
@@ -32,6 +34,7 @@ import io.fand.server.command.AdventureBridge;
 import io.fand.server.component.EntityComponentStorage;
 import io.fand.server.inventory.FandPlayerInventory;
 import io.fand.server.item.FandItemStacks;
+import io.fand.server.player.PlayerProfiles;
 import io.fand.server.recipe.FandRecipes;
 import io.fand.server.world.ParticleEffects;
 import io.fand.server.world.FandWorld;
@@ -294,6 +297,28 @@ public final class FandPlayer implements Player {
                     case DECREASED -> ClientParticleStatus.DECREASED;
                     case MINIMAL -> ClientParticleStatus.MINIMAL;
                 });
+    }
+
+    @Override
+    public PlayerProfile profile() {
+        return PlayerProfiles.fromVanilla(bound.handle.getGameProfile());
+    }
+
+    @Override
+    public void setSkin(@Nullable PlayerSkin skin) {
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            var nextProfile = skin == null
+                    ? PlayerProfiles.withoutSkin(handle.getGameProfile())
+                    : PlayerProfiles.withSkin(handle.getGameProfile(), skin);
+            handle.fand$setGameProfile(nextProfile);
+            refreshPlayerInfo(handle);
+        });
+    }
+
+    @Override
+    public void refreshSkin() {
+        runOnServerThread(() -> refreshPlayerInfo(bound.handle));
     }
 
     @Override
@@ -907,6 +932,21 @@ public final class FandPlayer implements Player {
             }
         }
         return parts.isEmpty() ? Set.of() : Set.copyOf(parts);
+    }
+
+    private static void refreshPlayerInfo(ServerPlayer player) {
+        var server = player.level().getServer();
+        if (server == null) {
+            return;
+        }
+        var remove = new ClientboundPlayerInfoRemovePacket(java.util.List.of(player.getUUID()));
+        var add = ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(java.util.List.of(player));
+        for (var viewer : server.getPlayerList().getPlayers()) {
+            if (viewer.connection != null) {
+                viewer.connection.send(remove);
+                viewer.connection.send(add);
+            }
+        }
     }
 
     @Override
