@@ -9,6 +9,9 @@ import io.fand.api.entity.Player;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.component.ItemEquipmentSlot;
 import io.fand.api.permission.PermissionService;
+import io.fand.api.player.ResourcePackRequest;
+import io.fand.api.player.RespawnLocation;
+import io.fand.api.recipe.Recipe;
 import io.fand.api.scoreboard.Sidebar;
 import io.fand.api.world.Location;
 import io.fand.api.world.Vector3;
@@ -23,14 +26,15 @@ import io.fand.server.command.AdventureBridge;
 import io.fand.server.component.EntityComponentStorage;
 import io.fand.server.inventory.FandPlayerInventory;
 import io.fand.server.item.FandItemStacks;
+import io.fand.server.recipe.FandRecipes;
 import io.fand.server.world.ParticleEffects;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.SoundEffects;
+import java.util.Collection;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.Collection;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import net.kyori.adventure.bossbar.BossBar;
@@ -40,9 +44,17 @@ import net.kyori.adventure.sound.SoundStop;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.title.Title;
 import net.kyori.adventure.title.TitlePart;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.protocol.common.ClientboundResourcePackPopPacket;
+import net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
+import net.minecraft.network.protocol.game.ClientboundSetDefaultSpawnPositionPacket;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.stats.Stats;
+import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
@@ -622,6 +634,58 @@ public final class FandPlayer implements Player {
     }
 
     @Override
+    public Optional<Component> tabListDisplayName() {
+        return Optional.ofNullable(bound.handle.getTabListDisplayName())
+                .map(component -> AdventureBridge.fromVanilla(component, bound.handle.registryAccess()));
+    }
+
+    @Override
+    public void setTabListDisplayName(@Nullable Component displayName) {
+        runOnServerThread(() -> bound.handle.fand$setTabListDisplayName(displayName == null
+                ? null
+                : AdventureBridge.toVanilla(displayName, bound.handle.registryAccess())));
+    }
+
+    @Override
+    public int tabListOrder() {
+        return bound.handle.getTabListOrder();
+    }
+
+    @Override
+    public void setTabListOrder(int order) {
+        runOnServerThread(() -> bound.handle.fand$setTabListOrder(order));
+    }
+
+    @Override
+    public void sendResourcePack(ResourcePackRequest request) {
+        Objects.requireNonNull(request, "request");
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            if (handle.connection != null) {
+                var prompt = request.prompt()
+                        .map(component -> AdventureBridge.toVanilla(component, handle.registryAccess()));
+                handle.connection.send(new ClientboundResourcePackPushPacket(
+                        request.id(),
+                        request.url(),
+                        request.hash(),
+                        request.required(),
+                        prompt));
+            }
+        });
+    }
+
+    @Override
+    public void removeResourcePack(Optional<UUID> id) {
+        Objects.requireNonNull(id, "id");
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            if (handle.connection != null) {
+                handle.connection.send(new ClientboundResourcePackPopPacket(id));
+            }
+        });
+    }
+
+    @Override
     public void sendPlayerListHeader(Component header) {
         sendTabList(header, Component.empty());
     }
@@ -749,6 +813,34 @@ public final class FandPlayer implements Player {
         return future;
     }
 
+    private <T> T callOnServerThread(Supplier<T> task) {
+        var server = bound.handle.level().getServer();
+        if (server == null) {
+            throw new IllegalStateException("Player is not attached to a server");
+        }
+        if (server.isSameThread()) {
+            return task.get();
+        }
+        return server.submit(task).join();
+    }
+
+    private Optional<World> resolveWorld(net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension) {
+        var server = bound.handle.level().getServer();
+        if (server == null) {
+            return Optional.empty();
+        }
+        var level = server.getLevel(dimension);
+        return level == null ? Optional.empty() : Optional.of(registry.wrapLevel(level));
+    }
+
+    private static Identifier customStat(Key key) {
+        var id = Identifier.fromNamespaceAndPath(key.namespace(), key.value());
+        if (!BuiltInRegistries.CUSTOM_STAT.containsKey(id)) {
+            throw new IllegalArgumentException("Unknown custom statistic: " + key.asString());
+        }
+        return id;
+    }
+
     @Override
     public boolean hasPermission(String permission) {
         return permissions.hasPermission(this, permission);
@@ -873,6 +965,124 @@ public final class FandPlayer implements Player {
                 abilities.flying = false;
             }
             pushAbilities();
+        });
+    }
+
+    @Override
+    public Optional<RespawnLocation> respawnLocation() {
+        return callOnServerThread(() -> {
+            var config = bound.handle.getRespawnConfig();
+            if (config == null) {
+                return Optional.empty();
+            }
+            var data = config.respawnData();
+            var world = resolveWorld(data.dimension());
+            if (world.isEmpty()) {
+                return Optional.empty();
+            }
+            var pos = data.pos();
+            return Optional.of(new RespawnLocation(
+                    new Location(world.orElseThrow(), pos.getX(), pos.getY(), pos.getZ(), data.yaw(), data.pitch()),
+                    config.forced()));
+        });
+    }
+
+    @Override
+    public void setRespawnLocation(@Nullable RespawnLocation location) {
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            if (location == null) {
+                handle.setRespawnPosition(null, false);
+                return;
+            }
+            var server = handle.level().getServer();
+            if (server == null) {
+                return;
+            }
+            var target = resolveLevel(location.location().world(), server);
+            var pos = BlockPos.containing(
+                    location.location().x(),
+                    location.location().y(),
+                    location.location().z());
+            var respawnData = LevelData.RespawnData.of(
+                    target.dimension(),
+                    pos,
+                    location.location().yaw(),
+                    location.location().pitch());
+            handle.setRespawnPosition(new ServerPlayer.RespawnConfig(respawnData, location.forced()), false);
+        });
+    }
+
+    @Override
+    public void sendCompassTarget(Location location) {
+        Objects.requireNonNull(location, "location");
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            if (handle.connection == null) {
+                return;
+            }
+            var server = handle.level().getServer();
+            if (server == null) {
+                return;
+            }
+            var target = resolveLevel(location.world(), server);
+            var respawnData = LevelData.RespawnData.of(
+                    target.dimension(),
+                    BlockPos.containing(location.x(), location.y(), location.z()),
+                    location.yaw(),
+                    location.pitch());
+            handle.connection.send(new ClientboundSetDefaultSpawnPositionPacket(respawnData));
+        });
+    }
+
+    @Override
+    public int statistic(Key key) {
+        Objects.requireNonNull(key, "key");
+        return callOnServerThread(() -> bound.handle.getStats().getValue(Stats.CUSTOM, customStat(key)));
+    }
+
+    @Override
+    public void setStatistic(Key key, int value) {
+        Objects.requireNonNull(key, "key");
+        int clamped = Math.max(0, value);
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            handle.getStats().setValue(handle, Stats.CUSTOM.get(customStat(key)), clamped);
+            handle.getStats().sendStats(handle);
+        });
+    }
+
+    @Override
+    public int discoverRecipes(Collection<? extends Recipe> recipes) {
+        Objects.requireNonNull(recipes, "recipes");
+        return callOnServerThread(() -> {
+            var server = bound.handle.level().getServer();
+            if (server == null) {
+                return 0;
+            }
+            java.util.List<net.minecraft.world.item.crafting.RecipeHolder<?>> holders = recipes.stream()
+                    .filter(Objects::nonNull)
+                    .map(recipe -> server.getRecipeManager().byKey(FandRecipes.recipeKey(recipe.key())))
+                    .flatMap(optional -> optional.stream())
+                    .toList();
+            return bound.handle.awardRecipes(holders);
+        });
+    }
+
+    @Override
+    public int undiscoverRecipes(Collection<? extends Recipe> recipes) {
+        Objects.requireNonNull(recipes, "recipes");
+        return callOnServerThread(() -> {
+            var server = bound.handle.level().getServer();
+            if (server == null) {
+                return 0;
+            }
+            java.util.List<net.minecraft.world.item.crafting.RecipeHolder<?>> holders = recipes.stream()
+                    .filter(Objects::nonNull)
+                    .map(recipe -> server.getRecipeManager().byKey(FandRecipes.recipeKey(recipe.key())))
+                    .flatMap(optional -> optional.stream())
+                    .toList();
+            return bound.handle.resetRecipes(holders);
         });
     }
 

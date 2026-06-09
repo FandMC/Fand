@@ -22,12 +22,14 @@ import io.fand.api.item.component.TrimMaterialKey;
 import io.fand.api.item.component.TrimPatternKey;
 import io.fand.api.item.component.VillagerVariantKey;
 import io.fand.api.item.component.WolfVariantKey;
+import io.fand.api.player.StatisticKey;
 import io.fand.api.recipe.RecipeIngredient;
 import io.fand.api.recipe.RecipeTypeKey;
 import io.fand.api.world.BiomeKey;
 import io.fand.api.world.DamageTypeKey;
 import io.fand.api.world.FluidKey;
 import io.fand.api.world.GameEventKey;
+import io.fand.api.world.GameRuleKey;
 import io.fand.api.world.PoiTypeKey;
 import io.fand.api.world.particle.ParticleKey;
 import io.fand.api.world.sound.JukeboxSongKey;
@@ -48,6 +50,7 @@ final class VanillaKeyEnumsTest {
         assertMinecraftNamespace(EntityKey.values());
         assertMinecraftNamespace(AttributeKey.values());
         assertMinecraftNamespace(GameEventKey.values());
+        assertMinecraftNamespace(GameRuleKey.values());
         assertMinecraftNamespace(EffectKey.values());
         assertMinecraftNamespace(PotionKey.values());
         assertMinecraftNamespace(BiomeKey.values());
@@ -66,6 +69,7 @@ final class VanillaKeyEnumsTest {
         assertMinecraftNamespace(PoiTypeKey.values());
         assertMinecraftNamespace(MenuTypeKey.values());
         assertMinecraftNamespace(RecipeTypeKey.values());
+        assertMinecraftNamespace(StatisticKey.values());
         assertMinecraftNamespace(WolfVariantKey.values());
         assertMinecraftNamespace(CatVariantKey.values());
         assertMinecraftNamespace(PaintingVariantKey.values());
@@ -82,6 +86,7 @@ final class VanillaKeyEnumsTest {
         assertThat(EntityKey.CREEPER.key()).isEqualTo(Key.key("minecraft:creeper"));
         assertThat(AttributeKey.ATTACK_DAMAGE.key()).isEqualTo(Key.key("minecraft:attack_damage"));
         assertThat(GameEventKey.BLOCK_PLACE.key()).isEqualTo(Key.key("minecraft:block_place"));
+        assertThat(GameRuleKey.KEEP_INVENTORY.key()).isEqualTo(Key.key("minecraft:keep_inventory"));
         assertThat(EffectKey.SPEED.key()).isEqualTo(Key.key("minecraft:speed"));
         assertThat(PotionKey.WATER.key()).isEqualTo(Key.key("minecraft:water"));
         assertThat(BiomeKey.PALE_GARDEN.key()).isEqualTo(Key.key("minecraft:pale_garden"));
@@ -102,6 +107,7 @@ final class VanillaKeyEnumsTest {
         assertThat(PoiTypeKey.LODESTONE.key()).isEqualTo(Key.key("minecraft:lodestone"));
         assertThat(MenuTypeKey.ANVIL.key()).isEqualTo(Key.key("minecraft:anvil"));
         assertThat(RecipeTypeKey.SMELTING.key()).isEqualTo(Key.key("minecraft:smelting"));
+        assertThat(StatisticKey.PLAY_TIME.key()).isEqualTo(Key.key("minecraft:play_time"));
         assertThat(WolfVariantKey.SNOWY.key()).isEqualTo(Key.key("minecraft:snowy"));
         assertThat(CatVariantKey.TABBY.key()).isEqualTo(Key.key("minecraft:tabby"));
         assertThat(PaintingVariantKey.KEBAB.key()).isEqualTo(Key.key("minecraft:kebab"));

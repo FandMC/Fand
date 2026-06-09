@@ -1,0 +1,78 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Tue, 9 Jun 2026 11:10:48 +0800
+Subject: [PATCH] Expose player list and explosive owner accessors
+
+
+diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
+index 57b1d5b799d46e8607b8837349911a244bb7a25d..efad39e47cfda2689d1e931a05c9f7ffca784349 100644
+--- a/net/minecraft/server/level/ServerPlayer.java
++++ b/net/minecraft/server/level/ServerPlayer.java
+@@ -72,6 +72,7 @@ import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
+ import net.minecraft.network.protocol.game.ClientboundPlayerCombatEndPacket;
+ import net.minecraft.network.protocol.game.ClientboundPlayerCombatEnterPacket;
+ import net.minecraft.network.protocol.game.ClientboundPlayerCombatKillPacket;
++import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
+ import net.minecraft.network.protocol.game.ClientboundPlayerLookAtPacket;
+ import net.minecraft.network.protocol.game.ClientboundPlayerRotationPacket;
+ import net.minecraft.network.protocol.game.ClientboundRemoveMobEffectPacket;
+@@ -252,6 +253,8 @@ public class ServerPlayer extends Player {
+     private @Nullable Vec3 levitationStartPos;
+     private int levitationStartTime;
+     private boolean disconnected;
++    private @Nullable Component fandTabListDisplayName;
++    private int fandTabListOrder;
+     private int requestedViewDistance = 2;
+     private String language = "en_us";
+     private @Nullable Vec3 startingToFallPosition;
+@@ -2058,11 +2061,33 @@ public class ServerPlayer extends Player {
+     }
+ 
+     public @Nullable Component getTabListDisplayName() {
+-        return null;
++        return this.fandTabListDisplayName;
++    }
++
++    public void fand$setTabListDisplayName(final @Nullable Component displayName) {
++        if (Objects.equals(this.fandTabListDisplayName, displayName)) {
++            return;
++        }
++        this.fandTabListDisplayName = displayName;
++        this.server.getPlayerList().broadcastAll(new ClientboundPlayerInfoUpdatePacket(
++            ClientboundPlayerInfoUpdatePacket.Action.UPDATE_DISPLAY_NAME,
++            this
++        ));
+     }
+ 
+     public int getTabListOrder() {
+-        return 0;
++        return this.fandTabListOrder;
++    }
++
++    public void fand$setTabListOrder(final int order) {
++        if (this.fandTabListOrder == order) {
++            return;
++        }
++        this.fandTabListOrder = order;
++        this.server.getPlayerList().broadcastAll(new ClientboundPlayerInfoUpdatePacket(
++            ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LIST_ORDER,
++            this
++        ));
+     }
+ 
+     @Override
+diff --git a/net/minecraft/world/entity/item/PrimedTnt.java b/net/minecraft/world/entity/item/PrimedTnt.java
+index 564973efed9a143374fde601da21b4f3c375b3bb..74105c799ceae31dff94dca7b3d4a629e436dcf9 100644
+--- a/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -159,6 +159,10 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+         return EntityReference.getLivingEntity(this.owner, this.level());
+     }
+ 
++    public void fand$setOwner(final @Nullable LivingEntity owner) {
++        this.owner = EntityReference.of(owner);
++    }
++
+     @Override
+     public void restoreFrom(final Entity oldEntity) {
+         super.restoreFrom(oldEntity);

@@ -12,9 +12,11 @@ import io.fand.api.lifecycle.ServerStartingEvent;
 import io.fand.api.lifecycle.ServerStoppingEvent;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.packet.PacketRegistry;
+import io.fand.api.player.PlayerAccessService;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
+import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldTemplate;
 import io.fand.server.command.BuiltinCommands;
@@ -31,9 +33,11 @@ import io.fand.server.network.ProxyForwardingSettings;
 import io.fand.server.network.packet.PacketRegistryImpl;
 import io.fand.server.permission.PermissionManager;
 import io.fand.server.performance.ServerPerformanceTracker;
+import io.fand.server.player.FandPlayerAccessService;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.recipe.FandRecipeRegistry;
 import io.fand.server.scheduler.TaskScheduler;
+import io.fand.server.scoreboard.FandScoreboardService;
 import io.fand.server.world.WorldRegistry;
 import java.nio.file.Path;
 import java.util.Collection;
@@ -65,9 +69,11 @@ public final class FandServer implements Server, AutoCloseable {
     private final TaskScheduler scheduler;
     private final ChunkSendScheduler chunks;
     private final FandRecipeRegistry recipes;
+    private final FandScoreboardService scoreboard;
     private final PacketRegistryImpl packets;
     private final PluginRuntime plugins;
     private final PlayerRegistry players;
+    private final FandPlayerAccessService playerAccess;
     private final ServerPerformanceTracker performance;
     private final ConfigReloader configReloader;
     private final ProxyForwardingSettings proxyForwarding;
@@ -99,8 +105,10 @@ public final class FandServer implements Server, AutoCloseable {
         this.scheduler = new TaskScheduler(initialConfig.scheduler.asyncThreads);
         this.chunks = new ChunkSendScheduler(initialConfig.chunks);
         this.recipes = new FandRecipeRegistry();
+        this.scoreboard = new FandScoreboardService(minecraftServer::get);
         this.packets = new PacketRegistryImpl();
         this.players = new PlayerRegistry(permissions);
+        this.playerAccess = new FandPlayerAccessService(minecraftServer::get);
         this.performance = new ServerPerformanceTracker();
         var pluginDirectory = Path.of(initialConfig.plugins.directory);
         this.plugins = new PluginRuntime(
@@ -112,6 +120,7 @@ public final class FandServer implements Server, AutoCloseable {
                 permissions,
                 scheduler,
                 recipes,
+                scoreboard,
                 packets,
                 ConfigReloader.toPluginOptions(initialConfig)
         );
@@ -268,6 +277,11 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
+    public ScoreboardService scoreboard() {
+        return scoreboard;
+    }
+
+    @Override
     public PacketRegistry packets() {
         return packets;
     }
@@ -301,6 +315,11 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public Collection<? extends io.fand.api.entity.Player> players() {
         return players.snapshot();
+    }
+
+    @Override
+    public PlayerAccessService playerAccess() {
+        return playerAccess;
     }
 
     @Override

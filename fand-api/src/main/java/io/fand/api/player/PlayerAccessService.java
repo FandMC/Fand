@@ -1,0 +1,59 @@
+package io.fand.api.player;
+
+import java.time.Instant;
+import java.util.Collection;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+
+/**
+ * Player identity lookup and server access-list controls.
+ */
+public interface PlayerAccessService {
+
+    CompletableFuture<Optional<PlayerProfile>> profile(String name);
+
+    CompletableFuture<Optional<PlayerProfile>> profile(UUID uniqueId);
+
+    PlayerProfile offlineProfile(String name);
+
+    Collection<BanEntry> bans();
+
+    Optional<BanEntry> ban(PlayerProfile profile);
+
+    boolean banned(PlayerProfile profile);
+
+    default boolean ban(PlayerProfile profile, String source, String reason) {
+        return ban(profile, source, reason, Optional.empty());
+    }
+
+    boolean ban(PlayerProfile profile, String source, String reason, Optional<Instant> expires);
+
+    boolean pardon(PlayerProfile profile);
+
+    Collection<PlayerProfile> whitelist();
+
+    boolean whitelisted(PlayerProfile profile);
+
+    boolean addWhitelist(PlayerProfile profile);
+
+    boolean removeWhitelist(PlayerProfile profile);
+
+    boolean whitelistEnabled();
+
+    void setWhitelistEnabled(boolean enabled);
+
+    Collection<OperatorEntry> operators();
+
+    Optional<OperatorEntry> operator(PlayerProfile profile);
+
+    boolean isOperator(PlayerProfile profile);
+
+    default boolean op(PlayerProfile profile) {
+        return op(profile, OperatorLevel.OWNERS, false);
+    }
+
+    boolean op(PlayerProfile profile, OperatorLevel level, boolean bypassesPlayerLimit);
+
+    boolean deop(PlayerProfile profile);
+}
