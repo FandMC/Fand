@@ -89,10 +89,23 @@ final class WorldEntityApiTest {
     void defaultWorldToolsRemainOptInForImplementations() {
         var world = new TestWorld(List.of());
 
+        assertThat(world.biomeAt(0, 64, 0)).isEqualTo(Key.key("minecraft:plains"));
+        assertThat(world.highestBlockYAt(0, 0)).isZero();
+        assertThat(world.spawnLocation()).isEqualTo(world.at(0, 0, 0));
+        assertThat(world.setSpawnLocation(world.at(0, 64, 0)).isCompletedExceptionally()).isTrue();
+        assertThat(world.gameRule("keepInventory")).isEmpty();
+        assertThat(world.setGameRule("keepInventory", "true").join()).isFalse();
         assertThat(world.rayTraceBlock(world.at(0, 64, 0), new Vector3(1, 0, 0), 4.0)).isEmpty();
         assertThat(world.rayTraceEntity(world.at(0, 64, 0), new Vector3(1, 0, 0), 4.0)).isEmpty();
         assertThat(world.chunkLoaded(0, 0)).isFalse();
+        assertThat(world.chunkForceLoaded(0, 0)).isFalse();
+        assertThat(world.loadChunk(0, 0).join()).isFalse();
+        assertThat(world.unloadChunk(0, 0).join()).isFalse();
+        assertThat(world.setChunkForceLoaded(0, 0, true).join()).isFalse();
         assertThat(world.entityCount(0, 0)).isZero();
+        assertThat(world.entitiesInChunk(0, 0)).isEmpty();
+        assertThat(world.chunkSnapshot(0, 0))
+                .isEqualTo(new ChunkSnapshot(world, 0, 0, false, false, 0));
         assertThat(world.strikeLightning(world.at(0, 64, 0)).isCompletedExceptionally()).isTrue();
         assertThat(world.createExplosion(world.at(0, 64, 0), 2.0F).isCompletedExceptionally()).isTrue();
     }

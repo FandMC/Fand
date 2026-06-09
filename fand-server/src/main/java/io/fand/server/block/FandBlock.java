@@ -1,15 +1,25 @@
 package io.fand.server.block;
 
 import io.fand.api.block.Block;
+import io.fand.api.block.BlockEntity;
 import io.fand.api.block.BlockType;
 import io.fand.api.component.DataComponentContainer;
 import io.fand.api.component.DataComponentMap;
 import io.fand.api.world.World;
 import io.fand.server.component.BlockComponentStorage;
 import io.fand.server.world.FandWorld;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.Container;
+import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.Property;
 
 public final class FandBlock implements Block {
 
@@ -52,9 +62,51 @@ public final class FandBlock implements Block {
     @Override
     public BlockType type() {
         ServerLevel level = world.handle();
-        requireMainThread(level, "Block.type() must be read on the server thread");
-        var state = level.getBlockState(pos);
-        return FandBlockType.of(state.getBlock());
+        return callOnServerThread(() -> FandBlockType.of(level.getBlockState(pos).getBlock()));
+    }
+
+    @Override
+    public Map<String, String> stateProperties() {
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> {
+            var state = level.getBlockState(pos);
+            var properties = new LinkedHashMap<String, String>();
+            for (var property : state.getProperties()) {
+                properties.put(property.getName(), propertyName(state, property));
+            }
+            return Map.copyOf(properties);
+        });
+    }
+
+    @Override
+    public Optional<String> stateProperty(String name) {
+        Objects.requireNonNull(name, "name");
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> {
+            var state = level.getBlockState(pos);
+            return findProperty(state, name).map(property -> propertyName(state, property));
+        });
+    }
+
+    @Override
+    public boolean setStateProperty(String name, String value) {
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(value, "value");
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> {
+            var state = level.getBlockState(pos);
+            var next = stateWithProperty(state, name, value);
+            if (next.isEmpty() || next.get() == state) {
+                return false;
+            }
+            return level.setBlockAndUpdate(pos, next.get());
+        });
+    }
+
+    @Override
+    public Optional<? extends BlockEntity> blockEntity() {
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> Optional.ofNullable(level.getBlockEntity(pos)).map(this::wrapBlockEntity));
     }
 
     @Override
@@ -70,29 +122,22 @@ public final class FandBlock implements Block {
             throw new IllegalArgumentException("Block type must be obtained from BlockTypes / Server.blockType");
         }
         ServerLevel level = world.handle();
-        var server = level.getServer();
-        Runnable run = () -> {
+        return callOnServerThread(() -> {
             if (!level.setBlockAndUpdate(pos, fandType.handle().defaultBlockState())) {
-                return;
+                return false;
             }
             if (components.isEmpty()) {
                 BlockComponentStorage.clear(level, pos);
             } else {
                 BlockComponentStorage.put(level, pos, components);
             }
-        };
-        if (server == null || server.isSameThread()) {
-            run.run();
-        } else {
-            server.executeIfPossible(run);
-        }
-        return true;
+            return true;
+        });
     }
 
     @Override
     public DataComponentContainer components() {
         ServerLevel level = world.handle();
-        requireMainThread(level, "Block.components() must be accessed on the server thread");
         return BlockComponentStorage.container(level, pos);
     }
 
@@ -113,10 +158,71 @@ public final class FandBlock implements Block {
         return "FandBlock(" + world.key().asString() + " " + pos.toShortString() + ")";
     }
 
-    private static void requireMainThread(ServerLevel level, String message) {
-        var server = level.getServer();
-        if (server != null && !server.isSameThread()) {
-            throw new IllegalStateException(message);
+    void runOnServerThread(Runnable task) {
+        var server = world.handle().getServer();
+        if (server == null || server.isSameThread()) {
+            task.run();
+        } else {
+            server.executeIfPossible(task);
         }
+    }
+
+    <T> T callOnServerThread(Supplier<T> task) {
+        var server = world.handle().getServer();
+        if (server == null || server.isSameThread()) {
+            return task.get();
+        }
+        var future = new CompletableFuture<T>();
+        server.executeIfPossible(() -> {
+            try {
+                future.complete(task.get());
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        });
+        return future.join();
+    }
+
+    private BlockEntity wrapBlockEntity(net.minecraft.world.level.block.entity.BlockEntity entity) {
+        if (entity instanceof SpawnerBlockEntity spawner) {
+            return new FandSpawnerBlockEntity(this, spawner);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.SignBlockEntity sign) {
+            return new FandSignBlockEntity(this, sign);
+        }
+        if (entity instanceof Container container) {
+            return new FandContainerBlockEntity(this, entity, container);
+        }
+        return new FandBlockEntity(this, entity);
+    }
+
+    private static Optional<Property<?>> findProperty(BlockState state, String name) {
+        for (var property : state.getProperties()) {
+            if (property.getName().equals(name)) {
+                return Optional.of(property);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static String propertyName(BlockState state, Property<?> property) {
+        return propertyValueName(property, state.getValue(property));
+    }
+
+    private static <T extends Comparable<T>> String propertyValueName(Property<T> property, Comparable<?> value) {
+        return property.getName(property.getValueClass().cast(value));
+    }
+
+    private static Optional<BlockState> stateWithProperty(BlockState state, String name, String value) {
+        for (var property : state.getProperties()) {
+            if (property.getName().equals(name)) {
+                return stateWithProperty(state, property, value);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static <T extends Comparable<T>> Optional<BlockState> stateWithProperty(BlockState state, Property<T> property, String value) {
+        return property.getValue(value).map(parsed -> state.setValue(property, parsed));
     }
 }

@@ -52,6 +52,36 @@ public final class EntityRegistry {
     }
 
     private FandEntity wrapFresh(net.minecraft.world.entity.Entity handle) {
+        if (handle instanceof net.minecraft.world.entity.decoration.ArmorStand armorStand) {
+            return new FandArmorStand(armorStand, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.AreaEffectCloud cloud) {
+            return new FandAreaEffectCloud(cloud, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.item.PrimedTnt explosive) {
+            return new FandExplosive(explosive, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.ExperienceOrb orb) {
+            return new FandExperienceOrb(orb, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.Display.BlockDisplay display) {
+            return new FandBlockDisplay(display, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.Display.ItemDisplay display) {
+            return new FandItemDisplay(display, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.Display.TextDisplay display) {
+            return new FandTextDisplay(display, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.Display display) {
+            return new FandDisplay(display, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.decoration.BlockAttachedEntity hanging) {
+            return new FandHanging(hanging, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.vehicle.VehicleEntity vehicle) {
+            return new FandVehicle(vehicle, worldRegistry);
+        }
         if (handle instanceof net.minecraft.world.entity.item.ItemEntity item) {
             return new FandItemEntity(item, worldRegistry);
         }

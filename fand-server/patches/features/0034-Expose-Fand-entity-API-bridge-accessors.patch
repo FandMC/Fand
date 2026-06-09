@@ -1,0 +1,279 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Tue, 9 Jun 2026 09:31:56 +0800
+Subject: [PATCH] Expose Fand entity API bridge accessors
+
+
+diff --git a/net/minecraft/world/entity/Display.java b/net/minecraft/world/entity/Display.java
+index 6dffc5f58e8b8019325c3b29b9a79855fa0da975..1fdc5f5ed37504ae6d6f3b07b43325d457b04946 100644
+--- a/net/minecraft/world/entity/Display.java
++++ b/net/minecraft/world/entity/Display.java
+@@ -271,6 +271,94 @@ public abstract class Display extends Entity {
+         return this.renderState;
+     }
+ 
++    public int fand$transformationInterpolationDuration() {
++        return this.getTransformationInterpolationDuration();
++    }
++
++    public void fand$setTransformationInterpolationDuration(final int duration) {
++        this.setTransformationInterpolationDuration(duration);
++    }
++
++    public int fand$transformationInterpolationDelay() {
++        return this.getTransformationInterpolationDelay();
++    }
++
++    public void fand$setTransformationInterpolationDelay(final int ticks) {
++        this.setTransformationInterpolationDelay(ticks);
++    }
++
++    public int fand$posRotInterpolationDuration() {
++        return this.getPosRotInterpolationDuration();
++    }
++
++    public void fand$setPosRotInterpolationDuration(final int duration) {
++        this.setPosRotInterpolationDuration(duration);
++    }
++
++    public Display.BillboardConstraints fand$billboardConstraints() {
++        return this.getBillboardConstraints();
++    }
++
++    public void fand$setBillboardConstraints(final Display.BillboardConstraints constraints) {
++        this.setBillboardConstraints(constraints);
++    }
++
++    public int fand$packedBrightnessOverride() {
++        return this.getPackedBrightnessOverride();
++    }
++
++    public void fand$setPackedBrightnessOverride(final int brightness) {
++        this.entityData.set(DATA_BRIGHTNESS_OVERRIDE_ID, brightness);
++    }
++
++    public float fand$viewRange() {
++        return this.getViewRange();
++    }
++
++    public void fand$setViewRange(final float range) {
++        this.setViewRange(range);
++    }
++
++    public float fand$shadowRadius() {
++        return this.getShadowRadius();
++    }
++
++    public void fand$setShadowRadius(final float size) {
++        this.setShadowRadius(size);
++    }
++
++    public float fand$shadowStrength() {
++        return this.getShadowStrength();
++    }
++
++    public void fand$setShadowStrength(final float strength) {
++        this.setShadowStrength(strength);
++    }
++
++    public float fand$displayWidth() {
++        return this.getWidth();
++    }
++
++    public void fand$setDisplayWidth(final float width) {
++        this.setWidth(width);
++    }
++
++    public float fand$displayHeight() {
++        return this.getHeight();
++    }
++
++    public void fand$setDisplayHeight(final float height) {
++        this.setHeight(height);
++    }
++
++    public int fand$glowColorOverride() {
++        return this.getGlowColorOverride();
++    }
++
++    public void fand$setGlowColorOverride(final int value) {
++        this.setGlowColorOverride(value);
++    }
++
+     private void setTransformationInterpolationDuration(final int duration) {
+         this.entityData.set(DATA_TRANSFORMATION_INTERPOLATION_DURATION_ID, duration);
+     }
+@@ -483,6 +571,14 @@ public abstract class Display extends Entity {
+             }
+         }
+ 
++        public BlockState fand$blockState() {
++            return this.getBlockState();
++        }
++
++        public void fand$setBlockState(final BlockState blockState) {
++            this.setBlockState(blockState);
++        }
++
+         private BlockState getBlockState() {
+             return this.entityData.get(DATA_BLOCK_STATE_ID);
+         }
+@@ -579,6 +675,22 @@ public abstract class Display extends Entity {
+             }
+         }
+ 
++        public ItemStack fand$itemStack() {
++            return this.getItemStack();
++        }
++
++        public void fand$setItemStack(final ItemStack item) {
++            this.setItemStack(item);
++        }
++
++        public ItemDisplayContext fand$itemTransform() {
++            return this.getItemTransform();
++        }
++
++        public void fand$setItemTransform(final ItemDisplayContext transform) {
++            this.setItemTransform(transform);
++        }
++
+         private ItemStack getItemStack() {
+             return this.entityData.get(DATA_ITEM_STACK_ID);
+         }
+@@ -707,6 +819,46 @@ public abstract class Display extends Entity {
+             }
+         }
+ 
++        public Component fand$text() {
++            return this.getText();
++        }
++
++        public void fand$setText(final Component text) {
++            this.setText(text);
++        }
++
++        public int fand$lineWidth() {
++            return this.getLineWidth();
++        }
++
++        public void fand$setLineWidth(final int width) {
++            this.setLineWidth(width);
++        }
++
++        public byte fand$textOpacity() {
++            return this.getTextOpacity();
++        }
++
++        public void fand$setTextOpacity(final byte opacity) {
++            this.setTextOpacity(opacity);
++        }
++
++        public int fand$backgroundColor() {
++            return this.getBackgroundColor();
++        }
++
++        public void fand$setBackgroundColor(final int color) {
++            this.setBackgroundColor(color);
++        }
++
++        public byte fand$styleFlags() {
++            return this.getFlags();
++        }
++
++        public void fand$setStyleFlags(final byte flags) {
++            this.setFlags(flags);
++        }
++
+         private Component getText() {
+             return this.entityData.get(DATA_TEXT_ID);
+         }
+diff --git a/net/minecraft/world/entity/ExperienceOrb.java b/net/minecraft/world/entity/ExperienceOrb.java
+index 1dfb1ab5569e71771f76894dfed84dd812c64b4a..c014d756b8e123834d9b7b8c8193a2ab44fad01d 100644
+--- a/net/minecraft/world/entity/ExperienceOrb.java
++++ b/net/minecraft/world/entity/ExperienceOrb.java
+@@ -316,6 +316,26 @@ public class ExperienceOrb extends Entity {
+         return this.entityData.get(DATA_VALUE);
+     }
+ 
++    public void fand$setValue(final int value) {
++        this.setValue(value);
++    }
++
++    public int fand$age() {
++        return this.age;
++    }
++
++    public void fand$setAge(final int age) {
++        this.age = age;
++    }
++
++    public int fand$count() {
++        return this.count;
++    }
++
++    public void fand$setCount(final int count) {
++        this.count = Math.max(1, count);
++    }
++
+     private void setValue(final int value) {
+         this.entityData.set(DATA_VALUE, value);
+     }
+diff --git a/net/minecraft/world/entity/decoration/ArmorStand.java b/net/minecraft/world/entity/decoration/ArmorStand.java
+index aef3fe608cd920db6e05b96480482b6dac005d8b..bce020a86064215f310273f3f4dce12143cd9b9a 100644
+--- a/net/minecraft/world/entity/decoration/ArmorStand.java
++++ b/net/minecraft/world/entity/decoration/ArmorStand.java
+@@ -458,6 +458,14 @@ public class ArmorStand extends LivingEntity {
+         return this.isMarker();
+     }
+ 
++    public void fand$setSmall(final boolean value) {
++        this.setSmall(value);
++    }
++
++    public void fand$setMarker(final boolean value) {
++        this.setMarker(value);
++    }
++
+     private void setSmall(final boolean value) {
+         this.entityData.set(DATA_CLIENT_FLAGS, this.setBit(this.entityData.get(DATA_CLIENT_FLAGS), CLIENT_FLAG_SMALL, value));
+     }
+diff --git a/net/minecraft/world/level/BaseSpawner.java b/net/minecraft/world/level/BaseSpawner.java
+index b7c4ffd8f32c3610337d941a5a1a116c8efe659e..0dd34142a788ff3c4de6b7f31c4c5bde07e05246 100644
+--- a/net/minecraft/world/level/BaseSpawner.java
++++ b/net/minecraft/world/level/BaseSpawner.java
+@@ -224,6 +224,34 @@ public abstract class BaseSpawner {
+         output.store("SpawnPotentials", SpawnData.LIST_CODEC, this.spawnPotentials);
+     }
+ 
++    public void fand$setSpawnDelay(final int spawnDelay) {
++        this.spawnDelay = Math.max(-1, spawnDelay);
++    }
++
++    public void fand$setMinSpawnDelay(final int minSpawnDelay) {
++        this.minSpawnDelay = Math.max(0, minSpawnDelay);
++    }
++
++    public void fand$setMaxSpawnDelay(final int maxSpawnDelay) {
++        this.maxSpawnDelay = Math.max(0, maxSpawnDelay);
++    }
++
++    public void fand$setSpawnCount(final int spawnCount) {
++        this.spawnCount = Math.max(1, spawnCount);
++    }
++
++    public void fand$setMaxNearbyEntities(final int maxNearbyEntities) {
++        this.maxNearbyEntities = Math.max(0, maxNearbyEntities);
++    }
++
++    public void fand$setRequiredPlayerRange(final int requiredPlayerRange) {
++        this.requiredPlayerRange = Math.max(0, requiredPlayerRange);
++    }
++
++    public void fand$setSpawnRange(final int spawnRange) {
++        this.spawnRange = Math.max(0, spawnRange);
++    }
++
+     public @Nullable Entity getOrCreateDisplayEntity(final Level level, final BlockPos pos) {
+         if (this.displayEntity == null) {
+             CompoundTag entityToSpawn = this.getOrCreateNextSpawnData(level, level.getRandom(), pos).getEntityToSpawn();

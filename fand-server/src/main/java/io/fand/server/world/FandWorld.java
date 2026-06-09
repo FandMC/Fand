@@ -9,8 +9,10 @@ import io.fand.api.entity.Player;
 import io.fand.api.event.block.BlockFace;
 import io.fand.api.item.ItemStack;
 import io.fand.api.world.BlockRayTraceResult;
+import io.fand.api.world.ChunkSnapshot;
 import io.fand.api.world.Difficulty;
 import io.fand.api.world.EntityRayTraceResult;
+import io.fand.api.world.HeightmapType;
 import io.fand.api.world.Location;
 import io.fand.api.world.RayTraceBlockMode;
 import io.fand.api.world.RayTraceFluidMode;
@@ -35,10 +37,17 @@ import java.util.function.Supplier;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.key.Key;
 import net.minecraft.core.Direction;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -88,7 +97,7 @@ public final class FandWorld implements World {
 
     @Override
     public long gameTime() {
-        return handle.getGameTime();
+        return callOnServerThread(handle::getGameTime);
     }
 
     @Override
@@ -102,9 +111,11 @@ public final class FandWorld implements World {
 
     @Override
     public long time() {
-        var clock = handle.dimensionType().defaultClock()
-                .orElseGet(() -> handle.registryAccess().getOrThrow(WorldClocks.OVERWORLD));
-        return handle.getServer().clockManager().getTotalTicks(clock);
+        return callOnServerThread(() -> {
+            var clock = handle.dimensionType().defaultClock()
+                    .orElseGet(() -> handle.registryAccess().getOrThrow(WorldClocks.OVERWORLD));
+            return handle.getServer().clockManager().getTotalTicks(clock);
+        });
     }
 
     @Override
@@ -118,7 +129,7 @@ public final class FandWorld implements World {
 
     @Override
     public Difficulty difficulty() {
-        return Difficulties.toApi(handle.getDifficulty());
+        return callOnServerThread(() -> Difficulties.toApi(handle.getDifficulty()));
     }
 
     @Override
@@ -129,7 +140,7 @@ public final class FandWorld implements World {
 
     @Override
     public boolean storm() {
-        return handle.isRaining();
+        return callOnServerThread(handle::isRaining);
     }
 
     @Override
@@ -142,7 +153,7 @@ public final class FandWorld implements World {
 
     @Override
     public boolean thundering() {
-        return handle.isThundering();
+        return callOnServerThread(handle::isThundering);
     }
 
     @Override
@@ -160,6 +171,65 @@ public final class FandWorld implements World {
     }
 
     @Override
+    public Key biomeAt(int x, int y, int z) {
+        return callOnServerThread(() -> {
+            var biome = handle.getBiome(new BlockPos(x, y, z));
+            var id = biome.unwrapKey()
+                    .map(key -> key.identifier())
+                    .orElseGet(() -> Identifier.withDefaultNamespace("plains"));
+            return Key.key(id.getNamespace(), id.getPath());
+        });
+    }
+
+    @Override
+    public int highestBlockYAt(int x, int z, HeightmapType type) {
+        Objects.requireNonNull(type, "type");
+        return callOnServerThread(() -> handle.getHeight(heightmap(type), x, z));
+    }
+
+    @Override
+    public Location spawnLocation() {
+        return callOnServerThread(() -> {
+            var respawn = handle.getServer().getRespawnData();
+            var level = handle.getServer().getLevel(respawn.dimension());
+            var world = level == null ? this : wrapWorld(level);
+            var pos = respawn.pos();
+            return world.at(pos.getX(), pos.getY(), pos.getZ(), respawn.yaw(), respawn.pitch());
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> setSpawnLocation(Location location) {
+        var checkedLocation = requireFiniteLocation(location);
+        return runOnServerThreadFuture(() -> {
+            if (!(checkedLocation.world() instanceof FandWorld fandWorld)) {
+                throw new IllegalArgumentException("Spawn location world must be a Fand world");
+            }
+            var pos = BlockPos.containing(checkedLocation.x(), checkedLocation.y(), checkedLocation.z());
+            handle.getServer().setRespawnData(LevelData.RespawnData.of(
+                    fandWorld.handle().dimension(),
+                    pos,
+                    checkedLocation.yaw(),
+                    checkedLocation.pitch()));
+        });
+    }
+
+    @Override
+    public Optional<String> gameRule(String name) {
+        Objects.requireNonNull(name, "name");
+        return callOnServerThread(() -> gameRuleByName(name).map(rule -> handle.getGameRules().getAsString(rule)));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> setGameRule(String name, String value) {
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(value, "value");
+        return runOnServerThreadFuture(() -> gameRuleByName(name)
+                .map(rule -> setGameRuleValue(rule, value))
+                .orElse(false));
+    }
+
+    @Override
     public CompletableFuture<Boolean> save() {
         var future = new CompletableFuture<Boolean>();
         runOnServerThread(() -> {
@@ -174,15 +244,12 @@ public final class FandWorld implements World {
 
     @Override
     public Collection<? extends Player> players() {
-        if (players == null) {
-            return List.of();
-        }
-        return players.snapshot(handle);
+        return callOnServerThread(() -> players == null ? List.of() : players.snapshot(handle));
     }
 
     @Override
     public Collection<? extends Entity> entities() {
-        return streamEntities(handle.getAllEntities());
+        return callOnServerThread(() -> streamEntities(handle.getAllEntities()));
     }
 
     @Override
@@ -191,13 +258,13 @@ public final class FandWorld implements World {
         if (!(type instanceof FandEntityType fandType)) {
             return List.of();
         }
-        return streamEntities(handle.getAllEntities(), entity -> entity.getType() == fandType.handle());
+        return callOnServerThread(() -> streamEntities(handle.getAllEntities(), entity -> entity.getType() == fandType.handle()));
     }
 
     @Override
     public Optional<? extends Entity> entity(java.util.UUID uniqueId) {
         Objects.requireNonNull(uniqueId, "uniqueId");
-        return Optional.ofNullable(handle.getEntity(uniqueId)).map(this::wrapEntity);
+        return callOnServerThread(() -> Optional.ofNullable(handle.getEntity(uniqueId)).map(this::wrapEntity));
     }
 
     @Override
@@ -212,7 +279,7 @@ public final class FandWorld implements World {
                 checkedCenter.y() + radius,
                 checkedCenter.z() + radius
         );
-        return streamEntities(handle.getEntities((net.minecraft.world.entity.Entity) null, box, entity -> true));
+        return callOnServerThread(() -> streamEntities(handle.getEntities((net.minecraft.world.entity.Entity) null, box, entity -> true)));
     }
 
     @Override
@@ -231,18 +298,18 @@ public final class FandWorld implements World {
                 checkedCenter.y() + radius,
                 checkedCenter.z() + radius
         );
-        return streamEntities(handle.getEntities(
+        return callOnServerThread(() -> streamEntities(handle.getEntities(
                 (net.minecraft.world.entity.Entity) null,
                 box,
-                entity -> entity.getType() == fandType.handle()));
+                entity -> entity.getType() == fandType.handle())));
     }
 
     @Override
     public Collection<? extends Entity> entitiesInBox(Location min, Location max) {
-        return streamEntities(handle.getEntities(
+        return callOnServerThread(() -> streamEntities(handle.getEntities(
                 (net.minecraft.world.entity.Entity) null,
                 box(min, max),
-                entity -> true));
+                entity -> true)));
     }
 
     @Override
@@ -251,10 +318,10 @@ public final class FandWorld implements World {
         if (!(type instanceof FandEntityType fandType)) {
             return List.of();
         }
-        return streamEntities(handle.getEntities(
+        return callOnServerThread(() -> streamEntities(handle.getEntities(
                 (net.minecraft.world.entity.Entity) null,
                 box(min, max),
-                entity -> entity.getType() == fandType.handle()));
+                entity -> entity.getType() == fandType.handle())));
     }
 
     @Override
@@ -289,22 +356,24 @@ public final class FandWorld implements World {
         }
         var from = toVec3(checkedStart);
         var to = from.add(normalizedDirection.scale(checkedDistance));
-        var result = handle.clip(new ClipContext(
-                from,
-                to,
-                blockMode(blockMode),
-                fluidMode(fluidMode),
-                CollisionContext.empty()));
-        if (result.getType() != HitResult.Type.BLOCK) {
-            return Optional.empty();
-        }
-        var hitLocation = toLocation(result.getLocation());
-        var blockPos = result.getBlockPos();
-        return Optional.of(new BlockRayTraceResult(
-                blockAt(blockPos.getX(), blockPos.getY(), blockPos.getZ()),
-                hitLocation,
-                face(result.getDirection()),
-                result.isInside()));
+        return callOnServerThread(() -> {
+            var result = handle.clip(new ClipContext(
+                    from,
+                    to,
+                    blockMode(blockMode),
+                    fluidMode(fluidMode),
+                    CollisionContext.empty()));
+            if (result.getType() != HitResult.Type.BLOCK) {
+                return Optional.empty();
+            }
+            var hitLocation = toLocation(result.getLocation());
+            var blockPos = result.getBlockPos();
+            return Optional.of(new BlockRayTraceResult(
+                    blockAt(blockPos.getX(), blockPos.getY(), blockPos.getZ()),
+                    hitLocation,
+                    face(result.getDirection()),
+                    result.isInside()));
+        });
     }
 
     @Override
@@ -472,16 +541,45 @@ public final class FandWorld implements World {
 
     @Override
     public boolean chunkLoaded(int chunkX, int chunkZ) {
-        return handle.getChunkSource().hasChunk(chunkX, chunkZ);
+        return callOnServerThread(() -> handle.getChunkSource().hasChunk(chunkX, chunkZ));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> loadChunk(int chunkX, int chunkZ) {
+        return runOnServerThreadFuture(() -> {
+            var chunk = handle.getChunk(chunkX, chunkZ, ChunkStatus.FULL, true);
+            return chunk != null;
+        });
+    }
+
+    @Override
+    public CompletableFuture<Boolean> unloadChunk(int chunkX, int chunkZ) {
+        return runOnServerThreadFuture(() -> {
+            boolean updated = handle.setChunkForced(chunkX, chunkZ, false);
+            handle.getChunkSource().tick(() -> true, false);
+            return updated;
+        });
+    }
+
+    @Override
+    public boolean chunkForceLoaded(int chunkX, int chunkZ) {
+        return callOnServerThread(() -> handle.getForceLoadedChunks().contains(ChunkPos.pack(chunkX, chunkZ)));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> setChunkForceLoaded(int chunkX, int chunkZ, boolean forceLoaded) {
+        return runOnServerThreadFuture(() -> handle.setChunkForced(chunkX, chunkZ, forceLoaded));
     }
 
     @Override
     public int loadedEntityCount() {
-        int count = 0;
-        for (var ignored : handle.getAllEntities()) {
-            count++;
-        }
-        return count;
+        return callOnServerThread(() -> {
+            int count = 0;
+            for (var ignored : handle.getAllEntities()) {
+                count++;
+            }
+            return count;
+        });
     }
 
     @Override
@@ -489,7 +587,25 @@ public final class FandWorld implements World {
         if (!chunkLoaded(chunkX, chunkZ)) {
             return 0;
         }
-        return handle.getEntities((net.minecraft.world.entity.Entity) null, chunkBox(chunkX, chunkZ), entity -> true).size();
+        return callOnServerThread(() -> handle.getEntities((net.minecraft.world.entity.Entity) null, chunkBox(chunkX, chunkZ), entity -> true).size());
+    }
+
+    @Override
+    public Collection<? extends Entity> entitiesInChunk(int chunkX, int chunkZ) {
+        if (!chunkLoaded(chunkX, chunkZ)) {
+            return List.of();
+        }
+        return callOnServerThread(() -> streamEntities(handle.getEntities((net.minecraft.world.entity.Entity) null, chunkBox(chunkX, chunkZ), entity -> true)));
+    }
+
+    @Override
+    public ChunkSnapshot chunkSnapshot(int chunkX, int chunkZ) {
+        return callOnServerThread(() -> {
+            boolean loaded = handle.getChunkSource().hasChunk(chunkX, chunkZ);
+            boolean forceLoaded = handle.getForceLoadedChunks().contains(ChunkPos.pack(chunkX, chunkZ));
+            int entities = loaded ? handle.getEntities((net.minecraft.world.entity.Entity) null, chunkBox(chunkX, chunkZ), entity -> true).size() : 0;
+            return new ChunkSnapshot(this, chunkX, chunkZ, loaded, forceLoaded, entities);
+        });
     }
 
     @Override
@@ -518,6 +634,12 @@ public final class FandWorld implements World {
             throw new IllegalArgumentException("Location world " + location.world().key().asString()
                     + " does not match " + key.asString());
         }
+        requireFinite(location, "location");
+        return location;
+    }
+
+    private Location requireFiniteLocation(Location location) {
+        Objects.requireNonNull(location, "location");
         requireFinite(location, "location");
         return location;
     }
@@ -573,6 +695,22 @@ public final class FandWorld implements World {
         return future;
     }
 
+    private <T> T callOnServerThread(Supplier<T> task) {
+        var server = handle.getServer();
+        if (server == null || server.isSameThread()) {
+            return task.get();
+        }
+        CompletableFuture<T> future = new CompletableFuture<>();
+        server.executeIfPossible(() -> {
+            try {
+                future.complete(task.get());
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        });
+        return future.join();
+    }
+
     private Entity wrapEntity(net.minecraft.world.entity.Entity entity) {
         if (worldRegistry != null) {
             return worldRegistry.entityRegistry().wrap(entity);
@@ -582,6 +720,16 @@ public final class FandWorld implements World {
                 players != null ? players : new PlayerRegistry(new io.fand.server.permission.PermissionManager())
         );
         return fallbackRegistry.entityRegistry().wrap(entity);
+    }
+
+    private FandWorld wrapWorld(ServerLevel level) {
+        if (level == handle) {
+            return this;
+        }
+        if (worldRegistry != null) {
+            return worldRegistry.wrap(level);
+        }
+        return new FandWorld(level, players);
     }
 
     private Collection<? extends Entity> streamEntities(Iterable<net.minecraft.world.entity.Entity> entities) {
@@ -742,6 +890,38 @@ public final class FandWorld implements World {
             case ANY -> ClipContext.Fluid.ANY;
             case WATER -> ClipContext.Fluid.WATER;
         };
+    }
+
+    private Heightmap.Types heightmap(HeightmapType type) {
+        return switch (type) {
+            case WORLD_SURFACE_WG -> Heightmap.Types.WORLD_SURFACE_WG;
+            case WORLD_SURFACE -> Heightmap.Types.WORLD_SURFACE;
+            case OCEAN_FLOOR_WG -> Heightmap.Types.OCEAN_FLOOR_WG;
+            case OCEAN_FLOOR -> Heightmap.Types.OCEAN_FLOOR;
+            case MOTION_BLOCKING -> Heightmap.Types.MOTION_BLOCKING;
+            case MOTION_BLOCKING_NO_LEAVES -> Heightmap.Types.MOTION_BLOCKING_NO_LEAVES;
+        };
+    }
+
+    private Optional<net.minecraft.world.level.gamerules.GameRule<?>> gameRuleByName(String name) {
+        var exact = Identifier.tryParse(name);
+        if (exact != null) {
+            var found = BuiltInRegistries.GAME_RULE.getOptional(exact);
+            if (found.isPresent()) {
+                return found;
+            }
+        }
+        var vanilla = Identifier.withDefaultNamespace(name);
+        return BuiltInRegistries.GAME_RULE.getOptional(vanilla);
+    }
+
+    private <T> boolean setGameRuleValue(net.minecraft.world.level.gamerules.GameRule<T> rule, String value) {
+        var parsed = rule.deserialize(value).result();
+        if (parsed.isEmpty()) {
+            return false;
+        }
+        handle.getGameRules().set(rule, parsed.get(), handle.getServer());
+        return true;
     }
 
     private BlockFace face(Direction direction) {

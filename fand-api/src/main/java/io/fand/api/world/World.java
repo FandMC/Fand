@@ -77,6 +77,45 @@ public interface World extends ForwardingAudience {
     /** Live world border controls. */
     WorldBorder worldBorder();
 
+    /** Biome key at block coordinates. */
+    default Key biomeAt(int x, int y, int z) {
+        return Key.key("minecraft", "plains");
+    }
+
+    /** Highest block Y using {@link HeightmapType#MOTION_BLOCKING}. */
+    default int highestBlockYAt(int x, int z) {
+        return highestBlockYAt(x, z, HeightmapType.MOTION_BLOCKING);
+    }
+
+    /** Highest block Y according to a vanilla heightmap. */
+    default int highestBlockYAt(int x, int z, HeightmapType type) {
+        java.util.Objects.requireNonNull(type, "type");
+        return 0;
+    }
+
+    /** Global default spawn location. */
+    default Location spawnLocation() {
+        return at(0.0, 0.0, 0.0);
+    }
+
+    /** Sets the global default spawn location. Marshals to the server thread. */
+    default CompletableFuture<Void> setSpawnLocation(Location location) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Spawn location changes are not supported"));
+    }
+
+    /** Reads a global vanilla game rule by id, e.g. {@code keepInventory}. */
+    default Optional<String> gameRule(String name) {
+        java.util.Objects.requireNonNull(name, "name");
+        return Optional.empty();
+    }
+
+    /** Sets a global vanilla game rule from its command/string representation. */
+    default CompletableFuture<Boolean> setGameRule(String name, String value) {
+        java.util.Objects.requireNonNull(name, "name");
+        java.util.Objects.requireNonNull(value, "value");
+        return CompletableFuture.completedFuture(false);
+    }
+
     /** Saves this world. Marshals to the server thread. */
     CompletableFuture<Boolean> save();
 
@@ -359,6 +398,31 @@ public interface World extends ForwardingAudience {
         return false;
     }
 
+    /** Loads or generates the chunk at chunk coordinates. Marshals to the server thread. */
+    default CompletableFuture<Boolean> loadChunk(int chunkX, int chunkZ) {
+        return CompletableFuture.completedFuture(false);
+    }
+
+    /**
+     * Requests that a chunk may unload by clearing forced-load state.
+     *
+     * <p>The returned value is whether the forced-load state changed; the chunk
+     * may remain loaded because of players, tickets, or pending server work.
+     */
+    default CompletableFuture<Boolean> unloadChunk(int chunkX, int chunkZ) {
+        return setChunkForceLoaded(chunkX, chunkZ, false);
+    }
+
+    /** Whether this chunk is explicitly force-loaded. */
+    default boolean chunkForceLoaded(int chunkX, int chunkZ) {
+        return false;
+    }
+
+    /** Sets explicit force-loaded state for a chunk. Marshals to the server thread. */
+    default CompletableFuture<Boolean> setChunkForceLoaded(int chunkX, int chunkZ, boolean forceLoaded) {
+        return CompletableFuture.completedFuture(false);
+    }
+
     /** Number of loaded entities in this world. */
     default int loadedEntityCount() {
         return entities().size();
@@ -367,6 +431,16 @@ public interface World extends ForwardingAudience {
     /** Number of loaded entities whose current bounds intersect a loaded chunk. */
     default int entityCount(int chunkX, int chunkZ) {
         return 0;
+    }
+
+    /** Snapshot of loaded entities whose current bounds intersect a loaded chunk. */
+    default Collection<? extends Entity> entitiesInChunk(int chunkX, int chunkZ) {
+        return java.util.List.of();
+    }
+
+    /** Lightweight chunk state snapshot. */
+    default ChunkSnapshot chunkSnapshot(int chunkX, int chunkZ) {
+        return new ChunkSnapshot(this, chunkX, chunkZ, chunkLoaded(chunkX, chunkZ), chunkForceLoaded(chunkX, chunkZ), entityCount(chunkX, chunkZ));
     }
 
     /** Builds a {@link Location} in this world. */
