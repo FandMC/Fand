@@ -18,12 +18,18 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class FandGuiService implements GuiService, AutoCloseable {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(FandGuiService.class);
 
     private final ConcurrentHashMap<UUID, FandGuiView> viewsById = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, FandGuiView> viewsByPlayer = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, CopyOnWriteArrayList<Runnable>> closeListeners = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, AtomicInteger> ignoredCloseEvents = new ConcurrentHashMap<>();
     private final EventSubscription clickSubscription;
     private final EventSubscription closeSubscription;
 
@@ -38,19 +44,19 @@ public final class FandGuiService implements GuiService, AutoCloseable {
         java.util.Objects.requireNonNull(gui, "gui");
         var view = new FandGuiView(this, player, gui, gui.createInventory());
         var previous = viewsByPlayer.put(player.uniqueId(), view);
+        boolean replacedDisplayedView = false;
         if (previous != null) {
-            previous.detach();
             viewsById.remove(previous.id(), previous);
+            if (previous.displayed()) {
+                ignoreNextCloseEvent(player.uniqueId());
+                replacedDisplayedView = true;
+            }
+            closeReplaced(previous);
         }
         viewsById.put(view.id(), view);
-        player.openInventory(view.inventory()).thenAccept(opened -> {
-            if (!opened) {
-                remove(view);
-            } else {
-                view.applyContentsToOpenMenu();
-                view.applyInitialProperties();
-            }
-        });
+        boolean skipCloseEventOnFailure = replacedDisplayedView;
+        player.openInventory(view.inventory())
+                .whenComplete((opened, failure) -> finishOpen(view, opened, failure, skipCloseEventOnFailure));
         return view;
     }
 
@@ -86,6 +92,7 @@ public final class FandGuiService implements GuiService, AutoCloseable {
         viewsById.clear();
         viewsByPlayer.clear();
         closeListeners.clear();
+        ignoredCloseEvents.clear();
     }
 
     public AutoCloseable addCloseListener(GuiView view, Runnable listener) {
@@ -101,6 +108,68 @@ public final class FandGuiService implements GuiService, AutoCloseable {
         viewsByPlayer.remove(view.player().uniqueId(), view);
         view.detach();
         notifyCloseListeners(view);
+    }
+
+    private void closeReplaced(FandGuiView view) {
+        view.detach();
+        notifyCloseListeners(view);
+        view.gui().close(new GuiClose(view, view.player()));
+    }
+
+    private boolean removeIfCurrent(FandGuiView view) {
+        if (viewsByPlayer.remove(view.player().uniqueId(), view)) {
+            viewsById.remove(view.id(), view);
+            view.detach();
+            notifyCloseListeners(view);
+            return true;
+        } else {
+            view.detach();
+            viewsById.remove(view.id(), view);
+            return false;
+        }
+    }
+
+    private boolean isCurrent(FandGuiView view) {
+        return viewsByPlayer.get(view.player().uniqueId()) == view && viewsById.get(view.id()) == view;
+    }
+
+    private void finishOpen(
+            FandGuiView view,
+            Boolean opened,
+            Throwable failure,
+            boolean skipCloseEventOnFailure
+    ) {
+        if (failure != null) {
+            LOGGER.warn("GUI open failed", failure);
+            if (skipCloseEventOnFailure) {
+                removeIgnoredCloseEvent(view.player().uniqueId());
+            }
+            removeIfCurrent(view);
+            return;
+        }
+        if (!Boolean.TRUE.equals(opened)) {
+            if (skipCloseEventOnFailure) {
+                removeIgnoredCloseEvent(view.player().uniqueId());
+            }
+            removeIfCurrent(view);
+            return;
+        }
+        if (isCurrent(view)) {
+            view.markDisplayed();
+            view.applyContentsToOpenMenu();
+            view.applyInitialProperties();
+        }
+    }
+
+    private void closeAfterFailedReopen(FandGuiView view) {
+        if (removeIfCurrent(view)) {
+            view.gui().close(new GuiClose(view, view.player()));
+        }
+    }
+
+    private void closeAfterFailedReopen(FandGuiView view, Throwable failure) {
+        LOGGER.warn("GUI reopen failed", failure);
+        closeAfterFailedReopen(view);
     }
 
     void closeProgrammatically(FandGuiView view) {
@@ -137,6 +206,9 @@ public final class FandGuiService implements GuiService, AutoCloseable {
     }
 
     private void handleClose(InventoryCloseEvent event) {
+        if (removeIgnoredCloseEvent(event.player().uniqueId())) {
+            return;
+        }
         var view = viewsByPlayer.remove(event.player().uniqueId());
         if (view == null) {
             return;
@@ -145,6 +217,30 @@ public final class FandGuiService implements GuiService, AutoCloseable {
         view.detach();
         notifyCloseListeners(view);
         view.gui().close(new GuiClose(view, event.player()));
+    }
+
+    private void ignoreNextCloseEvent(UUID playerId) {
+        ignoredCloseEvents.computeIfAbsent(playerId, ignored -> new AtomicInteger()).incrementAndGet();
+    }
+
+    private boolean removeIgnoredCloseEvent(UUID playerId) {
+        var counter = ignoredCloseEvents.get(playerId);
+        if (counter == null) {
+            return false;
+        }
+        while (true) {
+            int current = counter.get();
+            if (current <= 0) {
+                ignoredCloseEvents.remove(playerId, counter);
+                return false;
+            }
+            if (counter.compareAndSet(current, current - 1)) {
+                if (current == 1) {
+                    ignoredCloseEvents.remove(playerId, counter);
+                }
+                return true;
+            }
+        }
     }
 
     private void notifyCloseListeners(FandGuiView view) {
@@ -166,6 +262,7 @@ public final class FandGuiService implements GuiService, AutoCloseable {
         private final Inventory inventory;
         private final ConcurrentHashMap<String, Object> state = new ConcurrentHashMap<>();
         private volatile boolean open = true;
+        private volatile boolean displayed;
 
         FandGuiView(FandGuiService owner, Player player, Gui gui, Inventory inventory) {
             this.owner = owner;
@@ -199,6 +296,14 @@ public final class FandGuiService implements GuiService, AutoCloseable {
             return open;
         }
 
+        boolean displayed() {
+            return displayed;
+        }
+
+        void markDisplayed() {
+            displayed = true;
+        }
+
         @Override
         public ItemStack cursorItem() {
             return player.cursorItem();
@@ -227,10 +332,24 @@ public final class FandGuiService implements GuiService, AutoCloseable {
             if (!open) {
                 return;
             }
-            player.openInventory(inventory).thenAccept(opened -> {
-                if (opened) {
+            if (displayed) {
+                owner.ignoreNextCloseEvent(player.uniqueId());
+            }
+            player.openInventory(inventory).whenComplete((opened, failure) -> {
+                if (failure != null) {
+                    if (displayed) {
+                        owner.removeIgnoredCloseEvent(player.uniqueId());
+                    }
+                    owner.closeAfterFailedReopen(this, failure);
+                } else if (Boolean.TRUE.equals(opened) && owner.isCurrent(this)) {
+                    markDisplayed();
                     applyContentsToOpenMenu();
                     applyInitialProperties();
+                } else if (!Boolean.TRUE.equals(opened)) {
+                    if (displayed) {
+                        owner.removeIgnoredCloseEvent(player.uniqueId());
+                    }
+                    owner.closeAfterFailedReopen(this);
                 }
             });
         }
