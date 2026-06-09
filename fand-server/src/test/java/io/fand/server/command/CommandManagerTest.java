@@ -71,7 +71,9 @@ final class CommandManagerTest {
 
         assertThat(executed).containsExactly("config:now");
         assertThat(manager.suggestions(sender, List.of("config", "r"))).containsExactly("reload");
+        assertThat(manager.suggestions(sender, List.of("fand:config", "r"))).containsExactly("reload");
         assertThat(manager.suggestions(sender, List.of("config", "reload", "n"))).containsExactly("suggested");
+        assertThat(manager.suggestions(sender, List.of("fand:config", "reload", "n"))).containsExactly("suggested");
     }
 
     @Test
