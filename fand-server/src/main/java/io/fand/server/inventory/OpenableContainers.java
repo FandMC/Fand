@@ -6,10 +6,18 @@ import net.minecraft.world.Container;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.inventory.AnvilMenu;
+import net.minecraft.world.inventory.BlastFurnaceMenu;
+import net.minecraft.world.inventory.BrewingStandMenu;
 import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.ContainerLevelAccess;
 import net.minecraft.world.inventory.DispenserMenu;
+import net.minecraft.world.inventory.EnchantmentMenu;
+import net.minecraft.world.inventory.FurnaceMenu;
 import net.minecraft.world.inventory.HopperMenu;
 import net.minecraft.world.inventory.ShulkerBoxMenu;
+import net.minecraft.world.inventory.SimpleContainerData;
+import net.minecraft.world.inventory.SmokerMenu;
 
 /**
  * Builds vanilla {@link MenuProvider}s for the subset of {@link InventoryType}s
@@ -41,6 +49,30 @@ public final class OpenableContainers {
                     preExisting, 5,
                     (id, inv, container) -> new HopperMenu(id, inv, container),
                     title != null ? title : Component.translatable("container.hopper"));
+            case ANVIL -> generic(
+                    preExisting, 3,
+                    (id, inv, container) -> new AnvilMenu(id, inv, ContainerLevelAccess.NULL),
+                    title != null ? title : Component.translatable("container.repair"));
+            case FURNACE -> generic(
+                    preExisting, 3,
+                    (id, inv, container) -> new FurnaceMenu(id, inv, container, new SimpleContainerData(4)),
+                    title != null ? title : Component.translatable("container.furnace"));
+            case BLAST_FURNACE -> generic(
+                    preExisting, 3,
+                    (id, inv, container) -> new BlastFurnaceMenu(id, inv, container, new SimpleContainerData(4)),
+                    title != null ? title : Component.translatable("container.blast_furnace"));
+            case SMOKER -> generic(
+                    preExisting, 3,
+                    (id, inv, container) -> new SmokerMenu(id, inv, container, new SimpleContainerData(4)),
+                    title != null ? title : Component.translatable("container.smoker"));
+            case ENCHANTING -> generic(
+                    preExisting, 2,
+                    (id, inv, container) -> new EnchantmentMenu(id, inv, ContainerLevelAccess.NULL),
+                    title != null ? title : Component.translatable("container.enchant"));
+            case BREWING -> generic(
+                    preExisting, 5,
+                    (id, inv, container) -> new BrewingStandMenu(id, inv, container, new SimpleContainerData(2)),
+                    title != null ? title : Component.translatable("container.brewing"));
             case SHULKER_BOX -> generic(
                     preExisting, 27,
                     (id, inv, container) -> new ShulkerBoxMenu(id, inv, container),

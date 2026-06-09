@@ -90,12 +90,26 @@ class FandCustomBlockRegistryTest {
         assertThat(events).containsExactly("broken");
     }
 
+    @Test
+    void itemBindingsAreIndependentRegistrations() {
+        var registry = new FandCustomBlockRegistry(new NoopEventBus());
+        var registration = registry.register(new CustomBlockType(MACHINE_ID, STONE));
+        var binding = registration.bindItem(Key.key("test:machine_item"));
+
+        assertThat(registry.blockForItem(Key.key("test:machine_item")).map(CustomBlockType::id)).contains(MACHINE_ID);
+
+        binding.unregister();
+
+        assertThat(registry.type(MACHINE_ID)).isPresent();
+        assertThat(registry.blockForItem(Key.key("test:machine_item"))).isEmpty();
+    }
+
     private record TestBlockType(Key key) implements BlockType {
     }
 
     private static final class TestWorld implements World {
 
-        private final List<TestBlock> blocks = new CopyOnWriteArrayList<>();
+        private final Map<String, TestBlock> blocks = new java.util.concurrent.ConcurrentHashMap<>();
 
         @Override
         public Key key() {
@@ -192,12 +206,12 @@ class FandCustomBlockRegistryTest {
 
         @Override
         public Collection<? extends Block> blocksWith(DataComponentKey<?> key) {
-            return blocks.stream().filter(block -> block.components().has(key)).toList();
+            return blocks.values().stream().filter(block -> block.components().has(key)).toList();
         }
 
         @Override
         public Collection<? extends Block> blocksWith(DataComponentKey<?> key, int chunkX, int chunkZ) {
-            return blocks.stream()
+            return blocks.values().stream()
                     .filter(block -> (block.x() >> 4) == chunkX && (block.z() >> 4) == chunkZ)
                     .filter(block -> block.components().has(key))
                     .toList();
@@ -205,9 +219,7 @@ class FandCustomBlockRegistryTest {
 
         @Override
         public Block blockAt(int x, int y, int z) {
-            var block = new TestBlock(this, x, y, z);
-            blocks.add(block);
-            return block;
+            return blocks.computeIfAbsent(x + "," + y + "," + z, ignored -> new TestBlock(this, x, y, z));
         }
 
         @Override

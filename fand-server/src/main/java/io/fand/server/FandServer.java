@@ -117,7 +117,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.scoreboard = new FandScoreboardService(minecraftServer::get);
         this.packets = new PacketRegistryImpl();
         this.customItems = new FandCustomItemRegistry();
-        this.customBlocks = new FandCustomBlockRegistry(events);
+        this.customBlocks = new FandCustomBlockRegistry(events, customItems);
         this.guis = new FandGuiService(events);
         this.players = new PlayerRegistry(permissions);
         this.playerAccess = new FandPlayerAccessService(minecraftServer::get);

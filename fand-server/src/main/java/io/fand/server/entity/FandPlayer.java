@@ -6,6 +6,7 @@ import io.fand.api.entity.ClientMainHand;
 import io.fand.api.entity.ClientParticleStatus;
 import io.fand.api.entity.ClientSettings;
 import io.fand.api.entity.ClientSkinPart;
+import io.fand.api.entity.AdvancementProgress;
 import io.fand.api.entity.EntityType;
 import io.fand.api.entity.EntityEffect;
 import io.fand.api.entity.GameMode;
@@ -36,6 +37,8 @@ import io.fand.server.world.ParticleEffects;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.SoundEffects;
 import java.util.Collection;
+import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -49,16 +52,22 @@ import net.kyori.adventure.sound.SoundStop;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.title.Title;
 import net.kyori.adventure.title.TitlePart;
+import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.common.ClientboundResourcePackPopPacket;
 import net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSetDefaultSpawnPositionPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.stats.Stats;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.UseCooldown;
 import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
@@ -70,6 +79,7 @@ public final class FandPlayer implements Player {
     private final PlayerRegistry registry;
     private final BossBarTracker bossBars;
     private final SidebarTracker sidebar;
+    private final Set<UUID> hiddenTabListTargets = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public FandPlayer(ServerPlayer handle, PermissionService permissions, PlayerRegistry registry) {
         this.bound = new Bound(handle, new FandPlayerInventory(handle.getInventory()));
@@ -865,6 +875,30 @@ public final class FandPlayer implements Player {
         return id;
     }
 
+    private static net.minecraft.world.item.ItemStack cooldownProbe(Key group) {
+        var stack = new net.minecraft.world.item.ItemStack(Items.STONE);
+        stack.set(
+                DataComponents.USE_COOLDOWN,
+                new UseCooldown(1.0F, Optional.of(Identifier.fromNamespaceAndPath(group.namespace(), group.value()))));
+        return stack;
+    }
+
+    private @Nullable AdvancementHolder advancement(Key key) {
+        var server = bound.handle.level().getServer();
+        if (server == null) {
+            return null;
+        }
+        return server.getAdvancements().get(Identifier.fromNamespaceAndPath(key.namespace(), key.value()));
+    }
+
+    private static Set<String> iterableSet(Iterable<String> values) {
+        var set = new HashSet<String>();
+        for (var value : values) {
+            set.add(value);
+        }
+        return Set.copyOf(set);
+    }
+
     private static Set<ClientSkinPart> skinParts(int mask) {
         var parts = java.util.EnumSet.noneOf(ClientSkinPart.class);
         for (var part : ClientSkinPart.values()) {
@@ -1157,6 +1191,158 @@ public final class FandPlayer implements Player {
     }
 
     @Override
+    public boolean hasCooldown(Key group) {
+        Objects.requireNonNull(group, "group");
+        return cooldownPercent(group) > 0.0F;
+    }
+
+    @Override
+    public float cooldownPercent(Key group) {
+        Objects.requireNonNull(group, "group");
+        return callOnServerThread(() -> bound.handle.getCooldowns().getCooldownPercent(cooldownProbe(group), 0.0F));
+    }
+
+    @Override
+    public void setCooldown(Key group, int ticks) {
+        Objects.requireNonNull(group, "group");
+        if (ticks < 0) {
+            throw new IllegalArgumentException("Cooldown ticks must be >= 0, got " + ticks);
+        }
+        runOnServerThread(() -> {
+            var identifier = Identifier.fromNamespaceAndPath(group.namespace(), group.value());
+            if (ticks == 0) {
+                bound.handle.getCooldowns().removeCooldown(identifier);
+            } else {
+                bound.handle.getCooldowns().addCooldown(identifier, ticks);
+            }
+        });
+    }
+
+    @Override
+    public void clearCooldown(Key group) {
+        setCooldown(group, 0);
+    }
+
+    @Override
+    public Optional<AdvancementProgress> advancementProgress(Key advancement) {
+        Objects.requireNonNull(advancement, "advancement");
+        return callOnServerThread(() -> {
+            var holder = advancement(advancement);
+            if (holder == null) {
+                return Optional.empty();
+            }
+            var progress = bound.handle.getAdvancements().getOrStartProgress(holder);
+            return Optional.of(new AdvancementProgress(
+                    advancement,
+                    progress.isDone(),
+                    iterableSet(progress.getCompletedCriteria()),
+                    iterableSet(progress.getRemainingCriteria())));
+        });
+    }
+
+    @Override
+    public boolean grantAdvancement(Key advancement) {
+        Objects.requireNonNull(advancement, "advancement");
+        return callOnServerThread(() -> {
+            var holder = advancement(advancement);
+            if (holder == null) {
+                return false;
+            }
+            var progress = bound.handle.getAdvancements().getOrStartProgress(holder);
+            var changed = false;
+            for (var criterion : iterableSet(progress.getRemainingCriteria())) {
+                changed |= bound.handle.getAdvancements().award(holder, criterion);
+            }
+            bound.handle.getAdvancements().flushDirty(bound.handle, true);
+            return changed;
+        });
+    }
+
+    @Override
+    public boolean revokeAdvancement(Key advancement) {
+        Objects.requireNonNull(advancement, "advancement");
+        return callOnServerThread(() -> {
+            var holder = advancement(advancement);
+            if (holder == null) {
+                return false;
+            }
+            var progress = bound.handle.getAdvancements().getOrStartProgress(holder);
+            var changed = false;
+            for (var criterion : iterableSet(progress.getCompletedCriteria())) {
+                changed |= bound.handle.getAdvancements().revoke(holder, criterion);
+            }
+            bound.handle.getAdvancements().flushDirty(bound.handle, true);
+            return changed;
+        });
+    }
+
+    @Override
+    public boolean grantAdvancementCriterion(Key advancement, String criterion) {
+        Objects.requireNonNull(advancement, "advancement");
+        Objects.requireNonNull(criterion, "criterion");
+        return callOnServerThread(() -> {
+            var holder = advancement(advancement);
+            if (holder == null) {
+                return false;
+            }
+            var changed = bound.handle.getAdvancements().award(holder, criterion);
+            bound.handle.getAdvancements().flushDirty(bound.handle, true);
+            return changed;
+        });
+    }
+
+    @Override
+    public boolean revokeAdvancementCriterion(Key advancement, String criterion) {
+        Objects.requireNonNull(advancement, "advancement");
+        Objects.requireNonNull(criterion, "criterion");
+        return callOnServerThread(() -> {
+            var holder = advancement(advancement);
+            if (holder == null) {
+                return false;
+            }
+            var changed = bound.handle.getAdvancements().revoke(holder, criterion);
+            bound.handle.getAdvancements().flushDirty(bound.handle, true);
+            return changed;
+        });
+    }
+
+    @Override
+    public boolean visibleInPlayerList(Player viewer) {
+        Objects.requireNonNull(viewer, "viewer");
+        if (!(viewer instanceof FandPlayer fandViewer)) {
+            return true;
+        }
+        return !fandViewer.hiddenTabListTargets.contains(uniqueId());
+    }
+
+    @Override
+    public void setVisibleInPlayerList(Player viewer, boolean visible) {
+        Objects.requireNonNull(viewer, "viewer");
+        if (!(viewer instanceof FandPlayer fandViewer)) {
+            return;
+        }
+        runOnServerThread(() -> {
+            if (visible) {
+                if (fandViewer.hiddenTabListTargets.remove(uniqueId())) {
+                    fandViewer.bound.handle.connection.send(new ClientboundPlayerInfoUpdatePacket(
+                            EnumSet.of(
+                                    ClientboundPlayerInfoUpdatePacket.Action.ADD_PLAYER,
+                                    ClientboundPlayerInfoUpdatePacket.Action.INITIALIZE_CHAT,
+                                    ClientboundPlayerInfoUpdatePacket.Action.UPDATE_GAME_MODE,
+                                    ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LISTED,
+                                    ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY,
+                                    ClientboundPlayerInfoUpdatePacket.Action.UPDATE_DISPLAY_NAME,
+                                    ClientboundPlayerInfoUpdatePacket.Action.UPDATE_HAT,
+                                    ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LIST_ORDER),
+                            java.util.List.of(bound.handle)));
+                }
+            } else if (fandViewer.hiddenTabListTargets.add(uniqueId())) {
+                fandViewer.bound.handle.connection.send(new ClientboundPlayerInfoRemovePacket(java.util.List.of(uniqueId())));
+            }
+        });
+    }
+
+    @Override
     public ItemStack cursorItem() {
         return callOnServerThread(() -> FandItemStacks.fromVanilla(bound.handle.containerMenu.getCarried()));
     }
@@ -1266,6 +1452,19 @@ public final class FandPlayer implements Player {
             return Optional.empty();
         }
         return Optional.of(new io.fand.server.inventory.ContainerMenuView(menu));
+    }
+
+    public void setOpenInventoryProperty(int id, int value) {
+        if (id < 0) {
+            throw new IllegalArgumentException("property id must be >= 0");
+        }
+        runOnServerThread(() -> {
+            var menu = bound.handle.containerMenu;
+            if (menu != null && menu != bound.handle.inventoryMenu) {
+                menu.setData(id, value);
+                menu.broadcastChanges();
+            }
+        });
     }
 
     @Override

@@ -2,6 +2,7 @@ package io.fand.server.plugin;
 
 import io.fand.api.block.Block;
 import io.fand.api.component.DataComponentMap;
+import io.fand.api.customblock.CustomBlockItemBinding;
 import io.fand.api.customblock.CustomBlockListener;
 import io.fand.api.customblock.CustomBlockRegistration;
 import io.fand.api.customblock.CustomBlockRegistry;
@@ -26,12 +27,12 @@ public final class PluginCustomBlockRegistry implements CustomBlockRegistry {
 
     @Override
     public CustomBlockRegistration register(CustomBlockType type) {
-        return tracker.track(delegate.register(scoped(type)));
+        return new ScopedCustomBlockRegistration(tracker.track(delegate.register(scoped(type))));
     }
 
     @Override
     public CustomBlockRegistration register(CustomBlockType type, CustomBlockListener listener) {
-        return tracker.track(delegate.register(scoped(type), listener));
+        return new ScopedCustomBlockRegistration(tracker.track(delegate.register(scoped(type), listener)));
     }
 
     @Override
@@ -45,8 +46,23 @@ public final class PluginCustomBlockRegistry implements CustomBlockRegistry {
     }
 
     @Override
+    public Optional<CustomBlockType> blockForItem(Key itemId) {
+        return delegate.blockForItem(scopedKey(itemId)).filter(this::ownedByThisPlugin);
+    }
+
+    @Override
     public Collection<CustomBlockType> types() {
         return delegate.types().stream().filter(this::ownedByThisPlugin).toList();
+    }
+
+    @Override
+    public CustomBlockItemBinding bindItem(Key itemId, Key blockId) {
+        return tracker.track(delegate.bindItem(scopedKey(itemId), scopedKey(blockId)));
+    }
+
+    @Override
+    public void unbindItem(Key itemId) {
+        delegate.unbindItem(scopedKey(itemId));
     }
 
     @Override
@@ -97,5 +113,39 @@ public final class PluginCustomBlockRegistry implements CustomBlockRegistry {
 
     private boolean ownedByThisPlugin(CustomBlockType type) {
         return namespace.equals(type.id().namespace());
+    }
+
+    private final class ScopedCustomBlockRegistration implements CustomBlockRegistration {
+
+        private final CustomBlockRegistration delegateRegistration;
+
+        private ScopedCustomBlockRegistration(CustomBlockRegistration delegateRegistration) {
+            this.delegateRegistration = delegateRegistration;
+        }
+
+        @Override
+        public Key id() {
+            return delegateRegistration.id();
+        }
+
+        @Override
+        public boolean active() {
+            return delegateRegistration.active();
+        }
+
+        @Override
+        public void unregister() {
+            delegateRegistration.unregister();
+        }
+
+        @Override
+        public CustomBlockItemBinding bindItem(Key itemId) {
+            return PluginCustomBlockRegistry.this.bindItem(itemId, id());
+        }
+
+        @Override
+        public void unbindItem(Key itemId) {
+            PluginCustomBlockRegistry.this.unbindItem(itemId);
+        }
     }
 }

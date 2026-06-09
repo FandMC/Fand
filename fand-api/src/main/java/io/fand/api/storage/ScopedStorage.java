@@ -49,4 +49,8 @@ public interface ScopedStorage {
     void clear();
 
     JsonObject toJson();
+
+    /** Flushes this scope to its backing store when it has dirty changes. */
+    default void flush() {
+    }
 }

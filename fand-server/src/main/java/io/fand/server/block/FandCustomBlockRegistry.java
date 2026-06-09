@@ -4,6 +4,7 @@ import io.fand.api.block.Block;
 import io.fand.api.block.component.BlockComponentKeys;
 import io.fand.api.component.DataComponentMap;
 import io.fand.api.customblock.CustomBlockContext;
+import io.fand.api.customblock.CustomBlockItemBinding;
 import io.fand.api.customblock.CustomBlockListener;
 import io.fand.api.customblock.CustomBlockRegistration;
 import io.fand.api.customblock.CustomBlockRegistry;
@@ -13,11 +14,20 @@ import io.fand.api.event.EventPriority;
 import io.fand.api.event.EventSubscription;
 import io.fand.api.event.block.BlockBreakEvent;
 import io.fand.api.event.block.BlockPlaceEvent;
+import io.fand.api.event.player.PlayerInteractEvent;
+import io.fand.api.item.ItemStack;
+import io.fand.api.world.BlockRayTraceResult;
+import io.fand.api.world.Location;
+import io.fand.api.world.Vector3;
 import io.fand.api.world.World;
+import io.fand.server.item.FandCustomItemRegistry;
 import io.fand.server.component.BlockComponentStorage;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import net.kyori.adventure.key.Key;
@@ -28,11 +38,19 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
     };
 
     private final ConcurrentHashMap<Key, RegisteredCustomBlock> types = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Key, RegisteredItemBinding> itemBindings = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<ChunkKey, Set<BlockPosKey>> activeTickingBlocks = new ConcurrentHashMap<>();
     private final EventBus events;
+    private final FandCustomItemRegistry customItems;
     private final AtomicReference<LifecycleSubscriptions> lifecycleSubscriptions = new AtomicReference<>();
 
     public FandCustomBlockRegistry(EventBus events) {
+        this(events, null);
+    }
+
+    public FandCustomBlockRegistry(EventBus events, FandCustomItemRegistry customItems) {
         this.events = Objects.requireNonNull(events, "events");
+        this.customItems = customItems;
     }
 
     @Override
@@ -64,6 +82,14 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         return customId(block).flatMap(this::type);
     }
 
+    @Override
+    public Optional<CustomBlockType> blockForItem(Key itemId) {
+        Objects.requireNonNull(itemId, "itemId");
+        return Optional.ofNullable(itemBindings.get(itemId))
+                .filter(RegisteredItemBinding::active)
+                .flatMap(binding -> type(binding.blockId()));
+    }
+
     public Optional<Key> customId(Block block) {
         Objects.requireNonNull(block, "block");
         return block.components().get(BlockComponentKeys.CUSTOM_ID);
@@ -76,6 +102,28 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
                 .map(RegisteredCustomBlock::type)
                 .sorted(java.util.Comparator.comparing(type -> type.id().asString()))
                 .toList();
+    }
+
+    @Override
+    public CustomBlockItemBinding bindItem(Key itemId, Key blockId) {
+        Objects.requireNonNull(itemId, "itemId");
+        Objects.requireNonNull(blockId, "blockId");
+        registered(blockId);
+        var binding = new RegisteredItemBinding(this, itemId, blockId);
+        var previous = itemBindings.putIfAbsent(itemId, binding);
+        if (previous != null) {
+            throw new IllegalArgumentException("Custom block item binding already registered: " + itemId.asString());
+        }
+        return binding;
+    }
+
+    @Override
+    public void unbindItem(Key itemId) {
+        Objects.requireNonNull(itemId, "itemId");
+        var binding = itemBindings.remove(itemId);
+        if (binding != null) {
+            binding.deactivate();
+        }
     }
 
     @Override
@@ -100,6 +148,7 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         if (!block.setType(registered.type().baseType(), merged)) {
             return false;
         }
+        refreshActiveTickingBlock(block);
         firePlaced(registered, block);
         return true;
     }
@@ -113,6 +162,7 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         }
         fireBroken(registered, block);
         block.components().clear();
+        removeActiveTickingBlock(block);
         return true;
     }
 
@@ -129,19 +179,37 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
     }
 
     public void handlePlaced(Block block) {
-        customId(block).flatMap(this::activeRegistration).ifPresent(registered -> firePlaced(registered, block));
+        customId(block).flatMap(this::activeRegistration).ifPresent(registered -> {
+            refreshActiveTickingBlock(block);
+            firePlaced(registered, block);
+        });
     }
 
     public void handleBroken(Block block) {
-        customId(block).flatMap(this::activeRegistration).ifPresent(registered -> fireBroken(registered, block));
+        customId(block).flatMap(this::activeRegistration).ifPresent(registered -> {
+            removeActiveTickingBlock(block);
+            fireBroken(registered, block);
+        });
     }
 
     public void handleChunkLoaded(World world, int chunkX, int chunkZ) {
         if (types.isEmpty()) {
             return;
         }
+        var active = new HashSet<BlockPosKey>();
         for (var block : customBlocks(world, chunkX, chunkZ)) {
-            customId(block).flatMap(this::activeRegistration).ifPresent(registered -> fireLoaded(registered, block));
+            customId(block).flatMap(this::activeRegistration).ifPresent(registered -> {
+                if (registered.type().ticking()) {
+                    active.add(BlockPosKey.of(block));
+                }
+                fireLoaded(registered, block);
+            });
+        }
+        var chunkKey = new ChunkKey(world.key(), chunkX, chunkZ);
+        if (active.isEmpty()) {
+            activeTickingBlocks.remove(chunkKey);
+        } else {
+            activeTickingBlocks.put(chunkKey, Collections.synchronizedSet(active));
         }
     }
 
@@ -149,6 +217,7 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         if (types.isEmpty()) {
             return;
         }
+        activeTickingBlocks.remove(new ChunkKey(world.key(), chunkX, chunkZ));
         for (var block : customBlocks(world, chunkX, chunkZ)) {
             customId(block).flatMap(this::activeRegistration).ifPresent(registered -> fireUnloaded(registered, block));
         }
@@ -158,13 +227,20 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         if (types.values().stream().noneMatch(registration -> registration.active() && registration.type().ticking())) {
             return;
         }
-        for (var block : world.blocksWith(BlockComponentKeys.TICKING)) {
-            if (block.world().chunkLoaded(block.x() >> 4, block.z() >> 4)) {
-                customId(block).flatMap(this::activeRegistration).ifPresent(registered -> {
-                    if (registered.type().ticking()) {
-                        fireTick(registered, block);
-                    }
-                });
+        for (var entry : activeTickingBlocks.entrySet()) {
+            var chunk = entry.getKey();
+            if (!chunk.world().equals(world.key()) || !world.chunkLoaded(chunk.chunkX(), chunk.chunkZ())) {
+                continue;
+            }
+            var positions = entry.getValue().toArray(BlockPosKey[]::new);
+            for (var position : positions) {
+                var block = world.blockAt(position.x(), position.y(), position.z());
+                var registered = customId(block).flatMap(this::activeRegistration).orElse(null);
+                if (registered == null || !registered.type().ticking()) {
+                    entry.getValue().remove(position);
+                    continue;
+                }
+                fireTick(registered, block);
             }
         }
     }
@@ -211,8 +287,40 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
 
     private void unregister(RegisteredCustomBlock registration) {
         types.remove(registration.id(), registration);
+        itemBindings.values().removeIf(binding -> {
+            if (!binding.blockId().equals(registration.id())) {
+                return false;
+            }
+            binding.deactivate();
+            return true;
+        });
         if (types.isEmpty()) {
             closeLifecycleSubscriptions();
+            activeTickingBlocks.clear();
+        }
+    }
+
+    private void unregister(RegisteredItemBinding binding) {
+        itemBindings.remove(binding.itemId(), binding);
+    }
+
+    private void refreshActiveTickingBlock(Block block) {
+        var chunkKey = new ChunkKey(block.world().key(), block.x() >> 4, block.z() >> 4);
+        var position = BlockPosKey.of(block);
+        var registered = customId(block).flatMap(this::activeRegistration).orElse(null);
+        if (registered != null && registered.type().ticking() && block.world().chunkLoaded(chunkKey.chunkX(), chunkKey.chunkZ())) {
+            activeTickingBlocks
+                    .computeIfAbsent(chunkKey, ignored -> Collections.synchronizedSet(new HashSet<>()))
+                    .add(position);
+        } else {
+            removeActiveTickingBlock(block);
+        }
+    }
+
+    private void removeActiveTickingBlock(Block block) {
+        var positions = activeTickingBlocks.get(new ChunkKey(block.world().key(), block.x() >> 4, block.z() >> 4));
+        if (positions != null) {
+            positions.remove(BlockPosKey.of(block));
         }
     }
 
@@ -226,7 +334,8 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
                     if (!event.cancelled()) {
                         handleBroken(event.block());
                     }
-                }));
+                }),
+                events.subscribe(PlayerInteractEvent.class, EventPriority.HIGHEST, this::handleInteract));
         if (!lifecycleSubscriptions.compareAndSet(null, created)) {
             created.close();
         }
@@ -239,12 +348,95 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         }
     }
 
-    private record LifecycleSubscriptions(EventSubscription place, EventSubscription breakBlock) implements AutoCloseable {
+    private boolean handleInteract(PlayerInteractEvent event) {
+        if (event.cancelled() || event.action() != PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK || customItems == null) {
+            return true;
+        }
+        var itemId = customItems.customId(event.item()).orElse(null);
+        if (itemId == null) {
+            return true;
+        }
+        var binding = itemBindings.get(itemId);
+        if (binding == null || !binding.active()) {
+            return true;
+        }
+        var blockType = type(binding.blockId()).orElse(null);
+        if (blockType == null) {
+            return true;
+        }
+        var target = event.block()
+                .flatMap(block -> placementBlock(event.player(), block))
+                .orElse(null);
+        if (target == null || !target.air()) {
+            return true;
+        }
+        if (!place(target, blockType.id())) {
+            return true;
+        }
+        consumePlacedItem(event.player(), event.hand(), event.item());
+        event.setCancelled(true);
+        return false;
+    }
+
+    private Optional<Block> placementBlock(io.fand.api.entity.Player player, Block clicked) {
+        var location = player.location().offset(0.0, 1.62, 0.0);
+        var direction = lookDirection(location);
+        return clicked.world()
+                .rayTraceBlock(location, direction, 6.0)
+                .filter(hit -> sameBlock(hit.block(), clicked))
+                .map(hit -> adjacent(clicked, hit));
+    }
+
+    private static boolean sameBlock(Block left, Block right) {
+        return left.x() == right.x()
+                && left.y() == right.y()
+                && left.z() == right.z()
+                && left.world().key().equals(right.world().key());
+    }
+
+    private static Block adjacent(Block clicked, BlockRayTraceResult hit) {
+        return switch (hit.face()) {
+            case DOWN -> clicked.world().blockAt(clicked.x(), clicked.y() - 1, clicked.z());
+            case UP -> clicked.world().blockAt(clicked.x(), clicked.y() + 1, clicked.z());
+            case NORTH -> clicked.world().blockAt(clicked.x(), clicked.y(), clicked.z() - 1);
+            case SOUTH -> clicked.world().blockAt(clicked.x(), clicked.y(), clicked.z() + 1);
+            case WEST -> clicked.world().blockAt(clicked.x() - 1, clicked.y(), clicked.z());
+            case EAST -> clicked.world().blockAt(clicked.x() + 1, clicked.y(), clicked.z());
+        };
+    }
+
+    private static Vector3 lookDirection(Location location) {
+        double yaw = Math.toRadians(location.yaw());
+        double pitch = Math.toRadians(location.pitch());
+        double x = -Math.sin(yaw) * Math.cos(pitch);
+        double y = -Math.sin(pitch);
+        double z = Math.cos(yaw) * Math.cos(pitch);
+        return new Vector3(x, y, z);
+    }
+
+    private static void consumePlacedItem(
+            io.fand.api.entity.Player player,
+            PlayerInteractEvent.Hand hand,
+            ItemStack item
+    ) {
+        if (item.isEmpty() || player.gameMode() == io.fand.api.entity.GameMode.CREATIVE) {
+            return;
+        }
+        var next = item.amount() <= 1 ? ItemStack.EMPTY : item.withAmount(item.amount() - 1);
+        if (hand == PlayerInteractEvent.Hand.OFF_HAND) {
+            player.inventory().setOffhandItem(next);
+        } else {
+            player.inventory().setHeldItem(next);
+        }
+    }
+
+    private record LifecycleSubscriptions(EventSubscription place, EventSubscription breakBlock, EventSubscription interact) implements AutoCloseable {
 
         @Override
         public void close() {
             place.unregister();
             breakBlock.unregister();
+            interact.unregister();
         }
     }
 
@@ -285,6 +477,67 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
                 active = false;
                 owner.unregister(this);
             }
+        }
+
+        @Override
+        public CustomBlockItemBinding bindItem(Key itemId) {
+            return owner.bindItem(itemId, id());
+        }
+
+        @Override
+        public void unbindItem(Key itemId) {
+            owner.unbindItem(itemId);
+        }
+    }
+
+    private static final class RegisteredItemBinding implements CustomBlockItemBinding {
+
+        private final FandCustomBlockRegistry owner;
+        private final Key itemId;
+        private final Key blockId;
+        private volatile boolean active = true;
+
+        private RegisteredItemBinding(FandCustomBlockRegistry owner, Key itemId, Key blockId) {
+            this.owner = owner;
+            this.itemId = itemId;
+            this.blockId = blockId;
+        }
+
+        @Override
+        public Key itemId() {
+            return itemId;
+        }
+
+        @Override
+        public Key blockId() {
+            return blockId;
+        }
+
+        @Override
+        public boolean active() {
+            return active;
+        }
+
+        @Override
+        public void unregister() {
+            if (active) {
+                active = false;
+                owner.unregister(this);
+            }
+        }
+
+        private void deactivate() {
+            active = false;
+        }
+    }
+
+    private record ChunkKey(Key world, int chunkX, int chunkZ) {
+    }
+
+    private record BlockPosKey(int x, int y, int z) {
+
+        private static BlockPosKey of(Block block) {
+            return new BlockPosKey(block.x(), block.y(), block.z());
         }
     }
 }

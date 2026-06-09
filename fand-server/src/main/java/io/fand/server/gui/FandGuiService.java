@@ -12,6 +12,8 @@ import io.fand.api.gui.GuiClose;
 import io.fand.api.gui.GuiService;
 import io.fand.api.gui.GuiView;
 import io.fand.api.inventory.Inventory;
+import io.fand.api.item.ItemStack;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,6 +46,9 @@ public final class FandGuiService implements GuiService, AutoCloseable {
         player.openInventory(view.inventory()).thenAccept(opened -> {
             if (!opened) {
                 remove(view);
+            } else {
+                view.applyContentsToOpenMenu();
+                view.applyInitialProperties();
             }
         });
         return view;
@@ -53,6 +58,15 @@ public final class FandGuiService implements GuiService, AutoCloseable {
     public Optional<GuiView> openView(Player player) {
         java.util.Objects.requireNonNull(player, "player");
         return Optional.ofNullable(viewsByPlayer.get(player.uniqueId()));
+    }
+
+    @Override
+    public Collection<GuiView> openViews(Gui gui) {
+        java.util.Objects.requireNonNull(gui, "gui");
+        return viewsById.values().stream()
+                .filter(view -> view.open() && view.gui() == gui)
+                .map(GuiView.class::cast)
+                .toList();
     }
 
     @Override
@@ -186,11 +200,39 @@ public final class FandGuiService implements GuiService, AutoCloseable {
         }
 
         @Override
+        public ItemStack cursorItem() {
+            return player.cursorItem();
+        }
+
+        @Override
+        public void setCursorItem(ItemStack item) {
+            player.setCursorItem(item);
+        }
+
+        @Override
+        public void setProperty(int id, int value) {
+            if (id < 0) {
+                throw new IllegalArgumentException("property id must be >= 0");
+            }
+            if (!open) {
+                return;
+            }
+            if (player instanceof io.fand.server.entity.FandPlayer fandPlayer) {
+                fandPlayer.setOpenInventoryProperty(id, value);
+            }
+        }
+
+        @Override
         public void reopen() {
             if (!open) {
                 return;
             }
-            player.openInventory(inventory);
+            player.openInventory(inventory).thenAccept(opened -> {
+                if (opened) {
+                    applyContentsToOpenMenu();
+                    applyInitialProperties();
+                }
+            });
         }
 
         @Override
@@ -216,6 +258,27 @@ public final class FandGuiService implements GuiService, AutoCloseable {
 
         void detach() {
             open = false;
+        }
+
+        void applyInitialProperties() {
+            for (var entry : gui.properties().entrySet()) {
+                setProperty(entry.getKey(), entry.getValue());
+            }
+        }
+
+        void applyContentsToOpenMenu() {
+            var opened = player.openInventory();
+            if (opened.isEmpty()) {
+                return;
+            }
+            var menu = opened.get();
+            int slots = Math.min(gui.size(), menu.size());
+            for (int slot = 0; slot < slots; slot++) {
+                var item = gui.item(slot);
+                if (!item.isEmpty()) {
+                    menu.set(slot, item);
+                }
+            }
         }
     }
 }

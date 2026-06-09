@@ -66,6 +66,12 @@ public final class FandBlock implements Block {
     }
 
     @Override
+    public boolean air() {
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> level.getBlockState(pos).isAir());
+    }
+
+    @Override
     public Map<String, String> stateProperties() {
         ServerLevel level = world.handle();
         return callOnServerThread(() -> {

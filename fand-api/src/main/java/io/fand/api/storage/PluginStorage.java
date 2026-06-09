@@ -17,4 +17,8 @@ public interface PluginStorage {
         java.util.Objects.requireNonNull(block, "block");
         return block(block.world().key(), block.x(), block.y(), block.z());
     }
+
+    /** Flushes every dirty scope owned by this plugin to disk. */
+    default void flush() {
+    }
 }

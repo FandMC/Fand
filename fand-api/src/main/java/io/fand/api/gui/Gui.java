@@ -6,7 +6,9 @@ import io.fand.api.inventory.Inventory;
 import io.fand.api.inventory.InventoryType;
 import io.fand.api.item.ItemStack;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.IntFunction;
 import net.kyori.adventure.text.Component;
@@ -20,6 +22,7 @@ public final class Gui {
     private final ItemStack[] contents;
     private final GuiSlotHandler[] handlers;
     private final boolean[] protectedSlots;
+    private final Map<Integer, Integer> properties;
     private final GuiCloseHandler closeHandler;
 
     private Gui(Builder builder) {
@@ -29,11 +32,36 @@ public final class Gui {
         this.contents = builder.contents.clone();
         this.handlers = builder.handlers.clone();
         this.protectedSlots = builder.protectedSlots.clone();
+        this.properties = Map.copyOf(builder.properties);
         this.closeHandler = builder.closeHandler;
     }
 
     public static Builder chest(int rows, Component title) {
         return builder(InventoryType.CHEST, rows * 9, title);
+    }
+
+    public static Builder anvil(Component title) {
+        return builder(InventoryType.ANVIL, 3, title);
+    }
+
+    public static Builder furnace(Component title) {
+        return builder(InventoryType.FURNACE, 3, title);
+    }
+
+    public static Builder blastFurnace(Component title) {
+        return builder(InventoryType.BLAST_FURNACE, 3, title);
+    }
+
+    public static Builder smoker(Component title) {
+        return builder(InventoryType.SMOKER, 3, title);
+    }
+
+    public static Builder enchanting(Component title) {
+        return builder(InventoryType.ENCHANTING, 2, title);
+    }
+
+    public static Builder brewing(Component title) {
+        return builder(InventoryType.BREWING, 5, title);
     }
 
     public static Builder builder(InventoryType type, int size, Component title) {
@@ -78,6 +106,10 @@ public final class Gui {
         return slot >= 0 && slot < handlers.length && handlers[slot] != null;
     }
 
+    public Map<Integer, Integer> properties() {
+        return properties;
+    }
+
     public void handle(GuiClick click) {
         Objects.requireNonNull(click, "click");
         if (click.slot() < 0 || click.slot() >= handlers.length) {
@@ -109,6 +141,7 @@ public final class Gui {
         private final ItemStack[] contents;
         private final GuiSlotHandler[] handlers;
         private final boolean[] protectedSlots;
+        private final Map<Integer, Integer> properties = new LinkedHashMap<>();
         private GuiCloseHandler closeHandler;
 
         private Builder(InventoryType type, int size, Component title) {
@@ -139,6 +172,14 @@ public final class Gui {
         public Builder protectedSlot(int slot) {
             checkSlot(slot);
             protectedSlots[slot] = true;
+            return this;
+        }
+
+        public Builder property(int id, int value) {
+            if (id < 0) {
+                throw new IllegalArgumentException("property id must be >= 0");
+            }
+            properties.put(id, value);
             return this;
         }
 

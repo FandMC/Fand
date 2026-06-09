@@ -31,6 +31,17 @@ class GuiTest {
         assertThat(gui.item(2)).isEqualTo(two);
     }
 
+    @Test
+    void buildsTypedMenusWithInitialProperties() {
+        var gui = Gui.anvil(Component.text("Repair"))
+                .property(0, 5)
+                .build();
+
+        assertThat(gui.type()).isEqualTo(InventoryType.ANVIL);
+        assertThat(gui.size()).isEqualTo(3);
+        assertThat(gui.properties()).containsEntry(0, 5);
+    }
+
     private record TestItemType(Key key, int maxStackSize) implements ItemType {
     }
 }

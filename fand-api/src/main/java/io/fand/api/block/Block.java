@@ -26,6 +26,11 @@ public interface Block {
     /** Current block type at this position. */
     BlockType type();
 
+    /** Whether the current block is vanilla air. */
+    default boolean air() {
+        return type().key().asString().equals("minecraft:air");
+    }
+
     /** Current vanilla block-state properties as {@code propertyName -> valueName}. */
     default Map<String, String> stateProperties() {
         return Map.of();

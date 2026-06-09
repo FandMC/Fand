@@ -191,6 +191,17 @@ public final class RuntimePluginContext implements PluginContext {
     }
 
     public void close() {
+        var existingStorage = storage;
+        if (existingStorage != null) {
+            existingStorage.flush();
+            if (existingStorage instanceof AutoCloseable closeable) {
+                try {
+                    closeable.close();
+                } catch (Exception ex) {
+                    logger.warn("Failed to close storage for plugin {}", descriptor.id(), ex);
+                }
+            }
+        }
         resources.close();
     }
 }

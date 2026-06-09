@@ -49,9 +49,17 @@ class OpenableContainersTest {
     }
 
     @Test
-    void returnsNullForBlockBackedTypes() {
-        assertThat(OpenableContainers.build(InventoryType.ANVIL, 0)).isNull();
-        assertThat(OpenableContainers.build(InventoryType.FURNACE, 0)).isNull();
+    void buildsVirtualPropertyMenus() {
+        assertThat(OpenableContainers.build(InventoryType.ANVIL, 0).container().getContainerSize()).isEqualTo(3);
+        assertThat(OpenableContainers.build(InventoryType.FURNACE, 0).container().getContainerSize()).isEqualTo(3);
+        assertThat(OpenableContainers.build(InventoryType.BLAST_FURNACE, 0).container().getContainerSize()).isEqualTo(3);
+        assertThat(OpenableContainers.build(InventoryType.SMOKER, 0).container().getContainerSize()).isEqualTo(3);
+        assertThat(OpenableContainers.build(InventoryType.ENCHANTING, 0).container().getContainerSize()).isEqualTo(2);
+        assertThat(OpenableContainers.build(InventoryType.BREWING, 0).container().getContainerSize()).isEqualTo(5);
+    }
+
+    @Test
+    void returnsNullForUnsupportedBlockBackedTypes() {
         assertThat(OpenableContainers.build(InventoryType.BEACON, 0)).isNull();
     }
 

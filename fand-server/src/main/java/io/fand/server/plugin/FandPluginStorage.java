@@ -13,6 +13,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -20,14 +21,24 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import net.kyori.adventure.key.Key;
 
-public final class FandPluginStorage implements PluginStorage {
+public final class FandPluginStorage implements PluginStorage, AutoCloseable {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final long FLUSH_DELAY_MILLIS = 250L;
+    private static final ScheduledExecutorService FLUSHER = Executors.newSingleThreadScheduledExecutor(task -> {
+        var thread = new Thread(task, "Fand Plugin Storage Flusher");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private final Path root;
-    private final ConcurrentHashMap<String, ScopedStorage> stores = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, JsonScopedStorage> stores = new ConcurrentHashMap<>();
 
     public FandPluginStorage(Path pluginDataDirectory) {
         this.root = Objects.requireNonNull(pluginDataDirectory, "pluginDataDirectory").resolve("storage");
@@ -70,6 +81,18 @@ public final class FandPluginStorage implements PluginStorage {
         return stores.computeIfAbsent(id, ignored -> new JsonScopedStorage(path));
     }
 
+    @Override
+    public void flush() {
+        for (var store : stores.values()) {
+            store.flush();
+        }
+    }
+
+    @Override
+    public void close() {
+        flush();
+    }
+
     private static String fileName(Key key) {
         return key.namespace() + "__" + key.value().replace('/', '_');
     }
@@ -79,6 +102,8 @@ public final class FandPluginStorage implements PluginStorage {
         private final Path path;
         private final Object lock = new Object();
         private JsonObject values;
+        private boolean dirty;
+        private ScheduledFuture<?> scheduledFlush;
 
         private JsonScopedStorage(Path path) {
             this.path = path;
@@ -110,7 +135,7 @@ public final class FandPluginStorage implements PluginStorage {
             Objects.requireNonNull(value, "value");
             synchronized (lock) {
                 load().add(key, value.deepCopy());
-                save();
+                markDirty();
             }
         }
 
@@ -119,7 +144,7 @@ public final class FandPluginStorage implements PluginStorage {
             Objects.requireNonNull(key, "key");
             synchronized (lock) {
                 if (load().remove(key) != null) {
-                    save();
+                    markDirty();
                 }
             }
         }
@@ -128,7 +153,7 @@ public final class FandPluginStorage implements PluginStorage {
         public void clear() {
             synchronized (lock) {
                 values = new JsonObject();
-                save();
+                markDirty();
             }
         }
 
@@ -136,6 +161,13 @@ public final class FandPluginStorage implements PluginStorage {
         public JsonObject toJson() {
             synchronized (lock) {
                 return load().deepCopy();
+            }
+        }
+
+        @Override
+        public void flush() {
+            synchronized (lock) {
+                flushLocked();
             }
         }
 
@@ -158,10 +190,40 @@ public final class FandPluginStorage implements PluginStorage {
             return values;
         }
 
+        private void markDirty() {
+            dirty = true;
+            if (scheduledFlush == null || scheduledFlush.isDone()) {
+                scheduledFlush = FLUSHER.schedule(this::flush, FLUSH_DELAY_MILLIS, TimeUnit.MILLISECONDS);
+            }
+        }
+
+        private void flushLocked() {
+            if (!dirty) {
+                return;
+            }
+            var pending = scheduledFlush;
+            if (pending != null) {
+                pending.cancel(false);
+                scheduledFlush = null;
+            }
+            save();
+            dirty = false;
+        }
+
         private void save() {
             try {
                 Files.createDirectories(path.getParent());
-                Files.writeString(path, GSON.toJson(values), StandardCharsets.UTF_8);
+                var temp = Files.createTempFile(path.getParent(), path.getFileName().toString(), ".tmp");
+                try {
+                    Files.writeString(temp, GSON.toJson(values), StandardCharsets.UTF_8);
+                    try {
+                        Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                    } catch (IOException unsupportedAtomicMove) {
+                        Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                } finally {
+                    Files.deleteIfExists(temp);
+                }
             } catch (IOException ex) {
                 throw new UncheckedIOException("Failed to write plugin storage " + path, ex);
             }

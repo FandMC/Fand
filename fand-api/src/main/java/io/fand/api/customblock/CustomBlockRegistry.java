@@ -18,7 +18,13 @@ public interface CustomBlockRegistry {
 
     Optional<CustomBlockType> customBlock(Block block);
 
+    Optional<CustomBlockType> blockForItem(Key itemId);
+
     Collection<CustomBlockType> types();
+
+    CustomBlockItemBinding bindItem(Key itemId, Key blockId);
+
+    void unbindItem(Key itemId);
 
     boolean place(Block block, Key id);
 

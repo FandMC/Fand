@@ -227,6 +227,51 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     /** Clears {@code type}'s cooldown group. */
     void clearCooldown(ItemType type);
 
+    default boolean hasCooldown(Key group) {
+        throw new UnsupportedOperationException("Cooldown groups are not supported");
+    }
+
+    default float cooldownPercent(Key group) {
+        throw new UnsupportedOperationException("Cooldown groups are not supported");
+    }
+
+    default void setCooldown(Key group, int ticks) {
+        throw new UnsupportedOperationException("Cooldown groups are not supported");
+    }
+
+    default void clearCooldown(Key group) {
+        setCooldown(group, 0);
+    }
+
+    default Optional<AdvancementProgress> advancementProgress(Key advancement) {
+        return Optional.empty();
+    }
+
+    default boolean grantAdvancement(Key advancement) {
+        return false;
+    }
+
+    default boolean revokeAdvancement(Key advancement) {
+        return false;
+    }
+
+    default boolean grantAdvancementCriterion(Key advancement, String criterion) {
+        return false;
+    }
+
+    default boolean revokeAdvancementCriterion(Key advancement, String criterion) {
+        return false;
+    }
+
+    default boolean visibleInPlayerList(Player viewer) {
+        java.util.Objects.requireNonNull(viewer, "viewer");
+        return true;
+    }
+
+    default void setVisibleInPlayerList(Player viewer, boolean visible) {
+        java.util.Objects.requireNonNull(viewer, "viewer");
+    }
+
     /** Item currently carried by the cursor in the player's open menu. */
     ItemStack cursorItem();
 

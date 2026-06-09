@@ -1,6 +1,7 @@
 package io.fand.server.plugin;
 
 import io.fand.api.command.CommandRegistration;
+import io.fand.api.customblock.CustomBlockItemBinding;
 import io.fand.api.customblock.CustomBlockRegistration;
 import io.fand.api.customitem.CustomItemRegistration;
 import io.fand.api.event.EventSubscription;
@@ -10,8 +11,10 @@ import io.fand.api.recipe.RecipeRegistration;
 import io.fand.api.scheduler.Task;
 import io.fand.api.scoreboard.ScoreboardRegistration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 final class PluginResourceTracker {
@@ -24,6 +27,7 @@ final class PluginResourceTracker {
     private final Set<TrackedPacketRegistration> packetRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCustomItemRegistration> customItemRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCustomBlockRegistration> customBlockRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedCustomBlockItemBinding> customBlockItemBindings = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedGuiView> guiViews = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedTask> tasks = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private boolean closed;
@@ -156,6 +160,22 @@ final class PluginResourceTracker {
         return tracked;
     }
 
+    TrackedCustomBlockItemBinding track(CustomBlockItemBinding delegate) {
+        var tracked = new TrackedCustomBlockItemBinding(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                customBlockItemBindings.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.unregisterFromTracker();
+        }
+        return tracked;
+    }
+
     TrackedGuiView track(GuiView delegate) {
         var tracked = new TrackedGuiView(this, delegate);
         var dispose = false;
@@ -220,9 +240,34 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedCustomBlockItemBinding binding) {
+        synchronized (lock) {
+            customBlockItemBindings.remove(binding);
+        }
+    }
+
     void release(TrackedGuiView view) {
         synchronized (lock) {
             guiViews.remove(view);
+        }
+    }
+
+    Optional<GuiView> trackedGuiView(GuiView delegate) {
+        synchronized (lock) {
+            return guiViews.stream()
+                    .filter(view -> view.delegate == delegate || view.id().equals(delegate.id()))
+                    .filter(GuiView::open)
+                    .map(GuiView.class::cast)
+                    .findFirst();
+        }
+    }
+
+    Collection<GuiView> trackedGuiViews(io.fand.api.gui.Gui gui) {
+        synchronized (lock) {
+            return guiViews.stream()
+                    .filter(view -> view.open() && view.gui() == gui)
+                    .map(GuiView.class::cast)
+                    .toList();
         }
     }
 
@@ -234,6 +279,7 @@ final class PluginResourceTracker {
         List<TrackedPacketRegistration> packetRegistrationsToClose;
         List<TrackedCustomItemRegistration> customItemRegistrationsToClose;
         List<TrackedCustomBlockRegistration> customBlockRegistrationsToClose;
+        List<TrackedCustomBlockItemBinding> customBlockItemBindingsToClose;
         List<TrackedGuiView> guiViewsToClose;
         List<TrackedTask> tasksToClose;
         synchronized (lock) {
@@ -248,6 +294,7 @@ final class PluginResourceTracker {
             packetRegistrationsToClose = new ArrayList<>(packetRegistrations);
             customItemRegistrationsToClose = new ArrayList<>(customItemRegistrations);
             customBlockRegistrationsToClose = new ArrayList<>(customBlockRegistrations);
+            customBlockItemBindingsToClose = new ArrayList<>(customBlockItemBindings);
             guiViewsToClose = new ArrayList<>(guiViews);
             tasksToClose = new ArrayList<>(tasks);
             subscriptions.clear();
@@ -257,6 +304,7 @@ final class PluginResourceTracker {
             packetRegistrations.clear();
             customItemRegistrations.clear();
             customBlockRegistrations.clear();
+            customBlockItemBindings.clear();
             guiViews.clear();
             tasks.clear();
         }
@@ -280,6 +328,9 @@ final class PluginResourceTracker {
         }
         for (var registration : customBlockRegistrationsToClose) {
             registration.unregisterFromTracker();
+        }
+        for (var binding : customBlockItemBindingsToClose) {
+            binding.unregisterFromTracker();
         }
         for (var view : guiViewsToClose) {
             view.closeFromTracker();
@@ -595,6 +646,62 @@ final class PluginResourceTracker {
                 delegate.unregister();
             }
         }
+
+        @Override
+        public CustomBlockItemBinding bindItem(net.kyori.adventure.key.Key itemId) {
+            return owner.track(delegate.bindItem(itemId));
+        }
+
+        @Override
+        public void unbindItem(net.kyori.adventure.key.Key itemId) {
+            delegate.unbindItem(itemId);
+        }
+    }
+
+    static final class TrackedCustomBlockItemBinding implements CustomBlockItemBinding {
+
+        private final PluginResourceTracker owner;
+        private final CustomBlockItemBinding delegate;
+        private volatile boolean released;
+
+        TrackedCustomBlockItemBinding(PluginResourceTracker owner, CustomBlockItemBinding delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public net.kyori.adventure.key.Key itemId() {
+            return delegate.itemId();
+        }
+
+        @Override
+        public net.kyori.adventure.key.Key blockId() {
+            return delegate.blockId();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void unregister() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.unregister();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void unregisterFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.unregister();
+            }
+        }
     }
 
     static final class TrackedGuiView implements GuiView {
@@ -631,6 +738,25 @@ final class PluginResourceTracker {
         @Override
         public boolean open() {
             return !released && delegate.open();
+        }
+
+        @Override
+        public io.fand.api.item.ItemStack cursorItem() {
+            return delegate.cursorItem();
+        }
+
+        @Override
+        public void setCursorItem(io.fand.api.item.ItemStack item) {
+            if (!released) {
+                delegate.setCursorItem(item);
+            }
+        }
+
+        @Override
+        public void setProperty(int id, int value) {
+            if (!released) {
+                delegate.setProperty(id, value);
+            }
         }
 
         @Override

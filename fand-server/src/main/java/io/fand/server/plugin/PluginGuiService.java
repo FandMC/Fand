@@ -5,6 +5,7 @@ import io.fand.api.gui.Gui;
 import io.fand.api.gui.GuiService;
 import io.fand.api.gui.GuiView;
 import io.fand.server.gui.FandGuiService;
+import java.util.Collection;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,11 +31,16 @@ public final class PluginGuiService implements GuiService {
 
     @Override
     public Optional<GuiView> openView(Player player) {
-        return delegate.openView(player);
+        return delegate.openView(player).flatMap(tracker::trackedGuiView);
+    }
+
+    @Override
+    public Collection<GuiView> openViews(Gui gui) {
+        return tracker.trackedGuiViews(gui);
     }
 
     @Override
     public Optional<GuiView> view(UUID id) {
-        return delegate.view(id);
+        return delegate.view(id).flatMap(tracker::trackedGuiView);
     }
 }

@@ -10,4 +10,12 @@ public interface CustomBlockRegistration {
     boolean active();
 
     void unregister();
+
+    default CustomBlockItemBinding bindItem(Key itemId) {
+        throw new UnsupportedOperationException("Custom item bindings are not supported");
+    }
+
+    default void unbindItem(Key itemId) {
+        throw new UnsupportedOperationException("Custom item bindings are not supported");
+    }
 }

@@ -2,6 +2,7 @@ package io.fand.api.gui;
 
 import io.fand.api.entity.Player;
 import io.fand.api.inventory.Inventory;
+import io.fand.api.item.ItemStack;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,6 +18,18 @@ public interface GuiView extends AutoCloseable {
     Inventory inventory();
 
     boolean open();
+
+    default ItemStack cursorItem() {
+        return player().cursorItem();
+    }
+
+    default void setCursorItem(ItemStack item) {
+        player().setCursorItem(item);
+    }
+
+    default void setProperty(int id, int value) {
+        throw new UnsupportedOperationException("GUI properties are not supported");
+    }
 
     void reopen();
 

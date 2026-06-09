@@ -71,32 +71,9 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private volatile boolean enabled;
     private volatile boolean closed;
 
-    public PluginRuntime(
-            Path pluginsDirectory,
-            Path dataDirectoryRoot,
-            ClassLoader parentClassLoader,
-            CommandRegistry commandRegistry,
-            EventBus eventBus,
-            PermissionService permissions,
-            Scheduler scheduler
-    ) {
-        this(
-                pluginsDirectory,
-                dataDirectoryRoot,
-                parentClassLoader,
-                commandRegistry,
-                eventBus,
-                permissions,
-                scheduler,
-                new FandRecipeRegistry(),
-                unavailableScoreboardService(),
-                new PacketRegistryImpl(),
-                new FandCustomItemRegistry(),
-                new FandCustomBlockRegistry(eventBus),
-                new FandGuiService(eventBus),
-                true,
-                Options.defaults()
-        );
+    private static DefaultCustomServices defaultCustomServices(EventBus eventBus) {
+        var customItems = new FandCustomItemRegistry();
+        return new DefaultCustomServices(customItems, new FandCustomBlockRegistry(eventBus, customItems));
     }
 
     public PluginRuntime(
@@ -106,7 +83,21 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             CommandRegistry commandRegistry,
             EventBus eventBus,
             PermissionService permissions,
+            Scheduler scheduler
+    ) {
+        this(pluginsDirectory, dataDirectoryRoot, parentClassLoader, commandRegistry, eventBus, permissions, scheduler,
+                defaultCustomServices(eventBus), Options.defaults());
+    }
+
+    private PluginRuntime(
+            Path pluginsDirectory,
+            Path dataDirectoryRoot,
+            ClassLoader parentClassLoader,
+            CommandRegistry commandRegistry,
+            EventBus eventBus,
+            PermissionService permissions,
             Scheduler scheduler,
+            DefaultCustomServices customServices,
             Options options
     ) {
         this(
@@ -120,8 +111,8 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new FandRecipeRegistry(),
                 unavailableScoreboardService(),
                 new PacketRegistryImpl(),
-                new FandCustomItemRegistry(),
-                new FandCustomBlockRegistry(eventBus),
+                customServices.items(),
+                customServices.blocks(),
                 new FandGuiService(eventBus),
                 true,
                 options
@@ -136,7 +127,37 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             EventBus eventBus,
             PermissionService permissions,
             Scheduler scheduler,
+            Options options
+    ) {
+        this(pluginsDirectory, dataDirectoryRoot, parentClassLoader, commandRegistry, eventBus, permissions, scheduler,
+                defaultCustomServices(eventBus), options);
+    }
+
+    public PluginRuntime(
+            Path pluginsDirectory,
+            Path dataDirectoryRoot,
+            ClassLoader parentClassLoader,
+            CommandRegistry commandRegistry,
+            EventBus eventBus,
+            PermissionService permissions,
+            Scheduler scheduler,
             RecipeRegistry recipeRegistry,
+            Options options
+    ) {
+        this(pluginsDirectory, dataDirectoryRoot, parentClassLoader, commandRegistry, eventBus, permissions, scheduler,
+                recipeRegistry, defaultCustomServices(eventBus), options);
+    }
+
+    private PluginRuntime(
+            Path pluginsDirectory,
+            Path dataDirectoryRoot,
+            ClassLoader parentClassLoader,
+            CommandRegistry commandRegistry,
+            EventBus eventBus,
+            PermissionService permissions,
+            Scheduler scheduler,
+            RecipeRegistry recipeRegistry,
+            DefaultCustomServices customServices,
             Options options
     ) {
         this(
@@ -150,8 +171,8 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 recipeRegistry,
                 unavailableScoreboardService(),
                 new PacketRegistryImpl(),
-                new FandCustomItemRegistry(),
-                new FandCustomBlockRegistry(eventBus),
+                customServices.items(),
+                customServices.blocks(),
                 new FandGuiService(eventBus),
                 true,
                 options
@@ -642,6 +663,9 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             this.context = context;
             this.classLoader = classLoader;
         }
+    }
+
+    private record DefaultCustomServices(FandCustomItemRegistry items, FandCustomBlockRegistry blocks) {
     }
 
     private record DescriptorFile(
