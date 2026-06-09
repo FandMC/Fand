@@ -886,8 +886,23 @@ public final class FandWorld implements World {
         };
     }
 
-    private long volume(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
-        return ((long) maxX - minX + 1L) * ((long) maxY - minY + 1L) * ((long) maxZ - minZ + 1L);
+    static long volume(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        long volume = 1L;
+        volume = multiplyVolumeCapped(volume, span(minX, maxX));
+        volume = multiplyVolumeCapped(volume, span(minY, maxY));
+        volume = multiplyVolumeCapped(volume, span(minZ, maxZ));
+        return volume;
+    }
+
+    private static long multiplyVolumeCapped(long volume, long span) {
+        if (volume > Integer.MAX_VALUE / span) {
+            return (long) Integer.MAX_VALUE + 1L;
+        }
+        return volume * span;
+    }
+
+    private static long span(int min, int max) {
+        return (long) max - min + 1L;
     }
 
     private Location requireThisWorld(Location location) {
