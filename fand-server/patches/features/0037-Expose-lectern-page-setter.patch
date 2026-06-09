@@ -1,0 +1,21 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Tue, 9 Jun 2026 13:10:33 +0800
+Subject: [PATCH] Expose lectern page setter
+
+
+diff --git a/net/minecraft/world/level/block/entity/LecternBlockEntity.java b/net/minecraft/world/level/block/entity/LecternBlockEntity.java
+index fcdbd6030daf9bf76e03b68ed5202d992401a76e..0cec18f25e1a4fb92031bc30e464c9cc3d424f1a 100644
+--- a/net/minecraft/world/level/block/entity/LecternBlockEntity.java
++++ b/net/minecraft/world/level/block/entity/LecternBlockEntity.java
+@@ -178,6 +178,10 @@ public class LecternBlockEntity extends BlockEntity implements Clearable, MenuPr
+         return this.page;
+     }
+ 
++    public void fand$setPage(final int page) {
++        this.setPage(page);
++    }
++
+     public int getRedstoneSignal() {
+         float pageProgress = this.pageCount > 1 ? this.getPage() / (this.pageCount - 1.0F) : 1.0F;
+         return Mth.floor(pageProgress * 14.0F) + (this.hasBook() ? 1 : 0);

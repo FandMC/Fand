@@ -4,6 +4,8 @@ import io.fand.api.inventory.InventoryType;
 import io.fand.api.inventory.PlayerInventory;
 import io.fand.api.item.ItemStack;
 import io.fand.server.item.FandItemStacks;
+import java.util.Objects;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Inventory;
 
 public final class FandPlayerInventory implements PlayerInventory {
@@ -65,5 +67,70 @@ public final class FandPlayerInventory implements PlayerInventory {
     @Override
     public ItemStack heldItem() {
         return FandItemStacks.fromVanilla(handle.getSelectedItem());
+    }
+
+    @Override
+    public void setHeldItem(ItemStack stack) {
+        Objects.requireNonNull(stack, "stack");
+        handle.setSelectedItem(FandItemStacks.toVanilla(stack));
+    }
+
+    @Override
+    public ItemStack offhandItem() {
+        return equipment(EquipmentSlot.OFFHAND);
+    }
+
+    @Override
+    public void setOffhandItem(ItemStack stack) {
+        setEquipment(EquipmentSlot.OFFHAND, stack);
+    }
+
+    @Override
+    public ItemStack helmet() {
+        return equipment(EquipmentSlot.HEAD);
+    }
+
+    @Override
+    public void setHelmet(ItemStack stack) {
+        setEquipment(EquipmentSlot.HEAD, stack);
+    }
+
+    @Override
+    public ItemStack chestplate() {
+        return equipment(EquipmentSlot.CHEST);
+    }
+
+    @Override
+    public void setChestplate(ItemStack stack) {
+        setEquipment(EquipmentSlot.CHEST, stack);
+    }
+
+    @Override
+    public ItemStack leggings() {
+        return equipment(EquipmentSlot.LEGS);
+    }
+
+    @Override
+    public void setLeggings(ItemStack stack) {
+        setEquipment(EquipmentSlot.LEGS, stack);
+    }
+
+    @Override
+    public ItemStack boots() {
+        return equipment(EquipmentSlot.FEET);
+    }
+
+    @Override
+    public void setBoots(ItemStack stack) {
+        setEquipment(EquipmentSlot.FEET, stack);
+    }
+
+    private ItemStack equipment(EquipmentSlot slot) {
+        return FandItemStacks.fromVanilla(handle.player.getItemBySlot(slot));
+    }
+
+    private void setEquipment(EquipmentSlot slot, ItemStack stack) {
+        Objects.requireNonNull(stack, "stack");
+        handle.player.setItemSlot(slot, FandItemStacks.toVanilla(stack));
     }
 }

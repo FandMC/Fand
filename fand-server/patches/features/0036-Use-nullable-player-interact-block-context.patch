@@ -5,10 +5,10 @@ Subject: [PATCH] Use nullable player interact block context
 
 
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 0000000000000000000000000000000000000000..0000000000000000000000000000000000000000 100644
+index 96ef5ccb191923e5a9165c667a31e9071353bb58..9234a5e59abed11233bbd37c936264334395313a 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -1400,8 +1400,9 @@ public class ServerGamePacketListenerImpl
+@@ -1436,8 +1436,9 @@ public class ServerGamePacketListenerImpl
                                      var fandPlayer = io.fand.server.hooks.FandHooks.findPlayer(this.player.getUUID());
                                      if (fandPlayer != null) {
                                          var fandWorld = io.fand.server.hooks.FandHooks.wrapWorld(level);
@@ -20,7 +20,8 @@ index 0000000000000000000000000000000000000000..00000000000000000000000000000000
                                          var fandHand = hand == net.minecraft.world.InteractionHand.OFF_HAND
                                                  ? io.fand.api.event.player.PlayerInteractEvent.Hand.OFF_HAND
                                                  : io.fand.api.event.player.PlayerInteractEvent.Hand.MAIN_HAND;
-@@ -1494,6 +1494,6 @@ public class ServerGamePacketListenerImpl
+@@ -1531,7 +1532,7 @@ public class ServerGamePacketListenerImpl
+                                         fandPlayer,
                                          io.fand.api.event.player.PlayerInteractEvent.Action.RIGHT_CLICK_AIR,
                                          fandHand,
 -                                        java.util.Optional.empty(),

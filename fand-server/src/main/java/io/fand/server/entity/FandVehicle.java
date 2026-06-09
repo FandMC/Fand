@@ -3,7 +3,7 @@ package io.fand.server.entity;
 import io.fand.api.entity.Vehicle;
 import io.fand.server.world.WorldRegistry;
 
-public final class FandVehicle extends FandEntity implements Vehicle {
+public class FandVehicle extends FandEntity implements Vehicle {
 
     public FandVehicle(net.minecraft.world.entity.vehicle.VehicleEntity handle, WorldRegistry worldRegistry) {
         super(handle, worldRegistry);

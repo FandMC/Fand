@@ -187,6 +187,27 @@ public final class FandBlock implements Block {
         if (entity instanceof SpawnerBlockEntity spawner) {
             return new FandSpawnerBlockEntity(this, spawner);
         }
+        if (entity instanceof net.minecraft.world.level.block.entity.BeaconBlockEntity beacon) {
+            return new FandBeaconBlockEntity(this, beacon);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.LecternBlockEntity lectern) {
+            return new FandLecternBlockEntity(this, lectern);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.CommandBlockEntity commandBlock) {
+            return new FandCommandBlockEntity(this, commandBlock);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.DecoratedPotBlockEntity pot) {
+            return new FandDecoratedPotBlockEntity(this, pot);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity gateway) {
+            return new FandEndGatewayBlockEntity(this, gateway);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.BannerBlockEntity banner) {
+            return new FandBannerBlockEntity(this, banner);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.SkullBlockEntity skull) {
+            return new FandSkullBlockEntity(this, skull);
+        }
         if (entity instanceof net.minecraft.world.level.block.entity.SignBlockEntity sign) {
             return new FandSignBlockEntity(this, sign);
         }

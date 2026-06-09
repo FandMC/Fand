@@ -80,6 +80,16 @@ final class WorldEntityApiTest {
         assertThat(List.<Entity>copyOf(world.entitiesInBox(world.at(-1, 63, -1), world.at(1, 66, 1))))
                 .containsExactly(zombie);
         assertThat(List.<Entity>copyOf(world.entitiesInBox(world.at(-1, 63, -1), world.at(1, 66, 1), COW))).isEmpty();
+        assertThat(world.countEntitiesInBox(world.at(-1, 63, -1), world.at(1, 66, 1))).isOne();
+        assertThat(world.countEntitiesInBox(world.at(-1, 63, -1), world.at(1, 66, 1), COW)).isZero();
+        assertThat(world.firstEntityInBox(world.at(-1, 63, -1), world.at(1, 66, 1)).orElseThrow()).isSameAs(zombie);
+        assertThat(world.firstEntityInBox(world.at(-1, 63, -1), world.at(1, 66, 1), COW)).isEmpty();
+        var visited = new java.util.ArrayList<Entity>();
+        world.forEachEntityInBox(world.at(-1, 63, -1), world.at(1, 66, 1), visited::add);
+        assertThat(visited).containsExactly(zombie);
+        visited.clear();
+        world.forEachEntityInBox(world.at(-1, 63, -1), world.at(1, 66, 1), COW, visited::add);
+        assertThat(visited).isEmpty();
         assertThat(world.nearestEntity(world.at(9, 64, 0), 5.0).orElseThrow()).isSameAs(cow);
         assertThat(world.nearestEntity(world.at(9, 64, 0), 5.0, ZOMBIE)).isEmpty();
         assertThat(world.loadedEntityCount()).isEqualTo(2);

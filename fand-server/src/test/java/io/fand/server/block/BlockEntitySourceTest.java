@@ -15,6 +15,13 @@ final class BlockEntitySourceTest {
         var source = Files.readString(Path.of("src/main/java/io/fand/server/block/FandBlock.java"), StandardCharsets.UTF_8);
 
         assertBefore(source, "new FandSpawnerBlockEntity", "new FandBlockEntity");
+        assertBefore(source, "new FandBeaconBlockEntity", "new FandBlockEntity");
+        assertBefore(source, "new FandLecternBlockEntity", "new FandBlockEntity");
+        assertBefore(source, "new FandCommandBlockEntity", "new FandBlockEntity");
+        assertBefore(source, "new FandDecoratedPotBlockEntity", "new FandBlockEntity");
+        assertBefore(source, "new FandEndGatewayBlockEntity", "new FandBlockEntity");
+        assertBefore(source, "new FandBannerBlockEntity", "new FandBlockEntity");
+        assertBefore(source, "new FandSkullBlockEntity", "new FandBlockEntity");
         assertBefore(source, "new FandSignBlockEntity", "new FandBlockEntity");
         assertBefore(source, "new FandContainerBlockEntity", "new FandBlockEntity");
     }

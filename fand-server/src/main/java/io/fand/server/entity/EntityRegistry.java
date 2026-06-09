@@ -3,6 +3,7 @@ package io.fand.server.entity;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.fand.server.world.WorldRegistry;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import java.time.Duration;
 import java.util.UUID;
 import net.minecraft.server.level.ServerPlayer;
@@ -17,8 +18,11 @@ import net.minecraft.world.entity.LivingEntity;
  */
 public final class EntityRegistry {
 
+    private static final int NETWORK_ID_WRAPPER_CACHE_MAX_SIZE = 8192;
+
     private final WorldRegistry worldRegistry;
     private final PlayerRegistry players;
+    private final Int2ObjectOpenHashMap<FandEntity> wrappersByNetworkId = new Int2ObjectOpenHashMap<>();
     private final Cache<UUID, FandEntity> wrappers = Caffeine.newBuilder()
             .expireAfterAccess(Duration.ofMinutes(5))
             .maximumSize(8192)
@@ -34,12 +38,19 @@ public final class EntityRegistry {
             var existing = players.findOrNull(player.getUUID());
             return existing != null ? existing : players.attach(player);
         }
+        int networkId = handle.getId();
+        var existingByNetworkId = wrappersByNetworkId.get(networkId);
+        if (existingByNetworkId != null && existingByNetworkId.handle() == handle) {
+            return existingByNetworkId;
+        }
         var existing = wrappers.getIfPresent(handle.getUUID());
         if (existing != null && existing.handle() == handle) {
+            rememberNetworkId(networkId, existing);
             return existing;
         }
         var fresh = wrapFresh(handle);
         wrappers.put(handle.getUUID(), fresh);
+        rememberNetworkId(networkId, fresh);
         return fresh;
     }
 
@@ -51,9 +62,19 @@ public final class EntityRegistry {
         throw new IllegalStateException("Living entity wrapped as non-living entity: " + handle);
     }
 
+    private void rememberNetworkId(int networkId, FandEntity wrapper) {
+        if (wrappersByNetworkId.size() >= NETWORK_ID_WRAPPER_CACHE_MAX_SIZE && !wrappersByNetworkId.containsKey(networkId)) {
+            wrappersByNetworkId.clear();
+        }
+        wrappersByNetworkId.put(networkId, wrapper);
+    }
+
     private FandEntity wrapFresh(net.minecraft.world.entity.Entity handle) {
         if (handle instanceof net.minecraft.world.entity.decoration.ArmorStand armorStand) {
             return new FandArmorStand(armorStand, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon dragon) {
+            return new FandEnderDragon(dragon, worldRegistry);
         }
         if (handle instanceof net.minecraft.world.entity.AreaEffectCloud cloud) {
             return new FandAreaEffectCloud(cloud, worldRegistry);
@@ -79,6 +100,9 @@ public final class EntityRegistry {
         if (handle instanceof net.minecraft.world.entity.decoration.BlockAttachedEntity hanging) {
             return new FandHanging(hanging, worldRegistry);
         }
+        if (handle instanceof net.minecraft.world.entity.vehicle.minecart.AbstractMinecart minecart) {
+            return new FandMinecart(minecart, worldRegistry);
+        }
         if (handle instanceof net.minecraft.world.entity.vehicle.VehicleEntity vehicle) {
             return new FandVehicle(vehicle, worldRegistry);
         }
@@ -91,11 +115,23 @@ public final class EntityRegistry {
         if (handle instanceof net.minecraft.world.entity.TamableAnimal tameable) {
             return new FandTameable(tameable, worldRegistry);
         }
+        if (handle instanceof net.minecraft.world.entity.npc.villager.Villager villager) {
+            return new FandVillager(villager, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.animal.equine.AbstractHorse horse) {
+            return new FandHorse(horse, worldRegistry);
+        }
         if (handle instanceof net.minecraft.world.entity.animal.Animal animal) {
             return new FandAnimal(animal, worldRegistry);
         }
         if (handle instanceof net.minecraft.world.entity.AgeableMob ageable) {
             return new FandAgeable(ageable, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.monster.EnderMan enderman) {
+            return new FandEnderman(enderman, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.monster.Creeper creeper) {
+            return new FandCreeper(creeper, worldRegistry);
         }
         if (handle instanceof net.minecraft.world.entity.Mob mob) {
             return new FandMob(mob, worldRegistry);

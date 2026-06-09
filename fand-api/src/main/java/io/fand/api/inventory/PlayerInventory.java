@@ -16,4 +16,37 @@ public interface PlayerInventory extends Inventory {
 
     /** Stack currently held in the player's main hand. */
     ItemStack heldItem();
+
+    /** Replaces the stack currently held in the player's main hand. */
+    void setHeldItem(ItemStack stack);
+
+    /** Stack currently held in the player's off hand. */
+    ItemStack offhandItem();
+
+    /** Replaces the stack currently held in the player's off hand. */
+    void setOffhandItem(ItemStack stack);
+
+    /** Helmet slot. */
+    ItemStack helmet();
+
+    /** Replaces the helmet slot. */
+    void setHelmet(ItemStack stack);
+
+    /** Chestplate slot. */
+    ItemStack chestplate();
+
+    /** Replaces the chestplate slot. */
+    void setChestplate(ItemStack stack);
+
+    /** Leggings slot. */
+    ItemStack leggings();
+
+    /** Replaces the leggings slot. */
+    void setLeggings(ItemStack stack);
+
+    /** Boots slot. */
+    ItemStack boots();
+
+    /** Replaces the boots slot. */
+    void setBoots(ItemStack stack);
 }

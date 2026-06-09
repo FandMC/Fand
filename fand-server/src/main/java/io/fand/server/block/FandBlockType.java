@@ -27,6 +27,13 @@ public final class FandBlockType implements BlockType {
         return handle;
     }
 
+    public static Block unwrap(BlockType type) {
+        if (type instanceof FandBlockType fand) {
+            return fand.handle;
+        }
+        throw new IllegalArgumentException("Block type is not owned by this server: " + type.key().asString());
+    }
+
     @Override
     public Key key() {
         return key;

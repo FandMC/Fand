@@ -17,6 +17,7 @@ import io.fand.api.world.sound.SoundEffect;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import net.kyori.adventure.audience.ForwardingAudience;
 import net.kyori.adventure.key.Key;
 
@@ -202,6 +203,68 @@ public interface World extends ForwardingAudience {
         return entitiesInBox(min, max, EntityTypes.of(type));
     }
 
+    /** Counts loaded entities whose bounds intersect the axis-aligned box. */
+    default int countEntitiesInBox(Location min, Location max) {
+        return entitiesInBox(min, max).size();
+    }
+
+    /** Counts loaded entities of {@code type} whose bounds intersect the axis-aligned box. */
+    default int countEntitiesInBox(Location min, Location max, EntityType type) {
+        java.util.Objects.requireNonNull(type, "type");
+        return entitiesInBox(min, max, type).size();
+    }
+
+    /** Convenience overload for generated vanilla entity keys. */
+    default int countEntitiesInBox(Location min, Location max, EntityKey type) {
+        return countEntitiesInBox(min, max, EntityTypes.of(type));
+    }
+
+    /**
+     * Finds one loaded entity whose bounds intersect the axis-aligned box.
+     *
+     * <p>The chosen entity is implementation-defined and should only be used
+     * when any matching entity is acceptable.
+     */
+    default Optional<? extends Entity> firstEntityInBox(Location min, Location max) {
+        return entitiesInBox(min, max).stream().findFirst();
+    }
+
+    /** Finds one loaded entity of {@code type} whose bounds intersect the axis-aligned box. */
+    default Optional<? extends Entity> firstEntityInBox(Location min, Location max, EntityType type) {
+        java.util.Objects.requireNonNull(type, "type");
+        return entitiesInBox(min, max, type).stream().findFirst();
+    }
+
+    /** Convenience overload for generated vanilla entity keys. */
+    default Optional<? extends Entity> firstEntityInBox(Location min, Location max, EntityKey type) {
+        return firstEntityInBox(min, max, EntityTypes.of(type));
+    }
+
+    /**
+     * Visits loaded entities whose bounds intersect the axis-aligned box without
+     * requiring the caller to allocate a returned snapshot collection.
+     */
+    default void forEachEntityInBox(Location min, Location max, Consumer<? super Entity> action) {
+        java.util.Objects.requireNonNull(action, "action");
+        for (var entity : entitiesInBox(min, max)) {
+            action.accept(entity);
+        }
+    }
+
+    /** Visits loaded entities of {@code type} whose bounds intersect the axis-aligned box. */
+    default void forEachEntityInBox(Location min, Location max, EntityType type, Consumer<? super Entity> action) {
+        java.util.Objects.requireNonNull(type, "type");
+        java.util.Objects.requireNonNull(action, "action");
+        for (var entity : entitiesInBox(min, max, type)) {
+            action.accept(entity);
+        }
+    }
+
+    /** Convenience overload for generated vanilla entity keys. */
+    default void forEachEntityInBox(Location min, Location max, EntityKey type, Consumer<? super Entity> action) {
+        forEachEntityInBox(min, max, EntityTypes.of(type), action);
+    }
+
     /** Finds the nearest loaded entity within {@code radius} blocks of {@code center}. */
     default Optional<? extends Entity> nearestEntity(Location center, double radius) {
         requireSameWorld(center, this, "center");
@@ -252,6 +315,20 @@ public interface World extends ForwardingAudience {
         return Optional.empty();
     }
 
+    /**
+     * Ray traces entities asynchronously when the implementation supports it.
+     *
+     * <p>Implementations that are backed by a game world may still execute the
+     * trace on the server thread so entity state is read safely.
+     */
+    default CompletableFuture<Optional<EntityRayTraceResult>> rayTraceEntityAsync(
+            Location start,
+            Vector3 direction,
+            double maxDistance
+    ) {
+        return CompletableFuture.completedFuture(rayTraceEntity(start, direction, maxDistance));
+    }
+
     /** Ray traces entities of {@code type} from {@code start} along {@code direction}. */
     default Optional<EntityRayTraceResult> rayTraceEntity(
             Location start,
@@ -264,6 +341,22 @@ public interface World extends ForwardingAudience {
                 .filter(result -> result.entity().type().equals(type));
     }
 
+    /**
+     * Asynchronously ray traces entities of {@code type}. See
+     * {@link #rayTraceEntityAsync(Location, Vector3, double)} for scheduling
+     * and thread-safety semantics.
+     */
+    default CompletableFuture<Optional<EntityRayTraceResult>> rayTraceEntityAsync(
+            Location start,
+            Vector3 direction,
+            double maxDistance,
+            EntityType type
+    ) {
+        java.util.Objects.requireNonNull(type, "type");
+        return rayTraceEntityAsync(start, direction, maxDistance)
+                .thenApply(result -> result.filter(hit -> hit.entity().type().equals(type)));
+    }
+
     /** Convenience overload for generated vanilla entity keys. */
     default Optional<EntityRayTraceResult> rayTraceEntity(
             Location start,
@@ -272,6 +365,16 @@ public interface World extends ForwardingAudience {
             EntityKey type
     ) {
         return rayTraceEntity(start, direction, maxDistance, EntityTypes.of(type));
+    }
+
+    /** Convenience overload for generated vanilla entity keys. */
+    default CompletableFuture<Optional<EntityRayTraceResult>> rayTraceEntityAsync(
+            Location start,
+            Vector3 direction,
+            double maxDistance,
+            EntityKey type
+    ) {
+        return rayTraceEntityAsync(start, direction, maxDistance, EntityTypes.of(type));
     }
 
     /**

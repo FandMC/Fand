@@ -15,12 +15,18 @@ final class EntityRegistrySourceTest {
         var source = Files.readString(Path.of("src/main/java/io/fand/server/entity/EntityRegistry.java"), StandardCharsets.UTF_8);
 
         assertBefore(source, "new FandArmorStand", "new FandLivingEntity");
+        assertBefore(source, "new FandEnderDragon", "new FandMob");
         assertBefore(source, "new FandAreaEffectCloud", "new FandEntity");
         assertBefore(source, "new FandExplosive", "new FandEntity");
         assertBefore(source, "new FandExperienceOrb", "new FandEntity");
         assertBefore(source, "new FandDisplay", "new FandEntity");
         assertBefore(source, "new FandHanging", "new FandEntity");
+        assertBefore(source, "new FandMinecart", "new FandVehicle");
         assertBefore(source, "new FandVehicle", "new FandEntity");
+        assertBefore(source, "new FandVillager", "new FandAnimal");
+        assertBefore(source, "new FandHorse", "new FandAnimal");
+        assertBefore(source, "new FandEnderman", "new FandMob");
+        assertBefore(source, "new FandCreeper", "new FandMob");
     }
 
     private static void assertBefore(String source, String first, String second) {

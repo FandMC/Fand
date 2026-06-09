@@ -1,11 +1,16 @@
 package io.fand.server.entity;
 
 import io.fand.api.component.DataComponentContainer;
+import io.fand.api.entity.ClientChatVisibility;
+import io.fand.api.entity.ClientMainHand;
+import io.fand.api.entity.ClientParticleStatus;
 import io.fand.api.entity.ClientSettings;
+import io.fand.api.entity.ClientSkinPart;
 import io.fand.api.entity.EntityType;
 import io.fand.api.entity.EntityEffect;
 import io.fand.api.entity.GameMode;
 import io.fand.api.entity.Player;
+import io.fand.api.item.ItemType;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.component.ItemEquipmentSlot;
 import io.fand.api.permission.PermissionService;
@@ -258,7 +263,27 @@ public final class FandPlayer implements Player {
     @Override
     public ClientSettings clientSettings() {
         var information = bound.handle.clientInformation();
-        return new ClientSettings(information.language(), information.viewDistance());
+        return new ClientSettings(
+                information.language(),
+                information.viewDistance(),
+                switch (information.chatVisibility()) {
+                    case FULL -> ClientChatVisibility.FULL;
+                    case SYSTEM -> ClientChatVisibility.SYSTEM;
+                    case HIDDEN -> ClientChatVisibility.HIDDEN;
+                },
+                information.chatColors(),
+                skinParts(information.modelCustomisation()),
+                switch (information.mainHand()) {
+                    case LEFT -> ClientMainHand.LEFT;
+                    case RIGHT -> ClientMainHand.RIGHT;
+                },
+                information.textFilteringEnabled(),
+                information.allowsListing(),
+                switch (information.particleStatus()) {
+                    case ALL -> ClientParticleStatus.ALL;
+                    case DECREASED -> ClientParticleStatus.DECREASED;
+                    case MINIMAL -> ClientParticleStatus.MINIMAL;
+                });
     }
 
     @Override
@@ -841,6 +866,16 @@ public final class FandPlayer implements Player {
         return id;
     }
 
+    private static Set<ClientSkinPart> skinParts(int mask) {
+        var parts = java.util.EnumSet.noneOf(ClientSkinPart.class);
+        for (var part : ClientSkinPart.values()) {
+            if ((mask & part.mask()) != 0) {
+                parts.add(part);
+            }
+        }
+        return parts.isEmpty() ? Set.of() : Set.copyOf(parts);
+    }
+
     @Override
     public boolean hasPermission(String permission) {
         return permissions.hasPermission(this, permission);
@@ -1083,6 +1118,57 @@ public final class FandPlayer implements Player {
                     .flatMap(optional -> optional.stream())
                     .toList();
             return bound.handle.resetRecipes(holders);
+        });
+    }
+
+    @Override
+    public boolean hasCooldown(ItemType type) {
+        Objects.requireNonNull(type, "type");
+        return callOnServerThread(() -> bound.handle.getCooldowns().isOnCooldown(FandItemStacks.toVanilla(type.one())));
+    }
+
+    @Override
+    public float cooldownPercent(ItemType type) {
+        Objects.requireNonNull(type, "type");
+        return callOnServerThread(() -> bound.handle.getCooldowns().getCooldownPercent(
+                FandItemStacks.toVanilla(type.one()), 0.0F));
+    }
+
+    @Override
+    public void setCooldown(ItemType type, int ticks) {
+        Objects.requireNonNull(type, "type");
+        if (ticks < 0) {
+            throw new IllegalArgumentException("Cooldown ticks must be >= 0, got " + ticks);
+        }
+        runOnServerThread(() -> {
+            var cooldowns = bound.handle.getCooldowns();
+            var stack = FandItemStacks.toVanilla(type.one());
+            var group = cooldowns.getCooldownGroup(stack);
+            if (ticks == 0) {
+                cooldowns.removeCooldown(group);
+            } else {
+                cooldowns.addCooldown(group, ticks);
+            }
+        });
+    }
+
+    @Override
+    public void clearCooldown(ItemType type) {
+        setCooldown(type, 0);
+    }
+
+    @Override
+    public ItemStack cursorItem() {
+        return callOnServerThread(() -> FandItemStacks.fromVanilla(bound.handle.containerMenu.getCarried()));
+    }
+
+    @Override
+    public void setCursorItem(ItemStack item) {
+        Objects.requireNonNull(item, "item");
+        runOnServerThread(() -> {
+            var menu = bound.handle.containerMenu;
+            menu.setCarried(FandItemStacks.toVanilla(item));
+            menu.broadcastChanges();
         });
     }
 

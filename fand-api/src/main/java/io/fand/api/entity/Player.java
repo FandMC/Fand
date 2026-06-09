@@ -3,6 +3,8 @@ package io.fand.api.entity;
 import io.fand.api.command.CommandSender;
 import io.fand.api.inventory.Inventory;
 import io.fand.api.inventory.InventoryType;
+import io.fand.api.item.ItemType;
+import io.fand.api.item.ItemStack;
 import io.fand.api.permission.PermissionSubject;
 import io.fand.api.player.ResourcePackRequest;
 import io.fand.api.player.RespawnLocation;
@@ -44,8 +46,8 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     int ping();
 
     /**
-     * The client-side options this player last reported (locale, view
-     * distance). Returns the last-known settings once the player is
+     * The client-side options this player last reported. Returns the
+     * last-known settings once the player is
      * {@linkplain #online() offline}; defaults until the client sends its
      * first settings packet.
      */
@@ -212,6 +214,24 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
 
     /** Removes one or more recipes from this player's recipe book. */
     int undiscoverRecipes(Collection<? extends Recipe> recipes);
+
+    /** Whether {@code type}'s cooldown group is currently cooling down for this player. */
+    boolean hasCooldown(ItemType type);
+
+    /** Remaining cooldown fraction for {@code type}'s cooldown group, in {@code [0, 1]}. */
+    float cooldownPercent(ItemType type);
+
+    /** Starts or replaces {@code type}'s cooldown group for {@code ticks}; {@code 0} clears it. */
+    void setCooldown(ItemType type, int ticks);
+
+    /** Clears {@code type}'s cooldown group. */
+    void clearCooldown(ItemType type);
+
+    /** Item currently carried by the cursor in the player's open menu. */
+    ItemStack cursorItem();
+
+    /** Replaces the item carried by the cursor in the player's open menu. */
+    void setCursorItem(ItemStack item);
 
     /**
      * Opens a transient container of the given {@code type} for this player,

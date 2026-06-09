@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import net.kyori.adventure.audience.Audience;
@@ -46,6 +47,7 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.phys.AABB;
@@ -57,6 +59,10 @@ import net.minecraft.world.level.storage.ServerLevelData;
 import org.jspecify.annotations.Nullable;
 
 public final class FandWorld implements World {
+
+    private static final double ENTITY_RAY_SEGMENT_BLOCKS = 16.0;
+    private static final EntityTypeTest<net.minecraft.world.entity.Entity, net.minecraft.world.entity.Entity> ALL_ENTITY_TYPE =
+            EntityTypeTest.forClass(net.minecraft.world.entity.Entity.class);
 
     private final ServerLevel handle;
     private final Key key;
@@ -279,7 +285,7 @@ public final class FandWorld implements World {
                 checkedCenter.y() + radius,
                 checkedCenter.z() + radius
         );
-        return callOnServerThread(() -> streamEntities(handle.getEntities((net.minecraft.world.entity.Entity) null, box, entity -> true)));
+        return callOnServerThread(() -> entitiesInBox(box, entity -> true));
     }
 
     @Override
@@ -298,18 +304,12 @@ public final class FandWorld implements World {
                 checkedCenter.y() + radius,
                 checkedCenter.z() + radius
         );
-        return callOnServerThread(() -> streamEntities(handle.getEntities(
-                (net.minecraft.world.entity.Entity) null,
-                box,
-                entity -> entity.getType() == fandType.handle())));
+        return callOnServerThread(() -> entitiesInBox(box, entity -> entity.getType() == fandType.handle()));
     }
 
     @Override
     public Collection<? extends Entity> entitiesInBox(Location min, Location max) {
-        return callOnServerThread(() -> streamEntities(handle.getEntities(
-                (net.minecraft.world.entity.Entity) null,
-                box(min, max),
-                entity -> true)));
+        return callOnServerThread(() -> entitiesInBox(box(min, max), entity -> true));
     }
 
     @Override
@@ -318,10 +318,57 @@ public final class FandWorld implements World {
         if (!(type instanceof FandEntityType fandType)) {
             return List.of();
         }
-        return callOnServerThread(() -> streamEntities(handle.getEntities(
-                (net.minecraft.world.entity.Entity) null,
-                box(min, max),
-                entity -> entity.getType() == fandType.handle())));
+        return callOnServerThread(() -> entitiesInBox(box(min, max), entity -> entity.getType() == fandType.handle()));
+    }
+
+    @Override
+    public int countEntitiesInBox(Location min, Location max) {
+        return callOnServerThread(() -> countEntitiesInBox(box(min, max), entity -> true));
+    }
+
+    @Override
+    public int countEntitiesInBox(Location min, Location max, EntityType type) {
+        Objects.requireNonNull(type, "type");
+        if (!(type instanceof FandEntityType fandType)) {
+            return 0;
+        }
+        return callOnServerThread(() -> countEntitiesInBox(box(min, max), entity -> entity.getType() == fandType.handle()));
+    }
+
+    @Override
+    public Optional<? extends Entity> firstEntityInBox(Location min, Location max) {
+        return callOnServerThread(() -> firstEntityInBox(box(min, max), entity -> true));
+    }
+
+    @Override
+    public Optional<? extends Entity> firstEntityInBox(Location min, Location max, EntityType type) {
+        Objects.requireNonNull(type, "type");
+        if (!(type instanceof FandEntityType fandType)) {
+            return Optional.empty();
+        }
+        return callOnServerThread(() -> firstEntityInBox(box(min, max), entity -> entity.getType() == fandType.handle()));
+    }
+
+    @Override
+    public void forEachEntityInBox(Location min, Location max, Consumer<? super Entity> action) {
+        Objects.requireNonNull(action, "action");
+        callOnServerThread(() -> {
+            forEachEntityInBox(box(min, max), entity -> true, action);
+            return null;
+        });
+    }
+
+    @Override
+    public void forEachEntityInBox(Location min, Location max, EntityType type, Consumer<? super Entity> action) {
+        Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(action, "action");
+        if (!(type instanceof FandEntityType fandType)) {
+            return;
+        }
+        callOnServerThread(() -> {
+            forEachEntityInBox(box(min, max), entity -> entity.getType() == fandType.handle(), action);
+            return null;
+        });
     }
 
     @Override
@@ -382,6 +429,15 @@ public final class FandWorld implements World {
     }
 
     @Override
+    public CompletableFuture<Optional<EntityRayTraceResult>> rayTraceEntityAsync(
+            Location start,
+            Vector3 direction,
+            double maxDistance
+    ) {
+        return rayTraceEntityAsync(start, direction, maxDistance, entity -> true);
+    }
+
+    @Override
     public Optional<EntityRayTraceResult> rayTraceEntity(
             Location start,
             Vector3 direction,
@@ -393,6 +449,20 @@ public final class FandWorld implements World {
             return Optional.empty();
         }
         return rayTraceEntity(start, direction, maxDistance, entity -> entity.getType() == fandType.handle());
+    }
+
+    @Override
+    public CompletableFuture<Optional<EntityRayTraceResult>> rayTraceEntityAsync(
+            Location start,
+            Vector3 direction,
+            double maxDistance,
+            EntityType type
+    ) {
+        Objects.requireNonNull(type, "type");
+        if (!(type instanceof FandEntityType fandType)) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        return rayTraceEntityAsync(start, direction, maxDistance, entity -> entity.getType() == fandType.handle());
     }
 
     @Override
@@ -587,7 +657,7 @@ public final class FandWorld implements World {
         if (!chunkLoaded(chunkX, chunkZ)) {
             return 0;
         }
-        return callOnServerThread(() -> handle.getEntities((net.minecraft.world.entity.Entity) null, chunkBox(chunkX, chunkZ), entity -> true).size());
+        return callOnServerThread(() -> countEntitiesInBox(chunkBox(chunkX, chunkZ), entity -> true));
     }
 
     @Override
@@ -595,7 +665,7 @@ public final class FandWorld implements World {
         if (!chunkLoaded(chunkX, chunkZ)) {
             return List.of();
         }
-        return callOnServerThread(() -> streamEntities(handle.getEntities((net.minecraft.world.entity.Entity) null, chunkBox(chunkX, chunkZ), entity -> true)));
+        return callOnServerThread(() -> entitiesInBox(chunkBox(chunkX, chunkZ), entity -> true));
     }
 
     @Override
@@ -603,7 +673,7 @@ public final class FandWorld implements World {
         return callOnServerThread(() -> {
             boolean loaded = handle.getChunkSource().hasChunk(chunkX, chunkZ);
             boolean forceLoaded = handle.getForceLoadedChunks().contains(ChunkPos.pack(chunkX, chunkZ));
-            int entities = loaded ? handle.getEntities((net.minecraft.world.entity.Entity) null, chunkBox(chunkX, chunkZ), entity -> true).size() : 0;
+            int entities = loaded ? countEntitiesInBox(chunkBox(chunkX, chunkZ), entity -> true) : 0;
             return new ChunkSnapshot(this, chunkX, chunkZ, loaded, forceLoaded, entities);
         });
     }
@@ -740,13 +810,69 @@ public final class FandWorld implements World {
             Iterable<net.minecraft.world.entity.Entity> entities,
             java.util.function.Predicate<net.minecraft.world.entity.Entity> filter
     ) {
-        var snapshot = new java.util.ArrayList<Entity>();
+        var snapshot = new java.util.ArrayList<Entity>(entities instanceof Collection<?> collection ? collection.size() : 16);
         for (var entity : entities) {
             if (filter.test(entity)) {
                 snapshot.add(wrapEntity(entity));
             }
         }
-        return List.copyOf(snapshot);
+        return java.util.Collections.unmodifiableList(snapshot);
+    }
+
+    private Collection<? extends Entity> entitiesInBox(
+            AABB box,
+            Predicate<net.minecraft.world.entity.Entity> filter
+    ) {
+        var candidates = new java.util.ArrayList<net.minecraft.world.entity.Entity>();
+        collectEntitiesInBox(box, filter, candidates);
+        return streamEntities(candidates);
+    }
+
+    private int countEntitiesInBox(
+            AABB box,
+            Predicate<net.minecraft.world.entity.Entity> filter
+    ) {
+        var candidates = new java.util.ArrayList<net.minecraft.world.entity.Entity>();
+        collectEntitiesInBox(box, filter, candidates);
+        return candidates.size();
+    }
+
+    private Optional<? extends Entity> firstEntityInBox(
+            AABB box,
+            Predicate<net.minecraft.world.entity.Entity> filter
+    ) {
+        var candidates = new java.util.ArrayList<net.minecraft.world.entity.Entity>(1);
+        handle.getEntities(
+                ALL_ENTITY_TYPE,
+                box,
+                entity -> !entity.isRemoved() && filter.test(entity),
+                candidates,
+                1);
+        return candidates.isEmpty() ? Optional.empty() : Optional.of(wrapEntity(candidates.getFirst()));
+    }
+
+    private void forEachEntityInBox(
+            AABB box,
+            Predicate<net.minecraft.world.entity.Entity> filter,
+            Consumer<? super Entity> action
+    ) {
+        var candidates = new java.util.ArrayList<net.minecraft.world.entity.Entity>();
+        collectEntitiesInBox(box, filter, candidates);
+        for (var entity : candidates) {
+            action.accept(wrapEntity(entity));
+        }
+    }
+
+    private void collectEntitiesInBox(
+            AABB box,
+            Predicate<net.minecraft.world.entity.Entity> filter,
+            java.util.List<net.minecraft.world.entity.Entity> output
+    ) {
+        handle.getEntities(
+                ALL_ENTITY_TYPE,
+                box,
+                entity -> !entity.isRemoved() && filter.test(entity),
+                output);
     }
 
     private AABB box(Location min, Location max) {
@@ -784,7 +910,9 @@ public final class FandWorld implements World {
         double radiusSquared = checkedRadius * checkedRadius;
         double nearestDistanceSquared = Double.MAX_VALUE;
         net.minecraft.world.entity.Entity nearest = null;
-        for (var entity : handle.getEntities((net.minecraft.world.entity.Entity) null, box, filter)) {
+        var candidates = new java.util.ArrayList<net.minecraft.world.entity.Entity>(32);
+        collectEntitiesInBox(box, filter, candidates);
+        for (var entity : candidates) {
             double distanceSquared = distanceSquared(checkedCenter, entity);
             if (distanceSquared <= radiusSquared && distanceSquared < nearestDistanceSquared) {
                 nearestDistanceSquared = distanceSquared;
@@ -806,24 +934,38 @@ public final class FandWorld implements World {
         if (checkedDistance == 0.0) {
             return Optional.empty();
         }
+        return rayTraceEntityChecked(checkedStart, normalizedDirection, checkedDistance, filter);
+    }
+
+    private Optional<EntityRayTraceResult> rayTraceEntityChecked(
+            Location checkedStart,
+            Vec3 normalizedDirection,
+            double checkedDistance,
+            Predicate<net.minecraft.world.entity.Entity> filter
+    ) {
         var from = toVec3(checkedStart);
         var to = from.add(normalizedDirection.scale(checkedDistance));
-        var searchBox = new AABB(from, to).inflate(1.0);
         double nearestDistanceSquared = checkedDistance * checkedDistance;
         net.minecraft.world.entity.Entity nearest = null;
-        Vec3 nearestHit = null;
-        for (var entity : handle.getEntities(
-                (net.minecraft.world.entity.Entity) null,
-                searchBox,
-                entity -> !entity.isRemoved() && filter.test(entity))) {
-            var hit = entity.getBoundingBox().inflate(Math.max(0.0F, entity.getPickRadius())).clip(from, to);
-            if (hit.isPresent()) {
-                double distanceSquared = from.distanceToSqr(hit.get());
-                if (distanceSquared <= nearestDistanceSquared) {
-                    nearestDistanceSquared = distanceSquared;
+        RayHit nearestHit = null;
+        var candidates = new java.util.ArrayList<net.minecraft.world.entity.Entity>(32);
+        for (double segmentStart = 0.0; segmentStart < checkedDistance; segmentStart += ENTITY_RAY_SEGMENT_BLOCKS) {
+            double segmentEnd = Math.min(checkedDistance, segmentStart + ENTITY_RAY_SEGMENT_BLOCKS);
+            var segmentFrom = from.add(normalizedDirection.scale(segmentStart));
+            var segmentTo = from.add(normalizedDirection.scale(segmentEnd));
+            var searchBox = new AABB(segmentFrom, segmentTo).inflate(1.0);
+            candidates.clear();
+            collectRaySegmentCandidates(searchBox, filter, candidates);
+            for (var entity : candidates) {
+                var hit = traceEntity(entity, from, to, nearestDistanceSquared);
+                if (hit != null && hit.distanceSquared() <= nearestDistanceSquared) {
+                    nearestDistanceSquared = hit.distanceSquared();
                     nearest = entity;
-                    nearestHit = hit.get();
+                    nearestHit = hit;
                 }
+            }
+            if (nearestHit != null && nearestDistanceSquared <= segmentEnd * segmentEnd) {
+                break;
             }
         }
         if (nearest == null || nearestHit == null) {
@@ -831,8 +973,139 @@ public final class FandWorld implements World {
         }
         return Optional.of(new EntityRayTraceResult(
                 wrapEntity(nearest),
-                toLocation(nearestHit),
+                at(nearestHit.x(), nearestHit.y(), nearestHit.z()),
                 Math.sqrt(nearestDistanceSquared)));
+    }
+
+    private CompletableFuture<Optional<EntityRayTraceResult>> rayTraceEntityAsync(
+            Location start,
+            Vector3 direction,
+            double maxDistance,
+            Predicate<net.minecraft.world.entity.Entity> filter
+    ) {
+        var checkedStart = requireThisWorld(start);
+        var normalizedDirection = requireDirection(direction);
+        var checkedDistance = requireNonNegativeFinite(maxDistance, "maxDistance");
+        if (checkedDistance == 0.0) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        return runOnServerThreadFuture(() -> rayTraceEntityChecked(checkedStart, normalizedDirection, checkedDistance, filter));
+    }
+
+    private void collectRaySegmentCandidates(
+            AABB searchBox,
+            Predicate<net.minecraft.world.entity.Entity> filter,
+            java.util.List<net.minecraft.world.entity.Entity> output
+    ) {
+        collectEntitiesInBox(searchBox, filter, output);
+    }
+
+    private static @Nullable RayHit traceEntity(
+            net.minecraft.world.entity.Entity entity,
+            Vec3 from,
+            Vec3 to,
+            double maxDistanceSquared
+    ) {
+        var box = entity.getBoundingBox();
+        double inflate = Math.max(0.0F, entity.getPickRadius());
+        return traceBox(
+                box.minX - inflate,
+                box.minY - inflate,
+                box.minZ - inflate,
+                box.maxX + inflate,
+                box.maxY + inflate,
+                box.maxZ + inflate,
+                from,
+                to,
+                maxDistanceSquared);
+    }
+
+    private static @Nullable RayHit traceBox(
+            double minX,
+            double minY,
+            double minZ,
+            double maxX,
+            double maxY,
+            double maxZ,
+            Vec3 from,
+            Vec3 to,
+            double maxDistanceSquared
+    ) {
+        double dx = to.x - from.x;
+        double dy = to.y - from.y;
+        double dz = to.z - from.z;
+        double tMin = 0.0;
+        double tMax = 1.0;
+
+        if (Math.abs(dx) < 1.0E-12) {
+            if (from.x < minX || from.x > maxX) {
+                return null;
+            }
+        } else {
+            double inv = 1.0 / dx;
+            double near = (minX - from.x) * inv;
+            double far = (maxX - from.x) * inv;
+            if (near > far) {
+                double swap = near;
+                near = far;
+                far = swap;
+            }
+            tMin = Math.max(tMin, near);
+            tMax = Math.min(tMax, far);
+            if (tMin > tMax) {
+                return null;
+            }
+        }
+
+        if (Math.abs(dy) < 1.0E-12) {
+            if (from.y < minY || from.y > maxY) {
+                return null;
+            }
+        } else {
+            double inv = 1.0 / dy;
+            double near = (minY - from.y) * inv;
+            double far = (maxY - from.y) * inv;
+            if (near > far) {
+                double swap = near;
+                near = far;
+                far = swap;
+            }
+            tMin = Math.max(tMin, near);
+            tMax = Math.min(tMax, far);
+            if (tMin > tMax) {
+                return null;
+            }
+        }
+
+        if (Math.abs(dz) < 1.0E-12) {
+            if (from.z < minZ || from.z > maxZ) {
+                return null;
+            }
+        } else {
+            double inv = 1.0 / dz;
+            double near = (minZ - from.z) * inv;
+            double far = (maxZ - from.z) * inv;
+            if (near > far) {
+                double swap = near;
+                near = far;
+                far = swap;
+            }
+            tMin = Math.max(tMin, near);
+            tMax = Math.min(tMax, far);
+            if (tMin > tMax) {
+                return null;
+            }
+        }
+
+        double distanceSquared = (dx * dx + dy * dy + dz * dz) * tMin * tMin;
+        if (distanceSquared > maxDistanceSquared) {
+            return null;
+        }
+        return new RayHit(
+                from.x + dx * tMin,
+                from.y + dy * tMin,
+                from.z + dz * tMin,
+                distanceSquared);
     }
 
     private Vec3 requireDirection(Vector3 direction) {
@@ -873,6 +1146,9 @@ public final class FandWorld implements World {
 
     private Location toLocation(Vec3 position) {
         return at(position.x, position.y, position.z);
+    }
+
+    private record RayHit(double x, double y, double z, double distanceSquared) {
     }
 
     private ClipContext.Block blockMode(RayTraceBlockMode mode) {
