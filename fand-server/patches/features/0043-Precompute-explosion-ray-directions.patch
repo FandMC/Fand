@@ -1,0 +1,113 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Tue, 9 Jun 2026 22:59:54 +0800
+Subject: [PATCH] Precompute explosion ray directions
+
+
+diff --git a/net/minecraft/world/level/ServerExplosion.java b/net/minecraft/world/level/ServerExplosion.java
+index 70310b5c1aef7e9d28bc35e94bed28cc5c2a8a12..b8c8b1ce7e068aa01c70369096c5b9f6bed583c4 100644
+--- a/net/minecraft/world/level/ServerExplosion.java
++++ b/net/minecraft/world/level/ServerExplosion.java
+@@ -40,6 +40,7 @@ public class ServerExplosion implements Explosion {
+     private static final ExplosionDamageCalculator EXPLOSION_DAMAGE_CALCULATOR = new ExplosionDamageCalculator();
+     private static final int MAX_DROPS_PER_COMBINED_STACK = 16;
+     private static final float LARGE_EXPLOSION_RADIUS = 2.0F;
++    private static final RayDirection[] RAYS = createRays();
+     private final boolean fire;
+     private final Explosion.BlockInteraction blockInteraction;
+     private final ServerLevel level;
+@@ -122,6 +123,40 @@ public class ServerExplosion implements Explosion {
+         Set<BlockPos> toBlowSet = new HashSet<>();
+         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+ 
++        for (RayDirection ray : RAYS) {
++            float remainingPower = this.radius * (0.7F + this.level.random.nextFloat() * 0.6F);
++            double xp = this.center.x;
++            double yp = this.center.y;
++            double zp = this.center.z;
++
++            for (float stepSize = 0.3F; remainingPower > 0.0F; remainingPower -= 0.22500001F) {
++                pos.set(xp, yp, zp);
++                BlockState block = this.level.getBlockState(pos);
++                FluidState fluid = this.level.getFluidState(pos);
++                if (!this.level.isInWorldBounds(pos)) {
++                    break;
++                }
++
++                Optional<Float> resistance = this.damageCalculator.getBlockExplosionResistance(this, this.level, pos, block, fluid);
++                if (resistance.isPresent()) {
++                    remainingPower -= (resistance.get() + 0.3F) * 0.3F;
++                }
++
++                if (remainingPower > 0.0F && this.damageCalculator.shouldBlockExplode(this, this.level, pos, block, remainingPower)) {
++                    toBlowSet.add(pos.immutable());
++                }
++
++                xp += ray.x * 0.3F;
++                yp += ray.y * 0.3F;
++                zp += ray.z * 0.3F;
++            }
++        }
++
++        return new ObjectArrayList<>(toBlowSet);
++    }
++
++    private static RayDirection[] createRays() {
++        List<RayDirection> rays = new ArrayList<>(1352);
+         for (int xx = 0; xx < 16; xx++) {
+             for (int yy = 0; yy < 16; yy++) {
+                 for (int zz = 0; zz < 16; zz++) {
+@@ -130,41 +165,12 @@ public class ServerExplosion implements Explosion {
+                         double yd = yy / 15.0F * 2.0F - 1.0F;
+                         double zd = zz / 15.0F * 2.0F - 1.0F;
+                         double d = Math.sqrt(xd * xd + yd * yd + zd * zd);
+-                        xd /= d;
+-                        yd /= d;
+-                        zd /= d;
+-                        float remainingPower = this.radius * (0.7F + this.level.random.nextFloat() * 0.6F);
+-                        double xp = this.center.x;
+-                        double yp = this.center.y;
+-                        double zp = this.center.z;
+-
+-                        for (float stepSize = 0.3F; remainingPower > 0.0F; remainingPower -= 0.22500001F) {
+-                            pos.set(xp, yp, zp);
+-                            BlockState block = this.level.getBlockState(pos);
+-                            FluidState fluid = this.level.getFluidState(pos);
+-                            if (!this.level.isInWorldBounds(pos)) {
+-                                break;
+-                            }
+-
+-                            Optional<Float> resistance = this.damageCalculator.getBlockExplosionResistance(this, this.level, pos, block, fluid);
+-                            if (resistance.isPresent()) {
+-                                remainingPower -= (resistance.get() + 0.3F) * 0.3F;
+-                            }
+-
+-                            if (remainingPower > 0.0F && this.damageCalculator.shouldBlockExplode(this, this.level, pos, block, remainingPower)) {
+-                                toBlowSet.add(pos.immutable());
+-                            }
+-
+-                            xp += xd * 0.3F;
+-                            yp += yd * 0.3F;
+-                            zp += zd * 0.3F;
+-                        }
++                        rays.add(new RayDirection(xd / d, yd / d, zd / d));
+                     }
+                 }
+             }
+         }
+-
+-        return new ObjectArrayList<>(toBlowSet);
++        return rays.toArray(RayDirection[]::new);
+     }
+ 
+     private void hurtEntities() {
+@@ -271,6 +277,9 @@ public class ServerExplosion implements Explosion {
+         return this.hitPlayers;
+     }
+ 
++    private record RayDirection(double x, double y, double z) {
++    }
++
+     @Override
+     public ServerLevel level() {
+         return this.level;
