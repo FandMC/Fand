@@ -6,6 +6,7 @@ import io.fand.api.entity.Player;
 import io.fand.api.event.EventBus;
 import io.fand.api.lifecycle.LifecyclePhase;
 import io.fand.api.performance.ServerPerformance;
+import io.fand.api.packet.PacketRegistry;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
@@ -55,6 +56,9 @@ public interface Server extends ForwardingAudience {
 
     /** Global recipe registry. Registration and removal marshal to the server thread. */
     RecipeRegistry recipes();
+
+    /** Global packet registry. Prefer {@link io.fand.api.plugin.PluginContext#packets()} for plugin-owned registrations. */
+    PacketRegistry packets();
 
     /** Main-thread and async task scheduler. */
     Scheduler scheduler();

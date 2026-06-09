@@ -20,5 +20,8 @@ public final class FandDataGenerator {
         for (var spec : VanillaKeyEnumSpec.all()) {
             writer.write(spec, spec.entries(registrySources));
         }
+
+        var packetCatalog = new VanillaPacketSources(minecraftSources).packetCatalog();
+        new PacketMetadataWriter(Path.of(args[1])).write(packetCatalog);
     }
 }

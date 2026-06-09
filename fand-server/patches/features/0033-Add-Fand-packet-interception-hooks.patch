@@ -1,0 +1,156 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Tue, 9 Jun 2026 08:34:56 +0800
+Subject: [PATCH] Add Fand packet interception hooks
+
+
+diff --git a/net/minecraft/network/Connection.java b/net/minecraft/network/Connection.java
+index b1453c77156973db924ea4c0df396351abed86f5..5a55672fc0bba5c5a175fafbe4f4543fce9370e4 100644
+--- a/net/minecraft/network/Connection.java
++++ b/net/minecraft/network/Connection.java
+@@ -31,10 +31,10 @@ import java.util.concurrent.RejectedExecutionException;
+ import java.util.function.Consumer;
+ import javax.crypto.Cipher;
+ import net.minecraft.SharedConstants;
++import net.minecraft.network.protocol.PacketFlow;
+ import net.minecraft.network.chat.Component;
+ import net.minecraft.network.protocol.BundlerInfo;
+ import net.minecraft.network.protocol.Packet;
+-import net.minecraft.network.protocol.PacketFlow;
+ import net.minecraft.network.protocol.common.ClientboundDisconnectPacket;
+ import net.minecraft.network.protocol.handshake.ClientIntent;
+ import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
+@@ -81,6 +81,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     private boolean handlingFault;
+     private volatile @Nullable DisconnectionDetails delayedDisconnect;
+     private @Nullable BandwidthDebugMonitor bandwidthDebugMonitor;
++    private volatile ConnectionProtocol currentOutboundProtocol = INITIAL_PROTOCOL.id();
+ 
+     public Connection(final PacketFlow receiving) {
+         this.receiving = receiving;
+@@ -152,7 +153,14 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+             } else {
+                 if (packetListener.shouldHandleMessage(packet)) {
+                     try {
+-                        genericsFtw(packet, packetListener);
++                        if (this.shouldInterceptInboundDirectly(packetListener)) {
++                            Packet<?> intercepted = io.fand.server.hooks.FandHooks.interceptInboundPacket(packetListener, packet, this.address);
++                            if (intercepted != null) {
++                                genericsFtw(intercepted, packetListener);
++                            }
++                        } else {
++                            genericsFtw(packet, packetListener);
++                        }
+                     } catch (RunningOnDifferentThreadException var5) {
+                     } catch (RejectedExecutionException var6) {
+                         this.disconnect(Component.translatable("multiplayer.disconnect.server_shutdown"));
+@@ -171,6 +179,12 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         packet.handle((T)listener);
+     }
+ 
++    private boolean shouldInterceptInboundDirectly(final PacketListener listener) {
++        return listener.protocol() == ConnectionProtocol.HANDSHAKING
++            || listener.protocol() == ConnectionProtocol.STATUS
++            || listener.protocol() == ConnectionProtocol.LOGIN;
++    }
++
+     private void validateListener(final ProtocolInfo<?> protocol, final PacketListener packetListener) {
+         Objects.requireNonNull(packetListener, "packetListener");
+         PacketFlow listenerFlow = packetListener.flow();
+@@ -218,6 +232,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         if (protocol.flow() != this.getSending()) {
+             throw new IllegalStateException("Invalid outbound protocol: " + protocol.id());
+         } else {
++            this.currentOutboundProtocol = protocol.id();
+             UnconfiguredPipelineHandler.OutboundConfigurationTask configMessage = UnconfiguredPipelineHandler.setupOutboundProtocol(protocol);
+             BundlerInfo bundlerInfo = protocol.bundlerInfo();
+             if (bundlerInfo != null) {
+@@ -298,11 +313,17 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     }
+ 
+     private void sendPacket(final Packet<?> packet, final @Nullable ChannelFutureListener listener, final boolean flush) {
++        Packet<?> intercepted = io.fand.server.hooks.FandHooks.interceptOutboundPacket(
++            this.currentOutboundProtocol, this.getSending(), this.packetListener, packet, this.address
++        );
++        if (intercepted == null) {
++            return;
++        }
+         this.sentPackets++;
+         if (this.channel.eventLoop().inEventLoop()) {
+-            this.doSendPacket(packet, listener, flush);
++            this.doSendPacket(intercepted, listener, flush);
+         } else {
+-            this.channel.eventLoop().execute(() -> this.doSendPacket(packet, listener, flush));
++            this.channel.eventLoop().execute(() -> this.doSendPacket(intercepted, listener, flush));
+         }
+     }
+ 
+diff --git a/net/minecraft/network/PacketProcessor.java b/net/minecraft/network/PacketProcessor.java
+index 82bd316d094e2c1a43938313fab2283035610ef3..237f6f95c8aa6f036f60dd1257c3faa8afdeca4f 100644
+--- a/net/minecraft/network/PacketProcessor.java
++++ b/net/minecraft/network/PacketProcessor.java
+@@ -48,7 +48,10 @@ public class PacketProcessor implements AutoCloseable {
+         public void handle() {
+             if (this.listener.shouldHandleMessage(this.packet)) {
+                 try {
+-                    this.packet.handle(this.listener);
++                    Packet<?> intercepted = io.fand.server.hooks.FandHooks.interceptInboundPacket(this.listener, this.packet, null);
++                    if (intercepted != null) {
++                        handlePacket(this.listener, intercepted);
++                    }
+                 } catch (Exception var3) {
+                     if (var3 instanceof ReportedException re && re.getCause() instanceof OutOfMemoryError) {
+                         throw PacketUtils.makeReportedException(var3, this.packet, this.listener);
+@@ -60,5 +63,9 @@ public class PacketProcessor implements AutoCloseable {
+                 PacketProcessor.LOGGER.debug("Ignoring packet due to disconnection: {}", this.packet);
+             }
+         }
++
++        private static <T extends PacketListener> void handlePacket(final T listener, final Packet<?> packet) {
++            ((Packet<T>)packet).handle(listener);
++        }
+     }
+ }
+diff --git a/net/minecraft/network/protocol/common/custom/DiscardedPayload.java b/net/minecraft/network/protocol/common/custom/DiscardedPayload.java
+index 5f8cc073b9b85167b16bb6e88eae4679cc1f4c0d..b17c1bd1909dfe5fa070f0a17f653d368437a527 100644
+--- a/net/minecraft/network/protocol/common/custom/DiscardedPayload.java
++++ b/net/minecraft/network/protocol/common/custom/DiscardedPayload.java
+@@ -4,19 +4,34 @@ import net.minecraft.network.FriendlyByteBuf;
+ import net.minecraft.network.codec.StreamCodec;
+ import net.minecraft.resources.Identifier;
+ 
+-public record DiscardedPayload(Identifier id) implements CustomPacketPayload {
++public record DiscardedPayload(Identifier id, byte[] payload) implements CustomPacketPayload {
++    public DiscardedPayload {
++        payload = payload.clone();
++    }
++
+     public static <T extends FriendlyByteBuf> StreamCodec<T, DiscardedPayload> codec(final Identifier id, final int maxPayloadSize) {
+-        return CustomPacketPayload.codec((payload, buf) -> {}, buf -> {
++        return CustomPacketPayload.codec((payload, buf) -> {
++            if (payload.payload.length > maxPayloadSize) {
++                throw new IllegalArgumentException("Payload may not be larger than " + maxPayloadSize + " bytes");
++            }
++            buf.writeBytes(payload.payload);
++        }, buf -> {
+             int length = buf.readableBytes();
+             if (length >= 0 && length <= maxPayloadSize) {
+-                buf.skipBytes(length);
+-                return new DiscardedPayload(id);
++                byte[] payload = new byte[length];
++                buf.readBytes(payload);
++                return new DiscardedPayload(id, payload);
+             } else {
+                 throw new IllegalArgumentException("Payload may not be larger than " + maxPayloadSize + " bytes");
+             }
+         });
+     }
+ 
++    @Override
++    public byte[] payload() {
++        return payload.clone();
++    }
++
+     @Override
+     public CustomPacketPayload.Type<DiscardedPayload> type() {
+         return new CustomPacketPayload.Type<>(this.id);

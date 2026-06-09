@@ -24,6 +24,32 @@ final class MinecraftSourceSet {
         return Files.readString(root.resolve(relativePath), StandardCharsets.UTF_8);
     }
 
+    String read(Path file) throws IOException {
+        return Files.readString(file, StandardCharsets.UTF_8);
+    }
+
+    Path resolve(String relativePath) {
+        return root.resolve(relativePath);
+    }
+
+    List<Path> files(String relativeRoot, String fileNameSuffix) throws IOException {
+        var base = root.resolve(relativeRoot);
+        if (!Files.isDirectory(base)) {
+            return List.of();
+        }
+        try (var stream = Files.walk(base)) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith(fileNameSuffix))
+                    .sorted()
+                    .toList();
+        }
+    }
+
+    String relativePath(Path file) {
+        return root.relativize(file).toString().replace('\\', '/');
+    }
+
     List<StaticField> staticFields(String relativePath) throws IOException {
         var source = read(relativePath);
         var fields = new ArrayList<StaticField>();

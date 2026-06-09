@@ -2,6 +2,7 @@ package io.fand.server.plugin;
 
 import io.fand.api.command.CommandRegistration;
 import io.fand.api.event.EventSubscription;
+import io.fand.api.packet.PacketRegistration;
 import io.fand.api.recipe.RecipeRegistration;
 import io.fand.api.scheduler.Task;
 import java.util.ArrayList;
@@ -15,6 +16,7 @@ final class PluginResourceTracker {
     private final Set<TrackedSubscription> subscriptions = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCommandRegistration> commandRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedRecipeRegistration> recipeRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedPacketRegistration> packetRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedTask> tasks = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private boolean closed;
 
@@ -82,6 +84,22 @@ final class PluginResourceTracker {
         return tracked;
     }
 
+    TrackedPacketRegistration track(PacketRegistration delegate) {
+        var tracked = new TrackedPacketRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                packetRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.unregisterFromTracker();
+        }
+        return tracked;
+    }
+
     void release(TrackedSubscription subscription) {
         synchronized (lock) {
             subscriptions.remove(subscription);
@@ -106,10 +124,17 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedPacketRegistration registration) {
+        synchronized (lock) {
+            packetRegistrations.remove(registration);
+        }
+    }
+
     void close() {
         List<TrackedSubscription> subscriptionsToClose;
         List<TrackedCommandRegistration> commandRegistrationsToClose;
         List<TrackedRecipeRegistration> recipeRegistrationsToClose;
+        List<TrackedPacketRegistration> packetRegistrationsToClose;
         List<TrackedTask> tasksToClose;
         synchronized (lock) {
             if (closed) {
@@ -119,10 +144,12 @@ final class PluginResourceTracker {
             subscriptionsToClose = new ArrayList<>(subscriptions);
             commandRegistrationsToClose = new ArrayList<>(commandRegistrations);
             recipeRegistrationsToClose = new ArrayList<>(recipeRegistrations);
+            packetRegistrationsToClose = new ArrayList<>(packetRegistrations);
             tasksToClose = new ArrayList<>(tasks);
             subscriptions.clear();
             commandRegistrations.clear();
             recipeRegistrations.clear();
+            packetRegistrations.clear();
             tasks.clear();
         }
         for (var subscription : subscriptionsToClose) {
@@ -132,6 +159,9 @@ final class PluginResourceTracker {
             registration.unregisterFromTracker();
         }
         for (var registration : recipeRegistrationsToClose) {
+            registration.unregisterFromTracker();
+        }
+        for (var registration : packetRegistrationsToClose) {
             registration.unregisterFromTracker();
         }
         for (var task : tasksToClose) {
@@ -261,6 +291,42 @@ final class PluginResourceTracker {
         @Override
         public net.kyori.adventure.key.Key key() {
             return delegate.key();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void unregister() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.unregister();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void unregisterFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.unregister();
+            }
+        }
+    }
+
+    static final class TrackedPacketRegistration implements PacketRegistration {
+
+        private final PluginResourceTracker owner;
+        private final PacketRegistration delegate;
+        private volatile boolean released;
+
+        TrackedPacketRegistration(PluginResourceTracker owner, PacketRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
         }
 
         @Override
