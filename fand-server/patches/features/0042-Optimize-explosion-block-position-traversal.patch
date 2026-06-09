@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Tue, 9 Jun 2026 22:45:14 +0800
+Subject: [PATCH] Optimize explosion block position traversal
+
+
+diff --git a/net/minecraft/world/level/ServerExplosion.java b/net/minecraft/world/level/ServerExplosion.java
+index 1c06196938e16e29e37bbd9e5763e48cad4d16bb..70310b5c1aef7e9d28bc35e94bed28cc5c2a8a12 100644
+--- a/net/minecraft/world/level/ServerExplosion.java
++++ b/net/minecraft/world/level/ServerExplosion.java
+@@ -120,7 +120,7 @@ public class ServerExplosion implements Explosion {
+ 
+     private List<BlockPos> calculateExplodedPositions() {
+         Set<BlockPos> toBlowSet = new HashSet<>();
+-        int size = 16;
++        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+ 
+         for (int xx = 0; xx < 16; xx++) {
+             for (int yy = 0; yy < 16; yy++) {
+@@ -139,7 +139,7 @@ public class ServerExplosion implements Explosion {
+                         double zp = this.center.z;
+ 
+                         for (float stepSize = 0.3F; remainingPower > 0.0F; remainingPower -= 0.22500001F) {
+-                            BlockPos pos = BlockPos.containing(xp, yp, zp);
++                            pos.set(xp, yp, zp);
+                             BlockState block = this.level.getBlockState(pos);
+                             FluidState fluid = this.level.getFluidState(pos);
+                             if (!this.level.isInWorldBounds(pos)) {
+@@ -152,7 +152,7 @@ public class ServerExplosion implements Explosion {
+                             }
+ 
+                             if (remainingPower > 0.0F && this.damageCalculator.shouldBlockExplode(this, this.level, pos, block, remainingPower)) {
+-                                toBlowSet.add(pos);
++                                toBlowSet.add(pos.immutable());
+                             }
+ 
+                             xp += xd * 0.3F;
