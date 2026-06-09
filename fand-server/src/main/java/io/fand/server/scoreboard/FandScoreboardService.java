@@ -13,7 +13,10 @@ import java.util.Optional;
 import java.util.function.Supplier;
 import net.kyori.adventure.text.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.scores.Objective;
 import net.minecraft.world.scores.ScoreHolder;
+import net.minecraft.world.scores.Scoreboard;
+import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.criteria.ObjectiveCriteria;
 
 public final class FandScoreboardService implements ScoreboardService {
@@ -65,13 +68,13 @@ public final class FandScoreboardService implements ScoreboardService {
         Objects.requireNonNull(displayName, "displayName");
         Objects.requireNonNull(criteria, "criteria");
         Objects.requireNonNull(renderType, "renderType");
-        ScoreboardThreading.run(server(), () -> {
+        var objective = ScoreboardThreading.call(server(), () -> {
             if (handle().getObjective(normalized) != null) {
                 throw new IllegalStateException("Scoreboard objective already exists: " + normalized);
             }
             var vanillaCriteria = ObjectiveCriteria.byName(criteria)
                     .orElseThrow(() -> new IllegalArgumentException("Unknown scoreboard criteria: " + criteria));
-            handle().addObjective(
+            return handle().addObjective(
                     normalized,
                     vanillaCriteria,
                     AdventureBridge.toVanilla(displayName, server().registryAccess()),
@@ -79,7 +82,7 @@ public final class FandScoreboardService implements ScoreboardService {
                     false,
                     null);
         });
-        return new FandScoreboardRegistration(normalized, () -> removeObjective(normalized));
+        return new FandScoreboardRegistration(normalized, () -> removeObjective(normalized, objective));
     }
 
     @Override
@@ -139,13 +142,13 @@ public final class FandScoreboardService implements ScoreboardService {
     @Override
     public ScoreboardRegistration registerTeam(String name) {
         var normalized = ScoreboardNames.normalizeTeam(name);
-        ScoreboardThreading.run(server(), () -> {
+        var team = ScoreboardThreading.call(server(), () -> {
             if (handle().getPlayerTeam(normalized) != null) {
                 throw new IllegalStateException("Scoreboard team already exists: " + normalized);
             }
-            handle().addPlayerTeam(normalized);
+            return handle().addPlayerTeam(normalized);
         });
-        return new FandScoreboardRegistration(normalized, () -> removeTeam(normalized));
+        return new FandScoreboardRegistration(normalized, () -> removeTeam(normalized, team));
     }
 
     @Override
@@ -184,5 +187,33 @@ public final class FandScoreboardService implements ScoreboardService {
 
     static ScoreHolder holder(String owner) {
         return ScoreHolder.forNameOnly(ownerName(owner));
+    }
+
+    private boolean removeObjective(String name, Objective expected) {
+        var normalized = ScoreboardNames.normalizeObjective(name);
+        return ScoreboardThreading.call(server(), () -> removeObjectiveIfCurrent(handle(), normalized, expected));
+    }
+
+    static boolean removeObjectiveIfCurrent(Scoreboard scoreboard, String name, Objective expected) {
+        var objective = scoreboard.getObjective(name);
+        if (objective != expected) {
+            return false;
+        }
+        scoreboard.removeObjective(objective);
+        return true;
+    }
+
+    private boolean removeTeam(String name, PlayerTeam expected) {
+        var normalized = ScoreboardNames.normalizeTeam(name);
+        return ScoreboardThreading.call(server(), () -> removeTeamIfCurrent(handle(), normalized, expected));
+    }
+
+    static boolean removeTeamIfCurrent(Scoreboard scoreboard, String name, PlayerTeam expected) {
+        var team = scoreboard.getPlayerTeam(name);
+        if (team != expected) {
+            return false;
+        }
+        scoreboard.removePlayerTeam(team);
+        return true;
     }
 }
