@@ -7,9 +7,8 @@ import net.kyori.adventure.key.Key;
 /**
  * Mutable persistent component access for a live server object.
  *
- * <p>Implementations are backed by live world/server storage. Reads and writes
- * must be performed on the server thread unless the owning API method documents
- * a stricter rule.
+ * <p>Implementations are backed by live world/server storage. Server
+ * implementations resolve reads and writes on the server thread.
  */
 public interface DataComponentContainer {
 

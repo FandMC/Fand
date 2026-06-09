@@ -1,5 +1,7 @@
 package io.fand.server.benchmark;
 
+import com.github.benmanes.caffeine.cache.Caffeine;
+import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
 import io.fand.server.event.EventDispatcher;
 import io.fand.server.performance.ServerPerformanceTracker;
@@ -8,9 +10,12 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 public final class FandBenchmarkRunner {
 
@@ -26,12 +31,16 @@ public final class FandBenchmarkRunner {
                 benchmark("events.fire.noListeners", 250_000, FandBenchmarkRunner::eventNoListeners),
                 benchmark("events.fire.oneListener", 200_000, FandBenchmarkRunner::eventOneListener),
                 benchmark("events.fire.tenListeners", 100_000, FandBenchmarkRunner::eventTenListeners),
+                benchmark("events.fire.cancelled", 150_000, FandBenchmarkRunner::eventCancelled),
                 benchmark("events.hasListeners.cached", 500_000, FandBenchmarkRunner::hasListenersCached),
                 benchmark("performance.snapshot.cached", 500_000, FandBenchmarkRunner::performanceSnapshotCached),
                 benchmark("performance.recordTick", 200_000, FandBenchmarkRunner::performanceRecordTick),
                 benchmark("performance.recordAndSnapshot", 500, FandBenchmarkRunner::performanceRecordAndSnapshot),
                 benchmark("scheduler.tick.empty", 500_000, FandBenchmarkRunner::schedulerTickEmpty),
-                benchmark("scheduler.tick.readyTasks", 20_000, FandBenchmarkRunner::schedulerTickReadyTasks)
+                benchmark("scheduler.tick.readyTasks", 20_000, FandBenchmarkRunner::schedulerTickReadyTasks),
+                benchmark("wrapper.cache.hit", 500_000, FandBenchmarkRunner::wrapperCacheHit),
+                benchmark("world.entitiesInBox.scan256", 20_000, FandBenchmarkRunner::entitiesInBoxScan),
+                benchmark("world.rayTraceEntity.scan256", 10_000, FandBenchmarkRunner::rayTraceEntityScan)
         );
 
         System.out.println("Fand benchmark runner");
@@ -90,6 +99,18 @@ public final class FandBenchmarkRunner {
         return task(() -> bus.fire(event));
     }
 
+    private static BenchTask eventCancelled() {
+        var bus = new EventDispatcher();
+        bus.subscribe(CancellableBenchmarkEvent.class, event -> event.setCancelled(true));
+        return task(() -> {
+            var event = new CancellableBenchmarkEvent();
+            bus.fire(event);
+            if (!event.cancelled()) {
+                throw new AssertionError("expected cancelled event");
+            }
+        });
+    }
+
     private static BenchTask hasListenersCached() {
         var bus = new EventDispatcher();
         bus.subscribe(BenchmarkEvent.class, event -> {});
@@ -144,6 +165,71 @@ public final class FandBenchmarkRunner {
         }, scheduler::close);
     }
 
+    private static BenchTask wrapperCacheHit() {
+        var cache = Caffeine.newBuilder()
+                .expireAfterAccess(java.time.Duration.ofMinutes(5))
+                .maximumSize(8192)
+                .build();
+        var id = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        var wrapper = new Object();
+        cache.put(id, wrapper);
+        return task(() -> {
+            if (cache.getIfPresent(id) != wrapper) {
+                throw new AssertionError("expected cache hit");
+            }
+        });
+    }
+
+    private static BenchTask entitiesInBoxScan() {
+        var entities = syntheticEntities();
+        var box = new AABB(12.0, 60.0, 12.0, 34.0, 76.0, 34.0);
+        return task(() -> {
+            int count = 0;
+            for (var entity : entities) {
+                if (entity.intersects(box)) {
+                    count++;
+                }
+            }
+            if (count != 36) {
+                throw new AssertionError("expected 36 intersections, got " + count);
+            }
+        });
+    }
+
+    private static BenchTask rayTraceEntityScan() {
+        var entities = syntheticEntities();
+        var from = new Vec3(0.0, 65.0, 0.0);
+        var to = new Vec3(64.0, 65.0, 64.0);
+        return task(() -> {
+            double nearestDistanceSquared = Double.MAX_VALUE;
+            BenchEntity nearest = null;
+            for (var entity : entities) {
+                var hit = entity.box().inflate(0.1).clip(from, to);
+                if (hit.isPresent()) {
+                    double distanceSquared = from.distanceToSqr(hit.get());
+                    if (distanceSquared < nearestDistanceSquared) {
+                        nearestDistanceSquared = distanceSquared;
+                        nearest = entity;
+                    }
+                }
+            }
+            if (nearest == null || nearest.index() != 0) {
+                throw new AssertionError("expected first entity hit");
+            }
+        });
+    }
+
+    private static List<BenchEntity> syntheticEntities() {
+        var entities = new ArrayList<BenchEntity>(256);
+        for (int i = 0; i < 256; i++) {
+            double x = (i % 16) * 4.0 + 0.5;
+            double y = 64.0 + (i % 5);
+            double z = (i / 16) * 4.0 + 0.5;
+            entities.add(new BenchEntity(i, new AABB(x - 0.3, y, z - 0.3, x + 0.3, y + 1.8, z + 0.3)));
+        }
+        return List.copyOf(entities);
+    }
+
     private static BenchTask task(Runnable run) {
         return task(run, () -> {});
     }
@@ -157,6 +243,26 @@ public final class FandBenchmarkRunner {
     }
 
     private record BenchmarkEvent() implements Event {
+    }
+
+    private static final class CancellableBenchmarkEvent implements Event, Cancellable {
+        private boolean cancelled;
+
+        @Override
+        public boolean cancelled() {
+            return cancelled;
+        }
+
+        @Override
+        public void setCancelled(boolean cancelled) {
+            this.cancelled = cancelled;
+        }
+    }
+
+    private record BenchEntity(int index, AABB box) {
+        boolean intersects(AABB other) {
+            return box.intersects(other);
+        }
     }
 
     @FunctionalInterface

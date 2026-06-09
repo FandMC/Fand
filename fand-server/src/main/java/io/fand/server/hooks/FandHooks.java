@@ -4,6 +4,7 @@ import io.fand.api.event.Event;
 import io.fand.api.event.EventBus;
 import io.fand.api.entity.Entity;
 import io.fand.api.entity.LivingEntity;
+import io.fand.api.entity.Player;
 import io.fand.api.performance.ServerPerformance;
 import io.fand.server.chunk.ChunkSendScheduler;
 import io.fand.server.chunk.ChunkTrackingSnapshot;
@@ -18,9 +19,15 @@ import io.fand.server.network.ProxyForwardingMode;
 import io.fand.server.network.VelocityForwardingQueryAnswerPayload;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.WorldRegistry;
+import java.net.SocketAddress;
 import java.util.Optional;
 import java.util.UUID;
+import net.minecraft.network.ConnectionProtocol;
+import net.minecraft.network.PacketListener;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.network.ServerPlayerConnection;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -139,5 +146,40 @@ public final class FandHooks {
 
     public static ForwardedPlayerInfo parseVelocityModernForwarding(VelocityForwardingQueryAnswerPayload payload) {
         return ProxyForwarding.parseVelocityModern(Main.runtime().proxyForwarding().secret(), payload);
+    }
+
+    public static @Nullable Packet<?> interceptInboundPacket(
+            PacketListener listener,
+            Packet<?> packet,
+            @Nullable SocketAddress remoteAddress
+    ) {
+        try {
+            return Main.runtime().packetRegistry().interceptInbound(listener, player(listener), remoteAddress, packet);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Fand inbound packet hook failed for {}", packet.type(), failure);
+            return packet;
+        }
+    }
+
+    public static @Nullable Packet<?> interceptOutboundPacket(
+            ConnectionProtocol protocol,
+            PacketFlow flow,
+            @Nullable PacketListener listener,
+            Packet<?> packet,
+            @Nullable SocketAddress remoteAddress
+    ) {
+        try {
+            return Main.runtime().packetRegistry().interceptOutbound(protocol, flow, player(listener), remoteAddress, packet);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Fand outbound packet hook failed for {}", packet.type(), failure);
+            return packet;
+        }
+    }
+
+    private static Optional<? extends Player> player(@Nullable PacketListener listener) {
+        if (listener instanceof ServerPlayerConnection connection) {
+            return Optional.ofNullable(findPlayer(connection.getPlayer().getUUID()));
+        }
+        return Optional.empty();
     }
 }

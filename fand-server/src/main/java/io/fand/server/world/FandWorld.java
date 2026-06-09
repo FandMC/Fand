@@ -6,9 +6,17 @@ import io.fand.api.entity.ItemEntity;
 import io.fand.api.entity.EntitySpawnOptions;
 import io.fand.api.entity.EntityType;
 import io.fand.api.entity.Player;
+import io.fand.api.event.block.BlockFace;
 import io.fand.api.item.ItemStack;
+import io.fand.api.world.BlockRayTraceResult;
+import io.fand.api.world.ChunkSnapshot;
 import io.fand.api.world.Difficulty;
+import io.fand.api.world.EntityRayTraceResult;
+import io.fand.api.world.HeightmapType;
 import io.fand.api.world.Location;
+import io.fand.api.world.RayTraceBlockMode;
+import io.fand.api.world.RayTraceFluidMode;
+import io.fand.api.world.Vector3;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldBorder;
 import io.fand.api.world.particle.ParticleEffect;
@@ -24,10 +32,26 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.key.Key;
+import net.minecraft.core.Direction;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.clock.WorldClocks;
 import net.minecraft.world.level.storage.ServerLevelData;
 import org.jspecify.annotations.Nullable;
@@ -73,7 +97,7 @@ public final class FandWorld implements World {
 
     @Override
     public long gameTime() {
-        return handle.getGameTime();
+        return callOnServerThread(handle::getGameTime);
     }
 
     @Override
@@ -87,9 +111,11 @@ public final class FandWorld implements World {
 
     @Override
     public long time() {
-        var clock = handle.dimensionType().defaultClock()
-                .orElseGet(() -> handle.registryAccess().getOrThrow(WorldClocks.OVERWORLD));
-        return handle.getServer().clockManager().getTotalTicks(clock);
+        return callOnServerThread(() -> {
+            var clock = handle.dimensionType().defaultClock()
+                    .orElseGet(() -> handle.registryAccess().getOrThrow(WorldClocks.OVERWORLD));
+            return handle.getServer().clockManager().getTotalTicks(clock);
+        });
     }
 
     @Override
@@ -103,7 +129,7 @@ public final class FandWorld implements World {
 
     @Override
     public Difficulty difficulty() {
-        return Difficulties.toApi(handle.getDifficulty());
+        return callOnServerThread(() -> Difficulties.toApi(handle.getDifficulty()));
     }
 
     @Override
@@ -114,7 +140,7 @@ public final class FandWorld implements World {
 
     @Override
     public boolean storm() {
-        return handle.isRaining();
+        return callOnServerThread(handle::isRaining);
     }
 
     @Override
@@ -127,7 +153,7 @@ public final class FandWorld implements World {
 
     @Override
     public boolean thundering() {
-        return handle.isThundering();
+        return callOnServerThread(handle::isThundering);
     }
 
     @Override
@@ -145,6 +171,65 @@ public final class FandWorld implements World {
     }
 
     @Override
+    public Key biomeAt(int x, int y, int z) {
+        return callOnServerThread(() -> {
+            var biome = handle.getBiome(new BlockPos(x, y, z));
+            var id = biome.unwrapKey()
+                    .map(key -> key.identifier())
+                    .orElseGet(() -> Identifier.withDefaultNamespace("plains"));
+            return Key.key(id.getNamespace(), id.getPath());
+        });
+    }
+
+    @Override
+    public int highestBlockYAt(int x, int z, HeightmapType type) {
+        Objects.requireNonNull(type, "type");
+        return callOnServerThread(() -> handle.getHeight(heightmap(type), x, z));
+    }
+
+    @Override
+    public Location spawnLocation() {
+        return callOnServerThread(() -> {
+            var respawn = handle.getServer().getRespawnData();
+            var level = handle.getServer().getLevel(respawn.dimension());
+            var world = level == null ? this : wrapWorld(level);
+            var pos = respawn.pos();
+            return world.at(pos.getX(), pos.getY(), pos.getZ(), respawn.yaw(), respawn.pitch());
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> setSpawnLocation(Location location) {
+        var checkedLocation = requireFiniteLocation(location);
+        return runOnServerThreadFuture(() -> {
+            if (!(checkedLocation.world() instanceof FandWorld fandWorld)) {
+                throw new IllegalArgumentException("Spawn location world must be a Fand world");
+            }
+            var pos = BlockPos.containing(checkedLocation.x(), checkedLocation.y(), checkedLocation.z());
+            handle.getServer().setRespawnData(LevelData.RespawnData.of(
+                    fandWorld.handle().dimension(),
+                    pos,
+                    checkedLocation.yaw(),
+                    checkedLocation.pitch()));
+        });
+    }
+
+    @Override
+    public Optional<String> gameRule(String name) {
+        Objects.requireNonNull(name, "name");
+        return callOnServerThread(() -> gameRuleByName(name).map(rule -> handle.getGameRules().getAsString(rule)));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> setGameRule(String name, String value) {
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(value, "value");
+        return runOnServerThreadFuture(() -> gameRuleByName(name)
+                .map(rule -> setGameRuleValue(rule, value))
+                .orElse(false));
+    }
+
+    @Override
     public CompletableFuture<Boolean> save() {
         var future = new CompletableFuture<Boolean>();
         runOnServerThread(() -> {
@@ -159,15 +244,12 @@ public final class FandWorld implements World {
 
     @Override
     public Collection<? extends Player> players() {
-        if (players == null) {
-            return List.of();
-        }
-        return players.snapshot(handle);
+        return callOnServerThread(() -> players == null ? List.of() : players.snapshot(handle));
     }
 
     @Override
     public Collection<? extends Entity> entities() {
-        return streamEntities(handle.getAllEntities());
+        return callOnServerThread(() -> streamEntities(handle.getAllEntities()));
     }
 
     @Override
@@ -176,21 +258,19 @@ public final class FandWorld implements World {
         if (!(type instanceof FandEntityType fandType)) {
             return List.of();
         }
-        return streamEntities(handle.getAllEntities(), entity -> entity.getType() == fandType.handle());
+        return callOnServerThread(() -> streamEntities(handle.getAllEntities(), entity -> entity.getType() == fandType.handle()));
     }
 
     @Override
     public Optional<? extends Entity> entity(java.util.UUID uniqueId) {
         Objects.requireNonNull(uniqueId, "uniqueId");
-        return Optional.ofNullable(handle.getEntity(uniqueId)).map(this::wrapEntity);
+        return callOnServerThread(() -> Optional.ofNullable(handle.getEntity(uniqueId)).map(this::wrapEntity));
     }
 
     @Override
     public Collection<? extends Entity> nearbyEntities(Location center, double radius) {
         var checkedCenter = requireThisWorld(center);
-        if (radius < 0.0) {
-            throw new IllegalArgumentException("radius must be >= 0, got " + radius);
-        }
+        requireNonNegativeFinite(radius, "radius");
         var box = new AABB(
                 checkedCenter.x() - radius,
                 checkedCenter.y() - radius,
@@ -199,7 +279,7 @@ public final class FandWorld implements World {
                 checkedCenter.y() + radius,
                 checkedCenter.z() + radius
         );
-        return streamEntities(handle.getEntities((net.minecraft.world.entity.Entity) null, box, entity -> true));
+        return callOnServerThread(() -> streamEntities(handle.getEntities((net.minecraft.world.entity.Entity) null, box, entity -> true)));
     }
 
     @Override
@@ -209,9 +289,7 @@ public final class FandWorld implements World {
         if (!(type instanceof FandEntityType fandType)) {
             return List.of();
         }
-        if (radius < 0.0) {
-            throw new IllegalArgumentException("radius must be >= 0, got " + radius);
-        }
+        requireNonNegativeFinite(radius, "radius");
         var box = new AABB(
                 checkedCenter.x() - radius,
                 checkedCenter.y() - radius,
@@ -220,10 +298,101 @@ public final class FandWorld implements World {
                 checkedCenter.y() + radius,
                 checkedCenter.z() + radius
         );
-        return streamEntities(handle.getEntities(
+        return callOnServerThread(() -> streamEntities(handle.getEntities(
                 (net.minecraft.world.entity.Entity) null,
                 box,
-                entity -> entity.getType() == fandType.handle()));
+                entity -> entity.getType() == fandType.handle())));
+    }
+
+    @Override
+    public Collection<? extends Entity> entitiesInBox(Location min, Location max) {
+        return callOnServerThread(() -> streamEntities(handle.getEntities(
+                (net.minecraft.world.entity.Entity) null,
+                box(min, max),
+                entity -> true)));
+    }
+
+    @Override
+    public Collection<? extends Entity> entitiesInBox(Location min, Location max, EntityType type) {
+        Objects.requireNonNull(type, "type");
+        if (!(type instanceof FandEntityType fandType)) {
+            return List.of();
+        }
+        return callOnServerThread(() -> streamEntities(handle.getEntities(
+                (net.minecraft.world.entity.Entity) null,
+                box(min, max),
+                entity -> entity.getType() == fandType.handle())));
+    }
+
+    @Override
+    public Optional<? extends Entity> nearestEntity(Location center, double radius) {
+        return nearestEntity(center, radius, entity -> true);
+    }
+
+    @Override
+    public Optional<? extends Entity> nearestEntity(Location center, double radius, EntityType type) {
+        Objects.requireNonNull(type, "type");
+        if (!(type instanceof FandEntityType fandType)) {
+            return Optional.empty();
+        }
+        return nearestEntity(center, radius, entity -> entity.getType() == fandType.handle());
+    }
+
+    @Override
+    public Optional<BlockRayTraceResult> rayTraceBlock(
+            Location start,
+            Vector3 direction,
+            double maxDistance,
+            RayTraceBlockMode blockMode,
+            RayTraceFluidMode fluidMode
+    ) {
+        var checkedStart = requireThisWorld(start);
+        var normalizedDirection = requireDirection(direction);
+        var checkedDistance = requireNonNegativeFinite(maxDistance, "maxDistance");
+        Objects.requireNonNull(blockMode, "blockMode");
+        Objects.requireNonNull(fluidMode, "fluidMode");
+        if (checkedDistance == 0.0) {
+            return Optional.empty();
+        }
+        var from = toVec3(checkedStart);
+        var to = from.add(normalizedDirection.scale(checkedDistance));
+        return callOnServerThread(() -> {
+            var result = handle.clip(new ClipContext(
+                    from,
+                    to,
+                    blockMode(blockMode),
+                    fluidMode(fluidMode),
+                    CollisionContext.empty()));
+            if (result.getType() != HitResult.Type.BLOCK) {
+                return Optional.empty();
+            }
+            var hitLocation = toLocation(result.getLocation());
+            var blockPos = result.getBlockPos();
+            return Optional.of(new BlockRayTraceResult(
+                    blockAt(blockPos.getX(), blockPos.getY(), blockPos.getZ()),
+                    hitLocation,
+                    face(result.getDirection()),
+                    result.isInside()));
+        });
+    }
+
+    @Override
+    public Optional<EntityRayTraceResult> rayTraceEntity(Location start, Vector3 direction, double maxDistance) {
+        return rayTraceEntity(start, direction, maxDistance, entity -> true);
+    }
+
+    @Override
+    public Optional<EntityRayTraceResult> rayTraceEntity(
+            Location start,
+            Vector3 direction,
+            double maxDistance,
+            EntityType type
+    ) {
+        Objects.requireNonNull(type, "type");
+        if (!(type instanceof FandEntityType fandType)) {
+            return Optional.empty();
+        }
+        return rayTraceEntity(start, direction, maxDistance, entity -> entity.getType() == fandType.handle());
     }
 
     @Override
@@ -338,6 +507,108 @@ public final class FandWorld implements World {
     }
 
     @Override
+    public CompletableFuture<Optional<? extends Entity>> strikeLightning(Location location, boolean visualOnly) {
+        var checkedLocation = requireThisWorld(location);
+        return this.<Optional<? extends Entity>>runOnServerThreadFuture(() -> {
+            var bolt = net.minecraft.world.entity.EntityType.LIGHTNING_BOLT.create(handle, EntitySpawnReason.EVENT);
+            if (bolt == null) {
+                return Optional.empty();
+            }
+            bolt.snapTo(toVec3(checkedLocation));
+            bolt.setVisualOnly(visualOnly);
+            if (!handle.addFreshEntity(bolt)) {
+                return Optional.empty();
+            }
+            return Optional.of(wrapEntity(bolt));
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> createExplosion(Location location, float power, boolean fire, boolean breakBlocks) {
+        var checkedLocation = requireThisWorld(location);
+        if (!Float.isFinite(power) || power < 0.0F) {
+            throw new IllegalArgumentException("power must be finite and >= 0");
+        }
+        return runOnServerThreadFuture(() -> handle.explode(
+                null,
+                checkedLocation.x(),
+                checkedLocation.y(),
+                checkedLocation.z(),
+                power,
+                fire,
+                breakBlocks ? Level.ExplosionInteraction.BLOCK : Level.ExplosionInteraction.NONE));
+    }
+
+    @Override
+    public boolean chunkLoaded(int chunkX, int chunkZ) {
+        return callOnServerThread(() -> handle.getChunkSource().hasChunk(chunkX, chunkZ));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> loadChunk(int chunkX, int chunkZ) {
+        return runOnServerThreadFuture(() -> {
+            var chunk = handle.getChunk(chunkX, chunkZ, ChunkStatus.FULL, true);
+            return chunk != null;
+        });
+    }
+
+    @Override
+    public CompletableFuture<Boolean> unloadChunk(int chunkX, int chunkZ) {
+        return runOnServerThreadFuture(() -> {
+            boolean updated = handle.setChunkForced(chunkX, chunkZ, false);
+            handle.getChunkSource().tick(() -> true, false);
+            return updated;
+        });
+    }
+
+    @Override
+    public boolean chunkForceLoaded(int chunkX, int chunkZ) {
+        return callOnServerThread(() -> handle.getForceLoadedChunks().contains(ChunkPos.pack(chunkX, chunkZ)));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> setChunkForceLoaded(int chunkX, int chunkZ, boolean forceLoaded) {
+        return runOnServerThreadFuture(() -> handle.setChunkForced(chunkX, chunkZ, forceLoaded));
+    }
+
+    @Override
+    public int loadedEntityCount() {
+        return callOnServerThread(() -> {
+            int count = 0;
+            for (var ignored : handle.getAllEntities()) {
+                count++;
+            }
+            return count;
+        });
+    }
+
+    @Override
+    public int entityCount(int chunkX, int chunkZ) {
+        if (!chunkLoaded(chunkX, chunkZ)) {
+            return 0;
+        }
+        return callOnServerThread(() -> handle.getEntities((net.minecraft.world.entity.Entity) null, chunkBox(chunkX, chunkZ), entity -> true).size());
+    }
+
+    @Override
+    public Collection<? extends Entity> entitiesInChunk(int chunkX, int chunkZ) {
+        if (!chunkLoaded(chunkX, chunkZ)) {
+            return List.of();
+        }
+        return callOnServerThread(() -> streamEntities(handle.getEntities((net.minecraft.world.entity.Entity) null, chunkBox(chunkX, chunkZ), entity -> true)));
+    }
+
+    @Override
+    public ChunkSnapshot chunkSnapshot(int chunkX, int chunkZ) {
+        return callOnServerThread(() -> {
+            boolean loaded = handle.getChunkSource().hasChunk(chunkX, chunkZ);
+            boolean forceLoaded = handle.getForceLoadedChunks().contains(ChunkPos.pack(chunkX, chunkZ));
+            int entities = loaded ? handle.getEntities((net.minecraft.world.entity.Entity) null, chunkBox(chunkX, chunkZ), entity -> true).size() : 0;
+            return new ChunkSnapshot(this, chunkX, chunkZ, loaded, forceLoaded, entities);
+        });
+    }
+
+    @Override
     public Block blockAt(int x, int y, int z) {
         return new FandBlock(this, x, y, z);
     }
@@ -363,6 +634,13 @@ public final class FandWorld implements World {
             throw new IllegalArgumentException("Location world " + location.world().key().asString()
                     + " does not match " + key.asString());
         }
+        requireFinite(location, "location");
+        return location;
+    }
+
+    private Location requireFiniteLocation(Location location) {
+        Objects.requireNonNull(location, "location");
+        requireFinite(location, "location");
         return location;
     }
 
@@ -376,8 +654,17 @@ public final class FandWorld implements World {
     }
 
     private CompletableFuture<Void> runOnServerThreadFuture(Runnable task) {
-        var future = new CompletableFuture<Void>();
-        runOnServerThread(() -> {
+        var server = handle.getServer();
+        if (server == null || server.isSameThread()) {
+            try {
+                task.run();
+                return CompletableFuture.completedFuture(null);
+            } catch (Throwable failure) {
+                return CompletableFuture.failedFuture(failure);
+            }
+        }
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        server.executeIfPossible(() -> {
             try {
                 task.run();
                 future.complete(null);
@@ -386,6 +673,42 @@ public final class FandWorld implements World {
             }
         });
         return future;
+    }
+
+    private <T> CompletableFuture<T> runOnServerThreadFuture(Supplier<T> task) {
+        var server = handle.getServer();
+        if (server == null || server.isSameThread()) {
+            try {
+                return CompletableFuture.completedFuture(task.get());
+            } catch (Throwable failure) {
+                return CompletableFuture.failedFuture(failure);
+            }
+        }
+        CompletableFuture<T> future = new CompletableFuture<>();
+        server.executeIfPossible(() -> {
+            try {
+                future.complete(task.get());
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        });
+        return future;
+    }
+
+    private <T> T callOnServerThread(Supplier<T> task) {
+        var server = handle.getServer();
+        if (server == null || server.isSameThread()) {
+            return task.get();
+        }
+        CompletableFuture<T> future = new CompletableFuture<>();
+        server.executeIfPossible(() -> {
+            try {
+                future.complete(task.get());
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        });
+        return future.join();
     }
 
     private Entity wrapEntity(net.minecraft.world.entity.Entity entity) {
@@ -397,6 +720,16 @@ public final class FandWorld implements World {
                 players != null ? players : new PlayerRegistry(new io.fand.server.permission.PermissionManager())
         );
         return fallbackRegistry.entityRegistry().wrap(entity);
+    }
+
+    private FandWorld wrapWorld(ServerLevel level) {
+        if (level == handle) {
+            return this;
+        }
+        if (worldRegistry != null) {
+            return worldRegistry.wrap(level);
+        }
+        return new FandWorld(level, players);
     }
 
     private Collection<? extends Entity> streamEntities(Iterable<net.minecraft.world.entity.Entity> entities) {
@@ -414,5 +747,191 @@ public final class FandWorld implements World {
             }
         }
         return List.copyOf(snapshot);
+    }
+
+    private AABB box(Location min, Location max) {
+        var checkedMin = requireThisWorld(min);
+        var checkedMax = requireThisWorld(max);
+        return new AABB(
+                Math.min(checkedMin.x(), checkedMax.x()),
+                Math.min(checkedMin.y(), checkedMax.y()),
+                Math.min(checkedMin.z(), checkedMax.z()),
+                Math.max(checkedMin.x(), checkedMax.x()),
+                Math.max(checkedMin.y(), checkedMax.y()),
+                Math.max(checkedMin.z(), checkedMax.z()));
+    }
+
+    private AABB chunkBox(int chunkX, int chunkZ) {
+        int minX = chunkX << 4;
+        int minZ = chunkZ << 4;
+        return new AABB(minX, handle.getMinY(), minZ, minX + 16, handle.getMaxY() + 1.0, minZ + 16);
+    }
+
+    private Optional<? extends Entity> nearestEntity(
+            Location center,
+            double radius,
+            Predicate<net.minecraft.world.entity.Entity> filter
+    ) {
+        var checkedCenter = requireThisWorld(center);
+        var checkedRadius = requireNonNegativeFinite(radius, "radius");
+        var box = new AABB(
+                checkedCenter.x() - checkedRadius,
+                checkedCenter.y() - checkedRadius,
+                checkedCenter.z() - checkedRadius,
+                checkedCenter.x() + checkedRadius,
+                checkedCenter.y() + checkedRadius,
+                checkedCenter.z() + checkedRadius);
+        double radiusSquared = checkedRadius * checkedRadius;
+        double nearestDistanceSquared = Double.MAX_VALUE;
+        net.minecraft.world.entity.Entity nearest = null;
+        for (var entity : handle.getEntities((net.minecraft.world.entity.Entity) null, box, filter)) {
+            double distanceSquared = distanceSquared(checkedCenter, entity);
+            if (distanceSquared <= radiusSquared && distanceSquared < nearestDistanceSquared) {
+                nearestDistanceSquared = distanceSquared;
+                nearest = entity;
+            }
+        }
+        return Optional.ofNullable(nearest).map(this::wrapEntity);
+    }
+
+    private Optional<EntityRayTraceResult> rayTraceEntity(
+            Location start,
+            Vector3 direction,
+            double maxDistance,
+            Predicate<net.minecraft.world.entity.Entity> filter
+    ) {
+        var checkedStart = requireThisWorld(start);
+        var normalizedDirection = requireDirection(direction);
+        var checkedDistance = requireNonNegativeFinite(maxDistance, "maxDistance");
+        if (checkedDistance == 0.0) {
+            return Optional.empty();
+        }
+        var from = toVec3(checkedStart);
+        var to = from.add(normalizedDirection.scale(checkedDistance));
+        var searchBox = new AABB(from, to).inflate(1.0);
+        double nearestDistanceSquared = checkedDistance * checkedDistance;
+        net.minecraft.world.entity.Entity nearest = null;
+        Vec3 nearestHit = null;
+        for (var entity : handle.getEntities(
+                (net.minecraft.world.entity.Entity) null,
+                searchBox,
+                entity -> !entity.isRemoved() && filter.test(entity))) {
+            var hit = entity.getBoundingBox().inflate(Math.max(0.0F, entity.getPickRadius())).clip(from, to);
+            if (hit.isPresent()) {
+                double distanceSquared = from.distanceToSqr(hit.get());
+                if (distanceSquared <= nearestDistanceSquared) {
+                    nearestDistanceSquared = distanceSquared;
+                    nearest = entity;
+                    nearestHit = hit.get();
+                }
+            }
+        }
+        if (nearest == null || nearestHit == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new EntityRayTraceResult(
+                wrapEntity(nearest),
+                toLocation(nearestHit),
+                Math.sqrt(nearestDistanceSquared)));
+    }
+
+    private Vec3 requireDirection(Vector3 direction) {
+        Objects.requireNonNull(direction, "direction");
+        if (!Double.isFinite(direction.x()) || !Double.isFinite(direction.y()) || !Double.isFinite(direction.z())) {
+            throw new IllegalArgumentException("direction must be finite");
+        }
+        double length = direction.length();
+        if (!Double.isFinite(length) || length == 0.0) {
+            throw new IllegalArgumentException("direction must be non-zero");
+        }
+        return new Vec3(direction.x() / length, direction.y() / length, direction.z() / length);
+    }
+
+    private double requireNonNegativeFinite(double value, String name) {
+        if (!Double.isFinite(value) || value < 0.0) {
+            throw new IllegalArgumentException(name + " must be finite and >= 0");
+        }
+        return value;
+    }
+
+    private void requireFinite(Location location, String name) {
+        if (!Double.isFinite(location.x()) || !Double.isFinite(location.y()) || !Double.isFinite(location.z())) {
+            throw new IllegalArgumentException(name + " coordinates must be finite");
+        }
+    }
+
+    private double distanceSquared(Location center, net.minecraft.world.entity.Entity entity) {
+        double dx = center.x() - entity.getX();
+        double dy = center.y() - entity.getY();
+        double dz = center.z() - entity.getZ();
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    private Vec3 toVec3(Location location) {
+        return new Vec3(location.x(), location.y(), location.z());
+    }
+
+    private Location toLocation(Vec3 position) {
+        return at(position.x, position.y, position.z);
+    }
+
+    private ClipContext.Block blockMode(RayTraceBlockMode mode) {
+        return switch (mode) {
+            case COLLIDER -> ClipContext.Block.COLLIDER;
+            case OUTLINE -> ClipContext.Block.OUTLINE;
+            case VISUAL -> ClipContext.Block.VISUAL;
+        };
+    }
+
+    private ClipContext.Fluid fluidMode(RayTraceFluidMode mode) {
+        return switch (mode) {
+            case NONE -> ClipContext.Fluid.NONE;
+            case SOURCE_ONLY -> ClipContext.Fluid.SOURCE_ONLY;
+            case ANY -> ClipContext.Fluid.ANY;
+            case WATER -> ClipContext.Fluid.WATER;
+        };
+    }
+
+    private Heightmap.Types heightmap(HeightmapType type) {
+        return switch (type) {
+            case WORLD_SURFACE_WG -> Heightmap.Types.WORLD_SURFACE_WG;
+            case WORLD_SURFACE -> Heightmap.Types.WORLD_SURFACE;
+            case OCEAN_FLOOR_WG -> Heightmap.Types.OCEAN_FLOOR_WG;
+            case OCEAN_FLOOR -> Heightmap.Types.OCEAN_FLOOR;
+            case MOTION_BLOCKING -> Heightmap.Types.MOTION_BLOCKING;
+            case MOTION_BLOCKING_NO_LEAVES -> Heightmap.Types.MOTION_BLOCKING_NO_LEAVES;
+        };
+    }
+
+    private Optional<net.minecraft.world.level.gamerules.GameRule<?>> gameRuleByName(String name) {
+        var exact = Identifier.tryParse(name);
+        if (exact != null) {
+            var found = BuiltInRegistries.GAME_RULE.getOptional(exact);
+            if (found.isPresent()) {
+                return found;
+            }
+        }
+        var vanilla = Identifier.withDefaultNamespace(name);
+        return BuiltInRegistries.GAME_RULE.getOptional(vanilla);
+    }
+
+    private <T> boolean setGameRuleValue(net.minecraft.world.level.gamerules.GameRule<T> rule, String value) {
+        var parsed = rule.deserialize(value).result();
+        if (parsed.isEmpty()) {
+            return false;
+        }
+        handle.getGameRules().set(rule, parsed.get(), handle.getServer());
+        return true;
+    }
+
+    private BlockFace face(Direction direction) {
+        return switch (direction) {
+            case DOWN -> BlockFace.DOWN;
+            case UP -> BlockFace.UP;
+            case NORTH -> BlockFace.NORTH;
+            case SOUTH -> BlockFace.SOUTH;
+            case WEST -> BlockFace.WEST;
+            case EAST -> BlockFace.EAST;
+        };
     }
 }

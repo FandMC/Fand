@@ -16,7 +16,7 @@ with this file, this file wins.
 - Default to writing **no comments**. Add one only when the *why* is non-obvious:
   a hidden constraint, a subtle invariant, a workaround for a specific bug, or
   behaviour that would surprise a reader.
-- Don't explain *what* the code does; well-named identifiers do that.
+- Don't explain *what* the code does — well-named identifiers do that.
 - Don't reference the current task, fix, ticket, or callers in comments. Those
   belong in the commit message.
 
@@ -33,12 +33,15 @@ with this file, this file wins.
 
 ## Design principles
 
-- Keep the implementation as small as the current requirement allows. Prefer
-  direct, boring code over abstractions that only serve possible future work.
-- Introduce an abstraction only when it removes real duplication, isolates a
-  volatile boundary, or matches an existing local pattern.
-- Keep public APIs narrow and explicit. Avoid "just in case" methods, flags, or
-  extension points until there is a concrete caller.
+- Design for the current feature, the known roadmap, and the stable shape of the
+  domain. Do not optimize for a single narrow ticket when the next API surface is
+  already clear.
+- Prefer direct, boring code for local behaviour. Introduce an abstraction when
+  it removes real duplication, isolates a volatile boundary, supports a known
+  follow-up, or matches an existing local pattern.
+- Keep public APIs narrow and explicit, but do not paint the project into a
+  corner. Avoid "just in case" methods, flags, or extension points unless the
+  direction is already part of Fand's design.
 - Prefer deterministic, data-driven code for large vanilla surfaces. Hand-written
   code is fine for policy and lifecycle rules; it is not fine for hundreds of
   repeated vanilla mappings.
@@ -110,8 +113,11 @@ with this file, this file wins.
   packets are read-only by default unless they have an explicit dedicated codec.
 - Do not use generic reflection to make unknown class packets replaceable.
   Field order, constructor order, and derived state are not API contracts.
-- Interceptors and custom packet handlers run on the connection I/O thread.
-  They must not block or touch main-thread world state directly.
+- Packet callbacks run at the vanilla handling point for that packet: queued
+  play/config inbound packets run on the packet processor thread, early
+  handshake/status/login packets run on their direct connection path, and
+  outbound packets run before they are handed to the channel write. They must
+  not block, and world mutations must still respect the owning server thread.
 - Custom packet channel direction is a contract: inbound definitions require a
   handler, outbound definitions must not register an inbound handler, and
   bidirectional definitions must satisfy both sides.

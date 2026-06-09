@@ -11,6 +11,7 @@ import io.fand.api.lifecycle.ServerStartedEvent;
 import io.fand.api.lifecycle.ServerStartingEvent;
 import io.fand.api.lifecycle.ServerStoppingEvent;
 import io.fand.api.permission.PermissionService;
+import io.fand.api.packet.PacketRegistry;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
@@ -27,6 +28,7 @@ import io.fand.server.entity.EntityRegistry;
 import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.event.EventDispatcher;
 import io.fand.server.network.ProxyForwardingSettings;
+import io.fand.server.network.packet.PacketRegistryImpl;
 import io.fand.server.permission.PermissionManager;
 import io.fand.server.performance.ServerPerformanceTracker;
 import io.fand.server.plugin.PluginRuntime;
@@ -63,6 +65,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final TaskScheduler scheduler;
     private final ChunkSendScheduler chunks;
     private final FandRecipeRegistry recipes;
+    private final PacketRegistryImpl packets;
     private final PluginRuntime plugins;
     private final PlayerRegistry players;
     private final ServerPerformanceTracker performance;
@@ -96,6 +99,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.scheduler = new TaskScheduler(initialConfig.scheduler.asyncThreads);
         this.chunks = new ChunkSendScheduler(initialConfig.chunks);
         this.recipes = new FandRecipeRegistry();
+        this.packets = new PacketRegistryImpl();
         this.players = new PlayerRegistry(permissions);
         this.performance = new ServerPerformanceTracker();
         var pluginDirectory = Path.of(initialConfig.plugins.directory);
@@ -108,6 +112,7 @@ public final class FandServer implements Server, AutoCloseable {
                 permissions,
                 scheduler,
                 recipes,
+                packets,
                 ConfigReloader.toPluginOptions(initialConfig)
         );
         this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, chunks, guiThemes);
@@ -260,6 +265,15 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public RecipeRegistry recipes() {
         return recipes;
+    }
+
+    @Override
+    public PacketRegistry packets() {
+        return packets;
+    }
+
+    public PacketRegistryImpl packetRegistry() {
+        return packets;
     }
 
     @Override
@@ -487,6 +501,7 @@ public final class FandServer implements Server, AutoCloseable {
         }
         plugins.disablePlugins();
         plugins.close();
+        packets.close();
         chunks.close();
         scheduler.close();
         guiThemes.close();

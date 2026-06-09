@@ -1,0 +1,150 @@
+package io.fand.server.network.packet;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import io.fand.api.packet.CustomPacket;
+import io.fand.api.packet.CustomPacketDefinition;
+import io.fand.api.packet.PacketContext;
+import io.fand.api.packet.PacketDirection;
+import io.fand.api.packet.PacketProtocol;
+import io.fand.api.packet.PacketType;
+import io.fand.api.packet.view.ClientboundBlockChangedAckPacketView;
+import io.netty.buffer.Unpooled;
+import java.net.InetSocketAddress;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
+import net.kyori.adventure.key.Key;
+import net.minecraft.network.ConnectionProtocol;
+import net.minecraft.network.DisconnectionDetails;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.PacketListener;
+import net.minecraft.network.protocol.PacketFlow;
+import net.minecraft.network.protocol.common.ClientboundKeepAlivePacket;
+import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
+import net.minecraft.network.protocol.common.custom.DiscardedPayload;
+import net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket;
+import net.minecraft.resources.Identifier;
+import org.junit.jupiter.api.Test;
+
+final class VanillaPacketBridgeTest {
+
+    @Test
+    void typedReplacementChainRebuildsRecordPacket() {
+        var registry = new PacketRegistryImpl();
+        registry.intercept(
+                PacketType.PLAY_CLIENTBOUND_BLOCK_CHANGED_ACK,
+                ClientboundBlockChangedAckPacketView.class,
+                packet -> packet.replace(packet.view().withSequence(2)));
+        registry.intercept(
+                PacketType.PLAY_CLIENTBOUND_BLOCK_CHANGED_ACK,
+                ClientboundBlockChangedAckPacketView.class,
+                packet -> {
+                    assertThat(packet.view().sequence()).isEqualTo(2);
+                    packet.replace(packet.view().withSequence(3));
+                });
+
+        var intercepted = registry.interceptOutbound(
+                ConnectionProtocol.PLAY,
+                PacketFlow.CLIENTBOUND,
+                Optional.empty(),
+                null,
+                new ClientboundBlockChangedAckPacket(1));
+
+        assertThat(intercepted).isInstanceOf(ClientboundBlockChangedAckPacket.class);
+        assertThat(((ClientboundBlockChangedAckPacket) intercepted).sequence()).isEqualTo(3);
+    }
+
+    @Test
+    void interceptorCanCancelVanillaPacket() {
+        var registry = new PacketRegistryImpl();
+        registry.intercept(PacketType.PLAY_CLIENTBOUND_BLOCK_CHANGED_ACK, packet -> packet.cancel());
+
+        var intercepted = registry.interceptOutbound(
+                ConnectionProtocol.PLAY,
+                PacketFlow.CLIENTBOUND,
+                Optional.empty(),
+                null,
+                new ClientboundBlockChangedAckPacket(1));
+
+        assertThat(intercepted).isNull();
+    }
+
+    @Test
+    void nonRecordPacketReplacementIsIgnored() {
+        var registry = new PacketRegistryImpl();
+        var original = new ClientboundKeepAlivePacket(1L);
+        registry.intercept(PacketType.PLAY_CLIENTBOUND_KEEP_ALIVE, packet -> {
+            assertThat(packet.view().value("id", Long.class)).isEqualTo(1L);
+            packet.replace(packet.view().with("id", 2L));
+        });
+
+        var intercepted = registry.interceptOutbound(
+                ConnectionProtocol.PLAY,
+                PacketFlow.CLIENTBOUND,
+                Optional.empty(),
+                null,
+                original);
+
+        assertThat(intercepted).isSameAs(original);
+        assertThat(((ClientboundKeepAlivePacket) intercepted).getId()).isEqualTo(1L);
+    }
+
+    @Test
+    void registeredCustomChannelReceivesDiscardedPayloadBytes() {
+        var registry = new PacketRegistryImpl();
+        var channel = Key.key("example:channel");
+        var context = new AtomicReference<PacketContext>();
+        var packet = new AtomicReference<CustomPacket>();
+        registry.register(CustomPacketDefinition.play(PacketDirection.SERVERBOUND, channel), (ctx, payload) -> {
+            context.set(ctx);
+            packet.set(payload);
+        });
+
+        var remoteAddress = new InetSocketAddress("127.0.0.1", 25565);
+        var vanillaPacket = new ServerboundCustomPayloadPacket(new DiscardedPayload(
+                Identifier.fromNamespaceAndPath("example", "channel"),
+                new byte[] {1, 2, 3}));
+
+        var intercepted = registry.interceptInbound(
+                new StubPacketListener(ConnectionProtocol.PLAY, PacketFlow.SERVERBOUND),
+                Optional.empty(),
+                remoteAddress,
+                vanillaPacket);
+
+        assertThat(intercepted).isSameAs(vanillaPacket);
+        assertThat(context.get().protocol()).isEqualTo(PacketProtocol.PLAY);
+        assertThat(context.get().direction()).isEqualTo(PacketDirection.SERVERBOUND);
+        assertThat(context.get().remoteAddress()).contains(remoteAddress);
+        assertThat(packet.get().channel()).isEqualTo(channel);
+        assertThat(packet.get().payload()).containsExactly(1, 2, 3);
+    }
+
+    @Test
+    void discardedPayloadCodecPreservesBytes() {
+        var id = Identifier.fromNamespaceAndPath("example", "raw");
+        var codec = DiscardedPayload.<FriendlyByteBuf>codec(id, 16);
+        var buffer = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            codec.encode(buffer, new DiscardedPayload(id, new byte[] {4, 5, 6}));
+
+            var decoded = codec.decode(buffer);
+
+            assertThat(decoded.id()).isEqualTo(id);
+            assertThat(decoded.payload()).containsExactly(4, 5, 6);
+        } finally {
+            buffer.release();
+        }
+    }
+
+    private record StubPacketListener(ConnectionProtocol protocol, PacketFlow flow) implements PacketListener {
+
+        @Override
+        public void onDisconnect(DisconnectionDetails details) {
+        }
+
+        @Override
+        public boolean isAcceptingMessages() {
+            return true;
+        }
+    }
+}

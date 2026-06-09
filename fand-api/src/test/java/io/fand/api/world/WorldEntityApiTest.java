@@ -71,13 +71,56 @@ final class WorldEntityApiTest {
         assertThat(world.lastOptions).isSameAs(options);
     }
 
+    @Test
+    void defaultWorldQueriesUseLoadedEntitySnapshots() {
+        var zombie = new TestEntity(ZOMBIE, 0.0, 64.0, 0.0, 0.6, 1.8);
+        var cow = new TestEntity(COW, 10.0, 64.0, 0.0, 0.9, 1.4);
+        var world = new TestWorld(List.of(zombie, cow));
+
+        assertThat(List.<Entity>copyOf(world.entitiesInBox(world.at(-1, 63, -1), world.at(1, 66, 1))))
+                .containsExactly(zombie);
+        assertThat(List.<Entity>copyOf(world.entitiesInBox(world.at(-1, 63, -1), world.at(1, 66, 1), COW))).isEmpty();
+        assertThat(world.nearestEntity(world.at(9, 64, 0), 5.0).orElseThrow()).isSameAs(cow);
+        assertThat(world.nearestEntity(world.at(9, 64, 0), 5.0, ZOMBIE)).isEmpty();
+        assertThat(world.loadedEntityCount()).isEqualTo(2);
+    }
+
+    @Test
+    void defaultWorldToolsRemainOptInForImplementations() {
+        var world = new TestWorld(List.of());
+
+        assertThat(world.biomeAt(0, 64, 0)).isEqualTo(Key.key("minecraft:plains"));
+        assertThat(world.highestBlockYAt(0, 0)).isZero();
+        assertThat(world.spawnLocation()).isEqualTo(world.at(0, 0, 0));
+        assertThat(world.setSpawnLocation(world.at(0, 64, 0)).isCompletedExceptionally()).isTrue();
+        assertThat(world.gameRule("keepInventory")).isEmpty();
+        assertThat(world.setGameRule("keepInventory", "true").join()).isFalse();
+        assertThat(world.rayTraceBlock(world.at(0, 64, 0), new Vector3(1, 0, 0), 4.0)).isEmpty();
+        assertThat(world.rayTraceEntity(world.at(0, 64, 0), new Vector3(1, 0, 0), 4.0)).isEmpty();
+        assertThat(world.chunkLoaded(0, 0)).isFalse();
+        assertThat(world.chunkForceLoaded(0, 0)).isFalse();
+        assertThat(world.loadChunk(0, 0).join()).isFalse();
+        assertThat(world.unloadChunk(0, 0).join()).isFalse();
+        assertThat(world.setChunkForceLoaded(0, 0, true).join()).isFalse();
+        assertThat(world.entityCount(0, 0)).isZero();
+        assertThat(world.entitiesInChunk(0, 0)).isEmpty();
+        assertThat(world.chunkSnapshot(0, 0))
+                .isEqualTo(new ChunkSnapshot(world, 0, 0, false, false, 0));
+        assertThat(world.strikeLightning(world.at(0, 64, 0)).isCompletedExceptionally()).isTrue();
+        assertThat(world.createExplosion(world.at(0, 64, 0), 2.0F).isCompletedExceptionally()).isTrue();
+    }
+
     private record TestEntityType(Key key, boolean spawnable, boolean player) implements EntityType {
     }
 
     private record TestItemType(Key key, int maxStackSize) implements ItemType {
     }
 
-    private record TestEntity(EntityType type) implements Entity {
+    private record TestEntity(EntityType type, double x, double y, double z, double width, double height) implements Entity {
+
+        private TestEntity(EntityType type) {
+            this(type, 0.0, 64.0, 0.0, 0.6, 1.8);
+        }
 
         @Override
         public UUID uniqueId() {
@@ -96,7 +139,7 @@ final class WorldEntityApiTest {
 
         @Override
         public Location location() {
-            return world().at(0, 64, 0);
+            return world().at(x, y, z);
         }
 
         @Override
@@ -182,12 +225,12 @@ final class WorldEntityApiTest {
 
         @Override
         public double width() {
-            return 0.0;
+            return width;
         }
 
         @Override
         public double height() {
-            return 0.0;
+            return height;
         }
 
         @Override

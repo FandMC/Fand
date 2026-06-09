@@ -4,6 +4,7 @@ import com.google.gson.JsonElement;
 import io.fand.api.component.DataComponentContainer;
 import io.fand.api.component.DataComponentMap;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import net.kyori.adventure.key.Key;
 import net.minecraft.server.MinecraftServer;
@@ -28,41 +29,72 @@ public final class SavedDataComponentContainer implements DataComponentContainer
 
     @Override
     public DataComponentMap snapshot() {
-        requireMainThread();
-        var data = existingData.get();
-        return data == null ? DataComponentMap.EMPTY : data.get(id);
+        return callOnServerThread(() -> {
+            var data = existingData.get();
+            return data == null ? DataComponentMap.EMPTY : data.get(id);
+        });
     }
 
     @Override
     public void set(Key key, JsonElement value) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(value, "value");
-        requireMainThread();
-        writableData.get().put(id, snapshot().with(key, value));
+        runOnServerThread(() -> {
+            var data = writableData.get();
+            data.put(id, data.get(id).with(key, value));
+        });
     }
 
     @Override
     public void remove(Key key) {
         Objects.requireNonNull(key, "key");
-        requireMainThread();
-        var data = existingData.get();
-        if (data != null) {
-            data.put(id, snapshot().without(key));
-        }
+        runOnServerThread(() -> {
+            var data = existingData.get();
+            if (data != null) {
+                data.put(id, data.get(id).without(key));
+            }
+        });
     }
 
     @Override
     public void clear() {
-        requireMainThread();
-        var data = existingData.get();
-        if (data != null) {
-            data.clear(id);
-        }
+        runOnServerThread(() -> {
+            var data = existingData.get();
+            if (data != null) {
+                data.clear(id);
+            }
+        });
     }
 
-    private void requireMainThread() {
-        if (!server.isSameThread()) {
-            throw new IllegalStateException("Persistent components must be accessed on the server thread");
+    private void runOnServerThread(Runnable task) {
+        if (server.isSameThread()) {
+            task.run();
+            return;
         }
+        var future = new CompletableFuture<Void>();
+        server.executeIfPossible(() -> {
+            try {
+                task.run();
+                future.complete(null);
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        });
+        future.join();
+    }
+
+    private <T> T callOnServerThread(Supplier<T> task) {
+        if (server.isSameThread()) {
+            return task.get();
+        }
+        var future = new CompletableFuture<T>();
+        server.executeIfPossible(() -> {
+            try {
+                future.complete(task.get());
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+            }
+        });
+        return future.join();
     }
 }

@@ -517,9 +517,6 @@ public final class FandPlayer implements Player {
         if (server == null) {
             throw new IllegalStateException("Player is not attached to a server: " + handle);
         }
-        if (!server.isSameThread()) {
-            throw new IllegalStateException("Player.components() must be accessed on the server thread");
-        }
         return EntityComponentStorage.container(server, handle.getUUID());
     }
 

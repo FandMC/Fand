@@ -305,9 +305,6 @@ public class FandEntity implements io.fand.api.entity.Entity {
         if (server == null) {
             throw new IllegalStateException("Entity is not attached to a server: " + handle);
         }
-        if (!server.isSameThread()) {
-            throw new IllegalStateException("Entity.components() must be accessed on the server thread");
-        }
         return EntityComponentStorage.container(server, handle.getUUID());
     }
 
