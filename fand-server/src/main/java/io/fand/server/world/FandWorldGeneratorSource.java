@@ -156,8 +156,8 @@ public final class FandWorldGeneratorSource extends ChunkGenerator {
             WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(RandomSupport.generateUniqueSeed()));
             random.setDecorationSeed(worldGenRegion.getSeed(), center.getMinBlockX(), center.getMinBlockZ());
             NaturalSpawner.spawnMobsForChunkGeneration(worldGenRegion, biome, center, random);
-            generator.spawnOriginalMobs(context(ChunkGenerationStage.SPAWN));
         }
+        generator.spawnOriginalMobs(context(ChunkGenerationStage.SPAWN));
     }
 
     @Override
