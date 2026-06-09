@@ -43,7 +43,7 @@ protections:
   block-tnt-placement: true
   cancel-fall-damage: true
   limit-explosion-radius: true
-  limit-explosion-block-damage: true
+  limit-explosion-block-damage: false
 
 limits:
   max-give-amount: 2304

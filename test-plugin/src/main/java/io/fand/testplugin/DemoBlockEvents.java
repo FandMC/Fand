@@ -130,7 +130,7 @@ final class DemoBlockEvents implements Listener {
 
     @Subscribe
     public void onBlockExplode(BlockExplodeEvent event) {
-        if (context.config().getBoolean("protections.limit-explosion-block-damage", true)
+        if (context.config().getBoolean("protections.limit-explosion-block-damage", false)
                 && event.affectedBlocks().size() > 512) {
             event.affectedBlocks().subList(512, event.affectedBlocks().size()).clear();
         }
