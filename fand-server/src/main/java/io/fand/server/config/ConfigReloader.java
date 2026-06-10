@@ -108,6 +108,9 @@ public final class ConfigReloader {
         if (previous.performance.explosionDropHashMerge != reloaded.performance.explosionDropHashMerge) {
             hotApplied.add("performance.explosionDropHashMerge");
         }
+        if (previous.performance.explosionExposureClipCache != reloaded.performance.explosionExposureClipCache) {
+            hotApplied.add("performance.explosionExposureClipCache");
+        }
         io.fand.server.hooks.FandHooks.applyPerformanceConfig(reloaded.performance);
 
         plugins.reconfigure(toPluginOptions(reloaded));

@@ -136,6 +136,19 @@ public final class FandConfig {
                 "This switches to a hash-keyed lookup (O(n)), strictly vanilla-equivalent."
         })
         public boolean explosionDropHashMerge = true;
+
+        @ConfigComment({
+                "Route explosion entity-exposure sight rays through the explosion block",
+                "cache instead of chunk lookups. Each nearby entity costs ~27 line-of-",
+                "sight rays of ~10 block steps; vanilla pays two chunk lookups per step.",
+                "The blast sphere is already cached by the ray pass, blocks cannot",
+                "change mid-explosion, and collision shapes are still resolved per",
+                "entity - results are identical to vanilla."
+        })
+        public boolean explosionExposureClipCache = true;
+
+        @ConfigComment("Cache entity queries during explosions (avoids repeated AABB scans).")
+        public boolean explosionEntityCache = true;
     }
 
     public static final class Console {

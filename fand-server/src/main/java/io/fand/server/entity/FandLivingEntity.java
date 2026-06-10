@@ -57,9 +57,10 @@ public class FandLivingEntity extends FandEntity implements LivingEntity {
 
     @Override
     public void damage(double amount) {
+        var h = handle();
         runOnServerThread(() -> {
-            if (handle().level() instanceof net.minecraft.server.level.ServerLevel level) {
-                handle().hurtServer(level, handle().damageSources().generic(), (float) Math.max(0.0, amount));
+            if (h.level() instanceof net.minecraft.server.level.ServerLevel level) {
+                h.hurtServer(level, h.damageSources().generic(), (float) Math.max(0.0, amount));
             }
         });
     }
@@ -67,15 +68,16 @@ public class FandLivingEntity extends FandEntity implements LivingEntity {
     @Override
     public void damage(double amount, io.fand.api.entity.Entity source) {
         java.util.Objects.requireNonNull(source, "source");
+        var h = handle();
         runOnServerThread(() -> {
-            if (!(handle().level() instanceof net.minecraft.server.level.ServerLevel level)) {
+            if (!(h.level() instanceof net.minecraft.server.level.ServerLevel level)) {
                 return;
             }
             var sourceHandle = EntityHandles.unwrap(source);
             var damageSource = sourceHandle instanceof net.minecraft.world.entity.LivingEntity living
-                    ? handle().damageSources().mobAttack(living)
-                    : handle().damageSources().generic();
-            handle().hurtServer(level, damageSource, (float) Math.max(0.0, amount));
+                    ? h.damageSources().mobAttack(living)
+                    : h.damageSources().generic();
+            h.hurtServer(level, damageSource, (float) Math.max(0.0, amount));
         });
     }
 

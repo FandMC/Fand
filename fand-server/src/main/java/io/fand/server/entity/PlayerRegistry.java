@@ -58,7 +58,7 @@ public final class PlayerRegistry {
         var player = new FandPlayer(handle, permissions, this);
         byId.put(handle.getUUID(), player);
         byName.put(player.name(), player);
-        rebuildSnapshots();
+        addToSnapshots(player);
         return player;
     }
 
@@ -83,7 +83,7 @@ public final class PlayerRegistry {
         if (removed != null) {
             byName.remove(removed.name(), removed);
             removed.clearTransientState();
-            rebuildSnapshots();
+            removeFromSnapshots(removed);
         }
         return Optional.ofNullable(removed);
     }
@@ -143,5 +143,48 @@ public final class PlayerRegistry {
         // broadcasts saw an empty level list).
         snapshotsByLevel = Map.copyOf(grouped);
         snapshot = current;
+    }
+
+    private void addToSnapshots(FandPlayer player) {
+        var level = player.handle().level();
+        var newSnapshot = new ArrayList<>(snapshot.size() + 1);
+        newSnapshot.addAll(snapshot);
+        newSnapshot.add(player);
+        snapshot = List.copyOf(newSnapshot);
+        var currentLevelList = snapshotsByLevel.getOrDefault(level, List.of());
+        var newLevelList = new ArrayList<>(currentLevelList.size() + 1);
+        newLevelList.addAll(currentLevelList);
+        newLevelList.add(player);
+        var newGrouped = new HashMap<>(snapshotsByLevel);
+        newGrouped.put(level, List.copyOf(newLevelList));
+        snapshotsByLevel = Map.copyOf(newGrouped);
+    }
+
+    private void removeFromSnapshots(FandPlayer removed) {
+        var newSnapshot = new ArrayList<FandPlayer>(snapshot.size());
+        for (var player : snapshot) {
+            if (!player.uniqueId().equals(removed.uniqueId())) {
+                newSnapshot.add(player);
+            }
+        }
+        snapshot = List.copyOf(newSnapshot);
+        var level = removed.handle().level();
+        var currentLevelList = snapshotsByLevel.get(level);
+        if (currentLevelList == null) {
+            return;
+        }
+        var newLevelList = new ArrayList<FandPlayer>(currentLevelList.size());
+        for (var player : currentLevelList) {
+            if (!player.uniqueId().equals(removed.uniqueId())) {
+                newLevelList.add(player);
+            }
+        }
+        var newGrouped = new HashMap<>(snapshotsByLevel);
+        if (newLevelList.isEmpty()) {
+            newGrouped.remove(level);
+        } else {
+            newGrouped.put(level, List.copyOf(newLevelList));
+        }
+        snapshotsByLevel = Map.copyOf(newGrouped);
     }
 }

@@ -105,6 +105,8 @@ public final class FandHooks {
     private static volatile boolean explosionBlockCacheEnabled = true;
     private static volatile int tntDetonationBudget = 0;
     private static volatile boolean explosionDropHashMerge = true;
+    private static volatile boolean explosionExposureClipCache = true;
+    private static volatile boolean explosionEntityCache = true;
 
     private FandHooks() {
     }
@@ -115,6 +117,8 @@ public final class FandHooks {
         explosionBlockCacheEnabled = performance.explosionBlockCache;
         tntDetonationBudget = performance.tntDetonationBudget;
         explosionDropHashMerge = performance.explosionDropHashMerge;
+        explosionExposureClipCache = performance.explosionExposureClipCache;
+        explosionEntityCache = performance.explosionEntityCache;
     }
 
     public static boolean explosionDensityCacheEnabled() {
@@ -135,6 +139,14 @@ public final class FandHooks {
 
     public static boolean explosionDropHashMerge() {
         return explosionDropHashMerge;
+    }
+
+    public static boolean explosionExposureClipCacheEnabled() {
+        return explosionExposureClipCache;
+    }
+
+    public static boolean explosionEntityCacheEnabled() {
+        return explosionEntityCache;
     }
 
     public static EventBus events() {

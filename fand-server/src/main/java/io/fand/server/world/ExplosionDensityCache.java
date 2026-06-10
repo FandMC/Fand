@@ -38,7 +38,7 @@ public final class ExplosionDensityCache {
         return seenPercent(center, entity.getBoundingBox(), () -> ServerExplosion.getSeenPercent(center, entity));
     }
 
-    float seenPercent(Vec3 center, AABB box, ExposureFunction compute) {
+    public float seenPercent(Vec3 center, AABB box, ExposureFunction compute) {
         var key = new Key(
                 Mth.floor(center.x),
                 Mth.floor(center.y),
@@ -70,7 +70,7 @@ public final class ExplosionDensityCache {
     }
 
     @FunctionalInterface
-    interface ExposureFunction {
+    public interface ExposureFunction {
         float compute();
     }
 
