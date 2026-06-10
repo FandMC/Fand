@@ -1,0 +1,154 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Wed, 10 Jun 2026 19:47:27 +0800
+Subject: [PATCH] Cache explosion exposure and entity team lookups
+
+Explosions resolve entity exposure through a per-level cache keyed by
+center block and entity bounding box, cleared each level tick, so TNT
+chains stop re-tracing identical ray sets per entity per explosion.
+
+Entity.getTeam() caches its scoreboard lookup against a membership
+version bumped on team mutations, removing the string-keyed map lookup
+from every collision pair in dense entity stacks.
+
+Both paths are gated by fand.yml performance switches.
+
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index dded8f092dcb4df0902395e11d78763009711325..6525ad5eb915e41f12998c40007070f91b6e3ade 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -220,6 +220,11 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     private final StructureCheck structureCheck;
+     private final boolean tickTime;
+     private final LevelDebugSynchronizers debugSynchronizers = new LevelDebugSynchronizers(this);
++    private final io.fand.server.world.ExplosionDensityCache fandExplosionDensityCache = new io.fand.server.world.ExplosionDensityCache();
++
++    public io.fand.server.world.ExplosionDensityCache fand$explosionDensityCache() {
++        return this.fandExplosionDensityCache;
++    }
+ 
+     public ServerLevel(
+         final MinecraftServer server,
+@@ -341,6 +346,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     public void tick(final BooleanSupplier haveTime) {
+         ProfilerFiller profiler = Profiler.get();
+         this.handlingTick = true;
++        this.fandExplosionDensityCache.clear();
+         TickRateManager tickRateManager = this.tickRateManager();
+         boolean runs = tickRateManager.runsNormally();
+         if (runs) {
+diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
+index 63526d42c7f20d6c30b53e4bb5d7b49c04a015b1..34b3a0d79677895b6fefbf635376fb2f1017d2fc 100644
+--- a/net/minecraft/world/entity/Entity.java
++++ b/net/minecraft/world/entity/Entity.java
+@@ -2101,6 +2101,7 @@ public abstract class Entity
+             input.read("UUID", UUIDUtil.CODEC).ifPresent(id -> {
+                 this.uuid = id;
+                 this.stringUUID = this.uuid.toString();
++                this.fandCachedTeamScoreboard = null;
+             });
+             if (!Double.isFinite(this.getX()) || !Double.isFinite(this.getY()) || !Double.isFinite(this.getZ())) {
+                 throw new IllegalStateException("Entity has invalid position");
+@@ -2786,9 +2787,23 @@ public abstract class Entity
+     }
+ 
+     public @Nullable PlayerTeam getTeam() {
+-        return this.level().getScoreboard().getPlayersTeam(this.getScoreboardName());
++        Scoreboard scoreboard = this.level().getScoreboard();
++        if (!io.fand.server.hooks.FandHooks.collisionTeamCacheEnabled()) {
++            return scoreboard.getPlayersTeam(this.getScoreboardName());
++        }
++        int version = scoreboard.fand$teamMembershipVersion();
++        if (this.fandCachedTeamScoreboard != scoreboard || this.fandCachedTeamVersion != version) {
++            this.fandCachedTeam = scoreboard.getPlayersTeam(this.getScoreboardName());
++            this.fandCachedTeamScoreboard = scoreboard;
++            this.fandCachedTeamVersion = version;
++        }
++        return this.fandCachedTeam;
+     }
+ 
++    private @Nullable PlayerTeam fandCachedTeam;
++    private @Nullable Scoreboard fandCachedTeamScoreboard;
++    private int fandCachedTeamVersion;
++
+     public final boolean isAlliedTo(final @Nullable Entity other) {
+         return other != null && (this == other || this.considersEntityAsAlly(other) || other.considersEntityAsAlly(this));
+     }
+@@ -3277,6 +3292,7 @@ public abstract class Entity
+     public void setUUID(final UUID uuid) {
+         this.uuid = uuid;
+         this.stringUUID = this.uuid.toString();
++        this.fandCachedTeamScoreboard = null;
+     }
+ 
+     @Override
+diff --git a/net/minecraft/world/level/ServerExplosion.java b/net/minecraft/world/level/ServerExplosion.java
+index b8c8b1ce7e068aa01c70369096c5b9f6bed583c4..915733d0529a38e0b844bedcb0608c5c6930a1fb 100644
+--- a/net/minecraft/world/level/ServerExplosion.java
++++ b/net/minecraft/world/level/ServerExplosion.java
+@@ -109,6 +109,13 @@ public class ServerExplosion implements Explosion {
+         }
+     }
+ 
++    private float fandSeenPercent(final Entity entity) {
++        if (io.fand.server.hooks.FandHooks.explosionDensityCacheEnabled()) {
++            return this.level.fand$explosionDensityCache().seenPercent(this.center, entity);
++        }
++        return getSeenPercent(this.center, entity);
++    }
++
+     @Override
+     public float radius() {
+         return this.radius;
+@@ -191,7 +198,7 @@ public class ServerExplosion implements Explosion {
+                         Vec3 direction = entityOrigin.subtract(this.center).normalize();
+                         boolean shouldDamageEntity = this.damageCalculator.shouldDamageEntity(this, entity);
+                         float knockbackMultiplier = this.damageCalculator.getKnockbackMultiplier(entity);
+-                        float exposure = !shouldDamageEntity && knockbackMultiplier == 0.0F ? 0.0F : getSeenPercent(this.center, entity);
++                        float exposure = !shouldDamageEntity && knockbackMultiplier == 0.0F ? 0.0F : this.fandSeenPercent(entity);
+                         if (shouldDamageEntity) {
+                             entity.hurtServer(this.level, this.damageSource, this.damageCalculator.getEntityDamageAmount(this, entity, exposure));
+                         }
+diff --git a/net/minecraft/world/scores/Scoreboard.java b/net/minecraft/world/scores/Scoreboard.java
+index ce9563148885c8c1994e21d0f2a9b983acade800..79dfb2b8bc53a2301fdda55110f56af504b4e7ce 100644
+--- a/net/minecraft/world/scores/Scoreboard.java
++++ b/net/minecraft/world/scores/Scoreboard.java
+@@ -36,6 +36,14 @@ public class Scoreboard {
+     private final Map<DisplaySlot, Objective> displayObjectives = new EnumMap<>(DisplaySlot.class);
+     private final Object2ObjectMap<String, PlayerTeam> teamsByName = new Object2ObjectOpenHashMap<>();
+     private final Object2ObjectMap<String, PlayerTeam> teamsByPlayer = new Object2ObjectOpenHashMap<>();
++    // Bumped on every team membership mutation; entities cache their getTeam()
++    // result against this version so hot paths (collision pushing) skip the
++    // per-call string-keyed map lookup.
++    private int fandTeamMembershipVersion;
++
++    public int fand$teamMembershipVersion() {
++        return this.fandTeamMembershipVersion;
++    }
+ 
+     public @Nullable Objective getObjective(final @Nullable String name) {
+         return this.objectivesByName.get(name);
+@@ -270,6 +278,7 @@ public class Scoreboard {
+             this.teamsByPlayer.remove(player);
+         }
+ 
++        this.fandTeamMembershipVersion++;
+         this.onTeamRemoved(team);
+     }
+ 
+@@ -279,6 +288,7 @@ public class Scoreboard {
+         }
+ 
+         this.teamsByPlayer.put(player, team);
++        this.fandTeamMembershipVersion++;
+         return team.getPlayers().add(player);
+     }
+ 
+@@ -298,6 +308,7 @@ public class Scoreboard {
+         } else {
+             this.teamsByPlayer.remove(player);
+             team.getPlayers().remove(player);
++            this.fandTeamMembershipVersion++;
+         }
+     }
+ 

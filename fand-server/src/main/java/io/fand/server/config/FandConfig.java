@@ -23,6 +23,9 @@ public final class FandConfig {
     @ConfigComment("Chunk loading and player chunk-send scheduling settings.")
     public final Chunks chunks = new Chunks();
 
+    @ConfigComment("Game-path performance optimizations. All entries preserve vanilla behaviour unless noted.")
+    public final Performance performance = new Performance();
+
     public static FandConfig load(Path path) {
         var config = new YamlConfigLoader<>(FandConfig.class).load(path);
         validate(config);
@@ -83,6 +86,49 @@ public final class FandConfig {
         })
         @ConfigRange(min = 0, max = 4096)
         public int trackingDiffApplyBudget = 256;
+    }
+
+    public static final class Performance {
+
+        @ConfigComment({
+                "Cache explosion line-of-sight exposure per (center, entity bounding box)",
+                "within a single level tick. The vanilla algorithm re-traces ~27 rays per",
+                "nearby entity per explosion through the same blocks, which is quadratic",
+                "when many explosions share a tick (TNT chains, cannons).",
+                "Behaviour note: explosions in the same tick share cached results, so an",
+                "entity's cached exposure may predate block changes made by an earlier",
+                "explosion in that tick. This matches Paper's optimize-explosions trade-off."
+        })
+        public boolean explosionDensityCache = true;
+
+        @ConfigComment({
+                "Cache each entity's scoreboard team lookup, invalidated when team",
+                "membership changes. Entity collision checks resolve the pusher's and",
+                "every candidate's team once per pair; with hundreds of entities stacked",
+                "together that is hundreds of thousands of scoreboard hash lookups per",
+                "tick. Results are identical to vanilla."
+        })
+        public boolean collisionTeamCache = true;
+
+        @ConfigComment({
+                "Cache block state, fluid resistance, and world-bounds checks per block",
+                "position within a single explosion's ray pass. The 1352 explosion rays",
+                "revisit each block in the blast sphere ~5 times on average, and no block",
+                "mutates until after all rays finish, so results are identical to vanilla."
+        })
+        public boolean explosionBlockCache = true;
+
+        @ConfigComment({
+                "Maximum TNT detonations processed per level tick. Set to 0 for vanilla",
+                "behaviour (all fused TNT detonates in the same tick). When positive,",
+                "TNT past the budget keeps its primed state and detonates on a following",
+                "tick instead - nothing is cancelled, large chains are spread out so a",
+                "15k-TNT detonation becomes a wave over a few seconds instead of a",
+                "single multi-minute tick that trips the watchdog.",
+                "Recommended starting point for cannon/stress servers: 200-500."
+        })
+        @ConfigRange(min = 0, max = 1_000_000)
+        public int tntDetonationBudget = 0;
     }
 
     public static final class Console {

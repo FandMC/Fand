@@ -93,6 +93,19 @@ public final class ConfigReloader {
         if (previous.console.gui.enabled != reloaded.console.gui.enabled) {
             requiresRestart.add("console.gui.enabled");
         }
+        if (previous.performance.explosionDensityCache != reloaded.performance.explosionDensityCache) {
+            hotApplied.add("performance.explosionDensityCache");
+        }
+        if (previous.performance.collisionTeamCache != reloaded.performance.collisionTeamCache) {
+            hotApplied.add("performance.collisionTeamCache");
+        }
+        if (previous.performance.explosionBlockCache != reloaded.performance.explosionBlockCache) {
+            hotApplied.add("performance.explosionBlockCache");
+        }
+        if (previous.performance.tntDetonationBudget != reloaded.performance.tntDetonationBudget) {
+            hotApplied.add("performance.tntDetonationBudget");
+        }
+        io.fand.server.hooks.FandHooks.applyPerformanceConfig(reloaded.performance);
 
         plugins.reconfigure(toPluginOptions(reloaded));
         current.set(reloaded);

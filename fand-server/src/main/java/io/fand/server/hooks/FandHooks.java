@@ -95,7 +95,40 @@ public final class FandHooks {
     private static final io.fand.server.console.gui.GuiThemeService FALLBACK_GUI_THEMES =
             new io.fand.server.console.gui.GuiThemeService(io.fand.server.console.gui.GuiTheme.SYSTEM);
 
+    // Pushed by FandServer on config load/reload. Static volatiles (rather than
+    // a runtime lookup) because these gate per-collision-pair and per-explosion
+    // vanilla code where even an extra pointer chase is measurable. Defaults
+    // mirror FandConfig.Performance so behaviour before attach matches a
+    // default config.
+    private static volatile boolean explosionDensityCacheEnabled = true;
+    private static volatile boolean collisionTeamCacheEnabled = true;
+    private static volatile boolean explosionBlockCacheEnabled = true;
+    private static volatile int tntDetonationBudget = 0;
+
     private FandHooks() {
+    }
+
+    public static void applyPerformanceConfig(io.fand.server.config.FandConfig.Performance performance) {
+        explosionDensityCacheEnabled = performance.explosionDensityCache;
+        collisionTeamCacheEnabled = performance.collisionTeamCache;
+        explosionBlockCacheEnabled = performance.explosionBlockCache;
+        tntDetonationBudget = performance.tntDetonationBudget;
+    }
+
+    public static boolean explosionDensityCacheEnabled() {
+        return explosionDensityCacheEnabled;
+    }
+
+    public static boolean collisionTeamCacheEnabled() {
+        return collisionTeamCacheEnabled;
+    }
+
+    public static boolean explosionBlockCacheEnabled() {
+        return explosionBlockCacheEnabled;
+    }
+
+    public static int tntDetonationBudget() {
+        return tntDetonationBudget;
     }
 
     public static EventBus events() {

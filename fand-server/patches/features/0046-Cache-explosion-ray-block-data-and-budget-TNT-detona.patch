@@ -1,0 +1,143 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Wed, 10 Jun 2026 21:37:40 +0800
+Subject: [PATCH] Cache explosion ray block data and budget TNT detonations
+
+Explosion rays revisit each block in the blast sphere ~5x; block state,
+resistance, and bounds checks are now cached per position for the
+duration of one explosion's ray pass (vanilla-equivalent: blocks only
+mutate after all rays finish).
+
+TNT detonations can be budgeted per level tick via fand.yml. Past-budget
+TNT keeps its primed fuse and detonates on a following tick, spreading
+mass detonations into a wave instead of one watchdog-tripping tick.
+Budget 0 (default) preserves vanilla all-at-once behaviour.
+
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index 6525ad5eb915e41f12998c40007070f91b6e3ade..adbfbcfb6c29aa75c5b599f2c30a503bd156feea 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -221,11 +221,33 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     private final boolean tickTime;
+     private final LevelDebugSynchronizers debugSynchronizers = new LevelDebugSynchronizers(this);
+     private final io.fand.server.world.ExplosionDensityCache fandExplosionDensityCache = new io.fand.server.world.ExplosionDensityCache();
++    private final io.fand.server.world.ExplosionBlockCache fandExplosionBlockCache = new io.fand.server.world.ExplosionBlockCache();
++    private int fandTntDetonationsThisTick;
+ 
+     public io.fand.server.world.ExplosionDensityCache fand$explosionDensityCache() {
+         return this.fandExplosionDensityCache;
+     }
+ 
++    public io.fand.server.world.ExplosionBlockCache fand$explosionBlockCache() {
++        return this.fandExplosionBlockCache;
++    }
++
++    /**
++     * Claims one slot of this tick's TNT detonation budget. Returns false when
++     * the budget is exhausted; callers keep the TNT primed and retry next tick.
++     */
++    public boolean fand$claimTntDetonation() {
++        int budget = io.fand.server.hooks.FandHooks.tntDetonationBudget();
++        if (budget <= 0) {
++            return true;
++        }
++        if (this.fandTntDetonationsThisTick >= budget) {
++            return false;
++        }
++        this.fandTntDetonationsThisTick++;
++        return true;
++    }
++
+     public ServerLevel(
+         final MinecraftServer server,
+         final Executor executor,
+@@ -347,6 +369,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+         ProfilerFiller profiler = Profiler.get();
+         this.handlingTick = true;
+         this.fandExplosionDensityCache.clear();
++        this.fandTntDetonationsThisTick = 0;
+         TickRateManager tickRateManager = this.tickRateManager();
+         boolean runs = tickRateManager.runsNormally();
+         if (runs) {
+diff --git a/net/minecraft/world/entity/item/PrimedTnt.java b/net/minecraft/world/entity/item/PrimedTnt.java
+index 74105c799ceae31dff94dca7b3d4a629e436dcf9..81a91446de3a1d102a3ea7d5c4aca6e5ae2a82e0 100644
+--- a/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -104,13 +104,20 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+         }
+ 
+         int fuse = this.getFuse() - 1;
+-        this.setFuse(fuse);
+         if (fuse <= 0) {
++            // Fand: defer past-budget detonations to a later tick instead of
++            // detonating every fused TNT in the same tick. Fuse stays at its
++            // current value so the entity retries until it claims a slot.
++            if (this.level() instanceof ServerLevel fandLevel && !fandLevel.fand$claimTntDetonation()) {
++                return;
++            }
++            this.setFuse(fuse);
+             this.discard();
+             if (!this.level().isClientSide()) {
+                 this.explode();
+             }
+         } else {
++            this.setFuse(fuse);
+             this.updateFluidInteraction();
+             if (this.level().isClientSide()) {
+                 this.level().addParticle(ParticleTypes.SMOKE, this.getX(), this.getY() + 0.5, this.getZ(), 0.0, 0.0, 0.0);
+diff --git a/net/minecraft/world/level/ServerExplosion.java b/net/minecraft/world/level/ServerExplosion.java
+index 915733d0529a38e0b844bedcb0608c5c6930a1fb..d308b9acbcfc105be2607e158efeec859e98bbbc 100644
+--- a/net/minecraft/world/level/ServerExplosion.java
++++ b/net/minecraft/world/level/ServerExplosion.java
+@@ -129,6 +129,11 @@ public class ServerExplosion implements Explosion {
+     private List<BlockPos> calculateExplodedPositions() {
+         Set<BlockPos> toBlowSet = new HashSet<>();
+         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
++        io.fand.server.world.ExplosionBlockCache fandBlockCache =
++            io.fand.server.hooks.FandHooks.explosionBlockCacheEnabled() ? this.level.fand$explosionBlockCache() : null;
++        if (fandBlockCache != null) {
++            fandBlockCache.clear();
++        }
+ 
+         for (RayDirection ray : RAYS) {
+             float remainingPower = this.radius * (0.7F + this.level.random.nextFloat() * 0.6F);
+@@ -138,15 +143,33 @@ public class ServerExplosion implements Explosion {
+ 
+             for (float stepSize = 0.3F; remainingPower > 0.0F; remainingPower -= 0.22500001F) {
+                 pos.set(xp, yp, zp);
+-                BlockState block = this.level.getBlockState(pos);
+-                FluidState fluid = this.level.getFluidState(pos);
+-                if (!this.level.isInWorldBounds(pos)) {
++                BlockState block;
++                boolean inWorldBounds;
++                float fandResistance;
++                io.fand.server.world.ExplosionBlockCache.Entry fandCached =
++                    fandBlockCache == null ? null : fandBlockCache.get(pos.asLong());
++                if (fandCached != null) {
++                    block = fandCached.state();
++                    inWorldBounds = fandCached.inWorldBounds();
++                    fandResistance = fandCached.resistance();
++                } else {
++                    block = this.level.getBlockState(pos);
++                    FluidState fluid = this.level.getFluidState(pos);
++                    inWorldBounds = this.level.isInWorldBounds(pos);
++                    Optional<Float> resistance = inWorldBounds
++                        ? this.damageCalculator.getBlockExplosionResistance(this, this.level, pos, block, fluid)
++                        : Optional.empty();
++                    fandResistance = resistance.orElse(Float.NaN);
++                    if (fandBlockCache != null) {
++                        fandBlockCache.put(pos.asLong(), block, fandResistance, inWorldBounds);
++                    }
++                }
++                if (!inWorldBounds) {
+                     break;
+                 }
+ 
+-                Optional<Float> resistance = this.damageCalculator.getBlockExplosionResistance(this, this.level, pos, block, fluid);
+-                if (resistance.isPresent()) {
+-                    remainingPower -= (resistance.get() + 0.3F) * 0.3F;
++                if (!Float.isNaN(fandResistance)) {
++                    remainingPower -= (fandResistance + 0.3F) * 0.3F;
+                 }
+ 
+                 if (remainingPower > 0.0F && this.damageCalculator.shouldBlockExplode(this, this.level, pos, block, remainingPower)) {
