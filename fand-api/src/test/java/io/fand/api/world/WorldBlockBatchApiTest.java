@@ -54,6 +54,28 @@ final class WorldBlockBatchApiTest {
     }
 
     @Test
+    void defaultFillDoesNotMaterializeLargestRepresentableBatchBeforeSetBlocks() {
+        var world = new LazyInspectingWorld();
+
+        var result = world.fillBlocks(world.at(0, 0, 0), world.at(Integer.MAX_VALUE - 1L, 0, 0), STONE).join();
+
+        assertThat(result).isEqualTo(new BlockBatchResult(Integer.MAX_VALUE, 1, 0, 0));
+        assertThat(world.firstChange).isEqualTo(BlockBatchChange.of(0, 0, 0, STONE));
+    }
+
+    @Test
+    void blockVolumeCapsBeforeLongOverflow() {
+        assertThat(BlockBatchVolumes.cappedVolume(
+                        Integer.MIN_VALUE,
+                        0,
+                        Integer.MIN_VALUE,
+                        Integer.MAX_VALUE,
+                        0,
+                        Integer.MAX_VALUE))
+                .isEqualTo(BlockBatchVolumes.TOO_MANY_BLOCKS);
+    }
+
+    @Test
     void defaultPasteOffsetsClipboardFromOrigin() {
         var world = new TestWorld(true);
         var clipboard = BlockClipboard.of(2, 1, 1, List.of(
@@ -71,7 +93,7 @@ final class WorldBlockBatchApiTest {
     private record TestBlockType(Key key) implements BlockType {
     }
 
-    private static final class TestWorld implements World {
+    private static final class TestWorld extends BaseTestWorld {
 
         private final boolean supportsBatch;
         private final List<BlockBatchChange> changes = new ArrayList<>();
@@ -83,6 +105,35 @@ final class WorldBlockBatchApiTest {
         private TestWorld(boolean supportsBatch) {
             this.supportsBatch = supportsBatch;
         }
+
+        @Override
+        public CompletableFuture<BlockBatchResult> setBlocks(
+                Collection<BlockBatchChange> changes,
+                BlockBatchOptions options
+        ) {
+            if (!supportsBatch) {
+                return defaultSetBlocks(changes, options);
+            }
+            this.changes.addAll(changes);
+            return CompletableFuture.completedFuture(new BlockBatchResult(changes.size(), changes.size(), 0, 0));
+        }
+    }
+
+    private static final class LazyInspectingWorld extends BaseTestWorld {
+
+        private BlockBatchChange firstChange;
+
+        @Override
+        public CompletableFuture<BlockBatchResult> setBlocks(
+                Collection<BlockBatchChange> changes,
+                BlockBatchOptions options
+        ) {
+            firstChange = changes.iterator().next();
+            return CompletableFuture.completedFuture(new BlockBatchResult(changes.size(), 1, 0, 0));
+        }
+    }
+
+    private abstract static class BaseTestWorld implements World {
 
         @Override
         public Key key() {
@@ -186,16 +237,11 @@ final class WorldBlockBatchApiTest {
             throw new UnsupportedOperationException();
         }
 
-        @Override
-        public CompletableFuture<BlockBatchResult> setBlocks(
+        protected CompletableFuture<BlockBatchResult> defaultSetBlocks(
                 Collection<BlockBatchChange> changes,
                 BlockBatchOptions options
         ) {
-            if (!supportsBatch) {
-                return World.super.setBlocks(changes, options);
-            }
-            this.changes.addAll(changes);
-            return CompletableFuture.completedFuture(new BlockBatchResult(changes.size(), changes.size(), 0, 0));
+            return World.super.setBlocks(changes, options);
         }
     }
 }
