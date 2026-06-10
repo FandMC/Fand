@@ -37,11 +37,13 @@ public final class ChunkSendScheduler implements AutoCloseable {
 
     private volatile ExecutorService worker;
     private volatile int applyBudget;
+    private volatile int dynamicBudget;
 
     public ChunkSendScheduler(FandConfig.Chunks config) {
         Objects.requireNonNull(config, "config");
         this.worker = createWorker(config.workerThreads);
         this.applyBudget = config.trackingDiffApplyBudget;
+        this.dynamicBudget = config.trackingDiffApplyBudget;
     }
 
     public boolean submitTrackingDiff(Object levelId, ChunkTrackingSnapshot snapshot) {
@@ -79,6 +81,15 @@ public final class ChunkSendScheduler implements AutoCloseable {
         Objects.requireNonNull(applier, "applier");
         int applied = 0;
         int budget = applyBudget;
+        if (budget > 0) {
+            var queueSize = completedQueueSize(levelId);
+            if (queueSize > budget * 2) {
+                dynamicBudget = Math.min(budget * 2, (int) (queueSize * 0.5));
+            } else {
+                dynamicBudget = budget;
+            }
+            budget = dynamicBudget;
+        }
         var completed = completedByLevel.get(levelId);
         if (completed == null) {
             return 0;
@@ -117,6 +128,7 @@ public final class ChunkSendScheduler implements AutoCloseable {
     public void reconfigure(FandConfig.Chunks config) {
         Objects.requireNonNull(config, "config");
         applyBudget = config.trackingDiffApplyBudget;
+        dynamicBudget = config.trackingDiffApplyBudget;
         var replacement = createWorker(config.workerThreads);
         var previous = worker;
         worker = replacement;
@@ -134,6 +146,11 @@ public final class ChunkSendScheduler implements AutoCloseable {
 
     private long completedQueueSize() {
         return completedByLevel.values().stream().mapToLong(ConcurrentLinkedQueue::size).sum();
+    }
+
+    private long completedQueueSize(Object levelId) {
+        var queue = completedByLevel.get(levelId);
+        return queue == null ? 0L : queue.size();
     }
 
     private static ChunkTrackingDiff compute(ChunkTrackingSnapshot snapshot) {

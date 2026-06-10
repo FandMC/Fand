@@ -99,7 +99,7 @@ public final class FandConfig {
                 "entity's cached exposure may predate block changes made by an earlier",
                 "explosion in that tick. This matches Paper's optimize-explosions trade-off."
         })
-        public boolean explosionDensityCache = true;
+        public volatile boolean explosionDensityCache = true;
 
         @ConfigComment({
                 "Cache each entity's scoreboard team lookup, invalidated when team",
@@ -108,7 +108,7 @@ public final class FandConfig {
                 "together that is hundreds of thousands of scoreboard hash lookups per",
                 "tick. Results are identical to vanilla."
         })
-        public boolean collisionTeamCache = true;
+        public volatile boolean collisionTeamCache = true;
 
         @ConfigComment({
                 "Cache block state, fluid resistance, and world-bounds checks per block",
@@ -116,7 +116,7 @@ public final class FandConfig {
                 "revisit each block in the blast sphere ~5 times on average, and no block",
                 "mutates until after all rays finish, so results are identical to vanilla."
         })
-        public boolean explosionBlockCache = true;
+        public volatile boolean explosionBlockCache = true;
 
         @ConfigComment({
                 "Maximum TNT detonations processed per level tick. Set to 0 for vanilla",
@@ -128,14 +128,14 @@ public final class FandConfig {
                 "Recommended starting point for cannon/stress servers: 200-500."
         })
         @ConfigRange(min = 0, max = 1_000_000)
-        public int tntDetonationBudget = 0;
+        public volatile int tntDetonationBudget = 0;
 
         @ConfigComment({
                 "Use a hash map for explosion drop merging instead of linear search.",
                 "Vanilla loops over all collected drops to find merge targets (O(n²)).",
                 "This switches to a hash-keyed lookup (O(n)), strictly vanilla-equivalent."
         })
-        public boolean explosionDropHashMerge = true;
+        public volatile boolean explosionDropHashMerge = true;
 
         @ConfigComment({
                 "Route explosion entity-exposure sight rays through the explosion block",
@@ -145,10 +145,10 @@ public final class FandConfig {
                 "change mid-explosion, and collision shapes are still resolved per",
                 "entity - results are identical to vanilla."
         })
-        public boolean explosionExposureClipCache = true;
+        public volatile boolean explosionExposureClipCache = true;
 
         @ConfigComment("Cache entity queries during explosions (avoids repeated AABB scans).")
-        public boolean explosionEntityCache = true;
+        public volatile boolean explosionEntityCache = true;
     }
 
     public static final class Console {

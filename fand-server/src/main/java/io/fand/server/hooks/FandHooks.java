@@ -149,6 +149,18 @@ public final class FandHooks {
         return explosionEntityCache;
     }
 
+    public static boolean skipStationaryEntityTicks() {
+        return skipStationaryEntityTicks;
+    }
+
+    public static int stationaryEntityTickInterval() {
+        return stationaryEntityTickInterval;
+    }
+
+    public static boolean entityQueryCacheEnabled() {
+        return entityQueryCache;
+    }
+
     public static EventBus events() {
         var runtime = activeRuntime();
         return runtime == null ? NOOP_EVENTS : runtime.events();
@@ -335,6 +347,7 @@ public final class FandHooks {
                 emptyWindow(TickWindow.ONE_MINUTE),
                 emptyWindow(TickWindow.FIVE_MINUTES),
                 emptyWindow(TickWindow.FIFTEEN_MINUTES),
+                0L,
                 0L);
     }
 

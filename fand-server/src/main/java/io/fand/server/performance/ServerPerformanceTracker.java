@@ -17,10 +17,11 @@ public final class ServerPerformanceTracker implements AutoCloseable {
     private static final long IDLE_TICK_INTERVAL_TOLERANCE_NANOS = 2_000_000L;
     private static final double NANOS_PER_MILLISECOND = 1_000_000.0;
     private static final double NANOS_PER_SECOND = 1_000_000_000.0;
-    private static final ServerPerformance INITIAL_SNAPSHOT = createSnapshot(Samples.empty());
+    private static final ServerPerformance INITIAL_SNAPSHOT = createSnapshot(Samples.empty(), 0L);
 
     private final Executor executor;
     private final AutoCloseable closeExecutor;
+    private final java.util.function.LongSupplier chunkQueueDepthSupplier;
     private final long[] tickDurationsNanos = new long[CAPACITY];
     private final long[] tickIntervalsNanos = new long[CAPACITY];
     private final long[] tickIntervalWorkNanos = new long[CAPACITY];
@@ -32,14 +33,20 @@ public final class ServerPerformanceTracker implements AutoCloseable {
     private boolean closed;
 
     public ServerPerformanceTracker() {
+        this(() -> 0L);
+    }
+
+    public ServerPerformanceTracker(java.util.function.LongSupplier chunkQueueDepthSupplier) {
         var executorService = Executors.newSingleThreadExecutor(ServerPerformanceTracker::snapshotThread);
         this.executor = executorService;
         this.closeExecutor = executorService::shutdownNow;
+        this.chunkQueueDepthSupplier = chunkQueueDepthSupplier;
     }
 
-    ServerPerformanceTracker(Executor executor) {
+    ServerPerformanceTracker(Executor executor, java.util.function.LongSupplier chunkQueueDepthSupplier) {
         this.executor = Objects.requireNonNull(executor, "executor");
         this.closeExecutor = () -> {};
+        this.chunkQueueDepthSupplier = chunkQueueDepthSupplier;
     }
 
     public void recordTick(long tickStartNanos, long tickDurationNanos) {
@@ -141,7 +148,7 @@ public final class ServerPerformanceTracker implements AutoCloseable {
                 samples = captureSamples();
             }
 
-            ServerPerformance snapshot = createSnapshot(samples);
+            ServerPerformance snapshot = createSnapshot(samples, chunkQueueDepthSupplier.getAsLong());
 
             synchronized (this) {
                 if (!closed && snapshot.tickCount() >= publishedSnapshot.tickCount()) {
@@ -170,7 +177,7 @@ public final class ServerPerformanceTracker implements AutoCloseable {
         return new Samples(tickCount, durations, intervals, intervalWork);
     }
 
-    private static ServerPerformance createSnapshot(Samples samples) {
+    private static ServerPerformance createSnapshot(Samples samples, long chunkQueueDepth) {
         return new ServerPerformance(
                 window(TickWindow.ONE_SECOND, samples),
                 window(TickWindow.FIVE_SECONDS, samples),
@@ -179,7 +186,8 @@ public final class ServerPerformanceTracker implements AutoCloseable {
                 window(TickWindow.ONE_MINUTE, samples),
                 window(TickWindow.FIVE_MINUTES, samples),
                 window(TickWindow.FIFTEEN_MINUTES, samples),
-                samples.tickCount()
+                samples.tickCount(),
+                chunkQueueDepth
         );
     }
 

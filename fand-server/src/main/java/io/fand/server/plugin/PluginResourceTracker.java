@@ -30,7 +30,7 @@ final class PluginResourceTracker {
     private final Set<TrackedCustomBlockItemBinding> customBlockItemBindings = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedGuiView> guiViews = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedTask> tasks = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
-    private boolean closed;
+    private volatile boolean closed;
 
     TrackedSubscription track(EventSubscription delegate) {
         var tracked = new TrackedSubscription(this, delegate);
@@ -66,16 +66,12 @@ final class PluginResourceTracker {
 
     TrackedTask track(Task delegate) {
         var tracked = new TrackedTask(this, delegate);
-        var dispose = false;
         synchronized (lock) {
             if (closed) {
-                dispose = true;
-            } else {
-                tasks.add(tracked);
+                tracked.cancelFromTracker();
+                return tracked;
             }
-        }
-        if (dispose) {
-            tracked.cancelFromTracker();
+            tasks.add(tracked);
         }
         return tracked;
     }

@@ -130,7 +130,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.guis = new FandGuiService(events);
         this.players = new PlayerRegistry(permissions);
         this.playerAccess = new FandPlayerAccessService(minecraftServer::get);
-        this.performance = new ServerPerformanceTracker();
+        this.performance = new ServerPerformanceTracker(() -> chunks.metrics().pendingJobs());
         var pluginDirectory = Path.of(initialConfig.plugins.directory);
         this.plugins = new PluginRuntime(
                 pluginDirectory,

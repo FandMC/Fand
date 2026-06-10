@@ -11,6 +11,7 @@ package io.fand.api.performance;
  * @param fiveMinutes 5 minute rolling window
  * @param fifteenMinutes 15 minute rolling window
  * @param tickCount number of measured server ticks
+ * @param chunkTrackingQueueDepth pending chunk tracking diff jobs
  */
 public record ServerPerformance(
         TickWindowSnapshot oneSecond,
@@ -20,7 +21,8 @@ public record ServerPerformance(
         TickWindowSnapshot oneMinute,
         TickWindowSnapshot fiveMinutes,
         TickWindowSnapshot fifteenMinutes,
-        long tickCount
+        long tickCount,
+        long chunkTrackingQueueDepth
 ) {
     public TickWindowSnapshot window(TickWindow window) {
         return switch (window) {

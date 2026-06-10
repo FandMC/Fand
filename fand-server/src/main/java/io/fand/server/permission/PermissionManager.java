@@ -52,6 +52,10 @@ public final class PermissionManager implements PermissionService {
         Objects.requireNonNull(subject, "subject");
         var normalized = normalize(node);
 
+        return computePermission(subject, normalized);
+    }
+
+    private boolean computePermission(PermissionSubject subject, String normalized) {
         var explicit = explicitValue(subject, normalized);
         if (explicit != null) {
             return fireCheck(subject, normalized, explicit);
