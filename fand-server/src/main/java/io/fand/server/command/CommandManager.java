@@ -196,8 +196,16 @@ public final class CommandManager implements CommandRegistry {
         if (separator <= 0 || separator == token.length() - 1) {
             return null;
         }
-        var entry = current.namespacedPaths.get(token);
-        return entry != null && entry.allowed(sender) ? entry : null;
+        var namespace = token.substring(0, separator);
+        var root = token.substring(separator + 1);
+        for (var entry : current.namespacedPaths.values()) {
+            if (entry.descriptor.namespace().equals(namespace)
+                    && CommandManager.rootKeys(entry.descriptor).contains(root)
+                    && entry.allowed(sender)) {
+                return entry;
+            }
+        }
+        return null;
     }
 
     private List<String> rootSuggestions(Snapshot current, CommandSender sender, String prefix) {
