@@ -1,6 +1,7 @@
 package io.fand.server.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.fand.server.command.CommandManager;
@@ -85,7 +86,34 @@ final class PluginRuntimeTest {
     }
 
     @Test
-    void rejectsMissingDependency() throws IOException {
+    void rejectsMissingDependencyWhenConfiguredStrictly() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("broken.jar"),
+                PluginRuntimeTestSupport.descriptorJson("broken", "testplugins.broken.BrokenPlugin", List.of("missing")),
+                Map.of("testplugins/broken/BrokenPlugin.java", pluginSource("testplugins.broken", "BrokenPlugin", null, null, null)),
+                List.of()
+        );
+
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new CommandManager(),
+                new EventDispatcher(),
+                new PermissionManager(),
+                new TaskScheduler(),
+                new PluginRuntime.Options(false, false, false)
+        );
+        assertThatThrownBy(manager::loadPlugins)
+                .isInstanceOf(PluginLoadException.class)
+                .hasMessageContaining("depends on missing plugin 'missing'");
+    }
+
+    @Test
+    void skipsMissingDependencyByDefault() throws IOException {
         var pluginsDir = tempDir.resolve("plugins");
         Files.createDirectories(pluginsDir);
         PluginRuntimeTestSupport.createPluginJar(
@@ -97,13 +125,52 @@ final class PluginRuntimeTest {
         );
 
         var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new CommandManager(), new EventDispatcher(), new PermissionManager(), new TaskScheduler());
-        assertThatThrownBy(manager::loadPlugins)
-                .isInstanceOf(PluginLoadException.class)
-                .hasMessageContaining("depends on missing plugin 'missing'");
+        try {
+            manager.loadPlugins();
+
+            assertThat(manager.loaded()).isEmpty();
+            assertThat(manager.byId("broken")).isEmpty();
+        } finally {
+            manager.close();
+        }
     }
 
     @Test
-    void rejectsDuplicatePluginIds() throws IOException {
+    void rejectsDuplicatePluginIdsWhenConfiguredStrictly() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("first.jar"),
+                PluginRuntimeTestSupport.descriptorJson("dup", "testplugins.first.FirstPlugin", List.of()),
+                Map.of("testplugins/first/FirstPlugin.java", pluginSource("testplugins.first", "FirstPlugin", null, null, null)),
+                List.of()
+        );
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("second.jar"),
+                PluginRuntimeTestSupport.descriptorJson("dup", "testplugins.second.SecondPlugin", List.of()),
+                Map.of("testplugins/second/SecondPlugin.java", pluginSource("testplugins.second", "SecondPlugin", null, null, null)),
+                List.of()
+        );
+
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new CommandManager(),
+                new EventDispatcher(),
+                new PermissionManager(),
+                new TaskScheduler(),
+                new PluginRuntime.Options(false, false, false)
+        );
+        assertThatThrownBy(manager::loadPlugins)
+                .isInstanceOf(PluginLoadException.class)
+                .hasMessageContaining("Duplicate plugin id 'dup'");
+    }
+
+    @Test
+    void skipsDuplicatePluginIdsByDefault() throws IOException {
         var pluginsDir = tempDir.resolve("plugins");
         Files.createDirectories(pluginsDir);
         PluginRuntimeTestSupport.createPluginJar(
@@ -122,9 +189,14 @@ final class PluginRuntimeTest {
         );
 
         var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new CommandManager(), new EventDispatcher(), new PermissionManager(), new TaskScheduler());
-        assertThatThrownBy(manager::loadPlugins)
-                .isInstanceOf(PluginLoadException.class)
-                .hasMessageContaining("Duplicate plugin id 'dup'");
+        try {
+            manager.loadPlugins();
+
+            assertThat(manager.loaded()).hasSize(1);
+            assertThat(manager.byId("dup")).isPresent();
+        } finally {
+            manager.close();
+        }
     }
 
     @Test
@@ -223,6 +295,55 @@ final class PluginRuntimeTest {
             assertThat(manager.byId("dependent")).isEmpty();
             assertThat(manager.byId("healthy")).isPresent();
             assertThat(manager.loaded()).containsExactly(manager.byId("healthy").orElseThrow());
+        } finally {
+            manager.close();
+        }
+    }
+
+    @Test
+    void pluginListenerFailuresDoNotEscapePluginEventBus() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("listener.jar"),
+                PluginRuntimeTestSupport.descriptorJson("listener", "testplugins.listener.ListenerPlugin", List.of()),
+                Map.of("testplugins/listener/ListenerPlugin.java", """
+                        package testplugins.listener;
+
+                        import io.fand.api.plugin.Plugin;
+                        import io.fand.api.plugin.PluginContext;
+                        import io.fand.server.plugin.CleanupTestEvent;
+
+                        public final class ListenerPlugin implements Plugin {
+                            @Override
+                            public void onEnable(PluginContext context) {
+                                context.events().subscribe(CleanupTestEvent.class, event -> {
+                                    throw new RuntimeException("listener failed");
+                                });
+                            }
+                        }
+                        """),
+                List.of()
+        );
+
+        var dispatcher = new EventDispatcher();
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new CommandManager(),
+                dispatcher,
+                new PermissionManager(),
+                new TaskScheduler()
+        );
+        try {
+            manager.loadPlugins();
+            manager.enablePlugins();
+
+            assertThat(manager.isEnabled("listener")).isTrue();
+            assertThatCode(() -> dispatcher.fire(new CleanupTestEvent())).doesNotThrowAnyException();
         } finally {
             manager.close();
         }

@@ -260,9 +260,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         try {
             Files.createDirectories(pluginsDirectory);
             Files.createDirectories(dataDirectoryRoot);
-            var artifacts = discoverArtifacts();
-            var ordered = sortArtifacts(artifacts);
-            var skipped = 0;
+            var discovered = discoverArtifacts();
+            var sorted = sortArtifacts(discovered.artifacts());
+            var ordered = sorted.artifacts();
+            var skipped = discovered.skipped() + sorted.skipped();
             for (var artifact : ordered) {
                 var unavailableDependency = firstUnavailableDependency(artifact.descriptor.depends());
                 if (unavailableDependency != null) {
@@ -281,7 +282,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 var context = new RuntimePluginContext(
                         artifact.descriptor,
                         LoggerFactory.getLogger(artifact.descriptor.id()),
-                        new PluginEventBus(eventBus, resources),
+                        new PluginEventBus(eventBus, resources, artifact.descriptor.id()),
                         permissions,
                         new PluginCommandRegistry(commandRegistry, resources, artifact.descriptor.id()),
                         new PluginRecipeRegistry(recipeRegistry, resources, artifact.descriptor.id()),
@@ -313,7 +314,12 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             }
             loaded = true;
             if (options.logSummary()) {
-                LOGGER.info("Plugin load summary: discovered={}, loaded={}, skipped={}", artifacts.size(), loadedPlugins.size(), skipped);
+                LOGGER.info(
+                        "Plugin load summary: discovered={}, loaded={}, skipped={}",
+                        discovered.artifacts().size() + discovered.skipped(),
+                        loadedPlugins.size(),
+                        skipped
+                );
             }
         } catch (IOException failure) {
             close();
@@ -444,7 +450,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         }
     }
 
-    private List<PluginArtifact> discoverArtifacts() throws IOException {
+    private DiscoveryResult discoverArtifacts() throws IOException {
         try (var stream = Files.list(pluginsDirectory)) {
             var jars = stream
                     .filter(path -> Files.isRegularFile(path) && path.getFileName().toString().endsWith(".jar"))
@@ -452,15 +458,31 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                     .toList();
             var artifacts = new ArrayList<PluginArtifact>(jars.size());
             var seenIds = new LinkedHashMap<String, Path>();
+            var skipped = 0;
             for (var jar : jars) {
-                var descriptor = readDescriptor(jar);
+                PluginDescriptor descriptor;
+                try {
+                    descriptor = readDescriptor(jar);
+                } catch (PluginLoadException failure) {
+                    if (!options.continueOnLoadFailure()) {
+                        throw failure;
+                    }
+                    skipped++;
+                    LOGGER.warn("Skipping plugin jar {} after descriptor failure", jar, failure);
+                    continue;
+                }
                 var existing = seenIds.putIfAbsent(descriptor.id(), jar);
                 if (existing != null) {
-                    throw new PluginLoadException("Duplicate plugin id '" + descriptor.id() + "' in " + existing + " and " + jar);
+                    if (!options.continueOnLoadFailure()) {
+                        throw new PluginLoadException("Duplicate plugin id '" + descriptor.id() + "' in " + existing + " and " + jar);
+                    }
+                    skipped++;
+                    LOGGER.warn("Skipping duplicate plugin {} from {} because {} already provides it", descriptor.id(), jar, existing);
+                    continue;
                 }
                 artifacts.add(new PluginArtifact(jar, descriptor));
             }
-            return artifacts;
+            return new DiscoveryResult(artifacts, skipped);
         }
     }
 
@@ -503,18 +525,30 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         return descriptor;
     }
 
-    private List<PluginArtifact> sortArtifacts(List<PluginArtifact> artifacts) {
+    private SortResult sortArtifacts(List<PluginArtifact> artifacts) {
         var byId = new LinkedHashMap<String, PluginArtifact>();
+        for (var artifact : artifacts) {
+            byId.put(artifact.descriptor.id(), artifact);
+        }
+
+        var skipped = 0;
+        if (options.continueOnLoadFailure()) {
+            skipped += removeUnavailableDependencyArtifacts(byId);
+            artifacts = List.copyOf(byId.values());
+        }
+
         var incomingEdges = new LinkedHashMap<String, Integer>();
         var dependents = new LinkedHashMap<String, List<String>>();
         for (var artifact : artifacts) {
-            byId.put(artifact.descriptor.id(), artifact);
             incomingEdges.put(artifact.descriptor.id(), 0);
             dependents.put(artifact.descriptor.id(), new ArrayList<>());
         }
         for (var artifact : artifacts) {
             for (var dependency : artifact.descriptor.depends()) {
                 if (!byId.containsKey(dependency)) {
+                    if (options.continueOnLoadFailure()) {
+                        continue;
+                    }
                     throw new PluginLoadException("Plugin '" + artifact.descriptor.id() + "' depends on missing plugin '" + dependency + "'");
                 }
                 dependents.get(dependency).add(artifact.descriptor.id());
@@ -540,9 +574,42 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             }
         }
         if (ordered.size() != artifacts.size()) {
-            throw new PluginLoadException("Plugin dependency graph contains a cycle");
+            if (!options.continueOnLoadFailure()) {
+                throw new PluginLoadException("Plugin dependency graph contains a cycle");
+            }
+            for (var artifact : artifacts) {
+                if (!ordered.contains(artifact)) {
+                    skipped++;
+                    LOGGER.warn("Skipping plugin {} because the dependency graph contains a cycle", artifact.descriptor.id());
+                }
+            }
         }
-        return ordered;
+        return new SortResult(ordered, skipped);
+    }
+
+    private int removeUnavailableDependencyArtifacts(LinkedHashMap<String, PluginArtifact> byId) {
+        var skipped = 0;
+        var changed = true;
+        while (changed) {
+            changed = false;
+            var iterator = byId.values().iterator();
+            while (iterator.hasNext()) {
+                var artifact = iterator.next();
+                var unavailableDependency = firstUnavailableDependency(artifact.descriptor.depends(), byId);
+                if (unavailableDependency == null) {
+                    continue;
+                }
+                skipped++;
+                changed = true;
+                iterator.remove();
+                LOGGER.warn(
+                        "Skipping plugin {} because dependency {} is unavailable",
+                        artifact.descriptor.id(),
+                        unavailableDependency
+                );
+            }
+        }
+        return skipped;
     }
 
     private List<PluginClassLoader> dependencyClassLoaders(List<String> dependencyIds) {
@@ -560,6 +627,18 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private String firstUnavailableDependency(List<String> dependencyIds) {
         for (var dependencyId : dependencyIds) {
             if (!loadedPlugins.containsKey(dependencyId)) {
+                return dependencyId;
+            }
+        }
+        return null;
+    }
+
+    private static String firstUnavailableDependency(
+            List<String> dependencyIds,
+            LinkedHashMap<String, PluginArtifact> availableArtifacts
+    ) {
+        for (var dependencyId : dependencyIds) {
+            if (!availableArtifacts.containsKey(dependencyId)) {
                 return dependencyId;
             }
         }
@@ -611,7 +690,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             if (loadedPlugin.enabled) {
                 loadedPlugin.plugin.onDisable(loadedPlugin.context);
             }
-        } catch (RuntimeException failure) {
+        } catch (Throwable failure) {
             LOGGER.warn("Plugin {} failed during disable", loadedPlugin.descriptor.id(), failure);
         } finally {
             loadedPlugin.enabled = false;
@@ -642,6 +721,12 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     }
 
     private record PluginArtifact(Path jarPath, PluginDescriptor descriptor) {
+    }
+
+    private record DiscoveryResult(List<PluginArtifact> artifacts, int skipped) {
+    }
+
+    private record SortResult(List<PluginArtifact> artifacts, int skipped) {
     }
 
     private static final class LoadedPlugin {
@@ -699,7 +784,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             boolean logSummary
     ) {
         public static Options defaults() {
-            return new Options(false, false, true);
+            return new Options(true, true, true);
         }
     }
 }

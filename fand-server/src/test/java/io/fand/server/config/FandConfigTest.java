@@ -21,8 +21,8 @@ final class FandConfigTest {
 
         assertThat(config.identity.brand).isEqualTo("Fand");
         assertThat(config.plugins.directory).isEqualTo("plugins");
-        assertThat(config.plugins.continueOnLoadFailure).isFalse();
-        assertThat(config.plugins.continueOnEnableFailure).isFalse();
+        assertThat(config.plugins.continueOnLoadFailure).isTrue();
+        assertThat(config.plugins.continueOnEnableFailure).isTrue();
         assertThat(config.plugins.logSummary).isTrue();
         assertThat(config.scheduler.asyncThreads).isZero();
         assertThat(config.chunks.workerThreads).isZero();
@@ -37,8 +37,8 @@ final class FandConfigTest {
                 .contains("brand: Fand")
                 .contains("plugins:")
                 .contains("directory: plugins")
-                .contains("continueOnLoadFailure: false")
-                .contains("continueOnEnableFailure: false")
+                .contains("continueOnLoadFailure: true")
+                .contains("continueOnEnableFailure: true")
                 .contains("logSummary: true")
                 .contains("scheduler:")
                 .contains("asyncThreads: 0")

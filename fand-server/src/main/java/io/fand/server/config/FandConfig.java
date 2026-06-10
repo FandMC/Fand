@@ -49,10 +49,10 @@ public final class FandConfig {
         public String directory = "plugins";
 
         @ConfigComment("Continue boot if a plugin fails during discovery, construction, or onLoad.")
-        public boolean continueOnLoadFailure = false;
+        public boolean continueOnLoadFailure = true;
 
         @ConfigComment("Continue boot if a plugin fails during onEnable.")
-        public boolean continueOnEnableFailure = false;
+        public boolean continueOnEnableFailure = true;
 
         @ConfigComment("Log a summary after plugin load and enable phases.")
         public boolean logSummary = true;

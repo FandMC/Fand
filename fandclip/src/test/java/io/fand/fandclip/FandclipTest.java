@@ -1,6 +1,7 @@
 package io.fand.fandclip;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -64,8 +65,28 @@ final class FandclipTest {
     }
 
     @Test
+    void propagatesServerMainThreadFailure() {
+        assertThatThrownBy(() -> Fandclip.runServerMain(
+                FailingServerMain.class.getName(),
+                getClass().getClassLoader(),
+                new String[0]))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("server failed");
+    }
+
+    @Test
     void clipManifestFallsBackWhenMetadataCannotBeRead() {
         assertThat(ClipManifest.load(new FailingInputStream())).isEmpty();
+    }
+
+    public static final class FailingServerMain {
+
+        private FailingServerMain() {
+        }
+
+        public static void main(String[] args) {
+            throw new IllegalStateException("server failed");
+        }
     }
 
     private static final class FailingInputStream extends InputStream {

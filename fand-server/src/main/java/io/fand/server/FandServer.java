@@ -182,7 +182,8 @@ public final class FandServer implements Server, AutoCloseable {
             phase.set(LifecyclePhase.RUNNING);
             events.fire(new ServerStartedEvent(this));
         } catch (Throwable failure) {
-            LOGGER.error("Fand enable() failed", failure);
+            LOGGER.error("Fand enable() failed; shutting down the vanilla server", failure);
+            shutdown("Fand enable() failed: " + failure.getMessage());
             throw failure;
         }
     }

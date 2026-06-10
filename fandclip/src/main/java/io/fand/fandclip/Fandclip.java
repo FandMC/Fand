@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Standalone launcher distributed to end users. It materialises the embedded
@@ -72,6 +73,10 @@ public final class Fandclip {
         String mainClassName = bundled.mainClass();
         System.out.println("Starting " + mainClassName);
 
+        runServerMain(mainClassName, classLoader, args);
+    }
+
+    static void runServerMain(String mainClassName, ClassLoader classLoader, String[] args) throws InterruptedException {
         Thread runThread = new Thread(() -> {
             try {
                 Class<?> mainClass = Class.forName(mainClassName, true, classLoader);
@@ -85,7 +90,19 @@ public final class Fandclip {
             }
         }, "ServerMain");
         runThread.setContextClassLoader(classLoader);
+        AtomicReference<Throwable> serverFailure = new AtomicReference<>();
+        runThread.setUncaughtExceptionHandler((thread, failure) -> serverFailure.set(failure));
         runThread.start();
+        try {
+            runThread.join();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw interrupted;
+        }
+        var failure = serverFailure.get();
+        if (failure != null) {
+            throw sneakyThrow(failure);
+        }
     }
 
     private static void relaunchWithQuietJvmWarnings(String[] args) throws IOException {
