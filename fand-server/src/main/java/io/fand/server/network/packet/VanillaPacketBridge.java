@@ -36,10 +36,16 @@ final class VanillaPacketBridge {
     private static final Logger LOGGER = LoggerFactory.getLogger(VanillaPacketBridge.class);
     private static final Set<String> OBJECT_METHODS = Set.of(
             "equals", "hashCode", "toString", "getClass", "notify", "notifyAll", "wait");
+    private static final PacketType[] NO_TYPES = new PacketType[0];
+    private static final Map<String, PacketType[]> TYPES_BY_VANILLA_NAME = indexTypesByVanillaName();
 
     private final PacketRegistryImpl registry;
     private final PacketViewFactory viewFactory = new PacketViewFactory();
     private final ConcurrentMap<Class<?>, PacketShape> shapes = new ConcurrentHashMap<>();
+    // Per-packet-class candidate types. Common packets (e.g. keep_alive) map the
+    // same vanilla class to one PacketType per protocol phase, so this holds a
+    // small array selected by protocol+direction at intercept time.
+    private final ConcurrentMap<Class<?>, PacketType[]> typesByClass = new ConcurrentHashMap<>();
 
     VanillaPacketBridge(PacketRegistryImpl registry) {
         this.registry = Objects.requireNonNull(registry, "registry");
@@ -52,18 +58,44 @@ final class VanillaPacketBridge {
             @Nullable SocketAddress remoteAddress,
             Packet<?> packet
     ) {
-        var protocol = PacketProtocol.fromId(vanillaProtocol.id());
-        var key = key(packet.type().id());
-        var type = registry.type(protocol, direction, key).orElse(null);
+        var type = type(vanillaProtocol, direction, packet);
         if (type == null) {
             return packet;
         }
 
-        var result = interceptVanilla(type, protocol, direction, player, remoteAddress, packet);
+        var result = interceptVanilla(type, type.protocol(), direction, player, remoteAddress, packet);
         if (result != null && direction == PacketDirection.SERVERBOUND) {
-            dispatchCustomPayload(protocol, direction, player, remoteAddress, result);
+            dispatchCustomPayload(type.protocol(), direction, player, remoteAddress, result);
         }
         return result;
+    }
+
+    private @Nullable PacketType type(ConnectionProtocol vanillaProtocol, PacketDirection direction, Packet<?> packet) {
+        var candidates = typesByClass.computeIfAbsent(
+                packet.getClass(),
+                // Metadata stores nested packet classes in source form
+                // (Outer.Inner); normalise the runtime binary name to match.
+                packetClass -> TYPES_BY_VANILLA_NAME.getOrDefault(packetClass.getName().replace('$', '.'), NO_TYPES));
+        for (var candidate : candidates) {
+            // Vanilla and Fand protocol enums share the same phase ids, so name
+            // equality is the protocol match; see the data generator contract.
+            if (candidate.direction() == direction && candidate.protocol().name().equals(vanillaProtocol.name())) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static Map<String, PacketType[]> indexTypesByVanillaName() {
+        var index = new java.util.HashMap<String, PacketType[]>();
+        for (var type : PacketType.values()) {
+            index.merge(type.vanillaClassName(), new PacketType[] {type}, (existing, single) -> {
+                var grown = java.util.Arrays.copyOf(existing, existing.length + 1);
+                grown[existing.length] = single[0];
+                return grown;
+            });
+        }
+        return Map.copyOf(index);
     }
 
     private @Nullable Packet<?> interceptVanilla(

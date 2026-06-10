@@ -805,6 +805,12 @@ public final class PlayerEvents {
     }
 
     public static void fireChangedWorld(ServerPlayer player, ServerLevel oldLevel, ServerLevel newLevel) {
+        // Always refresh per-level snapshots, even with no listeners: the
+        // registry groups players by level and goes stale on dimension travel.
+        var registry = FandHooks.playersOrNull();
+        if (registry != null) {
+            registry.onChangedWorld(player);
+        }
         var bus = FandHooks.events();
         if (!bus.hasListeners(PlayerChangedWorldEvent.class)) {
             return;

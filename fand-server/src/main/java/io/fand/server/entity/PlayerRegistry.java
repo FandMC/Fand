@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,7 +28,7 @@ public final class PlayerRegistry {
     private final PermissionService permissions;
     private final ConcurrentHashMap<UUID, FandPlayer> byId = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, FandPlayer> byName = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<ServerLevel, List<FandPlayer>> snapshotsByLevel = new ConcurrentHashMap<>();
+    private volatile Map<ServerLevel, List<FandPlayer>> snapshotsByLevel = Map.of();
     private volatile List<FandPlayer> snapshot = List.of();
     private volatile @Nullable Function<ServerLevel, FandWorld> worldResolver;
     private volatile @Nullable WorldRegistry worldRegistry;
@@ -107,6 +108,20 @@ public final class PlayerRegistry {
         return snapshotsByLevel.getOrDefault(level, List.of());
     }
 
+    /**
+     * Rebuilds the per-level snapshots after a player switched dimensions, so
+     * {@code World.players()} and per-world broadcasts stop attributing the
+     * player to the previous level. Called from the patched
+     * {@code ServerPlayer.teleport} dimension-change path via
+     * {@code PlayerEvents.fireChangedWorld}, which runs regardless of whether
+     * any listener is registered.
+     */
+    public synchronized void onChangedWorld(ServerPlayer handle) {
+        if (byId.containsKey(handle.getUUID())) {
+            rebuildSnapshots();
+        }
+    }
+
     synchronized void refreshSnapshots() {
         rebuildSnapshots();
     }
@@ -118,14 +133,15 @@ public final class PlayerRegistry {
 
     private void rebuildSnapshots() {
         var current = List.copyOf(byId.values());
-        var grouped = new HashMap<ServerLevel, ArrayList<FandPlayer>>();
+        var grouped = new HashMap<ServerLevel, List<FandPlayer>>();
         for (var player : current) {
             grouped.computeIfAbsent(player.handle().level(), ignored -> new ArrayList<>()).add(player);
         }
-        snapshotsByLevel.clear();
-        for (var entry : grouped.entrySet()) {
-            snapshotsByLevel.put(entry.getKey(), List.copyOf(entry.getValue()));
-        }
+        grouped.replaceAll((level, players) -> List.copyOf(players));
+        // Publish complete replacements so concurrent readers never observe a
+        // half-built view (the previous clear-then-put left a window where
+        // broadcasts saw an empty level list).
+        snapshotsByLevel = Map.copyOf(grouped);
         snapshot = current;
     }
 }

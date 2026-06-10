@@ -20,7 +20,11 @@ public final class ChunkSendScheduler implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ChunkSendScheduler.class);
     private static final int DEFAULT_MAX_AUTO_THREADS = 4;
 
-    private final Map<String, ConcurrentLinkedQueue<ChunkTrackingDiff>> completedByLevel = new ConcurrentHashMap<>();
+    // Keyed by an opaque per-level identity (the patched caller passes the
+    // level's dimension ResourceKey, which is identity-stable for the lifetime
+    // of the level). Using the caller-supplied key directly keeps this class
+    // free of vanilla imports and avoids per-tick key allocation.
+    private final Map<Object, ConcurrentLinkedQueue<ChunkTrackingDiff>> completedByLevel = new ConcurrentHashMap<>();
     private final AtomicLong submittedJobs = new AtomicLong();
     private final AtomicLong completedJobs = new AtomicLong();
     private final AtomicLong appliedJobs = new AtomicLong();
@@ -40,7 +44,7 @@ public final class ChunkSendScheduler implements AutoCloseable {
         this.applyBudget = config.trackingDiffApplyBudget;
     }
 
-    public boolean submitTrackingDiff(String levelId, ChunkTrackingSnapshot snapshot) {
+    public boolean submitTrackingDiff(Object levelId, ChunkTrackingSnapshot snapshot) {
         Objects.requireNonNull(levelId, "levelId");
         Objects.requireNonNull(snapshot, "snapshot");
         if (closed.get()) {
@@ -70,7 +74,7 @@ public final class ChunkSendScheduler implements AutoCloseable {
         }
     }
 
-    public int applyCompleted(String levelId, TrackingDiffApplier applier) {
+    public int applyCompleted(Object levelId, TrackingDiffApplier applier) {
         Objects.requireNonNull(levelId, "levelId");
         Objects.requireNonNull(applier, "applier");
         int applied = 0;

@@ -61,7 +61,13 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
                     "View type " + viewType.getName() + " is not compatible with " + type.viewType().getName());
         }
         var registration = new InterceptorRegistration<>(this, type, viewType, interceptor);
-        interceptors.computeIfAbsent(type, ignored -> new CopyOnWriteArrayList<>()).add(registration);
+        // compute (not computeIfAbsent + add) so the insert is atomic with the
+        // empty-list removal in release(); both lock the same map bin.
+        interceptors.compute(type, (ignored, registrations) -> {
+            var target = registrations == null ? new CopyOnWriteArrayList<InterceptorRegistration<? extends PacketView>>() : registrations;
+            target.add(registration);
+            return target;
+        });
         return registration;
     }
 
@@ -86,7 +92,17 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
 
     public List<InterceptorRegistration<? extends PacketView>> interceptors(PacketType type) {
         var registrations = interceptors.get(type);
-        return registrations == null ? List.of() : List.copyOf(registrations);
+        return registrations == null ? List.of() : registrations;
+    }
+
+    /**
+     * Cheap pre-check for the per-packet hot path: when no interceptor and no
+     * custom channel is registered anywhere, callers skip packet introspection
+     * entirely. Interceptor lists are removed from the map when they empty out,
+     * so map emptiness tracks registration state.
+     */
+    public boolean hasRegistrations() {
+        return !interceptors.isEmpty() || !customChannels.isEmpty();
     }
 
     public Optional<CustomPacketHandler> customHandler(PacketProtocol protocol, Key channel) {
@@ -141,14 +157,10 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
     }
 
     private void release(InterceptorRegistration<? extends PacketView> registration) {
-        var registrations = interceptors.get(registration.type());
-        if (registrations == null) {
-            return;
-        }
-        registrations.remove(registration);
-        if (registrations.isEmpty()) {
-            interceptors.remove(registration.type(), registrations);
-        }
+        interceptors.computeIfPresent(registration.type(), (ignored, registrations) -> {
+            registrations.remove(registration);
+            return registrations.isEmpty() ? null : registrations;
+        });
     }
 
     private void release(CustomChannelRegistration registration) {

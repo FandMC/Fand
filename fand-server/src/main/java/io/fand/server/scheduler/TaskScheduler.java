@@ -36,6 +36,8 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
     private final Object mainLock = new Object();
     private final PriorityQueue<MainTask> timedMainTasks = new PriorityQueue<>(TIMED_MAIN_TASK_ORDER);
     private final PriorityQueue<MainTask> tickMainTasks = new PriorityQueue<>(TICK_MAIN_TASK_ORDER);
+    // Reused across ticks; tick() only runs on the server thread.
+    private final ArrayList<MainTask> readyMainTasks = new ArrayList<>();
     private final ScheduledExecutorService asyncExecutor;
     private final LongSupplier nanoTime;
     private final AtomicLong sequence = new AtomicLong();
@@ -108,7 +110,8 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
     public int tick() {
         var tick = currentTick.incrementAndGet();
         var tickTime = nanoTime.getAsLong();
-        List<MainTask> ready = new ArrayList<>();
+        var ready = readyMainTasks;
+        ready.clear();
         synchronized (mainLock) {
             compactCancelledMainTasksIfNeeded();
             collectReadyTimedTasks(tickTime, ready);
@@ -135,6 +138,7 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
                 task.finish();
             }
         }
+        ready.clear();
         return executed;
     }
 

@@ -72,7 +72,6 @@ public final class WorldRegistry {
     public FandWorld wrap(ServerLevel level) {
         var existing = byLevel.get(level);
         if (existing != null) {
-            byKey.putIfAbsent(existing.key(), existing);
             return existing;
         }
         return byLevel.computeIfAbsent(level, current -> {

@@ -90,6 +90,37 @@ final class VanillaPacketBridgeTest {
     }
 
     @Test
+    void nestedPacketClassResolvesToItsType() {
+        var registry = new PacketRegistryImpl();
+        var seen = new AtomicReference<PacketContext>();
+        registry.intercept(PacketType.PLAY_SERVERBOUND_MOVE_PLAYER_POS, packet -> seen.set(packet.context()));
+
+        var vanillaPacket = new net.minecraft.network.protocol.game.ServerboundMovePlayerPacket.Pos(
+                1.0, 2.0, 3.0, true, false);
+        var intercepted = registry.interceptInbound(
+                new StubPacketListener(ConnectionProtocol.PLAY, PacketFlow.SERVERBOUND),
+                Optional.empty(),
+                null,
+                vanillaPacket);
+
+        assertThat(intercepted).isSameAs(vanillaPacket);
+        assertThat(seen.get()).isNotNull();
+        assertThat(seen.get().direction()).isEqualTo(PacketDirection.SERVERBOUND);
+    }
+
+    @Test
+    void registrationStateTracksInterceptorLifecycle() {
+        var registry = new PacketRegistryImpl();
+        assertThat(registry.hasRegistrations()).isFalse();
+
+        var registration = registry.intercept(PacketType.PLAY_CLIENTBOUND_KEEP_ALIVE, packet -> {});
+        assertThat(registry.hasRegistrations()).isTrue();
+
+        registration.unregister();
+        assertThat(registry.hasRegistrations()).isFalse();
+    }
+
+    @Test
     void registeredCustomChannelReceivesDiscardedPayloadBytes() {
         var registry = new PacketRegistryImpl();
         var channel = Key.key("example:channel");

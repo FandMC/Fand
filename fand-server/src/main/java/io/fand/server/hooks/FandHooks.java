@@ -118,12 +118,12 @@ public final class FandHooks {
     public static boolean submitChunkTrackingDiff(ServerLevel level, ChunkTrackingSnapshot snapshot) {
         var runtime = activeRuntime();
         return runtime != null
-                && runtime.chunkSendScheduler().submitTrackingDiff(level.dimension().identifier().toString(), snapshot);
+                && runtime.chunkSendScheduler().submitTrackingDiff(level.dimension(), snapshot);
     }
 
     public static int applyChunkTrackingDiffs(ServerLevel level, ChunkSendScheduler.TrackingDiffApplier applier) {
         var runtime = activeRuntime();
-        return runtime == null ? 0 : runtime.chunkSendScheduler().applyCompleted(level.dimension().identifier().toString(), applier);
+        return runtime == null ? 0 : runtime.chunkSendScheduler().applyCompleted(level.dimension(), applier);
     }
 
     public static boolean hasListeners(Class<? extends Event> type) {
@@ -149,6 +149,11 @@ public final class FandHooks {
 
     public static PlayerRegistry players() {
         return Main.runtime().playerRegistry();
+    }
+
+    public static @Nullable PlayerRegistry playersOrNull() {
+        var runtime = Main.runtimeOrNull();
+        return runtime == null ? null : runtime.playerRegistry();
     }
 
     public static @Nullable FandPlayer findPlayer(UUID id) {
@@ -224,8 +229,14 @@ public final class FandHooks {
         if (runtime == null) {
             return packet;
         }
+        var packetRegistry = runtime.packetRegistry();
+        // Per-packet hot path: skip player lookup and bridge dispatch entirely
+        // while no plugin has registered any interceptor or custom channel.
+        if (!packetRegistry.hasRegistrations()) {
+            return packet;
+        }
         try {
-            return runtime.packetRegistry().interceptInbound(listener, player(listener), remoteAddress, packet);
+            return packetRegistry.interceptInbound(listener, player(listener), remoteAddress, packet);
         } catch (RuntimeException failure) {
             LOGGER.warn("Fand inbound packet hook failed for {}", packet.type(), failure);
             return packet;
@@ -243,8 +254,12 @@ public final class FandHooks {
         if (runtime == null) {
             return packet;
         }
+        var packetRegistry = runtime.packetRegistry();
+        if (!packetRegistry.hasRegistrations()) {
+            return packet;
+        }
         try {
-            return runtime.packetRegistry().interceptOutbound(protocol, flow, player(listener), remoteAddress, packet);
+            return packetRegistry.interceptOutbound(protocol, flow, player(listener), remoteAddress, packet);
         } catch (RuntimeException failure) {
             LOGGER.warn("Fand outbound packet hook failed for {}", packet.type(), failure);
             return packet;

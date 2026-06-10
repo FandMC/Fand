@@ -1,11 +1,19 @@
 package io.fand.server.chunk;
 
-import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongList;
 import it.unimi.dsi.fastutil.longs.LongLists;
 import java.util.Objects;
 import java.util.UUID;
 
+/**
+ * Immutable view-change snapshot handed to the async diff worker.
+ *
+ * <p>Ownership transfer: callers pass freshly built chunk lists and must not
+ * mutate them afterwards. The constructor wraps them unmodifiable without
+ * copying — the patched {@code ChunkMap} call site allocates new lists per
+ * submission, and copying here doubled the per-move allocation cost at view
+ * distance 32 (~4200 longs per list).
+ */
 public record ChunkTrackingSnapshot(
         UUID playerId,
         long sequence,
@@ -20,8 +28,8 @@ public record ChunkTrackingSnapshot(
 ) {
     public ChunkTrackingSnapshot {
         Objects.requireNonNull(playerId, "playerId");
-        previousChunks = immutableCopy(previousChunks, "previousChunks");
-        nextChunks = immutableCopy(nextChunks, "nextChunks");
+        previousChunks = LongLists.unmodifiable(Objects.requireNonNull(previousChunks, "previousChunks"));
+        nextChunks = LongLists.unmodifiable(Objects.requireNonNull(nextChunks, "nextChunks"));
     }
 
     public static ChunkTrackingSnapshot emptyToPositioned(
@@ -47,10 +55,5 @@ public record ChunkTrackingSnapshot(
 
     public boolean sameTarget(long center, int viewDistance) {
         return nextPositioned && nextCenter == center && nextViewDistance == viewDistance;
-    }
-
-    private static LongList immutableCopy(LongList values, String name) {
-        Objects.requireNonNull(values, name);
-        return LongLists.unmodifiable(new LongArrayList(values));
     }
 }

@@ -3,7 +3,7 @@ package io.fand.server.entity;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.fand.server.world.WorldRegistry;
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectLinkedOpenHashMap;
 import java.time.Duration;
 import java.util.UUID;
 import net.minecraft.server.level.ServerPlayer;
@@ -15,6 +15,9 @@ import net.minecraft.world.entity.LivingEntity;
  *
  * <p>Players are delegated to {@link PlayerRegistry}; non-player entries expire
  * after idle access because they do not have explicit attach/detach hooks here.
+ *
+ * <p>Not thread-safe: the network-id map is only touched from the server
+ * thread (all wrap calls originate from patched main-thread event sites).
  */
 public final class EntityRegistry {
 
@@ -22,7 +25,10 @@ public final class EntityRegistry {
 
     private final WorldRegistry worldRegistry;
     private final PlayerRegistry players;
-    private final Int2ObjectOpenHashMap<FandEntity> wrappersByNetworkId = new Int2ObjectOpenHashMap<>();
+    // Linked map maintains access order manually via getAndMoveToLast, so a
+    // full cache evicts its least-recently-used entry instead of clearing
+    // wholesale (which caused hit-rate collapse on entity-heavy servers).
+    private final Int2ObjectLinkedOpenHashMap<FandEntity> wrappersByNetworkId = new Int2ObjectLinkedOpenHashMap<>();
     private final Cache<UUID, FandEntity> wrappers = Caffeine.newBuilder()
             .expireAfterAccess(Duration.ofMinutes(5))
             .maximumSize(8192)
@@ -39,7 +45,7 @@ public final class EntityRegistry {
             return existing != null ? existing : players.attach(player);
         }
         int networkId = handle.getId();
-        var existingByNetworkId = wrappersByNetworkId.get(networkId);
+        var existingByNetworkId = wrappersByNetworkId.getAndMoveToLast(networkId);
         if (existingByNetworkId != null && existingByNetworkId.handle() == handle) {
             return existingByNetworkId;
         }
@@ -63,10 +69,10 @@ public final class EntityRegistry {
     }
 
     private void rememberNetworkId(int networkId, FandEntity wrapper) {
-        if (wrappersByNetworkId.size() >= NETWORK_ID_WRAPPER_CACHE_MAX_SIZE && !wrappersByNetworkId.containsKey(networkId)) {
-            wrappersByNetworkId.clear();
+        wrappersByNetworkId.putAndMoveToLast(networkId, wrapper);
+        if (wrappersByNetworkId.size() > NETWORK_ID_WRAPPER_CACHE_MAX_SIZE) {
+            wrappersByNetworkId.removeFirst();
         }
-        wrappersByNetworkId.put(networkId, wrapper);
     }
 
     private FandEntity wrapFresh(net.minecraft.world.entity.Entity handle) {
