@@ -20,7 +20,6 @@ import io.fand.api.player.PlayerSkin;
 import io.fand.api.player.ResourcePackRequest;
 import io.fand.api.player.RespawnLocation;
 import io.fand.api.recipe.Recipe;
-import io.fand.api.scoreboard.Sidebar;
 import io.fand.api.world.Location;
 import io.fand.api.world.Vector3;
 import io.fand.api.world.World;
@@ -29,7 +28,6 @@ import io.fand.api.world.particle.ParticleEmission;
 import io.fand.api.world.sound.SoundEffect;
 import io.fand.server.audience.BossBarTracker;
 import io.fand.server.audience.PacketAudience;
-import io.fand.server.audience.SidebarTracker;
 import io.fand.server.command.AdventureBridge;
 import io.fand.server.component.EntityComponentStorage;
 import io.fand.server.inventory.FandPlayerInventory;
@@ -81,7 +79,6 @@ public final class FandPlayer implements Player {
     private final PermissionService permissions;
     private final PlayerRegistry registry;
     private final BossBarTracker bossBars;
-    private final SidebarTracker sidebar;
     private final Set<UUID> hiddenTabListTargets = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public FandPlayer(ServerPlayer handle, PermissionService permissions, PlayerRegistry registry) {
@@ -89,7 +86,6 @@ public final class FandPlayer implements Player {
         this.permissions = permissions;
         this.registry = registry;
         this.bossBars = new BossBarTracker(handle);
-        this.sidebar = new SidebarTracker(handle);
     }
 
     public ServerPlayer handle() {
@@ -99,12 +95,10 @@ public final class FandPlayer implements Player {
     void refreshHandle(ServerPlayer newHandle) {
         this.bound = new Bound(newHandle, new FandPlayerInventory(newHandle.getInventory()));
         bossBars.rebind(newHandle);
-        sidebar.rebind(newHandle);
     }
 
     public void clearTransientState() {
         bossBars.clear();
-        sidebar.clear();
     }
 
     private record Bound(ServerPlayer handle, FandPlayerInventory inventory) {
@@ -824,17 +818,6 @@ public final class FandPlayer implements Player {
     public void hideBossBar(BossBar bar) {
         Objects.requireNonNull(bar, "bar");
         runOnServerThread(() -> bossBars.hide(bar));
-    }
-
-    @Override
-    public void showSidebar(Sidebar view) {
-        Objects.requireNonNull(view, "view");
-        runOnServerThread(() -> sidebar.show(view));
-    }
-
-    @Override
-    public void clearSidebar() {
-        runOnServerThread(sidebar::clear);
     }
 
     private void runOnServerThread(Runnable task) {

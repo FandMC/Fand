@@ -12,7 +12,6 @@ import io.fand.api.player.PlayerProfile;
 import io.fand.api.player.PlayerSkin;
 import io.fand.api.player.StatisticKey;
 import io.fand.api.recipe.Recipe;
-import io.fand.api.scoreboard.Sidebar;
 import io.fand.api.world.Location;
 import io.fand.api.world.particle.ParticleEffect;
 import io.fand.api.world.particle.ParticleEmission;
@@ -123,12 +122,6 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     default void removeResourcePacks() {
         removeResourcePack(null);
     }
-
-    /** Shows or replaces this player's transient sidebar scoreboard. */
-    void showSidebar(Sidebar sidebar);
-
-    /** Clears the transient sidebar scoreboard sent through Fand. */
-    void clearSidebar();
 
     /**
      * Teleports the player to {@code destination}. Schedules the move on the

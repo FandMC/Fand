@@ -3,15 +3,18 @@ package io.fand.server.scoreboard;
 import io.fand.api.scoreboard.ScoreboardRegistration;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 
 final class FandScoreboardRegistration implements ScoreboardRegistration {
 
     private final String name;
+    private final BooleanSupplier live;
     private final Runnable unregister;
     private final AtomicBoolean active = new AtomicBoolean(true);
 
-    FandScoreboardRegistration(String name, Runnable unregister) {
+    FandScoreboardRegistration(String name, BooleanSupplier live, Runnable unregister) {
         this.name = Objects.requireNonNull(name, "name");
+        this.live = Objects.requireNonNull(live, "live");
         this.unregister = Objects.requireNonNull(unregister, "unregister");
     }
 
@@ -22,7 +25,7 @@ final class FandScoreboardRegistration implements ScoreboardRegistration {
 
     @Override
     public boolean active() {
-        return active.get();
+        return active.get() && live.getAsBoolean();
     }
 
     @Override

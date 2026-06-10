@@ -121,6 +121,6 @@ final class FandScoreboardObjective implements ScoreboardObjective {
 
     @Override
     public void unregister() {
-        service.removeObjective(handle.getName());
+        service.removeObjective(handle);
     }
 }

@@ -39,7 +39,6 @@ import io.fand.api.recipe.RecipeType;
 import io.fand.api.recipe.ShapedRecipe;
 import io.fand.api.recipe.ShapelessRecipe;
 import io.fand.api.recipe.StonecuttingRecipe;
-import io.fand.api.scoreboard.Sidebar;
 import io.fand.api.world.World;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -65,7 +64,6 @@ final class DemoSupport {
     static final String DEMO_GUI_LOCKED_ITEM = "minecraft:barrier";
     static final String MUTE_NEXT_COMMAND = "!mute-next";
     static final String CLEAR_MODE = "clear";
-    static final String SHOW_MODE = "show";
     static final String COMMAND_ALIAS_DEMO = "fwhere";
     static final Key DEMO_COMPONENT_RECIPE = Key.key("fand-test-plugin:component_diamond");
     static final Key DEMO_NAVIGATOR_RECIPE = Key.key("fand-test-plugin:kit_navigator");
@@ -158,7 +156,6 @@ final class DemoSupport {
             "fand.testplugin.sound",
             "fand.testplugin.kick",
             "fand.testplugin.tab",
-            "fand.testplugin.sidebar",
             "fand.testplugin.recipe",
             "fand.testplugin.components",
             "fand.testplugin.selftest"
@@ -398,7 +395,7 @@ final class DemoSupport {
                                 Component.text("Welcome, " + playerName + ".", NamedTextColor.GOLD)
                                         .append(Component.newline())
                                         .append(Component.text("This kit was built with the public Fand API.", NamedTextColor.GRAY)),
-                                Component.text("Try /fandperf, /fandgui, /fandtab, and /fandsidebar.", NamedTextColor.AQUA))))
+                                Component.text("Try /fandperf, /fandgui, and /fandtab.", NamedTextColor.AQUA))))
                 .withCustomData(customData);
     }
 
@@ -430,12 +427,11 @@ final class DemoSupport {
                 NamedTextColor.AQUA));
         target.showTitle(Title.title(
                 Component.text(message(context.config(), "messages.kit-title", "Fand Kit"), NamedTextColor.GOLD),
-                Component.text(message(context.config(), "messages.kit-subtitle", "Components, GUI, tab, sidebar, and performance."), NamedTextColor.YELLOW),
+                Component.text(message(context.config(), "messages.kit-subtitle", "Components, GUI, tab, and performance."), NamedTextColor.YELLOW),
                 Title.Times.times(Duration.ofMillis(500), Duration.ofSeconds(3), Duration.ofMillis(750))));
         target.sendTabList(
                 Component.text("Fand Kit Demo", NamedTextColor.GOLD),
                 Component.text("TPS " + formatTickAverages(performance.ticksPerSecond()), NamedTextColor.GRAY));
-        target.showSidebar(demoSidebar(target));
         BossBar bar = BossBar.bossBar(
                 Component.text("Fand kit ready", NamedTextColor.GOLD),
                 boundedBossBarProgress((float) (1.0 - Math.min(1.0, performance.fiveSeconds().utilization()))),
@@ -561,26 +557,8 @@ final class DemoSupport {
         return text.trim().equalsIgnoreCase(CLEAR_MODE);
     }
 
-    static boolean isShowMode(String text) {
-        return text.trim().equalsIgnoreCase(SHOW_MODE);
-    }
-
     static boolean isCommandAliasDemo(String command) {
         return command.trim().equalsIgnoreCase(COMMAND_ALIAS_DEMO);
-    }
-
-    static Sidebar demoSidebar(Player player) {
-        var loc = player.location();
-        return Sidebar.of(
-                Component.text("Fand Demo", NamedTextColor.GOLD),
-                Component.text("Player: ", NamedTextColor.GRAY).append(Component.text(player.name(), NamedTextColor.AQUA)),
-                Component.text("World: ", NamedTextColor.GRAY).append(Component.text(player.world().name(), NamedTextColor.WHITE)),
-                Component.text("XYZ: " + loc.blockX() + " " + loc.blockY() + " " + loc.blockZ(), NamedTextColor.YELLOW),
-                Component.text("HP: " + trim(player.health()) + "/" + trim(player.maxHealth()), NamedTextColor.RED),
-                Component.text("Food: " + player.foodLevel(), NamedTextColor.GREEN),
-                Component.text("Mode: " + player.gameMode(), NamedTextColor.LIGHT_PURPLE),
-                Component.text("Held: " + stackName(player.inventory().heldItem()), NamedTextColor.GRAY)
-        );
     }
 
     static boolean isLockedDemoGuiClick(boolean demoGuiViewer, InventoryType inventoryType, int slot, ItemStack currentItem) {

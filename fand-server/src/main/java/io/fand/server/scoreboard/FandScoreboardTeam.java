@@ -165,6 +165,6 @@ final class FandScoreboardTeam implements ScoreboardTeam {
 
     @Override
     public void unregister() {
-        service.removeTeam(handle.getName());
+        service.removeTeam(handle);
     }
 }

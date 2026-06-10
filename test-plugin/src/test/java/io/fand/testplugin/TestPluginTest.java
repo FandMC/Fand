@@ -83,11 +83,9 @@ final class TestPluginTest {
     }
 
     @Test
-    void recognisesTabAndSidebarModes() {
+    void recognisesTabClearMode() {
         assertThat(DemoSupport.isClearMode(" clear ")).isTrue();
         assertThat(DemoSupport.isClearMode("show")).isFalse();
-        assertThat(DemoSupport.isShowMode(" SHOW ")).isTrue();
-        assertThat(DemoSupport.isShowMode("clear")).isFalse();
     }
 
     @Test
@@ -209,7 +207,6 @@ final class TestPluginTest {
                 SoundCommand.class,
                 KickCommand.class,
                 TabCommand.class,
-                SidebarCommand.class,
                 RecipeCommand.class,
                 ComponentsCommand.class,
                 SelfTestCommand.class,

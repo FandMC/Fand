@@ -198,7 +198,6 @@ final class SelfTestCommand implements io.fand.api.command.CommandExecutor, io.f
             command("fandsound", "fand.testplugin.sound", "fsound"),
             command("fandkick", "fand.testplugin.kick", "fkick"),
             command("fandtab", "fand.testplugin.tab", "ftab"),
-            command("fandsidebar", "fand.testplugin.sidebar", "fsidebar"),
             command("fandrecipe", "fand.testplugin.recipe", "frecipe"),
             command("fandcomponents", "fand.testplugin.components", "fcomponents"),
             command("fandselftest", "fand.testplugin.selftest", "fselftest"),

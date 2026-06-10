@@ -55,7 +55,6 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new SoundCommand());
         context.commands().register(new KickCommand(context));
         context.commands().register(new TabCommand(context));
-        context.commands().register(new SidebarCommand());
         context.commands().register(new RecipeCommand(context));
         context.commands().register(new ComponentsCommand());
         context.commands().register(new SelfTestCommand(context));
