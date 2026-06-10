@@ -1,0 +1,181 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Wed, 10 Jun 2026 23:41:28 +0800
+Subject: [PATCH] Cache explosion entities and route sight rays through block
+ cache
+
+Add ExplosionEntityCache field to ServerLevel, keyed by block position
+to avoid repeated section traversals when many explosions share a tick.
+
+Route explosion entity-exposure sight rays through ExplosionBlockCache
+instead of paying two chunk lookups per ray step. The blast sphere is
+already cached by the preceding ray pass, blocks cannot change until
+the explosion finishes, so results are identical to vanilla.
+
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index adbfbcfb6c29aa75c5b599f2c30a503bd156feea..c2cf5f9c174a3c03a7efd3969bda895e6a536c78 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -232,6 +232,13 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+         return this.fandExplosionBlockCache;
+     }
+ 
++    private final io.fand.server.world.ExplosionEntityCache fandExplosionEntityCache = new
++            io.fand.server.world.ExplosionEntityCache();
++
++    public io.fand.server.world.ExplosionEntityCache fand$explosionEntityCache() {
++        return fandExplosionEntityCache;
++    }
++
+     /**
+      * Claims one slot of this tick's TNT detonation budget. Returns false when
+      * the budget is exhausted; callers keep the TNT primed and retry next tick.
+diff --git a/net/minecraft/world/level/ServerExplosion.java b/net/minecraft/world/level/ServerExplosion.java
+index 4e958c0da8df2fad50a26062ef694bdf16c81f10..8a92ba24d1d01ee61f9e7d5aef4b46869e43812f 100644
+--- a/net/minecraft/world/level/ServerExplosion.java
++++ b/net/minecraft/world/level/ServerExplosion.java
+@@ -32,8 +32,10 @@ import net.minecraft.world.level.gameevent.GameEvent;
+ import net.minecraft.world.level.gamerules.GameRules;
+ import net.minecraft.world.level.material.FluidState;
+ import net.minecraft.world.phys.AABB;
++import net.minecraft.world.phys.BlockHitResult;
+ import net.minecraft.world.phys.HitResult;
+ import net.minecraft.world.phys.Vec3;
++import net.minecraft.world.phys.shapes.VoxelShape;
+ import org.jspecify.annotations.Nullable;
+ 
+ public class ServerExplosion implements Explosion {
+@@ -111,9 +113,82 @@ public class ServerExplosion implements Explosion {
+ 
+     private float fandSeenPercent(final Entity entity) {
+         if (io.fand.server.hooks.FandHooks.explosionDensityCacheEnabled()) {
+-            return this.level.fand$explosionDensityCache().seenPercent(this.center, entity);
++            return this.level
++                .fand$explosionDensityCache()
++                .seenPercent(this.center, entity.getBoundingBox(), () -> this.fandComputeSeenPercent(entity));
+         }
+-        return getSeenPercent(this.center, entity);
++        return this.fandComputeSeenPercent(entity);
++    }
++
++    /**
++     * Replica of {@link #getSeenPercent} whose sight rays read block states
++     * from the explosion block cache instead of paying two chunk lookups per
++     * ray step. The blast sphere is fully cached by the preceding ray pass and
++     * blocks cannot change until this explosion finishes, so results are
++     * identical to vanilla.
++     */
++    private float fandComputeSeenPercent(final Entity entity) {
++        if (!io.fand.server.hooks.FandHooks.explosionExposureClipCacheEnabled()) {
++            return getSeenPercent(this.center, entity);
++        }
++        io.fand.server.world.ExplosionBlockCache fandBlockCache = this.level.fand$explosionBlockCache();
++        AABB bb = entity.getBoundingBox();
++        double xs = 1.0 / ((bb.maxX - bb.minX) * 2.0 + 1.0);
++        double ys = 1.0 / ((bb.maxY - bb.minY) * 2.0 + 1.0);
++        double zs = 1.0 / ((bb.maxZ - bb.minZ) * 2.0 + 1.0);
++        double xOffset = (1.0 - Math.floor(1.0 / xs) * xs) / 2.0;
++        double zOffset = (1.0 - Math.floor(1.0 / zs) * zs) / 2.0;
++        if (!(xs < 0.0) && !(ys < 0.0) && !(zs < 0.0)) {
++            int hits = 0;
++            int count = 0;
++
++            for (double xx = 0.0; xx <= 1.0; xx += xs) {
++                for (double yy = 0.0; yy <= 1.0; yy += ys) {
++                    for (double zz = 0.0; zz <= 1.0; zz += zs) {
++                        double x = Mth.lerp(xx, bb.minX, bb.maxX);
++                        double y = Mth.lerp(yy, bb.minY, bb.maxY);
++                        double z = Mth.lerp(zz, bb.minZ, bb.maxZ);
++                        Vec3 from = new Vec3(x + xOffset, y, z + zOffset);
++                        if (this.fandSightRayMisses(from, entity, fandBlockCache)) {
++                            hits++;
++                        }
++
++                        count++;
++                    }
++                }
++            }
++
++            return (float)hits / count;
++        } else {
++            return 0.0F;
++        }
++    }
++
++    /**
++     * Equivalent of {@code level.clip(new ClipContext(from, center, COLLIDER,
++     * Fluid.NONE, entity)).getType() == MISS}. With {@code Fluid.NONE} the
++     * fluid shape is always empty and never hits, so the result reduces to the
++     * first block-collision hit along the ray; block states come from the
++     * explosion block cache while shapes stay entity-resolved.
++     */
++    private boolean fandSightRayMisses(final Vec3 from, final Entity entity, final io.fand.server.world.ExplosionBlockCache blockCache) {
++        ClipContext context = new ClipContext(from, this.center, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, entity);
++        BlockHitResult hit = BlockGetter.traverseBlocks(from, this.center, context, (ctx, pos) -> {
++            BlockState state;
++            io.fand.server.world.ExplosionBlockCache.Entry entry = blockCache.get(pos.asLong());
++            if (entry != null && entry.state() != null) {
++                state = entry.state();
++            } else {
++                state = this.level.getBlockState(pos);
++                // Sight rays run after the ray pass within one explosion, so
++                // this entry is only ever read by later sight rays; the
++                // placeholder resistance is never consumed.
++                blockCache.put(pos.asLong(), state, Float.NaN, true);
++            }
++            VoxelShape shape = ctx.getBlockShape(state, this.level, pos);
++            return this.level.clipWithInteractionOverride(ctx.getFrom(), ctx.getTo(), pos, shape, state);
++        }, ctx -> (BlockHitResult)null);
++        return hit == null;
+     }
+ 
+     @Override
+@@ -131,9 +206,6 @@ public class ServerExplosion implements Explosion {
+         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+         io.fand.server.world.ExplosionBlockCache fandBlockCache =
+             io.fand.server.hooks.FandHooks.explosionBlockCacheEnabled() ? this.level.fand$explosionBlockCache() : null;
+-        if (fandBlockCache != null) {
+-            fandBlockCache.clear();
+-        }
+ 
+         for (RayDirection ray : RAYS) {
+             float remainingPower = this.radius * (0.7F + this.level.random.nextFloat() * 0.6F);
+@@ -213,7 +285,15 @@ public class ServerExplosion implements Explosion {
+             int z0 = Mth.floor(this.center.z - doubleRadius - 1.0);
+             int z1 = Mth.floor(this.center.z + doubleRadius + 1.0);
+ 
+-            for (Entity entity : this.level.getEntities(this.source, new AABB(x0, y0, z0, x1, y1, z1))) {
++            List<Entity> entities;
++            if (io.fand.server.hooks.FandHooks.explosionEntityCacheEnabled()) {
++                entities = this.level.fand$explosionEntityCache()
++                        .getEntities(this.level, this.center, doubleRadius, this.source);
++            } else {
++                entities = this.level.getEntities(this.source, new AABB(x0, y0, z0, x1, y1, z1));
++            }
++
++            for (Entity entity : entities) {
+                 if (!entity.ignoreExplosion(this)) {
+                     double dist = Math.sqrt(entity.distanceToSqr(this.center)) / doubleRadius;
+                     if (!(dist > 1.0)) {
+@@ -227,8 +307,8 @@ public class ServerExplosion implements Explosion {
+                         }
+ 
+                         double knockbackResistance = entity instanceof LivingEntity livingEntity
+-                            ? livingEntity.getAttributeValue(Attributes.EXPLOSION_KNOCKBACK_RESISTANCE)
+-                            : 0.0;
++                                ? livingEntity.getAttributeValue(Attributes.EXPLOSION_KNOCKBACK_RESISTANCE)
++                                : 0.0;
+                         double knockbackPower = (1.0 - dist) * exposure * knockbackMultiplier * (1.0 - knockbackResistance);
+                         Vec3 knockback = direction.scale(knockbackPower);
+                         entity.push(knockback);
+@@ -297,6 +377,10 @@ public class ServerExplosion implements Explosion {
+     }
+ 
+     public int explode() {
++        // Stale entries from the previous explosion must never survive into
++        // this one (its blocks may have been destroyed in between), regardless
++        // of which cache-consuming features are enabled.
++        this.level.fand$explosionBlockCache().clear();
+         this.level.gameEvent(this.source, GameEvent.EXPLODE, this.center);
+         List<BlockPos> toBlow = this.calculateExplodedPositions();
+         toBlow = io.fand.server.event.EntityEvents.fireExplodeBlocks(this.level, this.source, this.center, toBlow);
