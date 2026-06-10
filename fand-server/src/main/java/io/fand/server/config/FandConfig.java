@@ -129,6 +129,13 @@ public final class FandConfig {
         })
         @ConfigRange(min = 0, max = 1_000_000)
         public int tntDetonationBudget = 0;
+
+        @ConfigComment({
+                "Use a hash map for explosion drop merging instead of linear search.",
+                "Vanilla loops over all collected drops to find merge targets (O(n²)).",
+                "This switches to a hash-keyed lookup (O(n)), strictly vanilla-equivalent."
+        })
+        public boolean explosionDropHashMerge = true;
     }
 
     public static final class Console {

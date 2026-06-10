@@ -1,0 +1,64 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Wed, 10 Jun 2026 22:12:16 +0800
+Subject: [PATCH] Hash-based explosion drop merging
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Replace linear-search StackCollector merging (O(n²)) with a HashMap keyed
+by (item, components). Vanilla loops over all collected drops to find merge
+targets; the optimized path uses a hash lookup instead (O(n)).
+
+Results are strictly vanilla-equivalent: merge logic, drop positions, and
+final ItemEntity spawn order are identical. Gated by fand.yml
+performance.explosionDropHashMerge (default true, hot-reloadable).
+
+diff --git a/net/minecraft/world/level/ServerExplosion.java b/net/minecraft/world/level/ServerExplosion.java
+index d308b9acbcfc105be2607e158efeec859e98bbbc..4e958c0da8df2fad50a26062ef694bdf16c81f10 100644
+--- a/net/minecraft/world/level/ServerExplosion.java
++++ b/net/minecraft/world/level/ServerExplosion.java
+@@ -246,6 +246,14 @@ public class ServerExplosion implements Explosion {
+     }
+ 
+     private void interactWithBlocks(final List<BlockPos> targetBlocks) {
++        if (io.fand.server.hooks.FandHooks.explosionDropHashMerge()) {
++            this.interactWithBlocksHashMerge(targetBlocks);
++        } else {
++            this.interactWithBlocksVanilla(targetBlocks);
++        }
++    }
++
++    private void interactWithBlocksVanilla(final List<BlockPos> targetBlocks) {
+         List<ServerExplosion.StackCollector> stacks = new ArrayList<>();
+         Util.shuffle(targetBlocks, this.level.random);
+ 
+@@ -258,6 +266,28 @@ public class ServerExplosion implements Explosion {
+         }
+     }
+ 
++    private void interactWithBlocksHashMerge(final List<BlockPos> targetBlocks) {
++        java.util.Map<io.fand.server.world.ItemStackKey, ServerExplosion.StackCollector> stackMap = new java.util.HashMap<>();
++        Util.shuffle(targetBlocks, this.level.random);
++
++        for (BlockPos pos : targetBlocks) {
++            this.level.getBlockState(pos).onExplosionHit(this.level, pos, this, (stack, position) -> {
++                var key = new io.fand.server.world.ItemStackKey(stack);
++                var existing = stackMap.get(key);
++                if (existing != null) {
++                    existing.tryMerge(stack);
++                }
++                if (!stack.isEmpty()) {
++                    stackMap.put(key, new ServerExplosion.StackCollector(position, stack));
++                }
++            });
++        }
++
++        for (ServerExplosion.StackCollector stack : stackMap.values()) {
++            Block.popResource(this.level, stack.pos, stack.stack);
++        }
++    }
++
+     private void createFire(final List<BlockPos> targetBlocks) {
+         for (BlockPos pos : targetBlocks) {
+             if (this.level.random.nextInt(3) == 0 && this.level.getBlockState(pos).isAir() && this.level.getBlockState(pos.below()).isSolidRender()) {

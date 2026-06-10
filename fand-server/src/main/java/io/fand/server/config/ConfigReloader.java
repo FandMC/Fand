@@ -105,6 +105,9 @@ public final class ConfigReloader {
         if (previous.performance.tntDetonationBudget != reloaded.performance.tntDetonationBudget) {
             hotApplied.add("performance.tntDetonationBudget");
         }
+        if (previous.performance.explosionDropHashMerge != reloaded.performance.explosionDropHashMerge) {
+            hotApplied.add("performance.explosionDropHashMerge");
+        }
         io.fand.server.hooks.FandHooks.applyPerformanceConfig(reloaded.performance);
 
         plugins.reconfigure(toPluginOptions(reloaded));
