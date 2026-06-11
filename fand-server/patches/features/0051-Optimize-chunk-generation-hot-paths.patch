@@ -1,0 +1,771 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 11 Jun 2026 17:49:53 +0800
+Subject: [PATCH] Optimize chunk generation hot paths
+
+
+diff --git a/net/minecraft/server/level/ChunkGenerationTask.java b/net/minecraft/server/level/ChunkGenerationTask.java
+index 01b839b67db8f5787176e78db4dce817afa10207..6c59059545073b1d4f20137011c5be34146e58c1 100644
+--- a/net/minecraft/server/level/ChunkGenerationTask.java
++++ b/net/minecraft/server/level/ChunkGenerationTask.java
+@@ -11,9 +11,12 @@ import net.minecraft.world.level.chunk.ChunkAccess;
+ import net.minecraft.world.level.chunk.status.ChunkDependencies;
+ import net.minecraft.world.level.chunk.status.ChunkPyramid;
+ import net.minecraft.world.level.chunk.status.ChunkStatus;
++import net.minecraft.world.level.chunk.status.ChunkStep;
+ import org.jspecify.annotations.Nullable;
+ 
+ public class ChunkGenerationTask {
++    private static final List<ChunkStatus> CHUNK_STATUSES = ChunkStatus.getStatusList();
++    private static final ChunkGenerationTask.Plan[] PLANS = createPlans();
+     private final GeneratingChunkMap chunkMap;
+     private final ChunkPos pos;
+     private @Nullable ChunkStatus scheduledStatus = null;
+@@ -33,13 +36,33 @@ public class ChunkGenerationTask {
+     }
+ 
+     public static ChunkGenerationTask create(final GeneratingChunkMap chunkMap, final ChunkStatus targetStatus, final ChunkPos pos) {
+-        int worstCaseRadius = ChunkPyramid.GENERATION_PYRAMID.getStepTo(targetStatus).getAccumulatedRadiusOf(ChunkStatus.EMPTY);
++        int worstCaseRadius = worstCaseRadius(targetStatus);
+         StaticCache2D<GenerationChunkHolder> cache = StaticCache2D.create(
+             pos.x(), pos.z(), worstCaseRadius, (x, z) -> chunkMap.acquireGeneration(ChunkPos.pack(x, z))
+         );
+         return new ChunkGenerationTask(chunkMap, targetStatus, pos, cache);
+     }
+ 
++    private static int worstCaseRadius(final ChunkStatus targetStatus) {
++        return io.fand.server.hooks.FandHooks.chunkGenerationTaskPlanCacheEnabled()
++            ? planFor(targetStatus).radiusFor(ChunkStatus.EMPTY, true)
++            : ChunkPyramid.GENERATION_PYRAMID.getStepTo(targetStatus).getAccumulatedRadiusOf(ChunkStatus.EMPTY);
++    }
++
++    private static ChunkGenerationTask.Plan[] createPlans() {
++        ChunkGenerationTask.Plan[] plans = new ChunkGenerationTask.Plan[CHUNK_STATUSES.size()];
++
++        for (ChunkStatus status : CHUNK_STATUSES) {
++            plans[status.getIndex()] = new ChunkGenerationTask.Plan(status);
++        }
++
++        return plans;
++    }
++
++    private static ChunkGenerationTask.Plan planFor(final ChunkStatus status) {
++        return PLANS[status.getIndex()];
++    }
++
+     public @Nullable CompletableFuture<?> runUntilWait() {
+         while (true) {
+             CompletableFuture<?> waitingFor = this.waitForScheduledLayer();
+@@ -64,13 +87,19 @@ public class ChunkGenerationTask {
+             this.needsGeneration = true;
+             statusToSchedule = ChunkStatus.EMPTY;
+         } else {
+-            statusToSchedule = ChunkStatus.getStatusList().get(this.scheduledStatus.getIndex() + 1);
++            statusToSchedule = this.nextStatusAfter(this.scheduledStatus);
+         }
+ 
+         this.scheduleLayer(statusToSchedule, this.needsGeneration);
+         this.scheduledStatus = statusToSchedule;
+     }
+ 
++    private ChunkStatus nextStatusAfter(final ChunkStatus status) {
++        return io.fand.server.hooks.FandHooks.chunkGenerationTaskPlanCacheEnabled()
++            ? CHUNK_STATUSES.get(status.getIndex() + 1)
++            : ChunkStatus.getStatusList().get(status.getIndex() + 1);
++    }
++
+     public void markForCancellation() {
+         this.markedForCancellation = true;
+     }
+@@ -87,7 +116,7 @@ public class ChunkGenerationTask {
+         } else {
+             ChunkStatus highestGeneratedStatus = this.cache.get(this.pos.x(), this.pos.z()).getPersistedStatus();
+             if (highestGeneratedStatus != null && !highestGeneratedStatus.isBefore(this.targetStatus)) {
+-                ChunkDependencies dependencies = ChunkPyramid.LOADING_PYRAMID.getStepTo(this.targetStatus).accumulatedDependencies();
++                ChunkDependencies dependencies = this.loadingDependencies();
+                 int range = dependencies.getRadius();
+ 
+                 for (int x = this.pos.x() - range; x <= this.pos.x() + range; x++) {
+@@ -108,6 +137,12 @@ public class ChunkGenerationTask {
+         }
+     }
+ 
++    private ChunkDependencies loadingDependencies() {
++        return io.fand.server.hooks.FandHooks.chunkGenerationTaskPlanCacheEnabled()
++            ? planFor(this.targetStatus).loadingDependencies()
++            : ChunkPyramid.LOADING_PYRAMID.getStepTo(this.targetStatus).accumulatedDependencies();
++    }
++
+     public GenerationChunkHolder getCenter() {
+         return this.cache.get(this.pos.x(), this.pos.z());
+     }
+@@ -129,8 +164,12 @@ public class ChunkGenerationTask {
+     }
+ 
+     private int getRadiusForLayer(final ChunkStatus status, final boolean needsGeneration) {
+-        ChunkPyramid pyramid = needsGeneration ? ChunkPyramid.GENERATION_PYRAMID : ChunkPyramid.LOADING_PYRAMID;
+-        return pyramid.getStepTo(this.targetStatus).getAccumulatedRadiusOf(status);
++        if (io.fand.server.hooks.FandHooks.chunkGenerationTaskPlanCacheEnabled()) {
++            return planFor(this.targetStatus).radiusFor(status, needsGeneration);
++        } else {
++            ChunkPyramid pyramid = needsGeneration ? ChunkPyramid.GENERATION_PYRAMID : ChunkPyramid.LOADING_PYRAMID;
++            return pyramid.getStepTo(this.targetStatus).getAccumulatedRadiusOf(status);
++        }
+     }
+ 
+     private boolean scheduleChunkInLayer(final ChunkStatus status, final boolean needsGeneration, final GenerationChunkHolder chunkHolder) {
+@@ -140,7 +179,8 @@ public class ChunkGenerationTask {
+         if (generate && !needsGeneration) {
+             throw new IllegalStateException("Can't load chunk, but didn't expect to need to generate");
+         } else {
+-            CompletableFuture<ChunkResult<ChunkAccess>> future = chunkHolder.applyStep(pyramid.getStepTo(status), this.chunkMap, this.cache);
++            ChunkStep step = this.getStepForLayer(status, generate, pyramid);
++            CompletableFuture<ChunkResult<ChunkAccess>> future = chunkHolder.applyStep(step, this.chunkMap, this.cache);
+             ChunkResult<ChunkAccess> now = future.getNow(null);
+             if (now == null) {
+                 this.scheduledLayer.add(future);
+@@ -154,6 +194,12 @@ public class ChunkGenerationTask {
+         }
+     }
+ 
++    private ChunkStep getStepForLayer(final ChunkStatus status, final boolean generate, final ChunkPyramid fallbackPyramid) {
++        return io.fand.server.hooks.FandHooks.chunkGenerationTaskPlanCacheEnabled()
++            ? planFor(status).step(generate)
++            : fallbackPyramid.getStepTo(status);
++    }
++
+     private @Nullable CompletableFuture<?> waitForScheduledLayer() {
+         while (!this.scheduledLayer.isEmpty()) {
+             CompletableFuture<ChunkResult<ChunkAccess>> lastFuture = this.scheduledLayer.getLast();
+@@ -170,4 +216,45 @@ public class ChunkGenerationTask {
+ 
+         return null;
+     }
++
++    private record Plan(
++        ChunkStep generationStep,
++        ChunkStep loadingStep,
++        ChunkDependencies loadingDependencies,
++        int[] generationRadii,
++        int[] loadingRadii
++    ) {
++        private Plan(final ChunkStatus targetStatus) {
++            this(
++                ChunkPyramid.GENERATION_PYRAMID.getStepTo(targetStatus),
++                ChunkPyramid.LOADING_PYRAMID.getStepTo(targetStatus),
++                ChunkPyramid.LOADING_PYRAMID.getStepTo(targetStatus).accumulatedDependencies(),
++                radii(ChunkPyramid.GENERATION_PYRAMID.getStepTo(targetStatus)),
++                radii(ChunkPyramid.LOADING_PYRAMID.getStepTo(targetStatus))
++            );
++        }
++
++        private static int[] radii(final ChunkStep step) {
++            int[] radii = new int[CHUNK_STATUSES.size()];
++            int targetIndex = step.targetStatus().getIndex();
++
++            for (ChunkStatus status : CHUNK_STATUSES) {
++                if (status.getIndex() > targetIndex) {
++                    break;
++                }
++
++                radii[status.getIndex()] = step.getAccumulatedRadiusOf(status);
++            }
++
++            return radii;
++        }
++
++        private int radiusFor(final ChunkStatus status, final boolean needsGeneration) {
++            return (needsGeneration ? this.generationRadii : this.loadingRadii)[status.getIndex()];
++        }
++
++        private ChunkStep step(final boolean generate) {
++            return generate ? this.generationStep : this.loadingStep;
++        }
++    }
+ }
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index 549f3dccc722d8e19af934e3d3a35b766379061d..0bd0f4782ff1a459f2b0b1e95b72c6d9472d6ce6 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -74,6 +74,7 @@ import net.minecraft.util.profiling.Profiler;
+ import net.minecraft.util.profiling.ProfilerFiller;
+ import net.minecraft.util.thread.BlockableEventLoop;
+ import net.minecraft.util.thread.ConsecutiveExecutor;
++import net.minecraft.util.thread.TaskScheduler;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.EntityType;
+ import net.minecraft.world.entity.ai.village.poi.PoiManager;
+@@ -193,10 +194,16 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+ 
+         this.chunkGeneratorState = generator.createState(registryAccess.lookupOrThrow(Registries.STRUCTURE_SET), this.randomState, levelSeed);
+         this.mainThreadExecutor = mainThreadExecutor;
+-        ConsecutiveExecutor worldgen = new ConsecutiveExecutor(executor, "worldgen");
++        int worldgenParallelism = io.fand.server.hooks.FandHooks.chunkWorldgenParallelism();
+         this.chunkStatusListener = chunkStatusListener;
+         ConsecutiveExecutor light = new ConsecutiveExecutor(executor, "light");
+-        this.worldgenTaskDispatcher = new ChunkTaskDispatcher(worldgen, executor);
++        if (worldgenParallelism > 1) {
++            TaskScheduler<Runnable> worldgen = TaskScheduler.wrapExecutor("fand-worldgen", executor);
++            this.worldgenTaskDispatcher = new ParallelChunkTaskDispatcher(worldgen, executor, worldgenParallelism);
++        } else {
++            ConsecutiveExecutor worldgen = new ConsecutiveExecutor(executor, "worldgen");
++            this.worldgenTaskDispatcher = new ChunkTaskDispatcher(worldgen, executor);
++        }
+         this.lightTaskDispatcher = new ChunkTaskDispatcher(light, executor);
+         this.lightEngine = new ThreadedLevelLightEngine(chunkGetter, this, this.level.dimensionType().hasSkyLight(), light, this.lightTaskDispatcher);
+         this.distanceManager = new ChunkMap.DistanceManager(ticketStorage, executor, mainThreadExecutor);
+diff --git a/net/minecraft/server/level/ChunkTaskDispatcher.java b/net/minecraft/server/level/ChunkTaskDispatcher.java
+index 3666b1efc77ab9b2e1dd9c26c67474ba6f48412e..8f5ff925d39d4337a24c74b4f6d4eb27c7f1024e 100644
+--- a/net/minecraft/server/level/ChunkTaskDispatcher.java
++++ b/net/minecraft/server/level/ChunkTaskDispatcher.java
+@@ -1,10 +1,13 @@
+ package net.minecraft.server.level;
+ 
+ import com.mojang.logging.LogUtils;
++import it.unimi.dsi.fastutil.longs.LongSet;
++import java.util.List;
+ import java.util.concurrent.CompletableFuture;
+ import java.util.concurrent.Executor;
+ import java.util.function.IntConsumer;
+ import java.util.function.IntSupplier;
++import java.util.function.LongPredicate;
+ import net.minecraft.SharedConstants;
+ import net.minecraft.util.Unit;
+ import net.minecraft.util.thread.PriorityConsecutiveExecutor;
+@@ -76,20 +79,74 @@ public class ChunkTaskDispatcher implements ChunkHolder.LevelChangeListener, Aut
+ 
+     protected void pollTask() {
+         this.dispatcher.schedule(new StrictQueue.RunnableWithPriority(3, () -> {
+-            ChunkTaskPriorityQueue.TasksForChunk tasksForChunk = this.popTasks();
+-            if (tasksForChunk == null) {
+-                this.sleeping = true;
+-            } else {
+-                this.scheduleForExecution(tasksForChunk);
+-            }
++            this.pollTaskNow();
+         }));
+     }
+ 
++    private void pollTaskNow() {
++        ChunkTaskPriorityQueue.TasksForChunk tasksForChunk = this.popTasks();
++        if (tasksForChunk == null) {
++            this.sleeping = true;
++        } else {
++            this.scheduleForExecution(tasksForChunk);
++        }
++    }
++
+     protected void scheduleForExecution(final ChunkTaskPriorityQueue.TasksForChunk tasksForChunk) {
+-        CompletableFuture.allOf(tasksForChunk.tasks().stream().map(message -> this.executor.scheduleWithResult(future -> {
++        if (io.fand.server.hooks.FandHooks.chunkTaskDispatcherBatchLoopEnabled()) {
++            this.scheduleForExecutionLoop(tasksForChunk);
++        } else {
++            this.pollAfter(CompletableFuture.allOf(tasksForChunk.tasks().stream().map(message -> this.executor.scheduleWithResult(future -> {
++                message.run();
++                future.complete(Unit.INSTANCE);
++            })).toArray(CompletableFuture[]::new)), tasksForChunk);
++        }
++    }
++
++    private void scheduleForExecutionLoop(final ChunkTaskPriorityQueue.TasksForChunk tasksForChunk) {
++        List<Runnable> tasks = tasksForChunk.tasks();
++        int taskCount = tasks.size();
++        if (taskCount == 0) {
++            this.onTaskBatchComplete(tasksForChunk);
++            this.pollTask();
++        } else if (taskCount == 1) {
++            this.pollAfter(this.scheduleTask(tasks.get(0)), tasksForChunk);
++        } else {
++            CompletableFuture<?>[] futures = new CompletableFuture<?>[taskCount];
++
++            for (int i = 0; i < taskCount; i++) {
++                futures[i] = this.scheduleTask(tasks.get(i));
++            }
++
++            this.pollAfter(CompletableFuture.allOf(futures), tasksForChunk);
++        }
++    }
++
++    private CompletableFuture<?> scheduleTask(final Runnable message) {
++        return this.executor.scheduleWithResult(future -> {
+             message.run();
+             future.complete(Unit.INSTANCE);
+-        })).toArray(CompletableFuture[]::new)).thenAccept(r -> this.pollTask());
++        });
++    }
++
++    protected CompletableFuture<?> scheduleTasksSequentially(final List<Runnable> tasks) {
++        return this.executor.scheduleWithResult(future -> {
++            for (Runnable message : tasks) {
++                message.run();
++            }
++
++            future.complete(Unit.INSTANCE);
++        });
++    }
++
++    protected void pollAfter(final CompletableFuture<?> future, final ChunkTaskPriorityQueue.TasksForChunk tasksForChunk) {
++        future.thenAccept(r -> this.dispatcher.schedule(new StrictQueue.RunnableWithPriority(3, () -> {
++            this.onTaskBatchComplete(tasksForChunk);
++            this.pollTaskNow();
++        })));
++    }
++
++    protected void onTaskBatchComplete(final ChunkTaskPriorityQueue.TasksForChunk tasksForChunk) {
+     }
+ 
+     protected void onRelease(final long key) {
+@@ -99,6 +156,14 @@ public class ChunkTaskDispatcher implements ChunkHolder.LevelChangeListener, Aut
+         return this.queue.pop();
+     }
+ 
++    protected ChunkTaskPriorityQueue.@Nullable TasksForChunk popTasksExcluding(final LongSet excludedChunkPositions) {
++        return this.queue.pop(excludedChunkPositions);
++    }
++
++    protected ChunkTaskPriorityQueue.@Nullable TasksForChunk popTasksAvoiding(final LongPredicate unavailableChunkPosition) {
++        return this.queue.popAvoiding(unavailableChunkPosition);
++    }
++
+     @Override
+     public void close() {
+         this.executor.close();
+diff --git a/net/minecraft/server/level/ChunkTaskPriorityQueue.java b/net/minecraft/server/level/ChunkTaskPriorityQueue.java
+index 6b436c812c92798b590766206115276c68b37d14..df8958c1a3aa60dd4da63e510d531d51e85c8105 100644
+--- a/net/minecraft/server/level/ChunkTaskPriorityQueue.java
++++ b/net/minecraft/server/level/ChunkTaskPriorityQueue.java
+@@ -2,7 +2,9 @@ package net.minecraft.server.level;
+ 
+ import com.google.common.collect.Lists;
+ import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
++import it.unimi.dsi.fastutil.longs.LongSet;
+ import java.util.List;
++import java.util.function.LongPredicate;
+ import java.util.stream.IntStream;
+ import net.minecraft.world.level.ChunkPos;
+ import org.jspecify.annotations.Nullable;
+@@ -61,19 +63,50 @@ public class ChunkTaskPriorityQueue {
+     }
+ 
+     public ChunkTaskPriorityQueue.@Nullable TasksForChunk pop() {
++        return this.popAvoiding(null);
++    }
++
++    public ChunkTaskPriorityQueue.@Nullable TasksForChunk pop(final @Nullable LongSet excludedChunkPositions) {
++        return this.popAvoiding(excludedChunkPositions == null || excludedChunkPositions.isEmpty() ? null : excludedChunkPositions::contains);
++    }
++
++    public ChunkTaskPriorityQueue.@Nullable TasksForChunk popAvoiding(final @Nullable LongPredicate unavailableChunkPosition) {
+         if (!this.hasWork()) {
+             return null;
+         } else {
+-            int index = this.topPriorityQueueIndex;
+-            Long2ObjectLinkedOpenHashMap<List<Runnable>> queue = this.queuesPerPriority.get(index);
+-            long chunkPos = queue.firstLongKey();
+-            List<Runnable> tasks = queue.removeFirst();
++            for (int index = this.topPriorityQueueIndex; index < PRIORITY_LEVEL_COUNT; index++) {
++                Long2ObjectLinkedOpenHashMap<List<Runnable>> queue = this.queuesPerPriority.get(index);
++                long chunkPos = this.firstAvailableChunk(queue, unavailableChunkPosition);
++                if (chunkPos != Long.MAX_VALUE) {
++                    List<Runnable> tasks = queue.remove(chunkPos);
++                    this.refreshTopPriorityQueueIndex();
++                    return new ChunkTaskPriorityQueue.TasksForChunk(chunkPos, tasks);
++                }
++            }
+ 
+-            while (this.hasWork() && this.queuesPerPriority.get(this.topPriorityQueueIndex).isEmpty()) {
+-                this.topPriorityQueueIndex++;
++            return null;
++        }
++    }
++
++    private long firstAvailableChunk(final Long2ObjectLinkedOpenHashMap<List<Runnable>> queue, final @Nullable LongPredicate unavailableChunkPosition) {
++        if (queue.isEmpty()) {
++            return Long.MAX_VALUE;
++        } else if (unavailableChunkPosition == null) {
++            return queue.firstLongKey();
++        } else {
++            for (long chunkPos : queue.keySet()) {
++                if (!unavailableChunkPosition.test(chunkPos)) {
++                    return chunkPos;
++                }
+             }
+ 
+-            return new ChunkTaskPriorityQueue.TasksForChunk(chunkPos, tasks);
++            return Long.MAX_VALUE;
++        }
++    }
++
++    private void refreshTopPriorityQueueIndex() {
++        while (this.hasWork() && this.queuesPerPriority.get(this.topPriorityQueueIndex).isEmpty()) {
++            this.topPriorityQueueIndex++;
+         }
+     }
+ 
+diff --git a/net/minecraft/server/level/ParallelChunkTaskDispatcher.java b/net/minecraft/server/level/ParallelChunkTaskDispatcher.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..9f086e741bd44c1012e8bc0556d5811fee72e125
+--- /dev/null
++++ b/net/minecraft/server/level/ParallelChunkTaskDispatcher.java
+@@ -0,0 +1,68 @@
++package net.minecraft.server.level;
++
++import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
++import it.unimi.dsi.fastutil.longs.LongSet;
++import java.util.List;
++import java.util.concurrent.Executor;
++import net.minecraft.util.thread.TaskScheduler;
++import net.minecraft.world.level.ChunkPos;
++import org.jspecify.annotations.Nullable;
++
++public class ParallelChunkTaskDispatcher extends ChunkTaskDispatcher {
++    // FULL generation can run block-writing statuses one chunk from the task center,
++    // and FEATURES may write one additional neighboring chunk.
++    private static final int MAX_BLOCK_WRITE_ENVELOPE_RADIUS = 2;
++    private static final int MAX_OVERLAPPING_WRITE_ENVELOPE_DISTANCE = MAX_BLOCK_WRITE_ENVELOPE_RADIUS * 2;
++    private final LongSet chunkPositionsInExecution = new LongOpenHashSet();
++    private final int maxChunksInExecution;
++
++    public ParallelChunkTaskDispatcher(final TaskScheduler<Runnable> executor, final Executor dispatcherExecutor, final int maxChunksInExecution) {
++        super(executor, dispatcherExecutor);
++        this.maxChunksInExecution = maxChunksInExecution;
++    }
++
++    @Override
++    protected ChunkTaskPriorityQueue.@Nullable TasksForChunk popTasks() {
++        return this.chunkPositionsInExecution.size() < this.maxChunksInExecution
++            ? this.popTasksAvoiding(this::overlapsActiveWriteEnvelope)
++            : null;
++    }
++
++    private boolean overlapsActiveWriteEnvelope(final long candidateChunkPos) {
++        for (long activeChunkPos : this.chunkPositionsInExecution) {
++            if (hasOverlappingWriteEnvelope(activeChunkPos, candidateChunkPos)) {
++                return true;
++            }
++        }
++
++        return false;
++    }
++
++    static boolean hasOverlappingWriteEnvelope(final long firstChunkPos, final long secondChunkPos) {
++        int distanceX = Math.abs(ChunkPos.getX(firstChunkPos) - ChunkPos.getX(secondChunkPos));
++        int distanceZ = Math.abs(ChunkPos.getZ(firstChunkPos) - ChunkPos.getZ(secondChunkPos));
++        return distanceX <= MAX_OVERLAPPING_WRITE_ENVELOPE_DISTANCE && distanceZ <= MAX_OVERLAPPING_WRITE_ENVELOPE_DISTANCE;
++    }
++
++    @Override
++    protected void scheduleForExecution(final ChunkTaskPriorityQueue.TasksForChunk tasksForChunk) {
++        if (!this.chunkPositionsInExecution.add(tasksForChunk.chunkPos())) {
++            throw new IllegalStateException("Chunk task already running for " + ChunkPos.unpack(tasksForChunk.chunkPos()));
++        }
++        List<Runnable> tasks = tasksForChunk.tasks();
++        if (tasks.isEmpty()) {
++            this.onTaskBatchComplete(tasksForChunk);
++            this.pollTask();
++        } else {
++            this.pollAfter(this.scheduleTasksSequentially(tasks), tasksForChunk);
++        }
++        if (this.chunkPositionsInExecution.size() < this.maxChunksInExecution) {
++            this.pollTask();
++        }
++    }
++
++    @Override
++    protected void onTaskBatchComplete(final ChunkTaskPriorityQueue.TasksForChunk tasksForChunk) {
++        this.chunkPositionsInExecution.remove(tasksForChunk.chunkPos());
++    }
++}
+diff --git a/net/minecraft/server/level/WorldGenRegion.java b/net/minecraft/server/level/WorldGenRegion.java
+index df9d1b51d333a7497648b0d74236c66bff372205..f44849d12a87acfb6446a2d7575e8990b4493ec3 100644
+--- a/net/minecraft/server/level/WorldGenRegion.java
++++ b/net/minecraft/server/level/WorldGenRegion.java
+@@ -41,6 +41,7 @@ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.border.WorldBorder;
+ import net.minecraft.world.level.chunk.ChunkAccess;
+ import net.minecraft.world.level.chunk.ChunkSource;
++import net.minecraft.world.level.chunk.status.ChunkDependencies;
+ import net.minecraft.world.level.chunk.status.ChunkStatus;
+ import net.minecraft.world.level.chunk.status.ChunkStep;
+ import net.minecraft.world.level.chunk.status.ChunkType;
+@@ -63,6 +64,7 @@ public class WorldGenRegion implements WorldGenLevel {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private final StaticCache2D<GenerationChunkHolder> cache;
+     private final ChunkAccess center;
++    private final ChunkPos centerPos;
+     private final ServerLevel level;
+     private final long seed;
+     private final LevelData levelData;
+@@ -72,6 +74,9 @@ public class WorldGenRegion implements WorldGenLevel {
+     private final WorldGenTickAccess<Fluid> fluidTicks = new WorldGenTickAccess<>(pos -> this.getChunk(pos).getFluidTicks());
+     private final BiomeManager biomeManager;
+     private final ChunkStep generatingStep;
++    private final ChunkDependencies directDependencies;
++    private final int directDependencyCount;
++    private final int blockStateWriteRadius;
+     private @Nullable Supplier<String> currentlyGenerating;
+     private final AtomicLong subTickCount = new AtomicLong();
+     private static final Identifier WORLDGEN_REGION_RANDOM = Identifier.withDefaultNamespace("worldgen_region_random");
+@@ -80,12 +85,16 @@ public class WorldGenRegion implements WorldGenLevel {
+         this.generatingStep = generatingStep;
+         this.cache = cache;
+         this.center = center;
++        this.centerPos = center.getPos();
+         this.level = level;
+         this.seed = level.getSeed();
+         this.levelData = level.getLevelData();
+-        this.random = level.getChunkSource().randomState().getOrCreateRandomFactory(WORLDGEN_REGION_RANDOM).at(this.center.getPos().getWorldPosition());
++        this.random = level.getChunkSource().randomState().getOrCreateRandomFactory(WORLDGEN_REGION_RANDOM).at(this.centerPos.getWorldPosition());
+         this.dimensionType = level.dimensionType();
+         this.biomeManager = new BiomeManager(this, BiomeManager.obfuscateSeed(this.seed));
++        this.directDependencies = generatingStep.directDependencies();
++        this.directDependencyCount = this.directDependencies.size();
++        this.blockStateWriteRadius = generatingStep.blockStateWriteRadius();
+     }
+ 
+     public boolean isOldChunkAround(final ChunkPos pos, final int range) {
+@@ -93,7 +102,7 @@ public class WorldGenRegion implements WorldGenLevel {
+     }
+ 
+     public ChunkPos getCenter() {
+-        return this.center.getPos();
++        return this.centerPos;
+     }
+ 
+     @Override
+@@ -108,10 +117,10 @@ public class WorldGenRegion implements WorldGenLevel {
+ 
+     @Override
+     public @Nullable ChunkAccess getChunk(final int chunkX, final int chunkZ, final ChunkStatus targetStatus, final boolean loadOrGenerate) {
+-        int distance = this.center.getPos().getChessboardDistance(chunkX, chunkZ);
+-        ChunkStatus maxAllowedStatus = distance >= this.generatingStep.directDependencies().size()
++        int distance = this.centerPos.getChessboardDistance(chunkX, chunkZ);
++        ChunkStatus maxAllowedStatus = distance >= this.directDependencyCount
+             ? null
+-            : this.generatingStep.directDependencies().get(distance);
++            : this.directDependencies.get(distance);
+         GenerationChunkHolder chunkHolder;
+         if (maxAllowedStatus != null) {
+             chunkHolder = this.cache.get(chunkX, chunkZ);
+@@ -134,16 +143,16 @@ public class WorldGenRegion implements WorldGenLevel {
+         category.setDetail("Requested status", targetStatus::getName);
+         category.setDetail("Actual status", () -> chunkHolder == null ? "[out of cache bounds]" : chunkHolder.getPersistedStatus().getName());
+         category.setDetail("Maximum allowed status", () -> maxAllowedStatus == null ? "null" : maxAllowedStatus.getName());
+-        category.setDetail("Dependencies", this.generatingStep.directDependencies()::toString);
++        category.setDetail("Dependencies", this.directDependencies::toString);
+         category.setDetail("Requested distance", distance);
+-        category.setDetail("Generating chunk", this.center.getPos()::toString);
++        category.setDetail("Generating chunk", this.centerPos::toString);
+         throw new ReportedException(report);
+     }
+ 
+     @Override
+     public boolean hasChunk(final int chunkX, final int chunkZ) {
+-        int distance = this.center.getPos().getChessboardDistance(chunkX, chunkZ);
+-        return distance < this.generatingStep.directDependencies().size();
++        int distance = this.centerPos.getChessboardDistance(chunkX, chunkZ);
++        return distance < this.directDependencyCount;
+     }
+ 
+     @Override
+@@ -153,7 +162,7 @@ public class WorldGenRegion implements WorldGenLevel {
+ 
+     @Override
+     public FluidState getFluidState(final BlockPos pos) {
+-        return this.getChunk(pos).getFluidState(pos);
++        return this.getChunk(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ())).getFluidState(pos);
+     }
+ 
+     @Override
+@@ -225,10 +234,14 @@ public class WorldGenRegion implements WorldGenLevel {
+     public boolean ensureCanWrite(final BlockPos pos) {
+         int chunkX = SectionPos.blockToSectionCoord(pos.getX());
+         int chunkZ = SectionPos.blockToSectionCoord(pos.getZ());
+-        ChunkPos centerPos = this.getCenter();
++        return this.ensureCanWrite(chunkX, chunkZ, pos);
++    }
++
++    private boolean ensureCanWrite(final int chunkX, final int chunkZ, final BlockPos pos) {
++        ChunkPos centerPos = this.centerPos;
+         int distanceX = Math.abs(centerPos.x() - chunkX);
+         int distanceZ = Math.abs(centerPos.z() - chunkZ);
+-        if (distanceX <= this.generatingStep.blockStateWriteRadius() && distanceZ <= this.generatingStep.blockStateWriteRadius()) {
++        if (distanceX <= this.blockStateWriteRadius && distanceZ <= this.blockStateWriteRadius) {
+             if (this.center.isUpgrading()) {
+                 LevelHeightAccessor levelHeightAccessor = this.center.getHeightAccessorForGeneration();
+                 if (levelHeightAccessor.isOutsideBuildHeight(pos.getY())) {
+@@ -255,10 +268,12 @@ public class WorldGenRegion implements WorldGenLevel {
+ 
+     @Override
+     public boolean setBlock(final BlockPos pos, final BlockState blockState, @Block.UpdateFlags final int updateFlags, final int updateLimit) {
+-        if (!this.ensureCanWrite(pos)) {
++        int chunkX = SectionPos.blockToSectionCoord(pos.getX());
++        int chunkZ = SectionPos.blockToSectionCoord(pos.getZ());
++        if (!this.ensureCanWrite(chunkX, chunkZ, pos)) {
+             return false;
+         } else {
+-            ChunkAccess chunk = this.getChunk(pos);
++            ChunkAccess chunk = this.getChunk(chunkX, chunkZ);
+             BlockState oldState = chunk.setBlockState(pos, blockState, updateFlags);
+             if (oldState != null) {
+                 this.level.updatePOIOnBlockStateChange(pos, oldState, blockState);
+@@ -296,7 +311,7 @@ public class WorldGenRegion implements WorldGenLevel {
+     }
+ 
+     private void markPosForPostprocessing(final BlockPos blockPos) {
+-        this.getChunk(blockPos).markPosForPostprocessing(blockPos);
++        this.getChunk(SectionPos.blockToSectionCoord(blockPos.getX()), SectionPos.blockToSectionCoord(blockPos.getZ())).markPosForPostprocessing(blockPos);
+     }
+ 
+     @Override
+diff --git a/net/minecraft/world/level/chunk/storage/IOWorker.java b/net/minecraft/world/level/chunk/storage/IOWorker.java
+index cc5d366f7b485f98901572b1aaf57d8b650d521f..a1c7939bc6d4d5b1698405285d719171529683eb 100644
+--- a/net/minecraft/world/level/chunk/storage/IOWorker.java
++++ b/net/minecraft/world/level/chunk/storage/IOWorker.java
+@@ -87,6 +87,12 @@ public class IOWorker implements AutoCloseable, ChunkScanAccess {
+     }
+ 
+     private CompletableFuture<BitSet> createOldDataForRegion(final int regionX, final int regionZ) {
++        return io.fand.server.hooks.FandHooks.chunkStorageRegionScanFastPathEnabled()
++            ? this.submitTask(() -> this.scanOldDataForRegion(regionX, regionZ))
++            : this.createOldDataForRegionVanilla(regionX, regionZ);
++    }
++
++    private CompletableFuture<BitSet> createOldDataForRegionVanilla(final int regionX, final int regionZ) {
+         return CompletableFuture.supplyAsync(
+             () -> {
+                 ChunkPos from = ChunkPos.minFromRegion(regionX, regionZ);
+@@ -101,8 +107,8 @@ public class IOWorker implements AutoCloseable, ChunkScanAccess {
+ 
+                             try {
+                                 this.scanChunk(pos, collectFields).join();
+-                            } catch (Exception var7) {
+-                                LOGGER.warn("Failed to scan chunk {}", pos, var7);
++                            } catch (Exception exception) {
++                                LOGGER.warn("Failed to scan chunk {}", pos, exception);
+                                 return;
+                             }
+ 
+@@ -118,6 +124,54 @@ public class IOWorker implements AutoCloseable, ChunkScanAccess {
+         );
+     }
+ 
++    private BitSet scanOldDataForRegion(final int regionX, final int regionZ) {
++        BitSet resultSet = new BitSet();
++        boolean hasStoredRegion = this.storage.doesRegionFileExist(regionX, regionZ);
++        if (!hasStoredRegion && !this.hasPendingWritesInRegion(regionX, regionZ)) {
++            return resultSet;
++        }
++
++        ChunkPos from = ChunkPos.minFromRegion(regionX, regionZ);
++        ChunkPos to = ChunkPos.maxFromRegion(regionX, regionZ);
++        ChunkPos.rangeClosed(from, to)
++            .forEach(pos -> {
++                CollectFields collectFields = new CollectFields(
++                    new FieldSelector(IntTag.TYPE, "DataVersion"), new FieldSelector(CompoundTag.TYPE, "blending_data")
++                );
++
++                try {
++                    IOWorker.PendingStore pendingStore = this.pendingWrites.get(pos);
++                    if (pendingStore != null) {
++                        CompoundTag data = pendingStore.data;
++                        if (data != null) {
++                            data.acceptAsRoot(collectFields);
++                        }
++                    } else if (hasStoredRegion) {
++                        this.storage.scanChunkInExistingRegion(pos, collectFields);
++                    }
++                } catch (Exception exception) {
++                    LOGGER.warn("Failed to scan chunk {}", pos, exception);
++                    return;
++                }
++
++                if (collectFields.getResult() instanceof CompoundTag chunkTag && this.isOldChunk(chunkTag)) {
++                    int chunkIndex = pos.getRegionLocalZ() * 32 + pos.getRegionLocalX();
++                    resultSet.set(chunkIndex);
++                }
++            });
++        return resultSet;
++    }
++
++    private boolean hasPendingWritesInRegion(final int regionX, final int regionZ) {
++        for (ChunkPos pos : this.pendingWrites.keySet()) {
++            if (pos.getRegionX() == regionX && pos.getRegionZ() == regionZ) {
++                return true;
++            }
++        }
++
++        return false;
++    }
++
+     private boolean isOldChunk(final CompoundTag tag) {
+         return tag.getIntOr("DataVersion", 0) < 4295 || tag.getCompound("blending_data").isPresent();
+     }
+diff --git a/net/minecraft/world/level/chunk/storage/RegionFileStorage.java b/net/minecraft/world/level/chunk/storage/RegionFileStorage.java
+index 56793559e200b651cfe10ebf97be821922158af6..75d6b9160e787c371077ad0c56cd5abc4c72b27e 100644
+--- a/net/minecraft/world/level/chunk/storage/RegionFileStorage.java
++++ b/net/minecraft/world/level/chunk/storage/RegionFileStorage.java
+@@ -4,6 +4,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
+ import java.io.DataInputStream;
+ import java.io.DataOutputStream;
+ import java.io.IOException;
++import java.nio.file.Files;
+ import java.nio.file.Path;
+ import net.minecraft.SharedConstants;
+ import net.minecraft.nbt.CompoundTag;
+@@ -30,7 +31,11 @@ public final class RegionFileStorage implements AutoCloseable {
+     }
+ 
+     private RegionFile getRegionFile(final ChunkPos pos) throws IOException {
+-        long key = ChunkPos.pack(pos.getRegionX(), pos.getRegionZ());
++        return this.getRegionFile(pos.getRegionX(), pos.getRegionZ());
++    }
++
++    private RegionFile getRegionFile(final int regionX, final int regionZ) throws IOException {
++        long key = ChunkPos.pack(regionX, regionZ);
+         RegionFile region = this.regionCache.getAndMoveToFirst(key);
+         if (region != null) {
+             return region;
+@@ -40,14 +45,26 @@ public final class RegionFileStorage implements AutoCloseable {
+             }
+ 
+             FileUtil.createDirectoriesSafe(this.folder);
+-            Path file = this.folder.resolve("r." + pos.getRegionX() + "." + pos.getRegionZ() + ".mca");
++            Path file = this.getRegionFilePath(regionX, regionZ);
+             RegionFile newRegion = new RegionFile(this.info, file, this.folder, this.sync);
+             this.regionCache.putAndMoveToFirst(key, newRegion);
+             return newRegion;
+         }
+     }
+ 
++    boolean doesRegionFileExist(final int regionX, final int regionZ) {
++        return Files.isRegularFile(this.getRegionFilePath(regionX, regionZ));
++    }
++
++    private Path getRegionFilePath(final int regionX, final int regionZ) {
++        return this.folder.resolve("r." + regionX + "." + regionZ + ".mca");
++    }
++
+     public @Nullable CompoundTag read(final ChunkPos pos) throws IOException {
++        if (io.fand.server.hooks.FandHooks.chunkStorageRegionScanFastPathEnabled() && !this.doesRegionFileExist(pos.getRegionX(), pos.getRegionZ())) {
++            return null;
++        }
++
+         RegionFile region = this.getRegionFile(pos);
+ 
+         CompoundTag var4;
+@@ -63,6 +80,14 @@ public final class RegionFileStorage implements AutoCloseable {
+     }
+ 
+     public void scanChunk(final ChunkPos pos, final StreamTagVisitor scanner) throws IOException {
++        if (io.fand.server.hooks.FandHooks.chunkStorageRegionScanFastPathEnabled() && !this.doesRegionFileExist(pos.getRegionX(), pos.getRegionZ())) {
++            return;
++        }
++
++        this.scanChunkInExistingRegion(pos, scanner);
++    }
++
++    void scanChunkInExistingRegion(final ChunkPos pos, final StreamTagVisitor scanner) throws IOException {
+         RegionFile region = this.getRegionFile(pos);
+ 
+         try (DataInputStream regionChunkInputStream = region.getChunkDataInputStream(pos)) {

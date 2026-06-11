@@ -86,6 +86,18 @@ public final class FandConfig {
         })
         @ConfigRange(min = 0, max = 4096)
         public int trackingDiffApplyBudget = 256;
+
+        @ConfigComment({
+                "Maximum chunk-generation batches allowed to run at the same",
+                "time. Set to 1 for vanilla's serialized worldgen dispatcher,",
+                "or 0 to derive a conservative value from available processors.",
+                "Parallel batches are limited to non-overlapping block-write",
+                "envelopes, preserving vanilla chunk status dependencies and",
+                "generated content. Existing worlds need a restart to replace",
+                "their dispatcher."
+        })
+        @ConfigRange(min = 0, max = 64)
+        public int worldgenParallelism = 0;
     }
 
     public static final class Performance {
@@ -188,6 +200,33 @@ public final class FandConfig {
                 "materialized vanilla path. Results are identical to vanilla."
         })
         public volatile boolean entityMovementLazyColliders = true;
+
+        @ConfigComment({
+                "Cache immutable chunk-generation status lists, pyramid steps,",
+                "dependency radii, and loading dependency tables used by each",
+                "chunk generation task. This avoids rebuilding the same control",
+                "data while preserving the exact vanilla generation dependencies",
+                "and execution order."
+        })
+        public volatile boolean chunkGenerationTaskPlanCache = true;
+
+        @ConfigComment({
+                "Schedule chunk task batches with a direct loop instead of stream",
+                "pipelines and use a single-future fast path for one-task batches.",
+                "The same tasks are submitted in the same order; only dispatcher",
+                "allocation overhead is reduced."
+        })
+        public volatile boolean chunkTaskDispatcherBatchLoop = true;
+
+        @ConfigComment({
+                "Avoid opening or creating region files when chunk loads and bulk",
+                "scans target a region file that does not exist, and scan blending",
+                "old-chunk metadata for a whole region in one IOWorker task instead",
+                "of scheduling 1024 per-chunk scan tasks. Existing region files,",
+                "pending writes, datafixing, and old-chunk detection results are",
+                "unchanged."
+        })
+        public volatile boolean chunkStorageRegionScanFastPath = true;
     }
 
     public static final class Console {

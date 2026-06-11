@@ -112,6 +112,10 @@ public final class FandHooks {
     private static volatile boolean entityCollisionAbortPropagation = true;
     private static volatile boolean pushableEntityConsumer = true;
     private static volatile boolean entityMovementLazyColliders = true;
+    private static volatile boolean chunkGenerationTaskPlanCache = true;
+    private static volatile boolean chunkTaskDispatcherBatchLoop = true;
+    private static volatile boolean chunkStorageRegionScanFastPath = true;
+    private static volatile int chunkWorldgenParallelism = 0;
 
     private FandHooks() {
     }
@@ -129,6 +133,13 @@ public final class FandHooks {
         entityCollisionAbortPropagation = performance.entityCollisionAbortPropagation;
         pushableEntityConsumer = performance.pushableEntityConsumer;
         entityMovementLazyColliders = performance.entityMovementLazyColliders;
+        chunkGenerationTaskPlanCache = performance.chunkGenerationTaskPlanCache;
+        chunkTaskDispatcherBatchLoop = performance.chunkTaskDispatcherBatchLoop;
+        chunkStorageRegionScanFastPath = performance.chunkStorageRegionScanFastPath;
+    }
+
+    public static void applyChunkConfig(io.fand.server.config.FandConfig.Chunks chunks) {
+        chunkWorldgenParallelism = chunks.worldgenParallelism;
     }
 
     public static boolean explosionDensityCacheEnabled() {
@@ -177,6 +188,27 @@ public final class FandHooks {
 
     public static boolean entityMovementLazyCollidersEnabled() {
         return entityMovementLazyColliders;
+    }
+
+    public static boolean chunkGenerationTaskPlanCacheEnabled() {
+        return chunkGenerationTaskPlanCache;
+    }
+
+    public static boolean chunkTaskDispatcherBatchLoopEnabled() {
+        return chunkTaskDispatcherBatchLoop;
+    }
+
+    public static boolean chunkStorageRegionScanFastPathEnabled() {
+        return chunkStorageRegionScanFastPath;
+    }
+
+    public static int chunkWorldgenParallelism() {
+        int configured = chunkWorldgenParallelism;
+        if (configured > 0) {
+            return configured;
+        }
+        int processors = Runtime.getRuntime().availableProcessors();
+        return Math.max(2, Math.min(8, processors / 2));
     }
 
     public static EventBus events() {

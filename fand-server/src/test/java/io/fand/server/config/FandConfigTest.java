@@ -27,6 +27,7 @@ final class FandConfigTest {
         assertThat(config.scheduler.asyncThreads).isZero();
         assertThat(config.chunks.workerThreads).isZero();
         assertThat(config.chunks.trackingDiffApplyBudget).isEqualTo(256);
+        assertThat(config.chunks.worldgenParallelism).isZero();
         assertThat(config.console.gui.enabled).isTrue();
         assertThat(config.console.gui.theme).isEqualTo("system");
         assertThat(config.network.forwarding.mode).isEqualTo("none");
@@ -36,6 +37,9 @@ final class FandConfigTest {
         assertThat(config.performance.entityCollisionAbortPropagation).isTrue();
         assertThat(config.performance.pushableEntityConsumer).isTrue();
         assertThat(config.performance.entityMovementLazyColliders).isTrue();
+        assertThat(config.performance.chunkGenerationTaskPlanCache).isTrue();
+        assertThat(config.performance.chunkTaskDispatcherBatchLoop).isTrue();
+        assertThat(config.performance.chunkStorageRegionScanFastPath).isTrue();
         assertThat(Files.readString(path))
                 .contains("# Public-facing identity settings.")
                 .contains("identity:")
@@ -50,6 +54,7 @@ final class FandConfigTest {
                 .contains("chunks:")
                 .contains("workerThreads: 0")
                 .contains("trackingDiffApplyBudget: 256")
+                .contains("worldgenParallelism: 0")
                 .contains("console:")
                 .contains("gui:")
                 .contains("enabled: true")
@@ -63,7 +68,10 @@ final class FandConfigTest {
                 .contains("entitySectionChunkScan: true")
                 .contains("entityCollisionAbortPropagation: true")
                 .contains("pushableEntityConsumer: true")
-                .contains("entityMovementLazyColliders: true");
+                .contains("entityMovementLazyColliders: true")
+                .contains("chunkGenerationTaskPlanCache: true")
+                .contains("chunkTaskDispatcherBatchLoop: true")
+                .contains("chunkStorageRegionScanFastPath: true");
     }
 
     @Test
@@ -85,6 +93,7 @@ final class FandConfigTest {
                 chunks:
                   workerThreads: 3
                   trackingDiffApplyBudget: 64
+                  worldgenParallelism: 6
 
                 console:
                   gui:
@@ -102,6 +111,9 @@ final class FandConfigTest {
                   entityCollisionAbortPropagation: false
                   pushableEntityConsumer: false
                   entityMovementLazyColliders: false
+                  chunkGenerationTaskPlanCache: false
+                  chunkTaskDispatcherBatchLoop: false
+                  chunkStorageRegionScanFastPath: false
                 """);
 
         var config = FandConfig.load(path);
@@ -114,6 +126,7 @@ final class FandConfigTest {
         assertThat(config.scheduler.asyncThreads).isEqualTo(6);
         assertThat(config.chunks.workerThreads).isEqualTo(3);
         assertThat(config.chunks.trackingDiffApplyBudget).isEqualTo(64);
+        assertThat(config.chunks.worldgenParallelism).isEqualTo(6);
         assertThat(config.console.gui.enabled).isFalse();
         assertThat(config.console.gui.theme).isEqualTo("dark");
         assertThat(config.network.forwarding.mode).isEqualTo("velocity-modern");
@@ -123,6 +136,9 @@ final class FandConfigTest {
         assertThat(config.performance.entityCollisionAbortPropagation).isFalse();
         assertThat(config.performance.pushableEntityConsumer).isFalse();
         assertThat(config.performance.entityMovementLazyColliders).isFalse();
+        assertThat(config.performance.chunkGenerationTaskPlanCache).isFalse();
+        assertThat(config.performance.chunkTaskDispatcherBatchLoop).isFalse();
+        assertThat(config.performance.chunkStorageRegionScanFastPath).isFalse();
     }
 
     @Test

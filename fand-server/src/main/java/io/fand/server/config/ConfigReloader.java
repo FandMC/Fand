@@ -73,10 +73,14 @@ public final class ConfigReloader {
         if (previous.chunks.trackingDiffApplyBudget != reloaded.chunks.trackingDiffApplyBudget) {
             hotApplied.add("chunks.trackingDiffApplyBudget");
         }
+        if (previous.chunks.worldgenParallelism != reloaded.chunks.worldgenParallelism) {
+            requiresRestart.add("chunks.worldgenParallelism");
+        }
         if (previous.chunks.workerThreads != reloaded.chunks.workerThreads
                 || previous.chunks.trackingDiffApplyBudget != reloaded.chunks.trackingDiffApplyBudget) {
             chunks.reconfigure(reloaded.chunks);
         }
+        io.fand.server.hooks.FandHooks.applyChunkConfig(reloaded.chunks);
         if (ProxyForwardingMode.fromConfig(previous.network.forwarding.mode)
                 != ProxyForwardingMode.fromConfig(reloaded.network.forwarding.mode)) {
             requiresRestart.add("network.forwarding.mode");
@@ -128,6 +132,15 @@ public final class ConfigReloader {
         }
         if (previous.performance.entityMovementLazyColliders != reloaded.performance.entityMovementLazyColliders) {
             hotApplied.add("performance.entityMovementLazyColliders");
+        }
+        if (previous.performance.chunkGenerationTaskPlanCache != reloaded.performance.chunkGenerationTaskPlanCache) {
+            hotApplied.add("performance.chunkGenerationTaskPlanCache");
+        }
+        if (previous.performance.chunkTaskDispatcherBatchLoop != reloaded.performance.chunkTaskDispatcherBatchLoop) {
+            hotApplied.add("performance.chunkTaskDispatcherBatchLoop");
+        }
+        if (previous.performance.chunkStorageRegionScanFastPath != reloaded.performance.chunkStorageRegionScanFastPath) {
+            hotApplied.add("performance.chunkStorageRegionScanFastPath");
         }
         io.fand.server.hooks.FandHooks.applyPerformanceConfig(reloaded.performance);
 

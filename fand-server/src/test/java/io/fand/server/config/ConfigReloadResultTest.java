@@ -32,6 +32,7 @@ final class ConfigReloadResultTest {
                 chunks:
                   workerThreads: 0
                   trackingDiffApplyBudget: 256
+                  worldgenParallelism: 0
 
                 network:
                   forwarding:
@@ -58,6 +59,7 @@ final class ConfigReloadResultTest {
                 chunks:
                   workerThreads: 2
                   trackingDiffApplyBudget: 32
+                  worldgenParallelism: 4
 
                 network:
                   forwarding:
@@ -79,6 +81,7 @@ final class ConfigReloadResultTest {
         );
         assertThat(result.requiresRestart()).containsExactlyInAnyOrder(
                 "plugins.directory",
+                "chunks.worldgenParallelism",
                 "network.forwarding.mode",
                 "network.forwarding.secret"
         );
@@ -96,6 +99,9 @@ final class ConfigReloadResultTest {
                   entityCollisionAbortPropagation: false
                   pushableEntityConsumer: false
                   entityMovementLazyColliders: false
+                  chunkGenerationTaskPlanCache: false
+                  chunkTaskDispatcherBatchLoop: false
+                  chunkStorageRegionScanFastPath: false
                 """);
 
         var initial = FandConfig.load(path);
@@ -108,6 +114,9 @@ final class ConfigReloadResultTest {
                   entityCollisionAbortPropagation: true
                   pushableEntityConsumer: true
                   entityMovementLazyColliders: true
+                  chunkGenerationTaskPlanCache: true
+                  chunkTaskDispatcherBatchLoop: true
+                  chunkStorageRegionScanFastPath: true
                 """);
 
         var result = server.reloadConfig();
@@ -117,7 +126,10 @@ final class ConfigReloadResultTest {
                 "performance.entitySectionChunkScan",
                 "performance.entityCollisionAbortPropagation",
                 "performance.pushableEntityConsumer",
-                "performance.entityMovementLazyColliders"
+                "performance.entityMovementLazyColliders",
+                "performance.chunkGenerationTaskPlanCache",
+                "performance.chunkTaskDispatcherBatchLoop",
+                "performance.chunkStorageRegionScanFastPath"
         );
         assertThat(result.requiresRestart()).isEmpty();
     }

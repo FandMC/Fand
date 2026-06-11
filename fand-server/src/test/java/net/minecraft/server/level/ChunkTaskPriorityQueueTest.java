@@ -1,0 +1,63 @@
+package net.minecraft.server.level;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import org.junit.jupiter.api.Test;
+
+final class ChunkTaskPriorityQueueTest {
+
+    @Test
+    void popSkipsExcludedChunkPositions() {
+        var queue = new ChunkTaskPriorityQueue("test");
+        long firstChunk = net.minecraft.world.level.ChunkPos.pack(0, 0);
+        long secondChunk = net.minecraft.world.level.ChunkPos.pack(1, 0);
+        var excluded = new LongOpenHashSet();
+
+        queue.submit(() -> {}, firstChunk, 1);
+        queue.submit(() -> {}, secondChunk, 1);
+        excluded.add(firstChunk);
+
+        var second = queue.pop(excluded);
+
+        assertThat(second).isNotNull();
+        assertThat(second.chunkPos()).isEqualTo(secondChunk);
+        assertThat(queue.pop(excluded)).isNull();
+
+        excluded.clear();
+        var first = queue.pop(excluded);
+
+        assertThat(first).isNotNull();
+        assertThat(first.chunkPos()).isEqualTo(firstChunk);
+    }
+
+    @Test
+    void popAvoidingSkipsOverlappingWorldgenWriteEnvelopes() {
+        var queue = new ChunkTaskPriorityQueue("test");
+        long activeChunk = net.minecraft.world.level.ChunkPos.pack(0, 0);
+        long distanceOne = net.minecraft.world.level.ChunkPos.pack(1, 0);
+        long distanceFour = net.minecraft.world.level.ChunkPos.pack(4, 4);
+        long distanceFive = net.minecraft.world.level.ChunkPos.pack(5, 0);
+
+        queue.submit(() -> {}, distanceOne, 1);
+        queue.submit(() -> {}, distanceFour, 1);
+        queue.submit(() -> {}, distanceFive, 1);
+
+        var farEnough = queue.popAvoiding(candidate -> ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(activeChunk, candidate));
+
+        assertThat(farEnough).isNotNull();
+        assertThat(farEnough.chunkPos()).isEqualTo(distanceFive);
+        assertThat(queue.popAvoiding(candidate -> ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(activeChunk, candidate))).isNull();
+    }
+
+    @Test
+    void parallelWorldgenWriteEnvelopesOnlyOverlapWithinFourChunks() {
+        long center = net.minecraft.world.level.ChunkPos.pack(0, 0);
+
+        assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(center, net.minecraft.world.level.ChunkPos.pack(0, 0))).isTrue();
+        assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(center, net.minecraft.world.level.ChunkPos.pack(2, 2))).isTrue();
+        assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(center, net.minecraft.world.level.ChunkPos.pack(4, 4))).isTrue();
+        assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(center, net.minecraft.world.level.ChunkPos.pack(5, 0))).isFalse();
+        assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(center, net.minecraft.world.level.ChunkPos.pack(0, 5))).isFalse();
+    }
+}
