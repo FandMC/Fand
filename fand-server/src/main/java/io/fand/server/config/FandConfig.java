@@ -98,6 +98,24 @@ public final class FandConfig {
         })
         @ConfigRange(min = 0, max = 64)
         public int worldgenParallelism = 0;
+
+        @ConfigComment({
+                "Run chunk lighting on one dedicated worker thread per world",
+                "instead of the shared chunk executor. Lighting tasks remain",
+                "serialized in the same light dispatcher; this only prevents",
+                "lighting from competing with worldgen and other chunk workers.",
+                "Existing worlds need a restart to replace their light executor."
+        })
+        public boolean dedicatedLightThread = true;
+
+        @ConfigComment({
+                "Store queued chunk-light tasks in parallel arrays instead of",
+                "allocating one Pair per task. The same tasks are batched and",
+                "executed in the same order; only queue allocation overhead is",
+                "reduced. Existing worlds need a restart to replace their light",
+                "task queue."
+        })
+        public boolean lightTaskQueueFastPath = true;
     }
 
     public static final class Performance {
@@ -200,6 +218,36 @@ public final class FandConfig {
                 "materialized vanilla path. Results are identical to vanilla."
         })
         public volatile boolean entityMovementLazyColliders = true;
+
+        @ConfigComment({
+                "Use a fast identity set and a no-passenger fast path in the",
+                "entity tracker. Tracking range, visibility checks, and packet",
+                "delivery are unchanged; only collection and stream overhead is",
+                "reduced."
+        })
+        public volatile boolean entityTrackerFastPath = true;
+
+        @ConfigComment({
+                "Iterate deep passenger trees with one ordered iterator instead",
+                "of recursive Stream pipelines. Self/passenger traversal order",
+                "matches vanilla; only stream allocation overhead is reduced."
+        })
+        public volatile boolean deepPassengerIteration = true;
+
+        @ConfigComment({
+                "Use a direct loop for ClassInstanceMultiMap type-index",
+                "creation instead of computeIfAbsent plus Stream. The cached",
+                "type lists and returned read-only views are unchanged."
+        })
+        public volatile boolean entityTypeLookupFastPath = true;
+
+        @ConfigComment({
+                "Keep a per-section bit mask of positions that can receive a",
+                "random block or fluid tick. Random positions are still selected",
+                "with vanilla's randValue sequence; the mask only skips block",
+                "state reads when the selected position cannot random tick."
+        })
+        public volatile boolean randomTickPositionMask = true;
 
         @ConfigComment({
                 "Cache immutable chunk-generation status lists, pyramid steps,",

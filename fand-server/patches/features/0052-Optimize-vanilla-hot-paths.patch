@@ -1,0 +1,575 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 11 Jun 2026 19:06:14 +0800
+Subject: [PATCH] Optimize vanilla hot paths
+
+
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index 0bd0f4782ff1a459f2b0b1e95b72c6d9472d6ce6..d67541134e990d076ce2205d80b8b1289bd334ec 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -19,6 +19,7 @@ import it.unimi.dsi.fastutil.longs.LongLinkedOpenHashSet;
+ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+ import it.unimi.dsi.fastutil.longs.LongSet;
+ import it.unimi.dsi.fastutil.longs.Long2ObjectMap.Entry;
++import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
+ import java.io.IOException;
+ import java.io.Writer;
+ import java.nio.file.Path;
+@@ -37,6 +38,8 @@ import java.util.concurrent.CompletableFuture;
+ import java.util.concurrent.CompletionException;
+ import java.util.concurrent.CompletionStage;
+ import java.util.concurrent.Executor;
++import java.util.concurrent.ExecutorService;
++import java.util.concurrent.Executors;
+ import java.util.concurrent.atomic.AtomicInteger;
+ import java.util.concurrent.atomic.AtomicLong;
+ import java.util.function.BooleanSupplier;
+@@ -144,6 +147,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     private boolean modified;
+     private final ChunkTaskDispatcher worldgenTaskDispatcher;
+     private final ChunkTaskDispatcher lightTaskDispatcher;
++    private final @Nullable ExecutorService dedicatedLightExecutor;
+     private final ChunkStatusUpdateListener chunkStatusListener;
+     private final ChunkMap.DistanceManager distanceManager;
+     private final String storageName;
+@@ -196,7 +200,21 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         this.mainThreadExecutor = mainThreadExecutor;
+         int worldgenParallelism = io.fand.server.hooks.FandHooks.chunkWorldgenParallelism();
+         this.chunkStatusListener = chunkStatusListener;
+-        ConsecutiveExecutor light = new ConsecutiveExecutor(executor, "light");
++        Executor lightExecutor = executor;
++        Executor lightDispatcherExecutor = executor;
++        ExecutorService dedicatedLightExecutor = null;
++        if (io.fand.server.hooks.FandHooks.chunkDedicatedLightThreadEnabled()) {
++            dedicatedLightExecutor = Executors.newSingleThreadExecutor(task -> {
++                Thread thread = new Thread(task, "Fand Light - " + this.storageName);
++                thread.setDaemon(true);
++                thread.setPriority(Math.max(Thread.MIN_PRIORITY, Thread.NORM_PRIORITY - 1));
++                return thread;
++            });
++            lightExecutor = dedicatedLightExecutor;
++            lightDispatcherExecutor = dedicatedLightExecutor;
++        }
++        this.dedicatedLightExecutor = dedicatedLightExecutor;
++        ConsecutiveExecutor light = new ConsecutiveExecutor(lightExecutor, "light");
+         if (worldgenParallelism > 1) {
+             TaskScheduler<Runnable> worldgen = TaskScheduler.wrapExecutor("fand-worldgen", executor);
+             this.worldgenTaskDispatcher = new ParallelChunkTaskDispatcher(worldgen, executor, worldgenParallelism);
+@@ -204,7 +222,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+             ConsecutiveExecutor worldgen = new ConsecutiveExecutor(executor, "worldgen");
+             this.worldgenTaskDispatcher = new ChunkTaskDispatcher(worldgen, executor);
+         }
+-        this.lightTaskDispatcher = new ChunkTaskDispatcher(light, executor);
++        this.lightTaskDispatcher = new ChunkTaskDispatcher(light, lightDispatcherExecutor);
+         this.lightEngine = new ThreadedLevelLightEngine(chunkGetter, this, this.level.dimensionType().hasSkyLight(), light, this.lightTaskDispatcher);
+         this.distanceManager = new ChunkMap.DistanceManager(ticketStorage, executor, mainThreadExecutor);
+         this.ticketStorage = ticketStorage;
+@@ -418,6 +436,9 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         try {
+             this.worldgenTaskDispatcher.close();
+             this.lightTaskDispatcher.close();
++            if (this.dedicatedLightExecutor != null) {
++                this.dedicatedLightExecutor.shutdownNow();
++            }
+             this.poiManager.close();
+         } finally {
+             super.close();
+@@ -1433,7 +1454,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         public TrackedEntity(final Entity entity, final int range, final int updateInterval, final boolean trackDelta) {
+             Objects.requireNonNull(ChunkMap.this);
+             super();
+-            this.seenBy = Sets.newIdentityHashSet();
++            this.seenBy = io.fand.server.hooks.FandHooks.entityTrackerFastPathEnabled() ? new ReferenceOpenHashSet<>() : Sets.newIdentityHashSet();
+             this.serverEntity = new ServerEntity(ChunkMap.this.level, entity, updateInterval, trackDelta, this);
+             this.entity = entity;
+             this.range = range;
+@@ -1520,6 +1541,9 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+ 
+         private int getEffectiveRange() {
+             int effectiveRange = this.range;
++            if (io.fand.server.hooks.FandHooks.entityTrackerFastPathEnabled() && this.entity.getPassengers().isEmpty()) {
++                return this.scaledRange(effectiveRange);
++            }
+ 
+             for (Entity passenger : this.entity.getIndirectPassengers()) {
+                 int passengerRange = passenger.getType().clientTrackingRange() * 16;
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index 6863d21ba143f3f89ad8540a455ebf15d1690754..6b496b047cb14ca6309a32f7559be566b391be3a 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -552,6 +552,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+         profiler.popPush("tickBlocks");
+         if (tickSpeed > 0) {
+             LevelChunkSection[] sections = chunk.getSections();
++            boolean randomTickPositionMask = io.fand.server.hooks.FandHooks.randomTickPositionMaskEnabled();
+ 
+             for (int sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+                 LevelChunkSection section = sections[sectionIndex];
+@@ -562,6 +563,11 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+                     for (int ix = 0; ix < tickSpeed; ix++) {
+                         BlockPos pos = this.getBlockRandomPos(minX, minYInSection, minZ, 15);
+                         profiler.push("randomTick");
++                        if (randomTickPositionMask
++                            && !section.fand$mayRandomTickAt(pos.getX() - minX, pos.getY() - minYInSection, pos.getZ() - minZ)) {
++                            profiler.pop();
++                            continue;
++                        }
+                         BlockState blockState = section.getBlockState(pos.getX() - minX, pos.getY() - minYInSection, pos.getZ() - minZ);
+                         if (blockState.isRandomlyTicking()) {
+                             blockState.randomTick(this, pos, this.random);
+diff --git a/net/minecraft/server/level/ThreadedLevelLightEngine.java b/net/minecraft/server/level/ThreadedLevelLightEngine.java
+index 46ce24ea601b1525834c1165075fc89d7ed8c69b..0ba4ba5fffca3ed7a8ce1d86aef72f3f3998f5a3 100644
+--- a/net/minecraft/server/level/ThreadedLevelLightEngine.java
++++ b/net/minecraft/server/level/ThreadedLevelLightEngine.java
+@@ -28,10 +28,13 @@ public class ThreadedLevelLightEngine extends LevelLightEngine implements AutoCl
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private final ConsecutiveExecutor consecutiveExecutor;
+     private final ObjectList<Pair<ThreadedLevelLightEngine.TaskType, Runnable>> lightTasks = new ObjectArrayList<>();
++    private final ObjectList<ThreadedLevelLightEngine.TaskType> lightTaskTypes = new ObjectArrayList<>();
++    private final ObjectList<Runnable> lightTaskRunnables = new ObjectArrayList<>();
+     private final ChunkMap chunkMap;
+     private final ChunkTaskDispatcher taskDispatcher;
+     private final int taskPerBatch = 1000;
+     private final AtomicBoolean scheduled = new AtomicBoolean();
++    private final boolean lightTaskQueueFastPath;
+ 
+     public ThreadedLevelLightEngine(
+         final LightChunkGetter lightChunkGetter,
+@@ -44,6 +47,7 @@ public class ThreadedLevelLightEngine extends LevelLightEngine implements AutoCl
+         this.chunkMap = chunkMap;
+         this.taskDispatcher = taskDispatcher;
+         this.consecutiveExecutor = consecutiveExecutor;
++        this.lightTaskQueueFastPath = io.fand.server.hooks.FandHooks.chunkLightTaskQueueFastPathEnabled();
+     }
+ 
+     @Override
+@@ -127,8 +131,14 @@ public class ThreadedLevelLightEngine extends LevelLightEngine implements AutoCl
+ 
+     private void addTask(final int chunkX, final int chunkZ, final IntSupplier level, final ThreadedLevelLightEngine.TaskType type, final Runnable runnable) {
+         this.taskDispatcher.submit(() -> {
+-            this.lightTasks.add(Pair.of(type, runnable));
+-            if (this.lightTasks.size() >= 1000) {
++            if (this.lightTaskQueueFastPath) {
++                this.lightTaskTypes.add(type);
++                this.lightTaskRunnables.add(runnable);
++            } else {
++                this.lightTasks.add(Pair.of(type, runnable));
++            }
++
++            if (this.lightTaskCount() >= this.taskPerBatch) {
+                 this.runUpdate();
+             }
+         }, ChunkPos.pack(chunkX, chunkZ), level);
+@@ -180,7 +190,7 @@ public class ThreadedLevelLightEngine extends LevelLightEngine implements AutoCl
+     }
+ 
+     public void tryScheduleUpdate() {
+-        if ((!this.lightTasks.isEmpty() || super.hasLightWork()) && this.scheduled.compareAndSet(false, true)) {
++        if ((this.hasPendingLightTasks() || super.hasLightWork()) && this.scheduled.compareAndSet(false, true)) {
+             this.consecutiveExecutor.schedule(() -> {
+                 this.runUpdate();
+                 this.scheduled.set(false);
+@@ -189,7 +199,23 @@ public class ThreadedLevelLightEngine extends LevelLightEngine implements AutoCl
+     }
+ 
+     private void runUpdate() {
+-        int totalSize = Math.min(this.lightTasks.size(), 1000);
++        if (this.lightTaskQueueFastPath) {
++            this.runUpdateFastQueue();
++        } else {
++            this.runUpdatePairQueue();
++        }
++    }
++
++    private boolean hasPendingLightTasks() {
++        return this.lightTaskQueueFastPath ? !this.lightTaskRunnables.isEmpty() : !this.lightTasks.isEmpty();
++    }
++
++    private int lightTaskCount() {
++        return this.lightTaskQueueFastPath ? this.lightTaskRunnables.size() : this.lightTasks.size();
++    }
++
++    private void runUpdatePairQueue() {
++        int totalSize = Math.min(this.lightTasks.size(), this.taskPerBatch);
+         ObjectListIterator<Pair<ThreadedLevelLightEngine.TaskType, Runnable>> iterator = this.lightTasks.iterator();
+ 
+         int count;
+@@ -213,6 +239,32 @@ public class ThreadedLevelLightEngine extends LevelLightEngine implements AutoCl
+         }
+     }
+ 
++    private void runUpdateFastQueue() {
++        int totalSize = Math.min(this.lightTaskRunnables.size(), this.taskPerBatch);
++
++        for (int i = 0; i < totalSize; i++) {
++            if (this.lightTaskTypes.get(i) == ThreadedLevelLightEngine.TaskType.PRE_UPDATE) {
++                this.lightTaskRunnables.get(i).run();
++            }
++        }
++
++        super.runLightUpdates();
++
++        int processed = 0;
++        try {
++            for (; processed < totalSize; processed++) {
++                if (this.lightTaskTypes.get(processed) == ThreadedLevelLightEngine.TaskType.POST_UPDATE) {
++                    this.lightTaskRunnables.get(processed).run();
++                }
++            }
++        } finally {
++            if (processed > 0) {
++                this.lightTaskTypes.removeElements(0, processed);
++                this.lightTaskRunnables.removeElements(0, processed);
++            }
++        }
++    }
++
+     public CompletableFuture<?> waitForPendingTasks(final int chunkX, final int chunkZ) {
+         return CompletableFuture.runAsync(() -> {}, r -> this.addTask(chunkX, chunkZ, ThreadedLevelLightEngine.TaskType.POST_UPDATE, r));
+     }
+diff --git a/net/minecraft/util/ClassInstanceMultiMap.java b/net/minecraft/util/ClassInstanceMultiMap.java
+index 76d7538142cb07a1d5e108bead75cf972d558fdc..8539a1dcd9c8eacbe40ed711814a5bdb1af98128 100644
+--- a/net/minecraft/util/ClassInstanceMultiMap.java
++++ b/net/minecraft/util/ClassInstanceMultiMap.java
+@@ -5,6 +5,7 @@ import com.google.common.collect.Iterators;
+ import com.google.common.collect.Lists;
+ import com.google.common.collect.Maps;
+ import java.util.AbstractCollection;
++import java.util.ArrayList;
+ import java.util.Collection;
+ import java.util.Collections;
+ import java.util.Iterator;
+@@ -58,12 +59,31 @@ public class ClassInstanceMultiMap<T> extends AbstractCollection<T> {
+         if (!this.baseClass.isAssignableFrom(index)) {
+             throw new IllegalArgumentException("Don't know how to search for " + index);
+         } else {
+-            List<? extends T> instances = this.byClass
+-                .computeIfAbsent(index, k -> this.allInstances.stream().filter(k::isInstance).collect(Util.toMutableList()));
++            List<? extends T> instances;
++            if (io.fand.server.hooks.FandHooks.entityTypeLookupFastPathEnabled()) {
++                instances = this.byClass.get(index);
++                if (instances == null) {
++                    instances = this.fand$createAllOfType(index);
++                    this.byClass.put(index, (List<T>)instances);
++                }
++            } else {
++                instances = this.byClass
++                    .computeIfAbsent(index, k -> this.allInstances.stream().filter(k::isInstance).collect(Util.toMutableList()));
++            }
+             return (Collection<S>)Collections.unmodifiableCollection(instances);
+         }
+     }
+ 
++    private <S> List<T> fand$createAllOfType(final Class<S> index) {
++        List<T> instances = new ArrayList<>();
++        for (T instance : this.allInstances) {
++            if (index.isInstance(instance)) {
++                instances.add(instance);
++            }
++        }
++        return instances;
++    }
++
+     @Override
+     public Iterator<T> iterator() {
+         return (Iterator<T>)(this.allInstances.isEmpty() ? Collections.emptyIterator() : Iterators.unmodifiableIterator(this.allInstances.iterator()));
+diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
+index 4779377fb838089a28629c7db2c12b2689efe5b3..1a1e115e1603884cc8480765a02832a5cf88c3e1 100644
+--- a/net/minecraft/world/entity/Entity.java
++++ b/net/minecraft/world/entity/Entity.java
+@@ -20,16 +20,20 @@ import java.lang.annotation.Target;
+ import java.util.ArrayDeque;
+ import java.util.ArrayList;
+ import java.util.Arrays;
++import java.util.Iterator;
+ import java.util.List;
+ import java.util.Locale;
+ import java.util.Objects;
+ import java.util.Optional;
+ import java.util.Set;
++import java.util.Spliterator;
++import java.util.Spliterators;
+ import java.util.UUID;
+ import java.util.concurrent.atomic.AtomicInteger;
+ import java.util.function.BiConsumer;
+ import java.util.function.Predicate;
+ import java.util.stream.Stream;
++import java.util.stream.StreamSupport;
+ import net.minecraft.CrashReport;
+ import net.minecraft.CrashReportCategory;
+ import net.minecraft.ReportedException;
+@@ -3610,16 +3614,25 @@ public abstract class Entity
+     }
+ 
+     private Stream<Entity> getIndirectPassengersStream() {
++        if (io.fand.server.hooks.FandHooks.deepPassengerIterationEnabled()) {
++            return this.passengers.isEmpty() ? Stream.empty() : stream(new SelfAndPassengersIterator(this, false));
++        }
+         return this.passengers.stream().flatMap(Entity::getSelfAndPassengers);
+     }
+ 
+     @Override
+     public Stream<Entity> getSelfAndPassengers() {
++        if (io.fand.server.hooks.FandHooks.deepPassengerIterationEnabled()) {
++            return this.passengers.isEmpty() ? Stream.of(this) : stream(new SelfAndPassengersIterator(this, true));
++        }
+         return Stream.concat(Stream.of(this), this.getIndirectPassengersStream());
+     }
+ 
+     @Override
+     public Stream<Entity> getPassengersAndSelf() {
++        if (io.fand.server.hooks.FandHooks.deepPassengerIterationEnabled()) {
++            return this.passengers.isEmpty() ? Stream.of(this) : stream(new PassengersAndSelfIterator(this));
++        }
+         return Stream.concat(this.passengers.stream().flatMap(Entity::getPassengersAndSelf), Stream.of(this));
+     }
+ 
+@@ -3628,6 +3641,19 @@ public abstract class Entity
+     }
+ 
+     public int countPlayerPassengers() {
++        if (io.fand.server.hooks.FandHooks.deepPassengerIterationEnabled()) {
++            if (this.passengers.isEmpty()) {
++                return 0;
++            }
++            int players = 0;
++            Iterator<Entity> passengers = new SelfAndPassengersIterator(this, false);
++            while (passengers.hasNext()) {
++                if (passengers.next() instanceof Player) {
++                    players++;
++                }
++            }
++            return players;
++        }
+         return (int)this.getIndirectPassengersStream().filter(e -> e instanceof Player).count();
+     }
+ 
+@@ -3635,6 +3661,105 @@ public abstract class Entity
+         return this.countPlayerPassengers() == 1;
+     }
+ 
++    private static Stream<Entity> stream(final Iterator<Entity> iterator) {
++        return StreamSupport.stream(Spliterators.spliteratorUnknownSize(iterator, Spliterator.ORDERED | Spliterator.NONNULL), false);
++    }
++
++    private static final class SelfAndPassengersIterator implements Iterator<Entity> {
++        private final ArrayDeque<Iterator<Entity>> stack = new ArrayDeque<>();
++        private Entity next;
++
++        SelfAndPassengersIterator(final Entity root, final boolean includeRoot) {
++            if (includeRoot) {
++                this.next = root;
++            }
++            if (!root.passengers.isEmpty()) {
++                this.stack.addLast(root.passengers.iterator());
++            }
++        }
++
++        @Override
++        public boolean hasNext() {
++            if (this.next != null) {
++                return true;
++            }
++
++            while (!this.stack.isEmpty()) {
++                Iterator<Entity> iterator = this.stack.peekLast();
++                if (iterator.hasNext()) {
++                    Entity entity = iterator.next();
++                    this.next = entity;
++                    if (!entity.passengers.isEmpty()) {
++                        this.stack.addLast(entity.passengers.iterator());
++                    }
++                    return true;
++                }
++                this.stack.removeLast();
++            }
++
++            return false;
++        }
++
++        @Override
++        public Entity next() {
++            if (!this.hasNext()) {
++                throw new java.util.NoSuchElementException();
++            }
++            Entity entity = this.next;
++            this.next = null;
++            return entity;
++        }
++    }
++
++    private static final class PassengersAndSelfIterator implements Iterator<Entity> {
++        private final ArrayDeque<PassengerFrame> stack = new ArrayDeque<>();
++        private Entity next;
++
++        PassengersAndSelfIterator(final Entity root) {
++            this.stack.addLast(new PassengerFrame(root));
++        }
++
++        @Override
++        public boolean hasNext() {
++            if (this.next != null) {
++                return true;
++            }
++
++            while (!this.stack.isEmpty()) {
++                PassengerFrame frame = this.stack.peekLast();
++                if (frame.passengers.hasNext()) {
++                    this.stack.addLast(new PassengerFrame(frame.passengers.next()));
++                    continue;
++                }
++                this.stack.removeLast();
++                this.next = frame.entity;
++                return true;
++            }
++
++            return false;
++        }
++
++        @Override
++        public Entity next() {
++            if (!this.hasNext()) {
++                throw new java.util.NoSuchElementException();
++            }
++            Entity entity = this.next;
++            this.next = null;
++            return entity;
++        }
++    }
++
++    private static final class PassengerFrame {
++        final Entity entity;
++        final Iterator<Entity> passengers;
++
++        PassengerFrame(final Entity entity) {
++            this.entity = entity;
++            this.passengers = entity.passengers.iterator();
++        }
++    }
++
+     public Entity getRootVehicle() {
+         Entity result = this;
+ 
+diff --git a/net/minecraft/world/level/chunk/LevelChunkSection.java b/net/minecraft/world/level/chunk/LevelChunkSection.java
+index 48f858323f3f47174a8be6c322924a003e3c284d..d9dd4bb33b371ba9e19f58d23f9a97e8845db0b8 100644
+--- a/net/minecraft/world/level/chunk/LevelChunkSection.java
++++ b/net/minecraft/world/level/chunk/LevelChunkSection.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.world.level.chunk;
+ 
++import java.util.Arrays;
+ import java.util.Objects;
+ import java.util.function.Predicate;
+ import net.minecraft.core.Holder;
+@@ -15,10 +16,12 @@ public class LevelChunkSection {
+     public static final int SECTION_HEIGHT = 16;
+     public static final int SECTION_SIZE = 4096;
+     public static final int BIOME_CONTAINER_BITS = 2;
++    private static final int RANDOM_TICK_MASK_WORDS = SECTION_SIZE / Long.SIZE;
+     private short nonEmptyBlockCount;
+     private short fluidCount;
+     private short tickingBlockCount;
+     private short tickingFluidCount;
++    private long[] fandRandomTickingPositionMask;
+     private final PalettedContainer<BlockState> states;
+     private PalettedContainerRO<Holder<Biome>> biomes;
+ 
+@@ -27,6 +30,7 @@ public class LevelChunkSection {
+         this.fluidCount = source.fluidCount;
+         this.tickingBlockCount = source.tickingBlockCount;
+         this.tickingFluidCount = source.tickingFluidCount;
++        this.fandRandomTickingPositionMask = source.fandRandomTickingPositionMask == null ? null : Arrays.copyOf(source.fandRandomTickingPositionMask, RANDOM_TICK_MASK_WORDS);
+         this.states = source.states.copy();
+         this.biomes = source.biomes.copy();
+     }
+@@ -100,6 +104,7 @@ public class LevelChunkSection {
+             }
+         }
+ 
++        this.updateRandomTickingPositionMask(sectionX, sectionY, sectionZ, state);
+         return previous;
+     }
+ 
+@@ -123,6 +128,15 @@ public class LevelChunkSection {
+         return this.tickingFluidCount > 0;
+     }
+ 
++    public boolean fand$mayRandomTickAt(final int sectionX, final int sectionY, final int sectionZ) {
++        long[] mask = this.fandRandomTickingPositionMask;
++        if (mask == null) {
++            return this.isRandomlyTicking();
++        }
++        int index = getSectionIndex(sectionX, sectionY, sectionZ);
++        return (mask[index >>> 6] & (1L << index)) != 0L;
++    }
++
+     public void recalcBlockCounts() {
+         class BlockCounter implements PalettedContainer.CountConsumer<BlockState> {
+             public int nonEmptyBlockCount;
+@@ -160,6 +174,57 @@ public class LevelChunkSection {
+         this.fluidCount = (short)blockCounter.fluidCount;
+         this.tickingBlockCount = (short)blockCounter.tickingBlockCount;
+         this.tickingFluidCount = (short)blockCounter.tickingFluidCount;
++        this.rebuildRandomTickingPositionMask();
++    }
++
++    private void rebuildRandomTickingPositionMask() {
++        if (this.tickingBlockCount <= 0 && this.tickingFluidCount <= 0) {
++            this.fandRandomTickingPositionMask = null;
++            return;
++        }
++
++        long[] mask = new long[RANDOM_TICK_MASK_WORDS];
++        for (int sectionY = 0; sectionY < SECTION_HEIGHT; sectionY++) {
++            for (int sectionZ = 0; sectionZ < SECTION_WIDTH; sectionZ++) {
++                for (int sectionX = 0; sectionX < SECTION_WIDTH; sectionX++) {
++                    int index = getSectionIndex(sectionX, sectionY, sectionZ);
++                    if (mayRandomTick(this.states.get(sectionX, sectionY, sectionZ))) {
++                        mask[index >>> 6] |= 1L << index;
++                    }
++                }
++            }
++        }
++
++        this.fandRandomTickingPositionMask = mask;
++    }
++
++    private void updateRandomTickingPositionMask(final int sectionX, final int sectionY, final int sectionZ, final BlockState state) {
++        long[] mask = this.fandRandomTickingPositionMask;
++        if (mask == null) {
++            if (this.isRandomlyTicking()) {
++                this.rebuildRandomTickingPositionMask();
++            }
++            return;
++        }
++
++        int index = getSectionIndex(sectionX, sectionY, sectionZ);
++        if (mayRandomTick(state)) {
++            mask[index >>> 6] |= 1L << index;
++        } else {
++            if (this.isRandomlyTicking()) {
++                mask[index >>> 6] &= ~(1L << index);
++            } else {
++                this.fandRandomTickingPositionMask = null;
++            }
++        }
++    }
++
++    private static boolean mayRandomTick(final BlockState state) {
++        return state.isRandomlyTicking() || state.getFluidState().isRandomlyTicking();
++    }
++
++    private static int getSectionIndex(final int sectionX, final int sectionY, final int sectionZ) {
++        return sectionY << 8 | sectionZ << 4 | sectionX;
+     }
+ 
+     public PalettedContainer<BlockState> getStates() {
+@@ -177,6 +242,7 @@ public class LevelChunkSection {
+         PalettedContainer<Holder<Biome>> biomes = this.biomes.recreate();
+         biomes.read(buffer);
+         this.biomes = biomes;
++        this.rebuildRandomTickingPositionMask();
+     }
+ 
+     public void readBiomes(final FriendlyByteBuf buffer) {

@@ -112,10 +112,16 @@ public final class FandHooks {
     private static volatile boolean entityCollisionAbortPropagation = true;
     private static volatile boolean pushableEntityConsumer = true;
     private static volatile boolean entityMovementLazyColliders = true;
+    private static volatile boolean entityTrackerFastPath = true;
+    private static volatile boolean deepPassengerIteration = true;
+    private static volatile boolean entityTypeLookupFastPath = true;
+    private static volatile boolean randomTickPositionMask = true;
     private static volatile boolean chunkGenerationTaskPlanCache = true;
     private static volatile boolean chunkTaskDispatcherBatchLoop = true;
     private static volatile boolean chunkStorageRegionScanFastPath = true;
     private static volatile int chunkWorldgenParallelism = 0;
+    private static volatile boolean chunkDedicatedLightThread = true;
+    private static volatile boolean chunkLightTaskQueueFastPath = true;
 
     private FandHooks() {
     }
@@ -133,6 +139,10 @@ public final class FandHooks {
         entityCollisionAbortPropagation = performance.entityCollisionAbortPropagation;
         pushableEntityConsumer = performance.pushableEntityConsumer;
         entityMovementLazyColliders = performance.entityMovementLazyColliders;
+        entityTrackerFastPath = performance.entityTrackerFastPath;
+        deepPassengerIteration = performance.deepPassengerIteration;
+        entityTypeLookupFastPath = performance.entityTypeLookupFastPath;
+        randomTickPositionMask = performance.randomTickPositionMask;
         chunkGenerationTaskPlanCache = performance.chunkGenerationTaskPlanCache;
         chunkTaskDispatcherBatchLoop = performance.chunkTaskDispatcherBatchLoop;
         chunkStorageRegionScanFastPath = performance.chunkStorageRegionScanFastPath;
@@ -140,6 +150,8 @@ public final class FandHooks {
 
     public static void applyChunkConfig(io.fand.server.config.FandConfig.Chunks chunks) {
         chunkWorldgenParallelism = chunks.worldgenParallelism;
+        chunkDedicatedLightThread = chunks.dedicatedLightThread;
+        chunkLightTaskQueueFastPath = chunks.lightTaskQueueFastPath;
     }
 
     public static boolean explosionDensityCacheEnabled() {
@@ -190,6 +202,22 @@ public final class FandHooks {
         return entityMovementLazyColliders;
     }
 
+    public static boolean entityTrackerFastPathEnabled() {
+        return entityTrackerFastPath;
+    }
+
+    public static boolean deepPassengerIterationEnabled() {
+        return deepPassengerIteration;
+    }
+
+    public static boolean entityTypeLookupFastPathEnabled() {
+        return entityTypeLookupFastPath;
+    }
+
+    public static boolean randomTickPositionMaskEnabled() {
+        return randomTickPositionMask;
+    }
+
     public static boolean chunkGenerationTaskPlanCacheEnabled() {
         return chunkGenerationTaskPlanCache;
     }
@@ -209,6 +237,14 @@ public final class FandHooks {
         }
         int processors = Runtime.getRuntime().availableProcessors();
         return Math.max(2, Math.min(8, processors / 2));
+    }
+
+    public static boolean chunkDedicatedLightThreadEnabled() {
+        return chunkDedicatedLightThread;
+    }
+
+    public static boolean chunkLightTaskQueueFastPathEnabled() {
+        return chunkLightTaskQueueFastPath;
     }
 
     public static EventBus events() {

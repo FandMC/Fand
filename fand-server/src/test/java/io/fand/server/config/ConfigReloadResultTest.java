@@ -33,6 +33,8 @@ final class ConfigReloadResultTest {
                   workerThreads: 0
                   trackingDiffApplyBudget: 256
                   worldgenParallelism: 0
+                  dedicatedLightThread: true
+                  lightTaskQueueFastPath: true
 
                 network:
                   forwarding:
@@ -60,6 +62,8 @@ final class ConfigReloadResultTest {
                   workerThreads: 2
                   trackingDiffApplyBudget: 32
                   worldgenParallelism: 4
+                  dedicatedLightThread: false
+                  lightTaskQueueFastPath: false
 
                 network:
                   forwarding:
@@ -82,6 +86,8 @@ final class ConfigReloadResultTest {
         assertThat(result.requiresRestart()).containsExactlyInAnyOrder(
                 "plugins.directory",
                 "chunks.worldgenParallelism",
+                "chunks.dedicatedLightThread",
+                "chunks.lightTaskQueueFastPath",
                 "network.forwarding.mode",
                 "network.forwarding.secret"
         );
@@ -99,6 +105,10 @@ final class ConfigReloadResultTest {
                   entityCollisionAbortPropagation: false
                   pushableEntityConsumer: false
                   entityMovementLazyColliders: false
+                  entityTrackerFastPath: false
+                  deepPassengerIteration: false
+                  entityTypeLookupFastPath: false
+                  randomTickPositionMask: false
                   chunkGenerationTaskPlanCache: false
                   chunkTaskDispatcherBatchLoop: false
                   chunkStorageRegionScanFastPath: false
@@ -114,6 +124,10 @@ final class ConfigReloadResultTest {
                   entityCollisionAbortPropagation: true
                   pushableEntityConsumer: true
                   entityMovementLazyColliders: true
+                  entityTrackerFastPath: true
+                  deepPassengerIteration: true
+                  entityTypeLookupFastPath: true
+                  randomTickPositionMask: true
                   chunkGenerationTaskPlanCache: true
                   chunkTaskDispatcherBatchLoop: true
                   chunkStorageRegionScanFastPath: true
@@ -127,6 +141,10 @@ final class ConfigReloadResultTest {
                 "performance.entityCollisionAbortPropagation",
                 "performance.pushableEntityConsumer",
                 "performance.entityMovementLazyColliders",
+                "performance.entityTrackerFastPath",
+                "performance.deepPassengerIteration",
+                "performance.entityTypeLookupFastPath",
+                "performance.randomTickPositionMask",
                 "performance.chunkGenerationTaskPlanCache",
                 "performance.chunkTaskDispatcherBatchLoop",
                 "performance.chunkStorageRegionScanFastPath"

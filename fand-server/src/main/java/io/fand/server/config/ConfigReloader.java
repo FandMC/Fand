@@ -76,6 +76,12 @@ public final class ConfigReloader {
         if (previous.chunks.worldgenParallelism != reloaded.chunks.worldgenParallelism) {
             requiresRestart.add("chunks.worldgenParallelism");
         }
+        if (previous.chunks.dedicatedLightThread != reloaded.chunks.dedicatedLightThread) {
+            requiresRestart.add("chunks.dedicatedLightThread");
+        }
+        if (previous.chunks.lightTaskQueueFastPath != reloaded.chunks.lightTaskQueueFastPath) {
+            requiresRestart.add("chunks.lightTaskQueueFastPath");
+        }
         if (previous.chunks.workerThreads != reloaded.chunks.workerThreads
                 || previous.chunks.trackingDiffApplyBudget != reloaded.chunks.trackingDiffApplyBudget) {
             chunks.reconfigure(reloaded.chunks);
@@ -132,6 +138,18 @@ public final class ConfigReloader {
         }
         if (previous.performance.entityMovementLazyColliders != reloaded.performance.entityMovementLazyColliders) {
             hotApplied.add("performance.entityMovementLazyColliders");
+        }
+        if (previous.performance.entityTrackerFastPath != reloaded.performance.entityTrackerFastPath) {
+            hotApplied.add("performance.entityTrackerFastPath");
+        }
+        if (previous.performance.deepPassengerIteration != reloaded.performance.deepPassengerIteration) {
+            hotApplied.add("performance.deepPassengerIteration");
+        }
+        if (previous.performance.entityTypeLookupFastPath != reloaded.performance.entityTypeLookupFastPath) {
+            hotApplied.add("performance.entityTypeLookupFastPath");
+        }
+        if (previous.performance.randomTickPositionMask != reloaded.performance.randomTickPositionMask) {
+            hotApplied.add("performance.randomTickPositionMask");
         }
         if (previous.performance.chunkGenerationTaskPlanCache != reloaded.performance.chunkGenerationTaskPlanCache) {
             hotApplied.add("performance.chunkGenerationTaskPlanCache");

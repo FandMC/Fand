@@ -28,6 +28,8 @@ final class FandConfigTest {
         assertThat(config.chunks.workerThreads).isZero();
         assertThat(config.chunks.trackingDiffApplyBudget).isEqualTo(256);
         assertThat(config.chunks.worldgenParallelism).isZero();
+        assertThat(config.chunks.dedicatedLightThread).isTrue();
+        assertThat(config.chunks.lightTaskQueueFastPath).isTrue();
         assertThat(config.console.gui.enabled).isTrue();
         assertThat(config.console.gui.theme).isEqualTo("system");
         assertThat(config.network.forwarding.mode).isEqualTo("none");
@@ -37,6 +39,10 @@ final class FandConfigTest {
         assertThat(config.performance.entityCollisionAbortPropagation).isTrue();
         assertThat(config.performance.pushableEntityConsumer).isTrue();
         assertThat(config.performance.entityMovementLazyColliders).isTrue();
+        assertThat(config.performance.entityTrackerFastPath).isTrue();
+        assertThat(config.performance.deepPassengerIteration).isTrue();
+        assertThat(config.performance.entityTypeLookupFastPath).isTrue();
+        assertThat(config.performance.randomTickPositionMask).isTrue();
         assertThat(config.performance.chunkGenerationTaskPlanCache).isTrue();
         assertThat(config.performance.chunkTaskDispatcherBatchLoop).isTrue();
         assertThat(config.performance.chunkStorageRegionScanFastPath).isTrue();
@@ -55,6 +61,8 @@ final class FandConfigTest {
                 .contains("workerThreads: 0")
                 .contains("trackingDiffApplyBudget: 256")
                 .contains("worldgenParallelism: 0")
+                .contains("dedicatedLightThread: true")
+                .contains("lightTaskQueueFastPath: true")
                 .contains("console:")
                 .contains("gui:")
                 .contains("enabled: true")
@@ -69,6 +77,10 @@ final class FandConfigTest {
                 .contains("entityCollisionAbortPropagation: true")
                 .contains("pushableEntityConsumer: true")
                 .contains("entityMovementLazyColliders: true")
+                .contains("entityTrackerFastPath: true")
+                .contains("deepPassengerIteration: true")
+                .contains("entityTypeLookupFastPath: true")
+                .contains("randomTickPositionMask: true")
                 .contains("chunkGenerationTaskPlanCache: true")
                 .contains("chunkTaskDispatcherBatchLoop: true")
                 .contains("chunkStorageRegionScanFastPath: true");
@@ -94,6 +106,8 @@ final class FandConfigTest {
                   workerThreads: 3
                   trackingDiffApplyBudget: 64
                   worldgenParallelism: 6
+                  dedicatedLightThread: false
+                  lightTaskQueueFastPath: false
 
                 console:
                   gui:
@@ -111,6 +125,10 @@ final class FandConfigTest {
                   entityCollisionAbortPropagation: false
                   pushableEntityConsumer: false
                   entityMovementLazyColliders: false
+                  entityTrackerFastPath: false
+                  deepPassengerIteration: false
+                  entityTypeLookupFastPath: false
+                  randomTickPositionMask: false
                   chunkGenerationTaskPlanCache: false
                   chunkTaskDispatcherBatchLoop: false
                   chunkStorageRegionScanFastPath: false
@@ -127,6 +145,8 @@ final class FandConfigTest {
         assertThat(config.chunks.workerThreads).isEqualTo(3);
         assertThat(config.chunks.trackingDiffApplyBudget).isEqualTo(64);
         assertThat(config.chunks.worldgenParallelism).isEqualTo(6);
+        assertThat(config.chunks.dedicatedLightThread).isFalse();
+        assertThat(config.chunks.lightTaskQueueFastPath).isFalse();
         assertThat(config.console.gui.enabled).isFalse();
         assertThat(config.console.gui.theme).isEqualTo("dark");
         assertThat(config.network.forwarding.mode).isEqualTo("velocity-modern");
@@ -136,6 +156,10 @@ final class FandConfigTest {
         assertThat(config.performance.entityCollisionAbortPropagation).isFalse();
         assertThat(config.performance.pushableEntityConsumer).isFalse();
         assertThat(config.performance.entityMovementLazyColliders).isFalse();
+        assertThat(config.performance.entityTrackerFastPath).isFalse();
+        assertThat(config.performance.deepPassengerIteration).isFalse();
+        assertThat(config.performance.entityTypeLookupFastPath).isFalse();
+        assertThat(config.performance.randomTickPositionMask).isFalse();
         assertThat(config.performance.chunkGenerationTaskPlanCache).isFalse();
         assertThat(config.performance.chunkTaskDispatcherBatchLoop).isFalse();
         assertThat(config.performance.chunkStorageRegionScanFastPath).isFalse();
