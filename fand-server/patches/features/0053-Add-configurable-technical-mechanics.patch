@@ -1,0 +1,663 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 11 Jun 2026 20:39:36 +0800
+Subject: [PATCH] Add configurable technical mechanics
+
+
+diff --git a/net/minecraft/core/dispenser/ShearsDispenseItemBehavior.java b/net/minecraft/core/dispenser/ShearsDispenseItemBehavior.java
+index 269c01835da74568fa797a400337e61d8c88a96f..beba47eb980c9d7da6073fd939f1cd2b539dde4b 100644
+--- a/net/minecraft/core/dispenser/ShearsDispenseItemBehavior.java
++++ b/net/minecraft/core/dispenser/ShearsDispenseItemBehavior.java
+@@ -24,7 +24,11 @@ public class ShearsDispenseItemBehavior extends OptionalDispenseItemBehavior {
+             BlockPos pos = source.pos().relative(source.state().getValue(DispenserBlock.FACING));
+             this.setSuccess(tryShearBeehive(level, dispensed, pos) || tryShearEntity(level, pos, dispensed));
+             if (this.isSuccess()) {
+-                dispensed.hurtAndBreak(1, level, null, item -> {});
++                dispensed.hurtAndBreak(1, level, null, item -> {
++                    if (io.fand.server.hooks.FandHooks.shearsInDispenserCanZeroAmountEnabled()) {
++                        dispensed.grow(1);
++                    }
++                });
+             }
+         }
+ 
+diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
+index efad39e47cfda2689d1e931a05c9f7ffca784349..e3241d8cbfb5376cf8eca838edda3b9ff9fd891d 100644
+--- a/net/minecraft/server/level/ServerPlayer.java
++++ b/net/minecraft/server/level/ServerPlayer.java
+@@ -242,6 +242,7 @@ public class ServerPlayer extends Player {
+     private int lastSentFood = -99999999;
+     private boolean lastFoodSaturationZero = true;
+     private int lastSentExp = -99999999;
++    protected int spawnInvulnerableTime = 60;
+     private ChatVisiblity chatVisibility = ChatVisiblity.FULL;
+     private ParticleStatus particleStatus = ParticleStatus.ALL;
+     private boolean canChatColor = true;
+@@ -602,6 +603,9 @@ public class ServerPlayer extends Player {
+         this.connection.tickClientLoadTimeout();
+         this.gameMode.tick();
+         this.wardenSpawnTracker.tick();
++        if (this.spawnInvulnerableTime > 0) {
++            this.spawnInvulnerableTime--;
++        }
+         if (this.invulnerableTime > 0) {
+             this.invulnerableTime--;
+         }
+@@ -1039,6 +1043,11 @@ public class ServerPlayer extends Player {
+         if (this.isInvulnerableTo(level, source)) {
+             return false;
+         } else {
++            if (io.fand.server.hooks.FandHooks.spawnInvulnerableTimeEnabled()
++                    && this.spawnInvulnerableTime > 0
++                    && !source.is(net.minecraft.tags.DamageTypeTags.BYPASSES_INVULNERABILITY)) {
++                return false;
++            }
+             Entity entity = source.getEntity();
+             return !(entity instanceof Player playerx && !this.canHarmPlayer(playerx))
+                 && !(entity instanceof AbstractArrow arrow && arrow.getOwner() instanceof Player player && !this.canHarmPlayer(player))
+diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
+index 1a1e115e1603884cc8480765a02832a5cf88c3e1..ea1d4a3603145a62d9997feb89a8e29a7cc6535f 100644
+--- a/net/minecraft/world/entity/Entity.java
++++ b/net/minecraft/world/entity/Entity.java
+@@ -3212,6 +3212,11 @@ public abstract class Entity
+                 transition.relatives().contains(Relative.Y) ? 0.0 : passengerOffset.y(),
+                 transition.relatives().contains(Relative.Z) ? 0.0 : passengerOffset.z()
+             );
++        if (io.fand.server.hooks.FandHooks.oldMinecartMotionBehaviorEnabled()) {
++            return new TeleportTransition(
++                transition.newLevel(), transition.position(), transition.deltaMovement(), 0.0F, 0.0F, transition.postTeleportTransition()
++            );
++        }
+         return transition.withPosition(passengerPos).withRotation(passengerYRot, passengerXRot).transitionAsPassenger();
+     }
+ 
+@@ -3285,6 +3290,9 @@ public abstract class Entity
+     }
+ 
+     public boolean canTeleport(final Level from, final Level to) {
++        if (!io.fand.server.hooks.FandHooks.allowEntityPortalWithPassengerEnabled() && (this.isPassenger() || this.isVehicle())) {
++            return false;
++        }
+         if (from.dimension() == Level.END && to.dimension() == Level.OVERWORLD) {
+             for (Entity passenger : this.getPassengers()) {
+                 if (passenger instanceof ServerPlayer player && !player.seenCredits) {
+diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
+index 3d78e1e0f660ce37443fb7485bec6009770f2847..2ec16a41612759ceec1501579e6f17062ab9f956 100644
+--- a/net/minecraft/world/entity/LivingEntity.java
++++ b/net/minecraft/world/entity/LivingEntity.java
+@@ -2821,7 +2821,7 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+             }
+         }
+ 
+-        if (!this.isRemoved()) {
++        if (io.fand.server.hooks.FandHooks.disableLivingEntityAiStepAliveCheckEnabled() || !this.isRemoved()) {
+             this.aiStep();
+         }
+ 
+diff --git a/net/minecraft/world/entity/item/FallingBlockEntity.java b/net/minecraft/world/entity/item/FallingBlockEntity.java
+index a1c07209f2f5b7a2a728b092664280de76b3ad79..141ae1a3fdac62101a6b0995ed8237bd6f027d6e 100644
+--- a/net/minecraft/world/entity/item/FallingBlockEntity.java
++++ b/net/minecraft/world/entity/item/FallingBlockEntity.java
+@@ -262,7 +262,9 @@ public class FallingBlockEntity extends Entity {
+             if (fallDistanceInt < 0) {
+                 return false;
+             } else {
+-                Predicate<Entity> entitySelector = EntitySelector.NO_CREATIVE_OR_SPECTATOR.and(EntitySelector.LIVING_ENTITY_STILL_ALIVE);
++                Predicate<Entity> entitySelector = io.fand.server.hooks.FandHooks.allowAnvilDestroyItemEntitiesEnabled()
++                    ? EntitySelector.NO_CREATIVE_OR_SPECTATOR
++                    : EntitySelector.NO_CREATIVE_OR_SPECTATOR.and(EntitySelector.LIVING_ENTITY_STILL_ALIVE);
+                 DamageSource actualDamageSource = this.blockState.getBlock() instanceof Fallable fallable
+                     ? fallable.getFallDamageSource(this)
+                     : this.damageSources().fallingBlock(this);
+@@ -364,7 +366,9 @@ public class FallingBlockEntity extends Entity {
+         ResourceKey<Level> oldDimension = this.level().dimension();
+         boolean fromOrToEnd = (oldDimension == Level.END || newDimension == Level.END) && oldDimension != newDimension;
+         Entity newEntity = super.teleport(transition);
+-        this.forceTickAfterTeleportToDuplicate = newEntity != null && fromOrToEnd;
++        this.forceTickAfterTeleportToDuplicate = io.fand.server.hooks.FandHooks.allowGravityBlockEndPortalDuplicationEnabled()
++            && newEntity != null
++            && fromOrToEnd;
+         return newEntity;
+     }
+ }
+diff --git a/net/minecraft/world/entity/monster/zombie/Zombie.java b/net/minecraft/world/entity/monster/zombie/Zombie.java
+index e77bfc1ae23ca283c051ead9621b609317dfc620..675e3543d39b09d0b078d0d0d10a715382a3b88a 100644
+--- a/net/minecraft/world/entity/monster/zombie/Zombie.java
++++ b/net/minecraft/world/entity/monster/zombie/Zombie.java
+@@ -297,7 +297,9 @@ public class Zombie extends Monster {
+                 int x = Mth.floor(this.getX());
+                 int y = Mth.floor(this.getY());
+                 int z = Mth.floor(this.getZ());
+-                EntityType<? extends Zombie> type = this.getType();
++                EntityType<? extends Zombie> type = io.fand.server.hooks.FandHooks.oldZombieReinforcementEnabled()
++                    ? EntityType.ZOMBIE
++                    : this.getType();
+                 Zombie reinforcement = type.create(level, EntitySpawnReason.REINFORCEMENT);
+                 if (reinforcement == null) {
+                     return true;
+diff --git a/net/minecraft/world/entity/monster/zombie/ZombifiedPiglin.java b/net/minecraft/world/entity/monster/zombie/ZombifiedPiglin.java
+index 0665db225b5a00f9ff0cf8d6a869ab2b2b9c0e19..73c14e5eaad21f726cd959852d11a0bdebf3ea5a 100644
+--- a/net/minecraft/world/entity/monster/zombie/ZombifiedPiglin.java
++++ b/net/minecraft/world/entity/monster/zombie/ZombifiedPiglin.java
+@@ -111,6 +111,9 @@ public class ZombifiedPiglin extends Zombie implements NeutralMob {
+         if (this.getTarget() != null) {
+             this.maybeAlertOthers();
+         }
++        if (io.fand.server.hooks.FandHooks.oldZombiePiglinDropEnabled() && this.isAngry()) {
++            this.lastHurtByPlayerMemoryTime = this.tickCount;
++        }
+ 
+         super.customServerAiStep(level);
+     }
+diff --git a/net/minecraft/world/entity/projectile/ThrowableProjectile.java b/net/minecraft/world/entity/projectile/ThrowableProjectile.java
+index a5d0292c9fd11144e5a12c3c4a709f411c0a9eef..dca3a0722e4e0354a226b81f1fa41dd8e6ea0189 100644
+--- a/net/minecraft/world/entity/projectile/ThrowableProjectile.java
++++ b/net/minecraft/world/entity/projectile/ThrowableProjectile.java
+@@ -45,6 +45,25 @@ public abstract class ThrowableProjectile extends Projectile {
+     @Override
+     public void tick() {
+         this.handleFirstTickBubbleColumn();
++        if (io.fand.server.hooks.FandHooks.oldThrowableProjectileTickOrderEnabled()) {
++            super.tick();
++            HitResult result = ProjectileUtil.getHitResultOnMoveVector(this, this::canHitEntity);
++            if (result.getType() != HitResult.Type.MISS) {
++                this.hitTargetOrDeflectSelf(result);
++            }
++
++            Vec3 movement = this.getDeltaMovement();
++            double x = this.getX() + movement.x;
++            double y = this.getY() + movement.y;
++            double z = this.getZ() + movement.z;
++            this.updateRotation();
++            this.applyInertia();
++            this.applyGravity();
++            this.setPos(x, y, z);
++            this.applyEffectsFromBlocks();
++            return;
++        }
++
+         this.applyGravity();
+         this.applyInertia();
+         HitResult result = ProjectileUtil.getHitResultOnMoveVector(this, this::canHitEntity);
+diff --git a/net/minecraft/world/item/FireworkRocketItem.java b/net/minecraft/world/item/FireworkRocketItem.java
+index b76e31894758d0fc6a24555886f5099608a40b72..2ad1d5d7303fd30a48666268014c577ab2a2d24c 100644
+--- a/net/minecraft/world/item/FireworkRocketItem.java
++++ b/net/minecraft/world/item/FireworkRocketItem.java
+@@ -60,7 +60,7 @@ public class FireworkRocketItem extends Item implements ProjectileItem {
+         if (player.isFallFlying()) {
+             ItemStack itemStack = player.getItemInHand(hand);
+             if (level instanceof ServerLevel serverLevel) {
+-                if (player.dropAllLeashConnections(null)) {
++                if (!io.fand.server.hooks.FandHooks.keepLeashConnectWhenUseFireworkEnabled() && player.dropAllLeashConnections(null)) {
+                     level.playSound(null, player, SoundEvents.LEAD_BREAK, SoundSource.NEUTRAL, 1.0F, 1.0F);
+                 }
+ 
+diff --git a/net/minecraft/world/item/ItemStack.java b/net/minecraft/world/item/ItemStack.java
+index 3931c7a25baac9d213986c86b3293e0f6d8a77d8..5db73bc8b586f40655fd8abdf16bc938ec20bbf8 100644
+--- a/net/minecraft/world/item/ItemStack.java
++++ b/net/minecraft/world/item/ItemStack.java
+@@ -429,11 +429,15 @@ public final class ItemStack implements DataComponentHolder, ItemInstance {
+     }
+ 
+     public int getDamageValue() {
+-        return Mth.clamp(this.getOrDefault(DataComponents.DAMAGE, 0), 0, this.getMaxDamage());
++        int damage = this.getOrDefault(DataComponents.DAMAGE, 0);
++        return io.fand.server.hooks.FandHooks.disableItemDamageCheckEnabled() ? damage : Mth.clamp(damage, 0, this.getMaxDamage());
+     }
+ 
+     public void setDamageValue(final int value) {
+-        this.set(DataComponents.DAMAGE, Mth.clamp(value, 0, this.getMaxDamage()));
++        this.set(
++            DataComponents.DAMAGE,
++            io.fand.server.hooks.FandHooks.disableItemDamageCheckEnabled() ? value : Mth.clamp(value, 0, this.getMaxDamage())
++        );
+     }
+ 
+     public int getMaxDamage() {
+diff --git a/net/minecraft/world/level/ServerExplosion.java b/net/minecraft/world/level/ServerExplosion.java
+index 8a92ba24d1d01ee61f9e7d5aef4b46869e43812f..4b58c921c0a339aea06016af7ab6865dd2f04b6d 100644
+--- a/net/minecraft/world/level/ServerExplosion.java
++++ b/net/minecraft/world/level/ServerExplosion.java
+@@ -311,7 +311,11 @@ public class ServerExplosion implements Explosion {
+                                 : 0.0;
+                         double knockbackPower = (1.0 - dist) * exposure * knockbackMultiplier * (1.0 - knockbackResistance);
+                         Vec3 knockback = direction.scale(knockbackPower);
+-                        entity.push(knockback);
++                        if (io.fand.server.hooks.FandHooks.oldProjectileExplosionBehaviorEnabled()) {
++                            entity.setDeltaMovement(entity.getDeltaMovement().add(knockback));
++                        } else {
++                            entity.push(knockback);
++                        }
+                         if (entity.is(EntityTypeTags.REDIRECTABLE_PROJECTILE) && entity instanceof Projectile projectile) {
+                             projectile.setOwner(this.damageSource.getEntity());
+                         } else if (entity instanceof Player player && !player.isSpectator() && (!player.isCreative() || !player.getAbilities().flying)) {
+@@ -458,6 +462,9 @@ public class ServerExplosion implements Explosion {
+     public boolean shouldAffectBlocklikeEntities() {
+         boolean mobGriefingEnabled = this.level.getGameRules().get(GameRules.MOB_GRIEFING);
+         boolean isNotWindCharge = this.source == null || !this.source.is(EntityType.BREEZE_WIND_CHARGE) && !this.source.is(EntityType.WIND_CHARGE);
++        if (io.fand.server.hooks.FandHooks.tntWetExplosionNoItemDamageEnabled()) {
++            isNotWindCharge = isNotWindCharge && (this.source == null || !this.source.isInWater());
++        }
+         return mobGriefingEnabled ? isNotWindCharge : this.blockInteraction.shouldAffectBlocklikeEntities() && isNotWindCharge;
+     }
+ 
+diff --git a/net/minecraft/world/level/block/BambooStalkBlock.java b/net/minecraft/world/level/block/BambooStalkBlock.java
+index 0e0067d6ee3c71589818c513cdbbed84d373afd6..a058e53639a8d992c30eb2ddac1cad859c9505ad 100644
+--- a/net/minecraft/world/level/block/BambooStalkBlock.java
++++ b/net/minecraft/world/level/block/BambooStalkBlock.java
+@@ -108,6 +108,8 @@ public class BambooStalkBlock extends Block implements BonemealableBlock {
+     protected void tick(final BlockState state, final ServerLevel level, final BlockPos pos, final RandomSource random) {
+         if (!state.canSurvive(level, pos)) {
+             level.destroyBlock(pos, true);
++        } else if (io.fand.server.hooks.FandHooks.zeroTickPlantsEnabled()) {
++            this.randomTick(state, level, pos, random);
+         }
+     }
+ 
+diff --git a/net/minecraft/world/level/block/CactusBlock.java b/net/minecraft/world/level/block/CactusBlock.java
+index 1f8160cd2e8f1b4ece3aced0129e295a3b544dfb..7382fa4cf9db6ff16fbb7c7c44d42e1de6eefc12 100644
+--- a/net/minecraft/world/level/block/CactusBlock.java
++++ b/net/minecraft/world/level/block/CactusBlock.java
+@@ -47,6 +47,8 @@ public class CactusBlock extends Block {
+     protected void tick(final BlockState state, final ServerLevel level, final BlockPos pos, final RandomSource random) {
+         if (!state.canSurvive(level, pos)) {
+             level.destroyBlock(pos, true);
++        } else if (io.fand.server.hooks.FandHooks.zeroTickPlantsEnabled()) {
++            this.randomTick(state, level, pos, random);
+         }
+     }
+ 
+diff --git a/net/minecraft/world/level/block/ChorusFlowerBlock.java b/net/minecraft/world/level/block/ChorusFlowerBlock.java
+index 7119b5dad124b894c03b70a1b4e8e6e7334e5968..441d13ec8f1b2712ed99c7a9ee0845c56a974e60 100644
+--- a/net/minecraft/world/level/block/ChorusFlowerBlock.java
++++ b/net/minecraft/world/level/block/ChorusFlowerBlock.java
+@@ -47,6 +47,8 @@ public class ChorusFlowerBlock extends Block {
+     protected void tick(final BlockState state, final ServerLevel level, final BlockPos pos, final RandomSource random) {
+         if (!state.canSurvive(level, pos)) {
+             level.destroyBlock(pos, true);
++        } else if (io.fand.server.hooks.FandHooks.zeroTickPlantsEnabled()) {
++            this.randomTick(state, level, pos, random);
+         }
+     }
+ 
+diff --git a/net/minecraft/world/level/block/ComparatorBlock.java b/net/minecraft/world/level/block/ComparatorBlock.java
+index efdf488c97567ee62e0da2b6aaff3a08d0bec8c9..fa982846ad5659ef011af133bff81307b59a9983 100644
+--- a/net/minecraft/world/level/block/ComparatorBlock.java
++++ b/net/minecraft/world/level/block/ComparatorBlock.java
+@@ -59,6 +59,9 @@ public class ComparatorBlock extends DiodeBlock implements EntityBlock {
+         final BlockState neighbourState,
+         final RandomSource random
+     ) {
++        if (directionToNeighbour == Direction.DOWN && io.fand.server.hooks.FandHooks.redstoneIgnoreUpwardsUpdateEnabled()) {
++            return state;
++        }
+         return directionToNeighbour == Direction.DOWN && !this.canSurviveOn(level, neighbourPos, neighbourState)
+             ? Blocks.AIR.defaultBlockState()
+             : super.updateShape(state, level, ticks, pos, directionToNeighbour, neighbourPos, neighbourState, random);
+diff --git a/net/minecraft/world/level/block/CopperBulbBlock.java b/net/minecraft/world/level/block/CopperBulbBlock.java
+index cc07d62b43908ab65c5b739633faef27c134f706..c08c83e3d8f65e6b60ee66edcc317dc00bd6ff64 100644
+--- a/net/minecraft/world/level/block/CopperBulbBlock.java
++++ b/net/minecraft/world/level/block/CopperBulbBlock.java
+@@ -6,6 +6,7 @@ import net.minecraft.core.Direction;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.sounds.SoundEvents;
+ import net.minecraft.sounds.SoundSource;
++import net.minecraft.util.RandomSource;
+ import net.minecraft.world.level.Level;
+ import net.minecraft.world.level.block.state.BlockBehaviour;
+ import net.minecraft.world.level.block.state.BlockState;
+@@ -33,7 +34,11 @@ public class CopperBulbBlock extends Block {
+     @Override
+     protected void onPlace(final BlockState state, final Level level, final BlockPos pos, final BlockState oldState, final boolean movedByPiston) {
+         if (oldState.getBlock() != state.getBlock() && level instanceof ServerLevel serverLevel) {
+-            this.checkAndFlip(state, serverLevel, pos);
++            if (io.fand.server.hooks.FandHooks.copperBulbOneGameTickDelayEnabled()) {
++                level.scheduleTick(pos, this, 1);
++            } else {
++                this.checkAndFlip(state, serverLevel, pos);
++            }
+         }
+     }
+ 
+@@ -42,7 +47,18 @@ public class CopperBulbBlock extends Block {
+         final BlockState state, final Level level, final BlockPos pos, final Block block, final @Nullable Orientation orientation, final boolean movedByPiston
+     ) {
+         if (level instanceof ServerLevel serverLevel) {
+-            this.checkAndFlip(state, serverLevel, pos);
++            if (io.fand.server.hooks.FandHooks.copperBulbOneGameTickDelayEnabled()) {
++                level.scheduleTick(pos, this, 1);
++            } else {
++                this.checkAndFlip(state, serverLevel, pos);
++            }
++        }
++    }
++
++    @Override
++    protected void tick(final BlockState state, final ServerLevel level, final BlockPos pos, final RandomSource random) {
++        if (io.fand.server.hooks.FandHooks.copperBulbOneGameTickDelayEnabled()) {
++            this.checkAndFlip(state, level, pos);
+         }
+     }
+ 
+diff --git a/net/minecraft/world/level/block/CrafterBlock.java b/net/minecraft/world/level/block/CrafterBlock.java
+index ebdadd89ed5fbcecdd2e07fc3887c50fdcd7cdb8..c703d89920dd6f7118d123331c607295bffe9f39 100644
+--- a/net/minecraft/world/level/block/CrafterBlock.java
++++ b/net/minecraft/world/level/block/CrafterBlock.java
+@@ -77,7 +77,7 @@ public class CrafterBlock extends BaseEntityBlock {
+         boolean isTriggered = state.getValue(TRIGGERED);
+         BlockEntity blockEntity = level.getBlockEntity(pos);
+         if (shouldTrigger && !isTriggered) {
+-            level.scheduleTick(pos, this, 4);
++            level.scheduleTick(pos, this, io.fand.server.hooks.FandHooks.crafterOneGameTickDelayEnabled() ? 1 : 4);
+             level.setBlock(pos, state.setValue(TRIGGERED, true), Block.UPDATE_CLIENTS);
+             this.setBlockEntityTriggered(blockEntity, true);
+         } else if (!shouldTrigger && isTriggered) {
+@@ -126,7 +126,7 @@ public class CrafterBlock extends BaseEntityBlock {
+     @Override
+     public void setPlacedBy(final Level level, final BlockPos pos, final BlockState state, final @Nullable LivingEntity by, final ItemStack itemStack) {
+         if (state.getValue(TRIGGERED)) {
+-            level.scheduleTick(pos, this, 4);
++            level.scheduleTick(pos, this, io.fand.server.hooks.FandHooks.crafterOneGameTickDelayEnabled() ? 1 : 4);
+         }
+     }
+ 
+diff --git a/net/minecraft/world/level/block/EndGatewayBlock.java b/net/minecraft/world/level/block/EndGatewayBlock.java
+index c6086169afec8748eb6fd20a1eb388f1e34cbd34..456a374f75d436f18e736a881cca10b914c42ff3 100644
+--- a/net/minecraft/world/level/block/EndGatewayBlock.java
++++ b/net/minecraft/world/level/block/EndGatewayBlock.java
+@@ -110,8 +110,11 @@ public class EndGatewayBlock extends BaseEntityBlock implements Portal {
+             if (teleportPosition == null) {
+                 return null;
+             } else {
++                TeleportTransition.PostTeleportTransition postTeleportTransition = io.fand.server.hooks.FandHooks.disableGatewayPortalEntityTickingEnabled()
++                    ? TeleportTransition.DO_NOTHING
++                    : TeleportTransition.PLACE_PORTAL_TICKET;
+                 return entity instanceof ThrownEnderpearl
+-                    ? new TeleportTransition(currentLevel, teleportPosition, Vec3.ZERO, 0.0F, 0.0F, Set.of(), TeleportTransition.PLACE_PORTAL_TICKET)
++                    ? new TeleportTransition(currentLevel, teleportPosition, Vec3.ZERO, 0.0F, 0.0F, Set.of(), postTeleportTransition)
+                     : new TeleportTransition(
+                         currentLevel,
+                         teleportPosition,
+@@ -119,7 +122,7 @@ public class EndGatewayBlock extends BaseEntityBlock implements Portal {
+                         0.0F,
+                         0.0F,
+                         Relative.union(Relative.DELTA, Relative.ROTATION),
+-                        TeleportTransition.PLACE_PORTAL_TICKET
++                        postTeleportTransition
+                     );
+             }
+         } else {
+diff --git a/net/minecraft/world/level/block/GrowingPlantHeadBlock.java b/net/minecraft/world/level/block/GrowingPlantHeadBlock.java
+index 30269ef827b53d62c0f26cf5b91fa252efd62457..28d2a2f400e66ca1edb58e475f050b32f8d81a36 100644
+--- a/net/minecraft/world/level/block/GrowingPlantHeadBlock.java
++++ b/net/minecraft/world/level/block/GrowingPlantHeadBlock.java
+@@ -56,6 +56,15 @@ public abstract class GrowingPlantHeadBlock extends GrowingPlantBlock implements
+         }
+     }
+ 
++    @Override
++    protected void tick(final BlockState state, final ServerLevel level, final BlockPos pos, final RandomSource random) {
++        if (!state.canSurvive(level, pos)) {
++            level.destroyBlock(pos, true);
++        } else if (io.fand.server.hooks.FandHooks.zeroTickPlantsEnabled()) {
++            this.randomTick(state, level, pos, random);
++        }
++    }
++
+     protected BlockState getGrowIntoState(final BlockState growFromState, final RandomSource random) {
+         return growFromState.cycle(AGE);
+     }
+diff --git a/net/minecraft/world/level/block/NetherPortalBlock.java b/net/minecraft/world/level/block/NetherPortalBlock.java
+index c6dceb0a716f1e939c8b1eb5592704890370ae50..95c6f5c84e43dd911b6b326dc2ab656484d2af9a 100644
+--- a/net/minecraft/world/level/block/NetherPortalBlock.java
++++ b/net/minecraft/world/level/block/NetherPortalBlock.java
+@@ -222,7 +222,16 @@ public class NetherPortalBlock extends Block implements Portal {
+         double width = foundRectangle.axis1Size;
+         double height = foundRectangle.axis2Size;
+         EntityDimensions dimensions = entity.getDimensions(entity.getPose());
+-        int outputRotation = portalAxis == axis ? 0 : 90;
++        int outputRotation;
++        Vec3 outputMovement;
++        if (io.fand.server.hooks.FandHooks.oldMinecartMotionBehaviorEnabled()) {
++            Vec3 movement = entity.getDeltaMovement();
++            outputMovement = portalAxis == axis ? movement : new Vec3(movement.z, movement.y, -movement.x);
++            outputRotation = 0;
++        } else {
++            outputMovement = Vec3.ZERO;
++            outputRotation = portalAxis == axis ? 0 : 90;
++        }
+         double offsetRight = dimensions.width() / 2.0 + (width - dimensions.width()) * offset.x();
+         double offsetUp = (height - dimensions.height()) * offset.y();
+         double offsetForward = 0.5 + offset.z();
+@@ -234,7 +243,7 @@ public class NetherPortalBlock extends Block implements Portal {
+         );
+         Vec3 collisionFreePos = PortalShape.findCollisionFreePosition(targetPos, newLevel, entity, dimensions);
+         return new TeleportTransition(
+-            newLevel, collisionFreePos, Vec3.ZERO, outputRotation, 0.0F, Relative.union(Relative.DELTA, Relative.ROTATION), postTeleportTransition
++            newLevel, collisionFreePos, outputMovement, outputRotation, 0.0F, Relative.union(Relative.DELTA, Relative.ROTATION), postTeleportTransition
+         );
+     }
+ 
+diff --git a/net/minecraft/world/level/block/RedStoneWireBlock.java b/net/minecraft/world/level/block/RedStoneWireBlock.java
+index fc937fe87733cb41f3451c842056ac24379a31d7..eb66a014f00a06ba5e9cf5f4df414af8de9020c2 100644
+--- a/net/minecraft/world/level/block/RedStoneWireBlock.java
++++ b/net/minecraft/world/level/block/RedStoneWireBlock.java
+@@ -179,7 +179,9 @@ public class RedStoneWireBlock extends Block {
+         final RandomSource random
+     ) {
+         if (directionToNeighbour == Direction.DOWN) {
+-            return !this.canSurviveOn(level, neighbourPos, neighbourState) ? Blocks.AIR.defaultBlockState() : state;
++            return io.fand.server.hooks.FandHooks.redstoneIgnoreUpwardsUpdateEnabled() || this.canSurviveOn(level, neighbourPos, neighbourState)
++                ? state
++                : Blocks.AIR.defaultBlockState();
+         } else if (directionToNeighbour == Direction.UP) {
+             return this.getConnectionState(level, state, pos);
+         } else {
+@@ -242,7 +244,9 @@ public class RedStoneWireBlock extends Block {
+         BlockPos relativePos = pos.relative(direction);
+         BlockState relativeState = level.getBlockState(relativePos);
+         if (canConnectUp) {
+-            boolean isPlaceableAbove = relativeState.getBlock() instanceof TrapDoorBlock || this.canSurviveOn(level, relativePos, relativeState);
++            boolean isPlaceableAbove = (!io.fand.server.hooks.FandHooks.redstoneIgnoreUpwardsUpdateEnabled()
++                    && relativeState.getBlock() instanceof TrapDoorBlock)
++                || this.canSurviveOn(level, relativePos, relativeState);
+             if (isPlaceableAbove && shouldConnectTo(level.getBlockState(relativePos.above()))) {
+                 if (relativeState.isFaceSturdy(level, relativePos, direction.getOpposite())) {
+                     return RedstoneSide.UP;
+diff --git a/net/minecraft/world/level/block/RepeaterBlock.java b/net/minecraft/world/level/block/RepeaterBlock.java
+index d301ca4c91e75d715998aa7ed155fd44ccd64785..30eb9a4aa4e320fae9744627b7850be5cdfb57df 100644
+--- a/net/minecraft/world/level/block/RepeaterBlock.java
++++ b/net/minecraft/world/level/block/RepeaterBlock.java
+@@ -70,6 +70,9 @@ public class RepeaterBlock extends DiodeBlock {
+         final BlockState neighbourState,
+         final RandomSource random
+     ) {
++        if (directionToNeighbour == Direction.DOWN && io.fand.server.hooks.FandHooks.redstoneIgnoreUpwardsUpdateEnabled()) {
++            return state;
++        }
+         if (directionToNeighbour == Direction.DOWN && !this.canSurviveOn(level, neighbourPos, neighbourState)) {
+             return Blocks.AIR.defaultBlockState();
+         } else {
+diff --git a/net/minecraft/world/level/block/SugarCaneBlock.java b/net/minecraft/world/level/block/SugarCaneBlock.java
+index c28008fa7c75788f5170e6c018c7840d4064465f..625ac208e3c145e5e65e0ef22df0027d872a6dc6 100644
+--- a/net/minecraft/world/level/block/SugarCaneBlock.java
++++ b/net/minecraft/world/level/block/SugarCaneBlock.java
+@@ -43,6 +43,8 @@ public class SugarCaneBlock extends Block {
+     protected void tick(final BlockState state, final ServerLevel level, final BlockPos pos, final RandomSource random) {
+         if (!state.canSurvive(level, pos)) {
+             level.destroyBlock(pos, true);
++        } else if (io.fand.server.hooks.FandHooks.zeroTickPlantsEnabled()) {
++            this.randomTick(state, level, pos, random);
+         }
+     }
+ 
+diff --git a/net/minecraft/world/level/block/TntBlock.java b/net/minecraft/world/level/block/TntBlock.java
+index ebe041f055c7c2a5d78c1c295e94e7ddc9049228..ff45ecbe0be9a46753bf752921ad431c9b8abb27 100644
+--- a/net/minecraft/world/level/block/TntBlock.java
++++ b/net/minecraft/world/level/block/TntBlock.java
+@@ -47,7 +47,7 @@ public class TntBlock extends Block {
+     @Override
+     protected void onPlace(final BlockState state, final Level level, final BlockPos pos, final BlockState oldState, final boolean movedByPiston) {
+         if (!oldState.is(state.getBlock())) {
+-            if (level.hasNeighborSignal(pos) && prime(level, pos)) {
++            if (level.hasNeighborSignal(pos) && !io.fand.server.hooks.FandHooks.noTntPlaceUpdateEnabled() && prime(level, pos)) {
+                 level.removeBlock(pos, false);
+             }
+         }
+diff --git a/net/minecraft/world/level/block/TripWireHookBlock.java b/net/minecraft/world/level/block/TripWireHookBlock.java
+index 2d902d97fbbc9b18faea9a31c8093fbc659a7983..ef14e8f934e89ad82327770b1a6c8555424ac713 100644
+--- a/net/minecraft/world/level/block/TripWireHookBlock.java
++++ b/net/minecraft/world/level/block/TripWireHookBlock.java
+@@ -184,9 +184,14 @@ public class TripWireHookBlock extends Block {
+                     BlockPos testPosx = pos.relative(direction, i);
+                     BlockState wireData = wireStates[i];
+                     if (wireData != null) {
+-                        BlockState testPosState = level.getBlockState(testPosx);
+-                        if (testPosState.is(Blocks.TRIPWIRE) || testPosState.is(Blocks.TRIPWIRE_HOOK)) {
++                        if (io.fand.server.hooks.FandHooks.stringTripwireHookDuplicateEnabled()) {
+                             level.setBlock(testPosx, wireData.trySetValue(ATTACHED, attached), Block.UPDATE_ALL);
++                            level.getBlockState(testPosx);
++                        } else {
++                            BlockState testPosState = level.getBlockState(testPosx);
++                            if (testPosState.is(Blocks.TRIPWIRE) || testPosState.is(Blocks.TRIPWIRE_HOOK)) {
++                                level.setBlock(testPosx, wireData.trySetValue(ATTACHED, attached), Block.UPDATE_ALL);
++                            }
+                         }
+                     }
+                 }
+diff --git a/net/minecraft/world/level/block/entity/HopperBlockEntity.java b/net/minecraft/world/level/block/entity/HopperBlockEntity.java
+index 710cae0039f70b479cf988c353cfad250e130365..976a67181284ef88b18cf04248345f55e826f387 100644
+--- a/net/minecraft/world/level/block/entity/HopperBlockEntity.java
++++ b/net/minecraft/world/level/block/entity/HopperBlockEntity.java
+@@ -231,6 +231,7 @@ public class HopperBlockEntity extends RandomizableContainerBlockEntity implemen
+             return false;
+         } else {
+             boolean isBlocked = hopper.isGridAligned()
++                && !io.fand.server.hooks.FandHooks.oldHopperSuckInBehaviorEnabled()
+                 && blockState.isCollisionShapeFullBlock(level, blockPos)
+                 && !blockState.is(BlockTags.DOES_NOT_BLOCK_HOPPERS);
+             if (!isBlocked) {
+diff --git a/net/minecraft/world/level/block/piston/PistonBaseBlock.java b/net/minecraft/world/level/block/piston/PistonBaseBlock.java
+index 69ca7b66acff67e10b693bdb43bdebc79f2186a1..0536dc774069689b79e9b9ddc468849becb223c0 100644
+--- a/net/minecraft/world/level/block/piston/PistonBaseBlock.java
++++ b/net/minecraft/world/level/block/piston/PistonBaseBlock.java
+@@ -311,14 +311,37 @@ public class PistonBaseBlock extends DirectionalBlock {
+                 toUpdate[updateIndex++] = state;
+             }
+ 
++            boolean allowPistonDuplication = true;
++            for (BlockState state : toPushShapes) {
++                if (!io.fand.server.hooks.FandHooks.allowPistonDuplicationFor(state)) {
++                    allowPistonDuplication = false;
++                    break;
++                }
++            }
+             for (int i = toPush.size() - 1; i >= 0; i--) {
+-                BlockPos pos = toPush.get(i);
+-                BlockState blockState = level.getBlockState(pos);
++                BlockPos oldPos = toPush.get(i);
++                BlockPos pos = oldPos;
++                BlockState blockState = allowPistonDuplication ? level.getBlockState(oldPos) : null;
+                 pos = pos.relative(pushDirection);
+                 deleteAfterMove.remove(pos);
+                 BlockState actualState = Blocks.MOVING_PISTON.defaultBlockState().setValue(FACING, direction);
+                 level.setBlock(pos, actualState, Block.UPDATE_NONE | Block.UPDATE_MOVE_BY_PISTON);
+-                level.setBlockEntity(MovingPistonBlock.newMovingBlockEntity(pos, actualState, toPushShapes.get(i), direction, extending, false));
++                if (!allowPistonDuplication) {
++                    blockState = level.getBlockState(oldPos);
++                    deleteAfterMove.replace(oldPos, blockState);
++                }
++                level.setBlockEntity(
++                    MovingPistonBlock.newMovingBlockEntity(
++                        pos, actualState, allowPistonDuplication ? toPushShapes.get(i) : blockState, direction, extending, false
++                    )
++                );
++                if (!allowPistonDuplication) {
++                    level.setBlock(
++                        oldPos,
++                        Blocks.AIR.defaultBlockState(),
++                        Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE | Block.UPDATE_MOVE_BY_PISTON | Block.UPDATE_SKIP_ON_PLACE
++                    );
++                }
+                 toUpdate[updateIndex++] = blockState;
+             }
+ 
+diff --git a/net/minecraft/world/level/block/state/BlockBehaviour.java b/net/minecraft/world/level/block/state/BlockBehaviour.java
+index 0c8509cf347d46f091d5a9f300f1cbf89e824b12..853c63d8e1d2641513bb4481db6f32bb05f4235f 100644
+--- a/net/minecraft/world/level/block/state/BlockBehaviour.java
++++ b/net/minecraft/world/level/block/state/BlockBehaviour.java
+@@ -651,6 +651,10 @@ public abstract class BlockBehaviour implements FeatureElement {
+         }
+ 
+         public PushReaction getPistonPushReaction() {
++            if (this.getBlock() == net.minecraft.world.level.block.Blocks.BUDDING_AMETHYST
++                    && io.fand.server.hooks.FandHooks.movableBuddingAmethystEnabled()) {
++                return PushReaction.NORMAL;
++            }
+             return this.pushReaction;
+         }
+ 
+diff --git a/net/minecraft/world/level/levelgen/feature/EndPlatformFeature.java b/net/minecraft/world/level/levelgen/feature/EndPlatformFeature.java
+index 0944f4b5cd783f29f8fe81ea9a222eab1a75fb6d..5efdb7e208c7eccc87893a8f7c7e13aac7016b6b 100644
+--- a/net/minecraft/world/level/levelgen/feature/EndPlatformFeature.java
++++ b/net/minecraft/world/level/levelgen/feature/EndPlatformFeature.java
+@@ -20,6 +20,10 @@ public class EndPlatformFeature extends Feature<NoneFeatureConfiguration> {
+ 
+     public static void createEndPlatform(final ServerLevelAccessor newLevel, final BlockPos origin, final boolean dropResources) {
+         BlockPos.MutableBlockPos pos = origin.mutable();
++        java.util.List<BlockPos> mixedDisarmedTripwires = new java.util.ArrayList<>();
++        boolean tripwireDuplicate = dropResources
++            && io.fand.server.hooks.FandHooks.stringTripwireHookDuplicateEnabled()
++            && !io.fand.server.hooks.FandHooks.tripwireBehaviorVanilla21();
+ 
+         for (int dz = -2; dz <= 2; dz++) {
+             for (int dx = -2; dx <= 2; dx++) {
+@@ -28,7 +32,7 @@ public class EndPlatformFeature extends Feature<NoneFeatureConfiguration> {
+                     Block block = dy == -1 ? Blocks.OBSIDIAN : Blocks.AIR;
+                     if (!newLevel.getBlockState(blockPos).is(block)) {
+                         if (dropResources) {
+-                            newLevel.destroyBlock(blockPos, true, null);
++                            newLevel.destroyBlock(blockPos, !shouldSuppressTripwireDrop(newLevel, blockPos, tripwireDuplicate, mixedDisarmedTripwires), null);
+                         }
+ 
+                         newLevel.setBlock(blockPos, block.defaultBlockState(), Block.UPDATE_ALL);
+@@ -37,4 +41,39 @@ public class EndPlatformFeature extends Feature<NoneFeatureConfiguration> {
+             }
+         }
+     }
++
++    private static boolean shouldSuppressTripwireDrop(
++        final ServerLevelAccessor level,
++        final BlockPos pos,
++        final boolean tripwireDuplicate,
++        final java.util.List<BlockPos> mixedDisarmedTripwires
++    ) {
++        if (!tripwireDuplicate) {
++            return false;
++        }
++        if (io.fand.server.hooks.FandHooks.tripwireBehaviorVanilla20()) {
++            return true;
++        }
++        if (!io.fand.server.hooks.FandHooks.tripwireBehaviorMixed()) {
++            return false;
++        }
++        var state = level.getBlockState(pos);
++        if (!state.is(Blocks.TRIPWIRE)) {
++            return false;
++        }
++        if (state.getValue(net.minecraft.world.level.block.TripWireBlock.DISARMED)) {
++            mixedDisarmedTripwires.add(pos.immutable());
++            return true;
++        }
++        return hasAlignedDisarmedTripwire(mixedDisarmedTripwires, pos);
++    }
++
++    private static boolean hasAlignedDisarmedTripwire(final java.util.List<BlockPos> positions, final BlockPos pos) {
++        for (BlockPos candidate : positions) {
++            if (candidate.getY() == pos.getY() && (candidate.getX() == pos.getX() || candidate.getZ() == pos.getZ())) {
++                return true;
++            }
++        }
++        return false;
++    }
+ }

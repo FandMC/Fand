@@ -151,4 +151,109 @@ final class ConfigReloadResultTest {
         );
         assertThat(result.requiresRestart()).isEmpty();
     }
+
+    @Test
+    void reloadsTechnicalOptionsAsHotApplicable() throws Exception {
+        var path = tempDir.resolve("fand.yml");
+        Files.writeString(path, """
+                technical:
+                  zeroTickPlants: false
+                  oldHopperSuckInBehavior: false
+                  shearsInDispenserCanZeroAmount: false
+                  allowEntityPortalWithPassenger: true
+                  disableGatewayPortalEntityTicking: false
+                  disableLivingEntityAiStepAliveCheck: false
+                  spawnInvulnerableTime: false
+                  oldZombiePiglinDrop: false
+                  oldZombieReinforcement: false
+                  allowAnvilDestroyItemEntities: false
+                  disableItemDamageCheck: false
+                  keepLeashConnectWhenUseFirework: false
+                  tntWetExplosionNoItemDamage: false
+                  oldProjectileExplosionBehavior: false
+                  oldThrowableProjectileTickOrder: false
+                  oldMinecartMotionBehavior: false
+                  copperBulbOneGameTickDelay: false
+                  crafterOneGameTickDelay: false
+                  noTntPlaceUpdate: false
+                  allowPistonDuplication: false
+                  allowTntDuplication: false
+                  allowRailDuplication: false
+                  allowCarpetDuplication: false
+                  allowGravityBlockEndPortalDuplication: false
+                  redstoneIgnoreUpwardsUpdate: false
+                  movableBuddingAmethyst: false
+                  stringTripwireHookDuplicate: false
+                  tripwireBehavior: vanilla_21
+                """);
+
+        var initial = FandConfig.load(path);
+        var server = new FandServer(path, initial, getClass().getClassLoader());
+
+        Files.writeString(path, """
+                technical:
+                  zeroTickPlants: true
+                  oldHopperSuckInBehavior: true
+                  shearsInDispenserCanZeroAmount: true
+                  allowEntityPortalWithPassenger: false
+                  disableGatewayPortalEntityTicking: true
+                  disableLivingEntityAiStepAliveCheck: true
+                  spawnInvulnerableTime: true
+                  oldZombiePiglinDrop: true
+                  oldZombieReinforcement: true
+                  allowAnvilDestroyItemEntities: true
+                  disableItemDamageCheck: true
+                  keepLeashConnectWhenUseFirework: true
+                  tntWetExplosionNoItemDamage: true
+                  oldProjectileExplosionBehavior: true
+                  oldThrowableProjectileTickOrder: true
+                  oldMinecartMotionBehavior: true
+                  copperBulbOneGameTickDelay: true
+                  crafterOneGameTickDelay: true
+                  noTntPlaceUpdate: true
+                  allowPistonDuplication: true
+                  allowTntDuplication: true
+                  allowRailDuplication: true
+                  allowCarpetDuplication: true
+                  allowGravityBlockEndPortalDuplication: true
+                  redstoneIgnoreUpwardsUpdate: true
+                  movableBuddingAmethyst: true
+                  stringTripwireHookDuplicate: true
+                  tripwireBehavior: mixed
+                """);
+
+        var result = server.reloadConfig();
+
+        assertThat(result.hotApplied()).containsExactlyInAnyOrder(
+                "technical.zeroTickPlants",
+                "technical.oldHopperSuckInBehavior",
+                "technical.shearsInDispenserCanZeroAmount",
+                "technical.allowEntityPortalWithPassenger",
+                "technical.disableGatewayPortalEntityTicking",
+                "technical.disableLivingEntityAiStepAliveCheck",
+                "technical.spawnInvulnerableTime",
+                "technical.oldZombiePiglinDrop",
+                "technical.oldZombieReinforcement",
+                "technical.allowAnvilDestroyItemEntities",
+                "technical.disableItemDamageCheck",
+                "technical.keepLeashConnectWhenUseFirework",
+                "technical.tntWetExplosionNoItemDamage",
+                "technical.oldProjectileExplosionBehavior",
+                "technical.oldThrowableProjectileTickOrder",
+                "technical.oldMinecartMotionBehavior",
+                "technical.copperBulbOneGameTickDelay",
+                "technical.crafterOneGameTickDelay",
+                "technical.noTntPlaceUpdate",
+                "technical.allowPistonDuplication",
+                "technical.allowTntDuplication",
+                "technical.allowRailDuplication",
+                "technical.allowCarpetDuplication",
+                "technical.allowGravityBlockEndPortalDuplication",
+                "technical.redstoneIgnoreUpwardsUpdate",
+                "technical.movableBuddingAmethyst",
+                "technical.stringTripwireHookDuplicate",
+                "technical.tripwireBehavior"
+        );
+        assertThat(result.requiresRestart()).isEmpty();
+    }
 }

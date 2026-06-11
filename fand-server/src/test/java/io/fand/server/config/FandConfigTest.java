@@ -46,6 +46,34 @@ final class FandConfigTest {
         assertThat(config.performance.chunkGenerationTaskPlanCache).isTrue();
         assertThat(config.performance.chunkTaskDispatcherBatchLoop).isTrue();
         assertThat(config.performance.chunkStorageRegionScanFastPath).isTrue();
+        assertThat(config.technical.zeroTickPlants).isFalse();
+        assertThat(config.technical.oldHopperSuckInBehavior).isFalse();
+        assertThat(config.technical.shearsInDispenserCanZeroAmount).isFalse();
+        assertThat(config.technical.allowEntityPortalWithPassenger).isTrue();
+        assertThat(config.technical.disableGatewayPortalEntityTicking).isFalse();
+        assertThat(config.technical.disableLivingEntityAiStepAliveCheck).isFalse();
+        assertThat(config.technical.spawnInvulnerableTime).isFalse();
+        assertThat(config.technical.oldZombiePiglinDrop).isFalse();
+        assertThat(config.technical.oldZombieReinforcement).isFalse();
+        assertThat(config.technical.allowAnvilDestroyItemEntities).isFalse();
+        assertThat(config.technical.disableItemDamageCheck).isFalse();
+        assertThat(config.technical.keepLeashConnectWhenUseFirework).isFalse();
+        assertThat(config.technical.tntWetExplosionNoItemDamage).isFalse();
+        assertThat(config.technical.oldProjectileExplosionBehavior).isFalse();
+        assertThat(config.technical.oldThrowableProjectileTickOrder).isFalse();
+        assertThat(config.technical.oldMinecartMotionBehavior).isFalse();
+        assertThat(config.technical.copperBulbOneGameTickDelay).isFalse();
+        assertThat(config.technical.crafterOneGameTickDelay).isFalse();
+        assertThat(config.technical.noTntPlaceUpdate).isFalse();
+        assertThat(config.technical.allowPistonDuplication).isTrue();
+        assertThat(config.technical.allowTntDuplication).isTrue();
+        assertThat(config.technical.allowRailDuplication).isTrue();
+        assertThat(config.technical.allowCarpetDuplication).isTrue();
+        assertThat(config.technical.allowGravityBlockEndPortalDuplication).isTrue();
+        assertThat(config.technical.redstoneIgnoreUpwardsUpdate).isFalse();
+        assertThat(config.technical.movableBuddingAmethyst).isFalse();
+        assertThat(config.technical.stringTripwireHookDuplicate).isTrue();
+        assertThat(config.technical.tripwireBehavior).isEqualTo("vanilla_21");
         assertThat(Files.readString(path))
                 .contains("# Public-facing identity settings.")
                 .contains("identity:")
@@ -83,7 +111,36 @@ final class FandConfigTest {
                 .contains("randomTickPositionMask: true")
                 .contains("chunkGenerationTaskPlanCache: true")
                 .contains("chunkTaskDispatcherBatchLoop: true")
-                .contains("chunkStorageRegionScanFastPath: true");
+                .contains("chunkStorageRegionScanFastPath: true")
+                .contains("technical:")
+                .contains("zeroTickPlants: false")
+                .contains("oldHopperSuckInBehavior: false")
+                .contains("shearsInDispenserCanZeroAmount: false")
+                .contains("allowEntityPortalWithPassenger: true")
+                .contains("disableGatewayPortalEntityTicking: false")
+                .contains("disableLivingEntityAiStepAliveCheck: false")
+                .contains("spawnInvulnerableTime: false")
+                .contains("oldZombiePiglinDrop: false")
+                .contains("oldZombieReinforcement: false")
+                .contains("allowAnvilDestroyItemEntities: false")
+                .contains("disableItemDamageCheck: false")
+                .contains("keepLeashConnectWhenUseFirework: false")
+                .contains("tntWetExplosionNoItemDamage: false")
+                .contains("oldProjectileExplosionBehavior: false")
+                .contains("oldThrowableProjectileTickOrder: false")
+                .contains("oldMinecartMotionBehavior: false")
+                .contains("copperBulbOneGameTickDelay: false")
+                .contains("crafterOneGameTickDelay: false")
+                .contains("noTntPlaceUpdate: false")
+                .contains("allowPistonDuplication: true")
+                .contains("allowTntDuplication: true")
+                .contains("allowRailDuplication: true")
+                .contains("allowCarpetDuplication: true")
+                .contains("allowGravityBlockEndPortalDuplication: true")
+                .contains("redstoneIgnoreUpwardsUpdate: false")
+                .contains("movableBuddingAmethyst: false")
+                .contains("stringTripwireHookDuplicate: true")
+                .contains("tripwireBehavior: vanilla_21");
     }
 
     @Test
@@ -132,6 +189,36 @@ final class FandConfigTest {
                   chunkGenerationTaskPlanCache: false
                   chunkTaskDispatcherBatchLoop: false
                   chunkStorageRegionScanFastPath: false
+
+                technical:
+                  zeroTickPlants: true
+                  oldHopperSuckInBehavior: true
+                  shearsInDispenserCanZeroAmount: true
+                  allowEntityPortalWithPassenger: false
+                  disableGatewayPortalEntityTicking: true
+                  disableLivingEntityAiStepAliveCheck: true
+                  spawnInvulnerableTime: true
+                  oldZombiePiglinDrop: true
+                  oldZombieReinforcement: true
+                  allowAnvilDestroyItemEntities: true
+                  disableItemDamageCheck: true
+                  keepLeashConnectWhenUseFirework: true
+                  tntWetExplosionNoItemDamage: true
+                  oldProjectileExplosionBehavior: true
+                  oldThrowableProjectileTickOrder: true
+                  oldMinecartMotionBehavior: true
+                  copperBulbOneGameTickDelay: true
+                  crafterOneGameTickDelay: true
+                  noTntPlaceUpdate: true
+                  allowPistonDuplication: false
+                  allowTntDuplication: false
+                  allowRailDuplication: false
+                  allowCarpetDuplication: false
+                  allowGravityBlockEndPortalDuplication: false
+                  redstoneIgnoreUpwardsUpdate: true
+                  movableBuddingAmethyst: true
+                  stringTripwireHookDuplicate: true
+                  tripwireBehavior: mixed
                 """);
 
         var config = FandConfig.load(path);
@@ -163,6 +250,34 @@ final class FandConfigTest {
         assertThat(config.performance.chunkGenerationTaskPlanCache).isFalse();
         assertThat(config.performance.chunkTaskDispatcherBatchLoop).isFalse();
         assertThat(config.performance.chunkStorageRegionScanFastPath).isFalse();
+        assertThat(config.technical.zeroTickPlants).isTrue();
+        assertThat(config.technical.oldHopperSuckInBehavior).isTrue();
+        assertThat(config.technical.shearsInDispenserCanZeroAmount).isTrue();
+        assertThat(config.technical.allowEntityPortalWithPassenger).isFalse();
+        assertThat(config.technical.disableGatewayPortalEntityTicking).isTrue();
+        assertThat(config.technical.disableLivingEntityAiStepAliveCheck).isTrue();
+        assertThat(config.technical.spawnInvulnerableTime).isTrue();
+        assertThat(config.technical.oldZombiePiglinDrop).isTrue();
+        assertThat(config.technical.oldZombieReinforcement).isTrue();
+        assertThat(config.technical.allowAnvilDestroyItemEntities).isTrue();
+        assertThat(config.technical.disableItemDamageCheck).isTrue();
+        assertThat(config.technical.keepLeashConnectWhenUseFirework).isTrue();
+        assertThat(config.technical.tntWetExplosionNoItemDamage).isTrue();
+        assertThat(config.technical.oldProjectileExplosionBehavior).isTrue();
+        assertThat(config.technical.oldThrowableProjectileTickOrder).isTrue();
+        assertThat(config.technical.oldMinecartMotionBehavior).isTrue();
+        assertThat(config.technical.copperBulbOneGameTickDelay).isTrue();
+        assertThat(config.technical.crafterOneGameTickDelay).isTrue();
+        assertThat(config.technical.noTntPlaceUpdate).isTrue();
+        assertThat(config.technical.allowPistonDuplication).isFalse();
+        assertThat(config.technical.allowTntDuplication).isFalse();
+        assertThat(config.technical.allowRailDuplication).isFalse();
+        assertThat(config.technical.allowCarpetDuplication).isFalse();
+        assertThat(config.technical.allowGravityBlockEndPortalDuplication).isFalse();
+        assertThat(config.technical.redstoneIgnoreUpwardsUpdate).isTrue();
+        assertThat(config.technical.movableBuddingAmethyst).isTrue();
+        assertThat(config.technical.stringTripwireHookDuplicate).isTrue();
+        assertThat(config.technical.tripwireBehavior).isEqualTo("mixed");
     }
 
     @Test
@@ -205,5 +320,18 @@ final class FandConfigTest {
         assertThatThrownBy(() -> FandConfig.load(path))
                 .isInstanceOf(ConfigException.class)
                 .hasMessageContaining("network.forwarding.secret");
+    }
+
+    @Test
+    void rejectsUnknownTripwireBehavior() throws Exception {
+        var path = tempDir.resolve("fand.yml");
+        Files.writeString(path, """
+                technical:
+                  tripwireBehavior: classic
+                """);
+
+        assertThatThrownBy(() -> FandConfig.load(path))
+                .isInstanceOf(ConfigException.class)
+                .hasMessageContaining("technical.tripwireBehavior");
     }
 }

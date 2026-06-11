@@ -151,6 +151,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, chunks, guiThemes);
         io.fand.server.hooks.FandHooks.applyChunkConfig(initialConfig.chunks);
         io.fand.server.hooks.FandHooks.applyPerformanceConfig(initialConfig.performance);
+        io.fand.server.hooks.FandHooks.applyTechnicalConfig(initialConfig.technical);
     }
 
     /**

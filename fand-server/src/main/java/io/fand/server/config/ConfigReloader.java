@@ -161,6 +161,91 @@ public final class ConfigReloader {
             hotApplied.add("performance.chunkStorageRegionScanFastPath");
         }
         io.fand.server.hooks.FandHooks.applyPerformanceConfig(reloaded.performance);
+        if (previous.technical.zeroTickPlants != reloaded.technical.zeroTickPlants) {
+            hotApplied.add("technical.zeroTickPlants");
+        }
+        if (previous.technical.oldHopperSuckInBehavior != reloaded.technical.oldHopperSuckInBehavior) {
+            hotApplied.add("technical.oldHopperSuckInBehavior");
+        }
+        if (previous.technical.shearsInDispenserCanZeroAmount != reloaded.technical.shearsInDispenserCanZeroAmount) {
+            hotApplied.add("technical.shearsInDispenserCanZeroAmount");
+        }
+        if (previous.technical.allowEntityPortalWithPassenger != reloaded.technical.allowEntityPortalWithPassenger) {
+            hotApplied.add("technical.allowEntityPortalWithPassenger");
+        }
+        if (previous.technical.disableGatewayPortalEntityTicking != reloaded.technical.disableGatewayPortalEntityTicking) {
+            hotApplied.add("technical.disableGatewayPortalEntityTicking");
+        }
+        if (previous.technical.disableLivingEntityAiStepAliveCheck != reloaded.technical.disableLivingEntityAiStepAliveCheck) {
+            hotApplied.add("technical.disableLivingEntityAiStepAliveCheck");
+        }
+        if (previous.technical.spawnInvulnerableTime != reloaded.technical.spawnInvulnerableTime) {
+            hotApplied.add("technical.spawnInvulnerableTime");
+        }
+        if (previous.technical.oldZombiePiglinDrop != reloaded.technical.oldZombiePiglinDrop) {
+            hotApplied.add("technical.oldZombiePiglinDrop");
+        }
+        if (previous.technical.oldZombieReinforcement != reloaded.technical.oldZombieReinforcement) {
+            hotApplied.add("technical.oldZombieReinforcement");
+        }
+        if (previous.technical.allowAnvilDestroyItemEntities != reloaded.technical.allowAnvilDestroyItemEntities) {
+            hotApplied.add("technical.allowAnvilDestroyItemEntities");
+        }
+        if (previous.technical.disableItemDamageCheck != reloaded.technical.disableItemDamageCheck) {
+            hotApplied.add("technical.disableItemDamageCheck");
+        }
+        if (previous.technical.keepLeashConnectWhenUseFirework != reloaded.technical.keepLeashConnectWhenUseFirework) {
+            hotApplied.add("technical.keepLeashConnectWhenUseFirework");
+        }
+        if (previous.technical.tntWetExplosionNoItemDamage != reloaded.technical.tntWetExplosionNoItemDamage) {
+            hotApplied.add("technical.tntWetExplosionNoItemDamage");
+        }
+        if (previous.technical.oldProjectileExplosionBehavior != reloaded.technical.oldProjectileExplosionBehavior) {
+            hotApplied.add("technical.oldProjectileExplosionBehavior");
+        }
+        if (previous.technical.oldThrowableProjectileTickOrder != reloaded.technical.oldThrowableProjectileTickOrder) {
+            hotApplied.add("technical.oldThrowableProjectileTickOrder");
+        }
+        if (previous.technical.oldMinecartMotionBehavior != reloaded.technical.oldMinecartMotionBehavior) {
+            hotApplied.add("technical.oldMinecartMotionBehavior");
+        }
+        if (previous.technical.copperBulbOneGameTickDelay != reloaded.technical.copperBulbOneGameTickDelay) {
+            hotApplied.add("technical.copperBulbOneGameTickDelay");
+        }
+        if (previous.technical.crafterOneGameTickDelay != reloaded.technical.crafterOneGameTickDelay) {
+            hotApplied.add("technical.crafterOneGameTickDelay");
+        }
+        if (previous.technical.noTntPlaceUpdate != reloaded.technical.noTntPlaceUpdate) {
+            hotApplied.add("technical.noTntPlaceUpdate");
+        }
+        if (previous.technical.allowPistonDuplication != reloaded.technical.allowPistonDuplication) {
+            hotApplied.add("technical.allowPistonDuplication");
+        }
+        if (previous.technical.allowTntDuplication != reloaded.technical.allowTntDuplication) {
+            hotApplied.add("technical.allowTntDuplication");
+        }
+        if (previous.technical.allowRailDuplication != reloaded.technical.allowRailDuplication) {
+            hotApplied.add("technical.allowRailDuplication");
+        }
+        if (previous.technical.allowCarpetDuplication != reloaded.technical.allowCarpetDuplication) {
+            hotApplied.add("technical.allowCarpetDuplication");
+        }
+        if (previous.technical.allowGravityBlockEndPortalDuplication != reloaded.technical.allowGravityBlockEndPortalDuplication) {
+            hotApplied.add("technical.allowGravityBlockEndPortalDuplication");
+        }
+        if (previous.technical.redstoneIgnoreUpwardsUpdate != reloaded.technical.redstoneIgnoreUpwardsUpdate) {
+            hotApplied.add("technical.redstoneIgnoreUpwardsUpdate");
+        }
+        if (previous.technical.movableBuddingAmethyst != reloaded.technical.movableBuddingAmethyst) {
+            hotApplied.add("technical.movableBuddingAmethyst");
+        }
+        if (previous.technical.stringTripwireHookDuplicate != reloaded.technical.stringTripwireHookDuplicate) {
+            hotApplied.add("technical.stringTripwireHookDuplicate");
+        }
+        if (!previous.technical.tripwireBehavior.equals(reloaded.technical.tripwireBehavior)) {
+            hotApplied.add("technical.tripwireBehavior");
+        }
+        io.fand.server.hooks.FandHooks.applyTechnicalConfig(reloaded.technical);
 
         plugins.reconfigure(toPluginOptions(reloaded));
         current.set(reloaded);

@@ -26,6 +26,12 @@ public final class FandConfig {
     @ConfigComment("Game-path performance optimizations. All entries preserve vanilla behaviour unless noted.")
     public final Performance performance = new Performance();
 
+    @ConfigComment({
+            "Technical survival and legacy-mechanic toggles.",
+            "Defaults prefer technical-survival compatibility for explicitly allowed legacy mechanics."
+    })
+    public final Technical technical = new Technical();
+
     public static FandConfig load(Path path) {
         var config = new YamlConfigLoader<>(FandConfig.class).load(path);
         validate(config);
@@ -38,6 +44,16 @@ public final class FandConfig {
             throw new ConfigException("network.forwarding.secret must be set when network.forwarding.mode is " + mode.configValue());
         }
         io.fand.server.console.gui.GuiTheme.fromConfig(config.console.gui.theme);
+        validateTripwireBehavior(config.technical.tripwireBehavior);
+    }
+
+    private static void validateTripwireBehavior(String value) {
+        switch (value) {
+            case "vanilla_21", "vanilla_20", "mixed" -> {
+            }
+            default -> throw new ConfigException(
+                    "technical.tripwireBehavior must be one of: vanilla_21, vanilla_20, mixed");
+        }
     }
 
     public static final class Identity {
@@ -275,6 +291,96 @@ public final class FandConfig {
                 "unchanged."
         })
         public volatile boolean chunkStorageRegionScanFastPath = true;
+    }
+
+    public static final class Technical {
+
+        @ConfigComment("Restore zero-tick growth behaviour for bamboo, cactus, chorus, sugar cane, kelp, and vines.")
+        public volatile boolean zeroTickPlants = false;
+
+        @ConfigComment("Restore old hopper item pickup behaviour where a full collision block above does not block loose item sucking.")
+        public volatile boolean oldHopperSuckInBehavior = false;
+
+        @ConfigComment("Allow dispenser shears to keep working after their durability reaches zero.")
+        public volatile boolean shearsInDispenserCanZeroAmount = false;
+
+        @ConfigComment("Allow entities with passengers, or riding entities, to use cross-dimension portals.")
+        public volatile boolean allowEntityPortalWithPassenger = true;
+
+        @ConfigComment("Do not place an End gateway portal ticket after teleporting entities.")
+        public volatile boolean disableGatewayPortalEntityTicking = false;
+
+        @ConfigComment("Allow removed living entities to continue through aiStep during the current tick.")
+        public volatile boolean disableLivingEntityAiStepAliveCheck = false;
+
+        @ConfigComment("Give freshly spawned players 60 ticks of damage immunity unless damage bypasses invulnerability.")
+        public volatile boolean spawnInvulnerableTime = false;
+
+        @ConfigComment("Restore old zombie piglin angry-drop credit behaviour.")
+        public volatile boolean oldZombiePiglinDrop = false;
+
+        @ConfigComment("Restore old zombie reinforcement spawning as normal zombies instead of the caller's exact zombie type.")
+        public volatile boolean oldZombieReinforcement = false;
+
+        @ConfigComment("Allow falling anvils to damage item entities.")
+        public volatile boolean allowAnvilDestroyItemEntities = false;
+
+        @ConfigComment("Disable clamping item damage values to the item's max damage.")
+        public volatile boolean disableItemDamageCheck = false;
+
+        @ConfigComment("Keep leash connections when a player boosts elytra flight with a firework rocket.")
+        public volatile boolean keepLeashConnectWhenUseFirework = false;
+
+        @ConfigComment("Restore old TNT-in-water behaviour where wet TNT explosions do not damage item/blocklike entities.")
+        public volatile boolean tntWetExplosionNoItemDamage = false;
+
+        @ConfigComment("Restore old projectile explosion knockback application by adding to delta movement instead of push().")
+        public volatile boolean oldProjectileExplosionBehavior = false;
+
+        @ConfigComment("Restore old throwable projectile tick order for snowballs, eggs, pearls, potions, and similar entities.")
+        public volatile boolean oldThrowableProjectileTickOrder = false;
+
+        @ConfigComment("Restore old minecart portal/passenger motion preservation behaviour.")
+        public volatile boolean oldMinecartMotionBehavior = false;
+
+        @ConfigComment("Restore copper bulb 1-game-tick redstone delay.")
+        public volatile boolean copperBulbOneGameTickDelay = false;
+
+        @ConfigComment("Restore crafter 1-game-tick trigger delay.")
+        public volatile boolean crafterOneGameTickDelay = false;
+
+        @ConfigComment("Prevent TNT from priming immediately when placed next to a powered source.")
+        public volatile boolean noTntPlaceUpdate = false;
+
+        @ConfigComment("Allow the vanilla piston desync duplication behaviour used by TNT, rail, and carpet dupers.")
+        public volatile boolean allowPistonDuplication = true;
+
+        @ConfigComment("Allow TNT dupers that rely on vanilla piston desync duplication.")
+        public volatile boolean allowTntDuplication = true;
+
+        @ConfigComment("Allow rail dupers that rely on vanilla piston desync duplication.")
+        public volatile boolean allowRailDuplication = true;
+
+        @ConfigComment("Allow carpet dupers that rely on vanilla piston desync duplication.")
+        public volatile boolean allowCarpetDuplication = true;
+
+        @ConfigComment("Allow falling blocks to duplicate through cross-dimension End portal teleportation.")
+        public volatile boolean allowGravityBlockEndPortalDuplication = true;
+
+        @ConfigComment("Restore old redstone wire/repeater/comparator behaviour that ignores upward support updates.")
+        public volatile boolean redstoneIgnoreUpwardsUpdate = false;
+
+        @ConfigComment("Allow pistons to move budding amethyst by treating its push reaction as normal.")
+        public volatile boolean movableBuddingAmethyst = false;
+
+        @ConfigComment("Allow tripwire hook/string duplication behaviour, including End platform drop compatibility.")
+        public volatile boolean stringTripwireHookDuplicate = true;
+
+        @ConfigComment({
+                "End platform tripwire handling mode when stringTripwireHookDuplicate is enabled.",
+                "Supported values: vanilla_21, vanilla_20, mixed."
+        })
+        public volatile String tripwireBehavior = "vanilla_21";
     }
 
     public static final class Console {

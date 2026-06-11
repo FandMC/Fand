@@ -37,6 +37,9 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.network.ServerPlayerConnection;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -122,6 +125,34 @@ public final class FandHooks {
     private static volatile int chunkWorldgenParallelism = 0;
     private static volatile boolean chunkDedicatedLightThread = true;
     private static volatile boolean chunkLightTaskQueueFastPath = true;
+    private static volatile boolean zeroTickPlants = false;
+    private static volatile boolean oldHopperSuckInBehavior = false;
+    private static volatile boolean shearsInDispenserCanZeroAmount = false;
+    private static volatile boolean allowEntityPortalWithPassenger = true;
+    private static volatile boolean disableGatewayPortalEntityTicking = false;
+    private static volatile boolean disableLivingEntityAiStepAliveCheck = false;
+    private static volatile boolean spawnInvulnerableTime = false;
+    private static volatile boolean oldZombiePiglinDrop = false;
+    private static volatile boolean oldZombieReinforcement = false;
+    private static volatile boolean allowAnvilDestroyItemEntities = false;
+    private static volatile boolean disableItemDamageCheck = false;
+    private static volatile boolean keepLeashConnectWhenUseFirework = false;
+    private static volatile boolean tntWetExplosionNoItemDamage = false;
+    private static volatile boolean oldProjectileExplosionBehavior = false;
+    private static volatile boolean oldThrowableProjectileTickOrder = false;
+    private static volatile boolean oldMinecartMotionBehavior = false;
+    private static volatile boolean copperBulbOneGameTickDelay = false;
+    private static volatile boolean crafterOneGameTickDelay = false;
+    private static volatile boolean noTntPlaceUpdate = false;
+    private static volatile boolean allowPistonDuplication = true;
+    private static volatile boolean allowTntDuplication = true;
+    private static volatile boolean allowRailDuplication = true;
+    private static volatile boolean allowCarpetDuplication = true;
+    private static volatile boolean allowGravityBlockEndPortalDuplication = true;
+    private static volatile boolean redstoneIgnoreUpwardsUpdate = false;
+    private static volatile boolean movableBuddingAmethyst = false;
+    private static volatile boolean stringTripwireHookDuplicate = true;
+    private static volatile int tripwireBehavior = 21;
 
     private FandHooks() {
     }
@@ -152,6 +183,41 @@ public final class FandHooks {
         chunkWorldgenParallelism = chunks.worldgenParallelism;
         chunkDedicatedLightThread = chunks.dedicatedLightThread;
         chunkLightTaskQueueFastPath = chunks.lightTaskQueueFastPath;
+    }
+
+    public static void applyTechnicalConfig(io.fand.server.config.FandConfig.Technical technical) {
+        zeroTickPlants = technical.zeroTickPlants;
+        oldHopperSuckInBehavior = technical.oldHopperSuckInBehavior;
+        shearsInDispenserCanZeroAmount = technical.shearsInDispenserCanZeroAmount;
+        allowEntityPortalWithPassenger = technical.allowEntityPortalWithPassenger;
+        disableGatewayPortalEntityTicking = technical.disableGatewayPortalEntityTicking;
+        disableLivingEntityAiStepAliveCheck = technical.disableLivingEntityAiStepAliveCheck;
+        spawnInvulnerableTime = technical.spawnInvulnerableTime;
+        oldZombiePiglinDrop = technical.oldZombiePiglinDrop;
+        oldZombieReinforcement = technical.oldZombieReinforcement;
+        allowAnvilDestroyItemEntities = technical.allowAnvilDestroyItemEntities;
+        disableItemDamageCheck = technical.disableItemDamageCheck;
+        keepLeashConnectWhenUseFirework = technical.keepLeashConnectWhenUseFirework;
+        tntWetExplosionNoItemDamage = technical.tntWetExplosionNoItemDamage;
+        oldProjectileExplosionBehavior = technical.oldProjectileExplosionBehavior;
+        oldThrowableProjectileTickOrder = technical.oldThrowableProjectileTickOrder;
+        oldMinecartMotionBehavior = technical.oldMinecartMotionBehavior;
+        copperBulbOneGameTickDelay = technical.copperBulbOneGameTickDelay;
+        crafterOneGameTickDelay = technical.crafterOneGameTickDelay;
+        noTntPlaceUpdate = technical.noTntPlaceUpdate;
+        allowPistonDuplication = technical.allowPistonDuplication;
+        allowTntDuplication = technical.allowTntDuplication;
+        allowRailDuplication = technical.allowRailDuplication;
+        allowCarpetDuplication = technical.allowCarpetDuplication;
+        allowGravityBlockEndPortalDuplication = technical.allowGravityBlockEndPortalDuplication;
+        redstoneIgnoreUpwardsUpdate = technical.redstoneIgnoreUpwardsUpdate;
+        movableBuddingAmethyst = technical.movableBuddingAmethyst;
+        stringTripwireHookDuplicate = technical.stringTripwireHookDuplicate;
+        tripwireBehavior = switch (technical.tripwireBehavior) {
+            case "vanilla_20" -> 20;
+            case "mixed" -> 0;
+            default -> 21;
+        };
     }
 
     public static boolean explosionDensityCacheEnabled() {
@@ -245,6 +311,140 @@ public final class FandHooks {
 
     public static boolean chunkLightTaskQueueFastPathEnabled() {
         return chunkLightTaskQueueFastPath;
+    }
+
+    public static boolean zeroTickPlantsEnabled() {
+        return zeroTickPlants;
+    }
+
+    public static boolean oldHopperSuckInBehaviorEnabled() {
+        return oldHopperSuckInBehavior;
+    }
+
+    public static boolean shearsInDispenserCanZeroAmountEnabled() {
+        return shearsInDispenserCanZeroAmount;
+    }
+
+    public static boolean allowEntityPortalWithPassengerEnabled() {
+        return allowEntityPortalWithPassenger;
+    }
+
+    public static boolean disableGatewayPortalEntityTickingEnabled() {
+        return disableGatewayPortalEntityTicking;
+    }
+
+    public static boolean disableLivingEntityAiStepAliveCheckEnabled() {
+        return disableLivingEntityAiStepAliveCheck;
+    }
+
+    public static boolean spawnInvulnerableTimeEnabled() {
+        return spawnInvulnerableTime;
+    }
+
+    public static boolean oldZombiePiglinDropEnabled() {
+        return oldZombiePiglinDrop;
+    }
+
+    public static boolean oldZombieReinforcementEnabled() {
+        return oldZombieReinforcement;
+    }
+
+    public static boolean allowAnvilDestroyItemEntitiesEnabled() {
+        return allowAnvilDestroyItemEntities;
+    }
+
+    public static boolean disableItemDamageCheckEnabled() {
+        return disableItemDamageCheck;
+    }
+
+    public static boolean keepLeashConnectWhenUseFireworkEnabled() {
+        return keepLeashConnectWhenUseFirework;
+    }
+
+    public static boolean tntWetExplosionNoItemDamageEnabled() {
+        return tntWetExplosionNoItemDamage;
+    }
+
+    public static boolean oldProjectileExplosionBehaviorEnabled() {
+        return oldProjectileExplosionBehavior;
+    }
+
+    public static boolean oldThrowableProjectileTickOrderEnabled() {
+        return oldThrowableProjectileTickOrder;
+    }
+
+    public static boolean oldMinecartMotionBehaviorEnabled() {
+        return oldMinecartMotionBehavior;
+    }
+
+    public static boolean copperBulbOneGameTickDelayEnabled() {
+        return copperBulbOneGameTickDelay;
+    }
+
+    public static boolean crafterOneGameTickDelayEnabled() {
+        return crafterOneGameTickDelay;
+    }
+
+    public static boolean noTntPlaceUpdateEnabled() {
+        return noTntPlaceUpdate;
+    }
+
+    public static boolean allowPistonDuplicationEnabled() {
+        return allowPistonDuplication;
+    }
+
+    public static boolean allowPistonDuplicationFor(BlockState state) {
+        if (!allowPistonDuplication) {
+            return false;
+        }
+        if (!allowTntDuplication && state.is(Blocks.TNT)) {
+            return false;
+        }
+        if (!allowRailDuplication && state.is(BlockTags.RAILS)) {
+            return false;
+        }
+        return allowCarpetDuplication
+                || (!state.is(BlockTags.WOOL_CARPETS) && !state.is(Blocks.MOSS_CARPET) && !state.is(Blocks.PALE_MOSS_CARPET));
+    }
+
+    public static boolean allowTntDuplicationEnabled() {
+        return allowTntDuplication;
+    }
+
+    public static boolean allowRailDuplicationEnabled() {
+        return allowRailDuplication;
+    }
+
+    public static boolean allowCarpetDuplicationEnabled() {
+        return allowCarpetDuplication;
+    }
+
+    public static boolean allowGravityBlockEndPortalDuplicationEnabled() {
+        return allowGravityBlockEndPortalDuplication;
+    }
+
+    public static boolean redstoneIgnoreUpwardsUpdateEnabled() {
+        return redstoneIgnoreUpwardsUpdate;
+    }
+
+    public static boolean movableBuddingAmethystEnabled() {
+        return movableBuddingAmethyst;
+    }
+
+    public static boolean stringTripwireHookDuplicateEnabled() {
+        return stringTripwireHookDuplicate;
+    }
+
+    public static boolean tripwireBehaviorVanilla20() {
+        return tripwireBehavior == 20;
+    }
+
+    public static boolean tripwireBehaviorVanilla21() {
+        return tripwireBehavior == 21;
+    }
+
+    public static boolean tripwireBehaviorMixed() {
+        return tripwireBehavior == 0;
     }
 
     public static EventBus events() {
