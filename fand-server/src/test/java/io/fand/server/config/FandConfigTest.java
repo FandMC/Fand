@@ -31,6 +31,11 @@ final class FandConfigTest {
         assertThat(config.console.gui.theme).isEqualTo("system");
         assertThat(config.network.forwarding.mode).isEqualTo("none");
         assertThat(config.network.forwarding.secret).isEmpty();
+        assertThat(config.performance.entityHardCollisionCandidateIndex).isTrue();
+        assertThat(config.performance.entitySectionChunkScan).isTrue();
+        assertThat(config.performance.entityCollisionAbortPropagation).isTrue();
+        assertThat(config.performance.pushableEntityConsumer).isTrue();
+        assertThat(config.performance.entityMovementLazyColliders).isTrue();
         assertThat(Files.readString(path))
                 .contains("# Public-facing identity settings.")
                 .contains("identity:")
@@ -52,7 +57,13 @@ final class FandConfigTest {
                 .contains("network:")
                 .contains("forwarding:")
                 .contains("mode: none")
-                .contains("secret: ''");
+                .contains("secret: ''")
+                .contains("performance:")
+                .contains("entityHardCollisionCandidateIndex: true")
+                .contains("entitySectionChunkScan: true")
+                .contains("entityCollisionAbortPropagation: true")
+                .contains("pushableEntityConsumer: true")
+                .contains("entityMovementLazyColliders: true");
     }
 
     @Test
@@ -84,6 +95,13 @@ final class FandConfigTest {
                   forwarding:
                     mode: velocity-modern
                     secret: 'shared-secret'
+
+                performance:
+                  entityHardCollisionCandidateIndex: false
+                  entitySectionChunkScan: false
+                  entityCollisionAbortPropagation: false
+                  pushableEntityConsumer: false
+                  entityMovementLazyColliders: false
                 """);
 
         var config = FandConfig.load(path);
@@ -100,6 +118,11 @@ final class FandConfigTest {
         assertThat(config.console.gui.theme).isEqualTo("dark");
         assertThat(config.network.forwarding.mode).isEqualTo("velocity-modern");
         assertThat(config.network.forwarding.secret).isEqualTo("shared-secret");
+        assertThat(config.performance.entityHardCollisionCandidateIndex).isFalse();
+        assertThat(config.performance.entitySectionChunkScan).isFalse();
+        assertThat(config.performance.entityCollisionAbortPropagation).isFalse();
+        assertThat(config.performance.pushableEntityConsumer).isFalse();
+        assertThat(config.performance.entityMovementLazyColliders).isFalse();
     }
 
     @Test

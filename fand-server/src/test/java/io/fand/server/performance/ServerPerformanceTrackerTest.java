@@ -42,7 +42,7 @@ final class ServerPerformanceTrackerTest {
     @Test
     void returnsPublishedSnapshotUntilAsyncRecomputeRuns() {
         var executor = new ManualExecutor();
-        var tracker = new ServerPerformanceTracker(executor);
+        var tracker = new ServerPerformanceTracker(executor, () -> 0L);
 
         var first = tracker.snapshot();
         tracker.recordTick(0L, 25_000_000L);
@@ -110,7 +110,7 @@ final class ServerPerformanceTrackerTest {
     @Test
     void coalescesQueuedAsyncRecomputes() {
         var executor = new ManualExecutor();
-        var tracker = new ServerPerformanceTracker(executor);
+        var tracker = new ServerPerformanceTracker(executor, () -> 0L);
 
         tracker.recordTick(0L, 25_000_000L);
         tracker.recordTick(50_000_000L, 75_000_000L);
@@ -128,7 +128,7 @@ final class ServerPerformanceTrackerTest {
     @Test
     void closeStopsFurtherSnapshotUpdates() {
         var executor = new ManualExecutor();
-        var tracker = new ServerPerformanceTracker(executor);
+        var tracker = new ServerPerformanceTracker(executor, () -> 0L);
 
         tracker.recordTick(0L, 25_000_000L);
         assertThat(executor.pendingTasks()).isEqualTo(1);
@@ -142,7 +142,7 @@ final class ServerPerformanceTrackerTest {
     }
 
     private static ServerPerformanceTracker newSynchronousTracker() {
-        return new ServerPerformanceTracker(Runnable::run);
+        return new ServerPerformanceTracker(Runnable::run, () -> 0L);
     }
 
     private static org.assertj.core.data.Offset<Double> within(double value) {

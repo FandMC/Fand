@@ -1,0 +1,991 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 11 Jun 2026 12:54:44 +0800
+Subject: [PATCH] Optimize entity collision hot paths
+
+
+diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
+index 34b3a0d79677895b6fefbf635376fb2f1017d2fc..4779377fb838089a28629c7db2c12b2689efe5b3 100644
+--- a/net/minecraft/world/entity/Entity.java
++++ b/net/minecraft/world/entity/Entity.java
+@@ -1,6 +1,7 @@
+ package net.minecraft.world.entity;
+ 
+ import com.google.common.collect.ImmutableList;
++import com.google.common.collect.Iterables;
+ import com.google.common.collect.Lists;
+ import com.google.common.collect.Sets;
+ import com.google.common.collect.ImmutableList.Builder;
+@@ -1157,6 +1158,11 @@ public abstract class Entity
+     public static Vec3 collideBoundingBox(
+         final @Nullable Entity source, final Vec3 movement, final AABB boundingBox, final Level level, final List<VoxelShape> entityColliders
+     ) {
++        if (io.fand.server.hooks.FandHooks.entityMovementLazyCollidersEnabled() && hasSingleAxisMovement(movement)) {
++            Iterable<VoxelShape> colliders = collectCollidersIterable(source, level, entityColliders, boundingBox.expandTowards(movement));
++            return collideWithShapesIterable(movement, boundingBox, colliders);
++        }
++
+         List<VoxelShape> colliders = collectColliders(source, level, entityColliders, boundingBox.expandTowards(movement));
+         return collideWithShapes(movement, boundingBox, colliders);
+     }
+@@ -1184,22 +1190,55 @@ public abstract class Entity
+         return colliders.build();
+     }
+ 
++    private static Iterable<VoxelShape> collectCollidersIterable(
++        final @Nullable Entity source, final Level level, final List<VoxelShape> entityColliders, final AABB boundingBox
++    ) {
++        Iterable<VoxelShape> blockColliders = level.getBlockCollisions(source, boundingBox);
++        WorldBorder worldBorder = level.getWorldBorder();
++        boolean isEntityInsideCloseToBorder = source != null && worldBorder.isInsideCloseToBorder(source, boundingBox);
++        if (isEntityInsideCloseToBorder) {
++            Iterable<VoxelShape> borderCollider = List.of(worldBorder.getCollisionShape());
++            return entityColliders.isEmpty()
++                ? Iterables.concat(borderCollider, blockColliders)
++                : Iterables.concat(entityColliders, borderCollider, blockColliders);
++        }
++        return entityColliders.isEmpty() ? blockColliders : Iterables.concat(entityColliders, blockColliders);
++    }
++
++    private static boolean hasSingleAxisMovement(final Vec3 movement) {
++        int axes = 0;
++        if (movement.x != 0.0) {
++            axes++;
++        }
++        if (movement.y != 0.0) {
++            axes++;
++        }
++        if (movement.z != 0.0) {
++            axes++;
++        }
++        return axes == 1;
++    }
++
+     private static Vec3 collideWithShapes(final Vec3 movement, final AABB boundingBox, final List<VoxelShape> shapes) {
+         if (shapes.isEmpty()) {
+             return movement;
+         } else {
+-            Vec3 resolvedMovement = Vec3.ZERO;
++            return collideWithShapesIterable(movement, boundingBox, shapes);
++        }
++    }
+ 
+-            for (Direction.Axis axis : Direction.axisStepOrder(movement)) {
+-                double axisMovement = movement.get(axis);
+-                if (axisMovement != 0.0) {
+-                    double collision = Shapes.collide(axis, boundingBox.move(resolvedMovement), shapes, axisMovement);
+-                    resolvedMovement = resolvedMovement.with(axis, collision);
+-                }
+-            }
++    private static Vec3 collideWithShapesIterable(final Vec3 movement, final AABB boundingBox, final Iterable<VoxelShape> shapes) {
++        Vec3 resolvedMovement = Vec3.ZERO;
+ 
+-            return resolvedMovement;
++        for (Direction.Axis axis : Direction.axisStepOrder(movement)) {
++            double axisMovement = movement.get(axis);
++            if (axisMovement != 0.0) {
++                double collision = Shapes.collide(axis, boundingBox.move(resolvedMovement), shapes, axisMovement);
++                resolvedMovement = resolvedMovement.with(axis, collision);
++            }
+         }
++
++        return resolvedMovement;
+     }
+ 
+     protected float nextStep() {
+diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
+index 84fb32ba8d2650b8c18cd45911a675f14685ec6c..3d78e1e0f660ce37443fb7485bec6009770f2847 100644
+--- a/net/minecraft/world/entity/LivingEntity.java
++++ b/net/minecraft/world/entity/LivingEntity.java
+@@ -62,6 +62,7 @@ import net.minecraft.tags.EntityTypeTags;
+ import net.minecraft.tags.FluidTags;
+ import net.minecraft.tags.ItemTags;
+ import net.minecraft.tags.TagKey;
++import net.minecraft.util.AbortableIterationConsumer;
+ import net.minecraft.util.BlockUtil;
+ import net.minecraft.util.Mth;
+ import net.minecraft.util.Util;
+@@ -3245,6 +3246,16 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+     }
+ 
+     protected void pushEntities() {
++        if (io.fand.server.hooks.FandHooks.pushableEntityConsumerEnabled()
++            && (!(this.level() instanceof ServerLevel serverLevel)
++                || serverLevel.getGameRules().get(GameRules.MAX_ENTITY_CRAMMING) <= 0)) {
++            this.level().forEachPushableEntity(this, this.getBoundingBox(), entity -> {
++                this.doPush(entity);
++                return AbortableIterationConsumer.Continuation.CONTINUE;
++            });
++            return;
++        }
++
+         List<Entity> pushableEntities = this.level().getPushableEntities(this, this.getBoundingBox());
+         if (!pushableEntities.isEmpty()) {
+             if (this.level() instanceof ServerLevel serverLevel) {
+diff --git a/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java b/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java
+index b50ae364b7a312197ae55d6f483b487ee60b3b18..51b57b2da43d530492b13a5b8fb206bdff97795e 100644
+--- a/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java
++++ b/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java
+@@ -15,6 +15,7 @@ import net.minecraft.sounds.SoundEvent;
+ import net.minecraft.sounds.SoundEvents;
+ import net.minecraft.tags.EntityTypeTags;
+ import net.minecraft.tags.FluidTags;
++import net.minecraft.util.AbortableIterationConsumer;
+ import net.minecraft.util.BlockUtil;
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.InteractionHand;
+@@ -279,27 +280,40 @@ public abstract class AbstractBoat extends VehicleEntity implements Leashable {
+             }
+         }
+ 
+-        List<Entity> entities = this.level().getPushableEntities(this, this.getBoundingBox().inflate(0.2F, -0.01F, 0.2F));
+-        if (!entities.isEmpty()) {
++        AABB pushBox = this.getBoundingBox().inflate(0.2F, -0.01F, 0.2F);
++        if (io.fand.server.hooks.FandHooks.pushableEntityConsumerEnabled()) {
+             boolean addNewPassengers = !this.level().isClientSide() && !(this.getControllingPassenger() instanceof Player);
++            this.level().forEachPushableEntity(this, pushBox, entity -> {
++                this.pushOrPickupEntity(entity, addNewPassengers);
++                return AbortableIterationConsumer.Continuation.CONTINUE;
++            });
++        } else {
++            List<Entity> entities = this.level().getPushableEntities(this, pushBox);
++            if (!entities.isEmpty()) {
++                boolean addNewPassengers = !this.level().isClientSide() && !(this.getControllingPassenger() instanceof Player);
+ 
+-            for (Entity entity : entities) {
+-                if (!entity.hasPassenger(this)) {
+-                    if (addNewPassengers
+-                        && this.getPassengers().size() < this.getMaxPassengers()
+-                        && !entity.isPassenger()
+-                        && this.hasEnoughSpaceFor(entity)
+-                        && entity instanceof LivingEntity
+-                        && !entity.is(EntityTypeTags.CANNOT_BE_PUSHED_ONTO_BOATS)) {
+-                        entity.startRiding(this);
+-                    } else {
+-                        this.push(entity);
+-                    }
++                for (Entity entity : entities) {
++                    this.pushOrPickupEntity(entity, addNewPassengers);
+                 }
+             }
+         }
+     }
+ 
++    private void pushOrPickupEntity(final Entity entity, final boolean addNewPassengers) {
++        if (!entity.hasPassenger(this)) {
++            if (addNewPassengers
++                && this.getPassengers().size() < this.getMaxPassengers()
++                && !entity.isPassenger()
++                && this.hasEnoughSpaceFor(entity)
++                && entity instanceof LivingEntity
++                && !entity.is(EntityTypeTags.CANNOT_BE_PUSHED_ONTO_BOATS)) {
++                entity.startRiding(this);
++            } else {
++                this.push(entity);
++            }
++        }
++    }
++
+     private void tickBubbleColumn() {
+         if (this.level().isClientSide()) {
+             int clientBubbleTime = this.getBubbleTime();
+diff --git a/net/minecraft/world/entity/vehicle/minecart/MinecartBehavior.java b/net/minecraft/world/entity/vehicle/minecart/MinecartBehavior.java
+index 0396f291d442b6851d75a9a755b27623c1173021..492ccd0d0dc936f2ea065085aca5b4d8b92124f3 100644
+--- a/net/minecraft/world/entity/vehicle/minecart/MinecartBehavior.java
++++ b/net/minecraft/world/entity/vehicle/minecart/MinecartBehavior.java
+@@ -3,12 +3,16 @@ package net.minecraft.world.entity.vehicle.minecart;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.server.level.ServerLevel;
++import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.InterpolationHandler;
+ import net.minecraft.world.level.Level;
+ import net.minecraft.world.level.block.state.properties.RailShape;
++import net.minecraft.world.level.entity.EntityTypeTest;
+ import net.minecraft.world.phys.Vec3;
+ 
+ public abstract class MinecartBehavior {
++    protected static final EntityTypeTest<Entity, AbstractMinecart> MINECART_ENTITY_TYPE = EntityTypeTest.forClass(AbstractMinecart.class);
++    private static final double MINECART_PUSH_DISTANCE_SQR = 1.0E-4F;
+     protected final AbstractMinecart minecart;
+ 
+     protected MinecartBehavior(final AbstractMinecart minecart) {
+@@ -35,6 +39,16 @@ public abstract class MinecartBehavior {
+ 
+     public abstract boolean pushAndPickupEntities();
+ 
++    protected static boolean canPushMinecart(final AbstractMinecart receiver, final AbstractMinecart pushed) {
++        if (receiver.level().isClientSide() || pushed.noPhysics || receiver.noPhysics || receiver.hasPassenger(pushed)) {
++            return false;
++        }
++
++        double xa = pushed.getX() - receiver.getX();
++        double za = pushed.getZ() - receiver.getZ();
++        return xa * xa + za * za >= MINECART_PUSH_DISTANCE_SQR;
++    }
++
+     public Vec3 getDeltaMovement() {
+         return this.minecart.getDeltaMovement();
+     }
+diff --git a/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java b/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java
+index 9c57604f53e27720bac73aa22e0f9f8b8e80cc20..50aa2f96350dd2612de1e891bb17e66fa9ea327f 100644
+--- a/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java
++++ b/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java
+@@ -10,10 +10,10 @@ import net.minecraft.network.codec.ByteBufCodecs;
+ import net.minecraft.network.codec.StreamCodec;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.server.level.ServerPlayer;
++import net.minecraft.util.AbortableIterationConsumer;
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.EntitySelector;
+-import net.minecraft.world.level.entity.EntityTypeTest;
+ import net.minecraft.world.entity.MoverType;
+ import net.minecraft.world.entity.animal.golem.IronGolem;
+ import net.minecraft.world.entity.player.Player;
+@@ -514,6 +514,22 @@ public class NewMinecartBehavior extends MinecartBehavior {
+ 
+     public boolean pickupEntities(final AABB hitbox) {
+         if (this.minecart.isRideable() && !this.minecart.isVehicle()) {
++            if (io.fand.server.hooks.FandHooks.pushableEntityConsumerEnabled()) {
++                return this.level().forEachPushableEntity(this.minecart, hitbox, entity -> {
++                    if (!(entity instanceof Player)
++                        && !(entity instanceof IronGolem)
++                        && !(entity instanceof AbstractMinecart)
++                        && !this.minecart.isVehicle()
++                        && !entity.isPassenger()) {
++                        boolean pickedUp = entity.startRiding(this.minecart);
++                        if (pickedUp) {
++                            return AbortableIterationConsumer.Continuation.ABORT;
++                        }
++                    }
++                    return AbortableIterationConsumer.Continuation.CONTINUE;
++                }).shouldAbort();
++            }
++
+             List<Entity> entities = this.level().getEntities(this.minecart, hitbox, EntitySelector.pushableBy(this.minecart));
+             if (!entities.isEmpty()) {
+                 for (Entity entity : entities) {
+@@ -537,6 +553,22 @@ public class NewMinecartBehavior extends MinecartBehavior {
+     public boolean pushEntities(final AABB hitbox) {
+         boolean pushed = false;
+         if (this.minecart.isRideable()) {
++            if (io.fand.server.hooks.FandHooks.pushableEntityConsumerEnabled()) {
++                boolean[] pushedEntity = new boolean[1];
++                this.level().forEachPushableEntity(this.minecart, hitbox, entity -> {
++                    if (entity instanceof Player
++                        || entity instanceof IronGolem
++                        || entity instanceof AbstractMinecart
++                        || this.minecart.isVehicle()
++                        || entity.isPassenger()) {
++                        entity.push(this.minecart);
++                        pushedEntity[0] = true;
++                    }
++                    return AbortableIterationConsumer.Continuation.CONTINUE;
++                });
++                return pushedEntity[0];
++            }
++
+             List<Entity> entities = this.level().getPushableEntities(this.minecart, hitbox);
+             if (!entities.isEmpty()) {
+                 for (Entity entity : entities) {
+@@ -551,12 +583,31 @@ public class NewMinecartBehavior extends MinecartBehavior {
+                 }
+             }
+         } else {
+-            for (AbstractMinecart entityx : this.level().getEntities(
+-                EntityTypeTest.forClass(AbstractMinecart.class), hitbox, entity -> entity != this.minecart && EntitySelector.NO_SPECTATORS.test(entity)
+-            )) {
+-                if (!this.minecart.hasPassenger(entityx) && entityx.isPushable()) {
+-                    entityx.push(this.minecart);
+-                    pushed = true;
++            if (io.fand.server.hooks.FandHooks.pushableEntityConsumerEnabled()) {
++                boolean[] pushedMinecart = new boolean[1];
++                this.level().forEachEntity(
++                    MINECART_ENTITY_TYPE,
++                    hitbox,
++                    entity -> entity != this.minecart && EntitySelector.NO_SPECTATORS.test(entity),
++                    entityx -> {
++                        if (!this.minecart.hasPassenger(entityx) && entityx.isPushable()) {
++                            pushedMinecart[0] = true;
++                            if (canPushMinecart(entityx, this.minecart)) {
++                                entityx.push(this.minecart);
++                            }
++                        }
++                        return AbortableIterationConsumer.Continuation.CONTINUE;
++                    }
++                );
++                pushed = pushedMinecart[0];
++            } else {
++                for (AbstractMinecart entityx : this.level().getEntities(
++                    MINECART_ENTITY_TYPE, hitbox, entity -> entity != this.minecart && EntitySelector.NO_SPECTATORS.test(entity)
++                )) {
++                    if (!this.minecart.hasPassenger(entityx) && entityx.isPushable()) {
++                        entityx.push(this.minecart);
++                        pushed = true;
++                    }
+                 }
+             }
+         }
+diff --git a/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java b/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java
+index f942293b6a9426b3ba5c0236d699426f07bacc8a..161966474c07457ae8e8fa29778354d9f49b118f 100644
+--- a/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java
++++ b/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java
+@@ -8,6 +8,7 @@ import net.minecraft.core.Vec3i;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.tags.BlockTags;
++import net.minecraft.util.AbortableIterationConsumer;
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.EntitySelector;
+@@ -15,7 +16,6 @@ import net.minecraft.world.entity.InterpolationHandler;
+ import net.minecraft.world.entity.MoverType;
+ import net.minecraft.world.entity.animal.golem.IronGolem;
+ import net.minecraft.world.entity.player.Player;
+-import net.minecraft.world.level.entity.EntityTypeTest;
+ import net.minecraft.world.level.block.BaseRailBlock;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.PoweredRailBlock;
+@@ -368,26 +368,39 @@ public class OldMinecartBehavior extends MinecartBehavior {
+     public boolean pushAndPickupEntities() {
+         AABB hitbox = this.minecart.getBoundingBox().inflate(0.2F, 0.0, 0.2F);
+         if (this.minecart.isRideable() && this.getDeltaMovement().horizontalDistanceSqr() >= 0.01) {
+-            List<Entity> entities = this.level().getEntities(this.minecart, hitbox, EntitySelector.pushableBy(this.minecart));
+-            if (!entities.isEmpty()) {
+-                for (Entity entity : entities) {
+-                    if (!(entity instanceof Player)
+-                        && !(entity instanceof IronGolem)
+-                        && !(entity instanceof AbstractMinecart)
+-                        && !this.minecart.isVehicle()
+-                        && !entity.isPassenger()) {
+-                        entity.startRiding(this.minecart);
+-                    } else {
+-                        entity.push(this.minecart);
++            if (io.fand.server.hooks.FandHooks.pushableEntityConsumerEnabled()) {
++                this.level().forEachPushableEntity(this.minecart, hitbox, entity -> {
++                    this.pushOrPickupEntity(entity);
++                    return AbortableIterationConsumer.Continuation.CONTINUE;
++                });
++            } else {
++                List<Entity> entities = this.level().getEntities(this.minecart, hitbox, EntitySelector.pushableBy(this.minecart));
++                if (!entities.isEmpty()) {
++                    for (Entity entity : entities) {
++                        this.pushOrPickupEntity(entity);
+                     }
+                 }
+             }
+         } else {
+-            for (AbstractMinecart entityx : this.level().getEntities(
+-                EntityTypeTest.forClass(AbstractMinecart.class), hitbox, entity -> entity != this.minecart && EntitySelector.NO_SPECTATORS.test(entity)
+-            )) {
+-                if (!this.minecart.hasPassenger(entityx) && entityx.isPushable()) {
+-                    entityx.push(this.minecart);
++            if (io.fand.server.hooks.FandHooks.pushableEntityConsumerEnabled()) {
++                this.level().forEachEntity(
++                    MINECART_ENTITY_TYPE,
++                    hitbox,
++                    entity -> entity != this.minecart && EntitySelector.NO_SPECTATORS.test(entity),
++                    entityx -> {
++                        if (!this.minecart.hasPassenger(entityx) && entityx.isPushable() && canPushMinecart(entityx, this.minecart)) {
++                            entityx.push(this.minecart);
++                        }
++                        return AbortableIterationConsumer.Continuation.CONTINUE;
++                    }
++                );
++            } else {
++                for (AbstractMinecart entityx : this.level().getEntities(
++                    MINECART_ENTITY_TYPE, hitbox, entity -> entity != this.minecart && EntitySelector.NO_SPECTATORS.test(entity)
++                )) {
++                    if (!this.minecart.hasPassenger(entityx) && entityx.isPushable()) {
++                        entityx.push(this.minecart);
++                    }
+                 }
+             }
+         }
+@@ -395,6 +408,18 @@ public class OldMinecartBehavior extends MinecartBehavior {
+         return false;
+     }
+ 
++    private void pushOrPickupEntity(final Entity entity) {
++        if (!(entity instanceof Player)
++            && !(entity instanceof IronGolem)
++            && !(entity instanceof AbstractMinecart)
++            && !this.minecart.isVehicle()
++            && !entity.isPassenger()) {
++            entity.startRiding(this.minecart);
++        } else {
++            entity.push(this.minecart);
++        }
++    }
++
+     @Override
+     public Direction getMotionDirection() {
+         return this.minecart.isFlipped() ? this.minecart.getDirection().getOpposite().getClockWise() : this.minecart.getDirection().getClockWise();
+diff --git a/net/minecraft/world/level/Level.java b/net/minecraft/world/level/Level.java
+index 54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5..da8ad802e9527ac607bae3872ab9dc9bf9cb6954 100644
+--- a/net/minecraft/world/level/Level.java
++++ b/net/minecraft/world/level/Level.java
+@@ -93,6 +93,7 @@ import net.minecraft.world.phys.shapes.BooleanOp;
+ import net.minecraft.world.phys.shapes.Shapes;
+ import net.minecraft.world.phys.shapes.VoxelShape;
+ import net.minecraft.world.scores.Scoreboard;
++import net.minecraft.world.scores.Team;
+ import org.apache.commons.lang3.mutable.MutableBoolean;
+ import org.apache.commons.lang3.mutable.MutableObject;
+ import org.jspecify.annotations.Nullable;
+@@ -112,6 +113,16 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         .add(new ExplosionParticleInfo(ParticleTypes.POOF, 0.5F, 1.0F))
+         .add(new ExplosionParticleInfo(ParticleTypes.SMOKE, 1.0F, 1.0F))
+         .build();
++    private static final ClassValue<Boolean> ENTITY_CAN_COLLIDE_WITH_OVERRIDES = new ClassValue<>() {
++        @Override
++        protected Boolean computeValue(final Class<?> type) {
++            try {
++                return type.getMethod("canCollideWith", Entity.class).getDeclaringClass() != Entity.class;
++            } catch (NoSuchMethodException ex) {
++                return true;
++            }
++        }
++    };
+     protected final List<TickingBlockEntity> blockEntityTickers = Lists.newArrayList();
+     protected final CollectingNeighborUpdater neighborUpdater;
+     private final List<TickingBlockEntity> pendingBlockEntityTickers = Lists.newArrayList();
+@@ -818,6 +829,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         final EntityTypeTest<Entity, T> type, final AABB bb, final Predicate<? super T> selector, final List<? super T> output, final int maxResults
+     ) {
+         Profiler.get().incrementCounter("getEntities");
++        boolean includeDragonParts = canTypeMatchDragonPart(type);
+         this.getEntities().get(type, bb, e -> {
+             if (selector.test(e)) {
+                 output.add(e);
+@@ -826,7 +838,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+                 }
+             }
+ 
+-            if (e instanceof EnderDragon enderDragon) {
++            if (includeDragonParts && e instanceof EnderDragon enderDragon) {
+                 for (EnderDragonPart subEntity : enderDragon.getSubEntities()) {
+                     T castSubPart = type.tryCast(subEntity);
+                     if (castSubPart != null && selector.test(castSubPart)) {
+@@ -842,15 +854,61 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         });
+     }
+ 
++    public <T extends Entity> AbortableIterationConsumer.Continuation forEachEntity(
++        final EntityTypeTest<Entity, T> type,
++        final AABB bb,
++        final Predicate<? super T> selector,
++        final AbortableIterationConsumer<T> consumer
++    ) {
++        Profiler.get().incrementCounter("getEntities");
++        boolean includeDragonParts = canTypeMatchDragonPart(type);
++        return this.getEntities().get(type, bb, e -> {
++            if (selector.test(e) && consumer.accept(e).shouldAbort()) {
++                return AbortableIterationConsumer.Continuation.ABORT;
++            }
++
++            if (includeDragonParts && e instanceof EnderDragon enderDragon) {
++                for (EnderDragonPart subEntity : enderDragon.getSubEntities()) {
++                    T castSubPart = type.tryCast(subEntity);
++                    if (castSubPart != null && selector.test(castSubPart) && consumer.accept(castSubPart).shouldAbort()) {
++                        return AbortableIterationConsumer.Continuation.ABORT;
++                    }
++                }
++            }
++
++            return AbortableIterationConsumer.Continuation.CONTINUE;
++        });
++    }
++
+     public <T extends Entity> boolean hasEntities(final EntityTypeTest<Entity, T> type, final AABB bb, final Predicate<? super T> selector) {
+         Profiler.get().incrementCounter("hasEntities");
++        boolean includeDragonParts = canTypeMatchDragonPart(type);
++        if (io.fand.server.hooks.FandHooks.entityCollisionAbortPropagationEnabled()) {
++            return this.getEntities().get(type, bb, e -> {
++                if (selector.test(e)) {
++                    return AbortableIterationConsumer.Continuation.ABORT;
++                } else {
++                    if (includeDragonParts && e instanceof EnderDragon enderDragon) {
++                        for (EnderDragonPart subEntity : enderDragon.getSubEntities()) {
++                            T castSubPart = type.tryCast(subEntity);
++                            if (castSubPart != null && selector.test(castSubPart)) {
++                                return AbortableIterationConsumer.Continuation.ABORT;
++                            }
++                        }
++                    }
++
++                    return AbortableIterationConsumer.Continuation.CONTINUE;
++                }
++            }).shouldAbort();
++        }
++
+         MutableBoolean hasEntities = new MutableBoolean();
+         this.getEntities().get(type, bb, e -> {
+             if (selector.test(e)) {
+                 hasEntities.setTrue();
+                 return AbortableIterationConsumer.Continuation.ABORT;
+             } else {
+-                if (e instanceof EnderDragon enderDragon) {
++                if (includeDragonParts && e instanceof EnderDragon enderDragon) {
+                     for (EnderDragonPart subEntity : enderDragon.getSubEntities()) {
+                         T castSubPart = type.tryCast(subEntity);
+                         if (castSubPart != null && selector.test(castSubPart)) {
+@@ -866,6 +924,10 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         return hasEntities.isTrue();
+     }
+ 
++    private static boolean canTypeMatchDragonPart(final EntityTypeTest<Entity, ?> type) {
++        return type.getBaseClass().isAssignableFrom(EnderDragonPart.class);
++    }
++
+     @Override
+     public boolean isUnobstructed(final @Nullable Entity source, final VoxelShape shape) {
+         if (shape.isEmpty()) {
+@@ -873,21 +935,37 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         }
+         Profiler.get().incrementCounter("getEntities");
+         AABB bounds = shape.bounds();
+-        MutableBoolean obstructed = new MutableBoolean();
+-        this.getEntities().get(EntityTypeTest.forClass(Entity.class), bounds, entity -> {
+-            if (!entity.isRemoved()
+-                && entity != source
+-                && EntitySelector.NO_SPECTATORS.test(entity)
+-                && entity.blocksBuilding
+-                && (source == null || !entity.isPassengerOfSameVehicle(source))
+-                && Shapes.joinIsNotEmpty(shape, Shapes.create(entity.getBoundingBox()), BooleanOp.AND)) {
+-                obstructed.setTrue();
+-                return AbortableIterationConsumer.Continuation.ABORT;
++        if (io.fand.server.hooks.FandHooks.entityCollisionAbortPropagationEnabled()) {
++            if (this.getEntities().get(EntityTypeTest.forClass(Entity.class), bounds, entity -> {
++                if (!entity.isRemoved()
++                    && entity != source
++                    && EntitySelector.NO_SPECTATORS.test(entity)
++                    && entity.blocksBuilding
++                    && (source == null || !entity.isPassengerOfSameVehicle(source))
++                    && Shapes.joinIsNotEmpty(shape, Shapes.create(entity.getBoundingBox()), BooleanOp.AND)) {
++                    return AbortableIterationConsumer.Continuation.ABORT;
++                }
++                return AbortableIterationConsumer.Continuation.CONTINUE;
++            }).shouldAbort()) {
++                return false;
++            }
++        } else {
++            MutableBoolean obstructed = new MutableBoolean();
++            this.getEntities().get(EntityTypeTest.forClass(Entity.class), bounds, entity -> {
++                if (!entity.isRemoved()
++                    && entity != source
++                    && EntitySelector.NO_SPECTATORS.test(entity)
++                    && entity.blocksBuilding
++                    && (source == null || !entity.isPassengerOfSameVehicle(source))
++                    && Shapes.joinIsNotEmpty(shape, Shapes.create(entity.getBoundingBox()), BooleanOp.AND)) {
++                    obstructed.setTrue();
++                    return AbortableIterationConsumer.Continuation.ABORT;
++                }
++                return AbortableIterationConsumer.Continuation.CONTINUE;
++            });
++            if (obstructed.isTrue()) {
++                return false;
+             }
+-            return AbortableIterationConsumer.Continuation.CONTINUE;
+-        });
+-        if (obstructed.isTrue()) {
+-            return false;
+         }
+ 
+         for (EnderDragonPart dragonPart : this.dragonParts()) {
+@@ -913,16 +991,27 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         Profiler.get().incrementCounter("getEntities");
+         Predicate<Entity> canCollide = entity == null ? EntitySelector.CAN_BE_COLLIDED_WITH : EntitySelector.NO_SPECTATORS.and(entity::canCollideWith);
+         AABB searchArea = aabb.inflate(1.0E-7);
+-        MutableBoolean collided = new MutableBoolean();
+-        this.getEntities().getEntityCollisionCandidates(searchArea, candidate -> {
+-            if (candidate != entity && canCollide.test(candidate)) {
+-                collided.setTrue();
+-                return AbortableIterationConsumer.Continuation.ABORT;
++        if (io.fand.server.hooks.FandHooks.entityCollisionAbortPropagationEnabled()) {
++            if (this.getEntityCollisionCandidates(entity, searchArea, candidate -> {
++                if (candidate != entity && canCollide.test(candidate)) {
++                    return AbortableIterationConsumer.Continuation.ABORT;
++                }
++                return AbortableIterationConsumer.Continuation.CONTINUE;
++            }).shouldAbort()) {
++                return false;
++            }
++        } else {
++            MutableBoolean collided = new MutableBoolean();
++            this.getEntityCollisionCandidates(entity, searchArea, candidate -> {
++                if (candidate != entity && canCollide.test(candidate)) {
++                    collided.setTrue();
++                    return AbortableIterationConsumer.Continuation.ABORT;
++                }
++                return AbortableIterationConsumer.Continuation.CONTINUE;
++            });
++            if (collided.isTrue()) {
++                return false;
+             }
+-            return AbortableIterationConsumer.Continuation.CONTINUE;
+-        });
+-        if (collided.isTrue()) {
+-            return false;
+         }
+ 
+         for (EnderDragonPart dragonPart : this.dragonParts()) {
+@@ -942,11 +1031,9 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         Profiler.get().incrementCounter("getEntities");
+         Predicate<Entity> canCollide = source == null ? EntitySelector.CAN_BE_COLLIDED_WITH : EntitySelector.NO_SPECTATORS.and(source::canCollideWith);
+         MutableObject<Builder<VoxelShape>> shapes = new MutableObject<>();
+-        MutableBoolean found = new MutableBoolean();
+         AABB searchArea = testArea.inflate(1.0E-7);
+-        this.getEntities().getEntityCollisionCandidates(searchArea, entity -> {
++        this.getEntityCollisionCandidates(source, searchArea, entity -> {
+             if (entity != source && canCollide.test(entity)) {
+-                found.setTrue();
+                 if (shapes.getValue() == null) {
+                     shapes.setValue(ImmutableList.builder());
+                 }
+@@ -957,7 +1044,6 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+ 
+         for (EnderDragonPart dragonPart : this.dragonParts()) {
+             if (dragonPart != source && dragonPart.parentMob != source && canCollide.test(dragonPart) && searchArea.intersects(dragonPart.getBoundingBox())) {
+-                found.setTrue();
+                 if (shapes.getValue() == null) {
+                     shapes.setValue(ImmutableList.builder());
+                 }
+@@ -965,10 +1051,22 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+             }
+         }
+ 
+-        return found.isTrue() ? shapes.getValue().build() : List.of();
++        return shapes.getValue() == null ? List.of() : shapes.getValue().build();
+     }
+ 
+     public List<Entity> getPushableEntities(final Entity pusher, final AABB boundingBox) {
++        if (io.fand.server.hooks.FandHooks.pushableEntityConsumerEnabled()) {
++            MutableObject<List<Entity>> output = new MutableObject<>();
++            this.forEachPushableEntity(pusher, boundingBox, entity -> {
++                if (output.getValue() == null) {
++                    output.setValue(Lists.newArrayList());
++                }
++                output.getValue().add(entity);
++                return AbortableIterationConsumer.Continuation.CONTINUE;
++            });
++            return output.getValue() == null ? List.of() : output.getValue();
++        }
++
+         Profiler.get().incrementCounter("getEntities");
+         Predicate<Entity> selector = EntitySelector.pushableBy(pusher);
+         MutableObject<List<Entity>> output = new MutableObject<>();
+@@ -997,6 +1095,74 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         return output.getValue() == null ? List.of() : output.getValue();
+     }
+ 
++    public AbortableIterationConsumer.Continuation forEachPushableEntity(
++        final Entity pusher, final AABB boundingBox, final AbortableIterationConsumer<Entity> consumer
++    ) {
++        Profiler.get().incrementCounter("getEntities");
++        Team ownTeam = pusher.getTeam();
++        Team.CollisionRule ownCollisionRule = ownTeam == null ? Team.CollisionRule.ALWAYS : ownTeam.getCollisionRule();
++        if (ownCollisionRule == Team.CollisionRule.NEVER) {
++            return AbortableIterationConsumer.Continuation.CONTINUE;
++        }
++        boolean pusherLevelClientSide = pusher.level().isClientSide();
++
++        AbortableIterationConsumer.Continuation continuation = this.getEntities().getEntityCollisionCandidates(boundingBox, entity -> {
++            if (entity != pusher && isPushableBy(entity, ownTeam, ownCollisionRule, pusherLevelClientSide) && consumer.accept(entity).shouldAbort()) {
++                return AbortableIterationConsumer.Continuation.ABORT;
++            }
++            return AbortableIterationConsumer.Continuation.CONTINUE;
++        });
++        if (continuation.shouldAbort()) {
++            return continuation;
++        }
++
++        for (EnderDragonPart dragonPart : this.dragonParts()) {
++            if (dragonPart != pusher
++                && dragonPart.parentMob != pusher
++                && isPushableBy(dragonPart, ownTeam, ownCollisionRule, pusherLevelClientSide)
++                && boundingBox.intersects(dragonPart.getBoundingBox())
++                && consumer.accept(dragonPart).shouldAbort()) {
++                return AbortableIterationConsumer.Continuation.ABORT;
++            }
++        }
++
++        return AbortableIterationConsumer.Continuation.CONTINUE;
++    }
++
++    private static boolean isPushableBy(
++        final Entity candidate, final @Nullable Team ownTeam, final Team.CollisionRule ownCollisionRule, final boolean pusherLevelClientSide
++    ) {
++        if (candidate.isSpectator() || !candidate.isPushable()) {
++            return false;
++        } else if (pusherLevelClientSide && (!(candidate instanceof Player player) || !player.isLocalPlayer())) {
++            return false;
++        }
++
++        Team theirTeam = candidate.getTeam();
++        Team.CollisionRule theirCollisionRule = theirTeam == null ? Team.CollisionRule.ALWAYS : theirTeam.getCollisionRule();
++        if (theirCollisionRule == Team.CollisionRule.NEVER) {
++            return false;
++        }
++
++        boolean sameTeam = ownTeam != null && ownTeam.isAlliedTo(theirTeam);
++        return (ownCollisionRule != Team.CollisionRule.PUSH_OWN_TEAM && theirCollisionRule != Team.CollisionRule.PUSH_OWN_TEAM || !sameTeam)
++            && (ownCollisionRule != Team.CollisionRule.PUSH_OTHER_TEAMS && theirCollisionRule != Team.CollisionRule.PUSH_OTHER_TEAMS || sameTeam);
++    }
++
++    private AbortableIterationConsumer.Continuation getEntityCollisionCandidates(
++        final @Nullable Entity source, final AABB searchArea, final AbortableIterationConsumer<Entity> consumer
++    ) {
++        if (io.fand.server.hooks.FandHooks.entityHardCollisionCandidateIndexEnabled()
++            && canUseHardEntityCollisionCandidates(source)) {
++            return this.getEntities().getHardEntityCollisionCandidates(searchArea, consumer);
++        }
++        return this.getEntities().getEntityCollisionCandidates(searchArea, consumer);
++    }
++
++    private static boolean canUseHardEntityCollisionCandidates(final @Nullable Entity source) {
++        return source == null || !ENTITY_CAN_COLLIDE_WITH_OVERRIDES.get(source.getClass());
++    }
++
+     public abstract @Nullable Entity getEntity(int id);
+ 
+     public @Nullable Entity getEntity(final UUID uuid) {
+diff --git a/net/minecraft/world/level/entity/EntitySection.java b/net/minecraft/world/level/entity/EntitySection.java
+index 1fe2fa4a43721a7e0076c828f0e45eb712aa6a51..ce93f863e3d96fdad50bfb306449bfb55fc8d7ae 100644
+--- a/net/minecraft/world/level/entity/EntitySection.java
++++ b/net/minecraft/world/level/entity/EntitySection.java
+@@ -15,17 +15,25 @@ public class EntitySection<T extends EntityAccess> {
+     private static final ClassValue<Boolean> ENTITY_COLLISION_CANDIDATE_TYPES = new ClassValue<>() {
+         @Override
+         protected Boolean computeValue(final Class<?> type) {
+-            return declaresEntityCollisionMethod(type, "canBeCollidedWith", Entity.class) || declaresEntityCollisionMethod(type, "isPushable");
++            return HARD_ENTITY_COLLISION_CANDIDATE_TYPES.get(type) || declaresEntityCollisionMethod(type, "isPushable");
++        }
++    };
++    private static final ClassValue<Boolean> HARD_ENTITY_COLLISION_CANDIDATE_TYPES = new ClassValue<>() {
++        @Override
++        protected Boolean computeValue(final Class<?> type) {
++            return declaresEntityCollisionMethod(type, "canBeCollidedWith", Entity.class);
+         }
+     };
+     private final ClassInstanceMultiMap<T> storage;
+     private final ClassInstanceMultiMap<T> entityCollisionCandidates;
++    private final ClassInstanceMultiMap<T> hardEntityCollisionCandidates;
+     private Visibility chunkStatus;
+ 
+     public EntitySection(final Class<T> entityClass, final Visibility chunkStatus) {
+         this.chunkStatus = chunkStatus;
+         this.storage = new ClassInstanceMultiMap<>(entityClass);
+         this.entityCollisionCandidates = new ClassInstanceMultiMap<>(entityClass);
++        this.hardEntityCollisionCandidates = new ClassInstanceMultiMap<>(entityClass);
+     }
+ 
+     public void add(final T entity) {
+@@ -33,10 +41,14 @@ public class EntitySection<T extends EntityAccess> {
+         if (couldCollideWithMovingEntity(entity)) {
+             this.entityCollisionCandidates.add(entity);
+         }
++        if (couldHardCollideWithMovingEntity(entity)) {
++            this.hardEntityCollisionCandidates.add(entity);
++        }
+     }
+ 
+     public boolean remove(final T entity) {
+         this.entityCollisionCandidates.remove(entity);
++        this.hardEntityCollisionCandidates.remove(entity);
+         return this.storage.remove(entity);
+     }
+ 
+@@ -60,6 +72,16 @@ public class EntitySection<T extends EntityAccess> {
+         return AbortableIterationConsumer.Continuation.CONTINUE;
+     }
+ 
++    public AbortableIterationConsumer.Continuation getHardEntityCollisionCandidates(final AABB bb, final AbortableIterationConsumer<T> entities) {
++        for (T entity : this.hardEntityCollisionCandidates) {
++            if (entity.getBoundingBox().intersects(bb) && entities.accept(entity).shouldAbort()) {
++                return AbortableIterationConsumer.Continuation.ABORT;
++            }
++        }
++
++        return AbortableIterationConsumer.Continuation.CONTINUE;
++    }
++
+     public <U extends T> AbortableIterationConsumer.Continuation getEntities(
+         final EntityTypeTest<T, U> type, final AABB bb, final AbortableIterationConsumer<? super U> consumer
+     ) {
+@@ -106,6 +128,11 @@ public class EntitySection<T extends EntityAccess> {
+             && ENTITY_COLLISION_CANDIDATE_TYPES.get(minecraftEntity.getClass());
+     }
+ 
++    private static boolean couldHardCollideWithMovingEntity(final EntityAccess entity) {
++        return entity instanceof Entity minecraftEntity
++            && HARD_ENTITY_COLLISION_CANDIDATE_TYPES.get(minecraftEntity.getClass());
++    }
++
+     private static boolean declaresEntityCollisionMethod(final Class<?> type, final String name, final Class<?>... parameterTypes) {
+         try {
+             return type.getMethod(name, parameterTypes).getDeclaringClass() != Entity.class;
+diff --git a/net/minecraft/world/level/entity/EntitySectionStorage.java b/net/minecraft/world/level/entity/EntitySectionStorage.java
+index 4d4b8da878ecc238c9501b8802cf17a729deefec..2c069c0f1bdf0dd2e674f0cd0a7b3537746afe6b 100644
+--- a/net/minecraft/world/level/entity/EntitySectionStorage.java
++++ b/net/minecraft/world/level/entity/EntitySectionStorage.java
+@@ -35,7 +35,7 @@ public class EntitySectionStorage<T extends EntityAccess> {
+         this.intialSectionVisibility = intialSectionVisibility;
+     }
+ 
+-    public void forEachAccessibleNonEmptySection(final AABB bb, final AbortableIterationConsumer<EntitySection<T>> output) {
++    public AbortableIterationConsumer.Continuation forEachAccessibleNonEmptySection(final AABB bb, final AbortableIterationConsumer<EntitySection<T>> output) {
+         int xMin = SectionPos.posToSectionCoord(bb.minX - 2.0);
+         int yMin = SectionPos.posToSectionCoord(bb.minY - 4.0);
+         int zMin = SectionPos.posToSectionCoord(bb.minZ - 2.0);
+@@ -43,6 +43,10 @@ public class EntitySectionStorage<T extends EntityAccess> {
+         int yMax = SectionPos.posToSectionCoord(bb.maxY + 0.0);
+         int zMax = SectionPos.posToSectionCoord(bb.maxZ + 2.0);
+ 
++        if (io.fand.server.hooks.FandHooks.entitySectionChunkScanEnabled()) {
++            return this.forEachAccessibleNonEmptySectionByChunk(xMin, yMin, zMin, xMax, yMax, zMax, output);
++        }
++
+         for (int x = xMin; x <= xMax; x++) {
+             long lowestAbsoluteSectionKey = SectionPos.asLong(x, 0, 0);
+             long highestAbsoluteSectionKey = SectionPos.asLong(x, -1, -1);
+@@ -58,11 +62,72 @@ public class EntitySectionStorage<T extends EntityAccess> {
+                         && !entitySection.isEmpty()
+                         && entitySection.getStatus().isAccessible()
+                         && output.accept(entitySection).shouldAbort()) {
+-                        return;
++                        return AbortableIterationConsumer.Continuation.ABORT;
++                    }
++                }
++            }
++        }
++
++        return AbortableIterationConsumer.Continuation.CONTINUE;
++    }
++
++    private AbortableIterationConsumer.Continuation forEachAccessibleNonEmptySectionByChunk(
++        final int xMin,
++        final int yMin,
++        final int zMin,
++        final int xMax,
++        final int yMax,
++        final int zMax,
++        final AbortableIterationConsumer<EntitySection<T>> output
++    ) {
++        for (int x = xMin; x <= xMax; x++) {
++            if (zMin < 0 && zMax >= 0) {
++                AbortableIterationConsumer.Continuation positive = this.forEachAccessibleNonEmptySectionInZRange(x, yMin, 0, yMax, zMax, output);
++                if (positive.shouldAbort()) {
++                    return positive;
++                }
++                AbortableIterationConsumer.Continuation negative = this.forEachAccessibleNonEmptySectionInZRange(x, yMin, zMin, yMax, -1, output);
++                if (negative.shouldAbort()) {
++                    return negative;
++                }
++            } else {
++                AbortableIterationConsumer.Continuation continuation = this.forEachAccessibleNonEmptySectionInZRange(x, yMin, zMin, yMax, zMax, output);
++                if (continuation.shouldAbort()) {
++                    return continuation;
++                }
++            }
++        }
++
++        return AbortableIterationConsumer.Continuation.CONTINUE;
++    }
++
++    private AbortableIterationConsumer.Continuation forEachAccessibleNonEmptySectionInZRange(
++        final int x,
++        final int yMin,
++        final int zMin,
++        final int yMax,
++        final int zMax,
++        final AbortableIterationConsumer<EntitySection<T>> output
++    ) {
++        for (int z = zMin; z <= zMax; z++) {
++            LongIterator it = this.getChunkSections(x, z).iterator();
++
++            while (it.hasNext()) {
++                long sectionKey = it.nextLong();
++                int y = SectionPos.y(sectionKey);
++                if (y >= yMin && y <= yMax) {
++                    EntitySection<T> entitySection = this.sections.get(sectionKey);
++                    if (entitySection != null
++                        && !entitySection.isEmpty()
++                        && entitySection.getStatus().isAccessible()
++                        && output.accept(entitySection).shouldAbort()) {
++                        return AbortableIterationConsumer.Continuation.ABORT;
+                     }
+                 }
+             }
+         }
++
++        return AbortableIterationConsumer.Continuation.CONTINUE;
+     }
+ 
+     public LongStream getExistingSectionPositionsInChunk(final long chunkKey) {
+@@ -121,12 +186,18 @@ public class EntitySectionStorage<T extends EntityAccess> {
+         this.forEachAccessibleNonEmptySection(bb, section -> section.getEntities(bb, output));
+     }
+ 
+-    public void getEntityCollisionCandidates(final AABB bb, final AbortableIterationConsumer<T> consumer) {
+-        this.forEachAccessibleNonEmptySection(bb, section -> section.getEntityCollisionCandidates(bb, consumer));
++    public AbortableIterationConsumer.Continuation getEntityCollisionCandidates(final AABB bb, final AbortableIterationConsumer<T> consumer) {
++        return this.forEachAccessibleNonEmptySection(bb, section -> section.getEntityCollisionCandidates(bb, consumer));
++    }
++
++    public AbortableIterationConsumer.Continuation getHardEntityCollisionCandidates(final AABB bb, final AbortableIterationConsumer<T> consumer) {
++        return this.forEachAccessibleNonEmptySection(bb, section -> section.getHardEntityCollisionCandidates(bb, consumer));
+     }
+ 
+-    public <U extends T> void getEntities(final EntityTypeTest<T, U> type, final AABB bb, final AbortableIterationConsumer<U> consumer) {
+-        this.forEachAccessibleNonEmptySection(bb, section -> section.getEntities(type, bb, consumer));
++    public <U extends T> AbortableIterationConsumer.Continuation getEntities(
++        final EntityTypeTest<T, U> type, final AABB bb, final AbortableIterationConsumer<U> consumer
++    ) {
++        return this.forEachAccessibleNonEmptySection(bb, section -> section.getEntities(type, bb, consumer));
+     }
+ 
+     public void remove(final long sectionKey) {
+diff --git a/net/minecraft/world/level/entity/LevelEntityGetter.java b/net/minecraft/world/level/entity/LevelEntityGetter.java
+index 33e6fe14f2e486cb68ac6f69276b8ef0b9bc893c..7998c2295b0151eb8c009067d04a130d2efb290d 100644
+--- a/net/minecraft/world/level/entity/LevelEntityGetter.java
++++ b/net/minecraft/world/level/entity/LevelEntityGetter.java
+@@ -17,7 +17,9 @@ public interface LevelEntityGetter<T extends EntityAccess> {
+ 
+     void get(final AABB bb, final Consumer<T> output);
+ 
+-    void getEntityCollisionCandidates(final AABB bb, final AbortableIterationConsumer<T> consumer);
++    AbortableIterationConsumer.Continuation getEntityCollisionCandidates(final AABB bb, final AbortableIterationConsumer<T> consumer);
+ 
+-    <U extends T> void get(final EntityTypeTest<T, U> type, final AABB bb, final AbortableIterationConsumer<U> consumer);
++    AbortableIterationConsumer.Continuation getHardEntityCollisionCandidates(final AABB bb, final AbortableIterationConsumer<T> consumer);
++
++    <U extends T> AbortableIterationConsumer.Continuation get(final EntityTypeTest<T, U> type, final AABB bb, final AbortableIterationConsumer<U> consumer);
+ }
+diff --git a/net/minecraft/world/level/entity/LevelEntityGetterAdapter.java b/net/minecraft/world/level/entity/LevelEntityGetterAdapter.java
+index 0c20ca2f7406383960e09675c2fe2845700d1701..a5ce7fc84e73afcac8738019fba79fce33ee3723 100644
+--- a/net/minecraft/world/level/entity/LevelEntityGetterAdapter.java
++++ b/net/minecraft/world/level/entity/LevelEntityGetterAdapter.java
+@@ -41,12 +41,17 @@ public class LevelEntityGetterAdapter<T extends EntityAccess> implements LevelEn
+     }
+ 
+     @Override
+-    public void getEntityCollisionCandidates(final AABB bb, final AbortableIterationConsumer<T> consumer) {
+-        this.sectionStorage.getEntityCollisionCandidates(bb, consumer);
++    public AbortableIterationConsumer.Continuation getEntityCollisionCandidates(final AABB bb, final AbortableIterationConsumer<T> consumer) {
++        return this.sectionStorage.getEntityCollisionCandidates(bb, consumer);
+     }
+ 
+     @Override
+-    public <U extends T> void get(final EntityTypeTest<T, U> type, final AABB bb, final AbortableIterationConsumer<U> consumer) {
+-        this.sectionStorage.getEntities(type, bb, consumer);
++    public AbortableIterationConsumer.Continuation getHardEntityCollisionCandidates(final AABB bb, final AbortableIterationConsumer<T> consumer) {
++        return this.sectionStorage.getHardEntityCollisionCandidates(bb, consumer);
++    }
++
++    @Override
++    public <U extends T> AbortableIterationConsumer.Continuation get(final EntityTypeTest<T, U> type, final AABB bb, final AbortableIterationConsumer<U> consumer) {
++        return this.sectionStorage.getEntities(type, bb, consumer);
+     }
+ }

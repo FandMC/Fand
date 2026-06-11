@@ -85,4 +85,40 @@ final class ConfigReloadResultTest {
         assertThat(result.restartRequired()).isTrue();
         assertThat(result.changed()).isTrue();
     }
+
+    @Test
+    void reloadsEntityPerformanceOptionsAsHotApplicable() throws Exception {
+        var path = tempDir.resolve("fand.yml");
+        Files.writeString(path, """
+                performance:
+                  entityHardCollisionCandidateIndex: false
+                  entitySectionChunkScan: false
+                  entityCollisionAbortPropagation: false
+                  pushableEntityConsumer: false
+                  entityMovementLazyColliders: false
+                """);
+
+        var initial = FandConfig.load(path);
+        var server = new FandServer(path, initial, getClass().getClassLoader());
+
+        Files.writeString(path, """
+                performance:
+                  entityHardCollisionCandidateIndex: true
+                  entitySectionChunkScan: true
+                  entityCollisionAbortPropagation: true
+                  pushableEntityConsumer: true
+                  entityMovementLazyColliders: true
+                """);
+
+        var result = server.reloadConfig();
+
+        assertThat(result.hotApplied()).containsExactlyInAnyOrder(
+                "performance.entityHardCollisionCandidateIndex",
+                "performance.entitySectionChunkScan",
+                "performance.entityCollisionAbortPropagation",
+                "performance.pushableEntityConsumer",
+                "performance.entityMovementLazyColliders"
+        );
+        assertThat(result.requiresRestart()).isEmpty();
+    }
 }

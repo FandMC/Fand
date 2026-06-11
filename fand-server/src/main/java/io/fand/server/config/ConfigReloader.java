@@ -111,6 +111,24 @@ public final class ConfigReloader {
         if (previous.performance.explosionExposureClipCache != reloaded.performance.explosionExposureClipCache) {
             hotApplied.add("performance.explosionExposureClipCache");
         }
+        if (previous.performance.explosionEntityCache != reloaded.performance.explosionEntityCache) {
+            hotApplied.add("performance.explosionEntityCache");
+        }
+        if (previous.performance.entityHardCollisionCandidateIndex != reloaded.performance.entityHardCollisionCandidateIndex) {
+            hotApplied.add("performance.entityHardCollisionCandidateIndex");
+        }
+        if (previous.performance.entitySectionChunkScan != reloaded.performance.entitySectionChunkScan) {
+            hotApplied.add("performance.entitySectionChunkScan");
+        }
+        if (previous.performance.entityCollisionAbortPropagation != reloaded.performance.entityCollisionAbortPropagation) {
+            hotApplied.add("performance.entityCollisionAbortPropagation");
+        }
+        if (previous.performance.pushableEntityConsumer != reloaded.performance.pushableEntityConsumer) {
+            hotApplied.add("performance.pushableEntityConsumer");
+        }
+        if (previous.performance.entityMovementLazyColliders != reloaded.performance.entityMovementLazyColliders) {
+            hotApplied.add("performance.entityMovementLazyColliders");
+        }
         io.fand.server.hooks.FandHooks.applyPerformanceConfig(reloaded.performance);
 
         plugins.reconfigure(toPluginOptions(reloaded));

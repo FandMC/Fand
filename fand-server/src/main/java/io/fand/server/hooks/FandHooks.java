@@ -107,6 +107,11 @@ public final class FandHooks {
     private static volatile boolean explosionDropHashMerge = true;
     private static volatile boolean explosionExposureClipCache = true;
     private static volatile boolean explosionEntityCache = true;
+    private static volatile boolean entityHardCollisionCandidateIndex = true;
+    private static volatile boolean entitySectionChunkScan = true;
+    private static volatile boolean entityCollisionAbortPropagation = true;
+    private static volatile boolean pushableEntityConsumer = true;
+    private static volatile boolean entityMovementLazyColliders = true;
 
     private FandHooks() {
     }
@@ -119,6 +124,11 @@ public final class FandHooks {
         explosionDropHashMerge = performance.explosionDropHashMerge;
         explosionExposureClipCache = performance.explosionExposureClipCache;
         explosionEntityCache = performance.explosionEntityCache;
+        entityHardCollisionCandidateIndex = performance.entityHardCollisionCandidateIndex;
+        entitySectionChunkScan = performance.entitySectionChunkScan;
+        entityCollisionAbortPropagation = performance.entityCollisionAbortPropagation;
+        pushableEntityConsumer = performance.pushableEntityConsumer;
+        entityMovementLazyColliders = performance.entityMovementLazyColliders;
     }
 
     public static boolean explosionDensityCacheEnabled() {
@@ -149,16 +159,24 @@ public final class FandHooks {
         return explosionEntityCache;
     }
 
-    public static boolean skipStationaryEntityTicks() {
-        return skipStationaryEntityTicks;
+    public static boolean entityHardCollisionCandidateIndexEnabled() {
+        return entityHardCollisionCandidateIndex;
     }
 
-    public static int stationaryEntityTickInterval() {
-        return stationaryEntityTickInterval;
+    public static boolean entitySectionChunkScanEnabled() {
+        return entitySectionChunkScan;
     }
 
-    public static boolean entityQueryCacheEnabled() {
-        return entityQueryCache;
+    public static boolean entityCollisionAbortPropagationEnabled() {
+        return entityCollisionAbortPropagation;
+    }
+
+    public static boolean pushableEntityConsumerEnabled() {
+        return pushableEntityConsumer;
+    }
+
+    public static boolean entityMovementLazyCollidersEnabled() {
+        return entityMovementLazyColliders;
     }
 
     public static EventBus events() {

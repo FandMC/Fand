@@ -149,6 +149,45 @@ public final class FandConfig {
 
         @ConfigComment("Cache entity queries during explosions (avoids repeated AABB scans).")
         public volatile boolean explosionEntityCache = true;
+
+        @ConfigComment({
+                "Keep a separate hard-collision entity candidate index for",
+                "movement checks. Normal entities only hard-collide with targets",
+                "whose canBeCollidedWith method can return true; pushable-only",
+                "living entities are still considered by vehicle and push logic.",
+                "Results are identical to vanilla."
+        })
+        public volatile boolean entityHardCollisionCandidateIndex = true;
+
+        @ConfigComment({
+                "Scan entity sections by exact X/Z chunk columns before filtering",
+                "section Y. Vanilla-compatible searches keep the same bounding",
+                "grace but avoid walking unrelated Z columns that share an X key."
+        })
+        public volatile boolean entitySectionChunkScan = true;
+
+        @ConfigComment({
+                "Propagate abort results from entity collision candidate scans",
+                "instead of allocating mutable holder objects on short-circuit",
+                "queries. Results are identical to vanilla."
+        })
+        public volatile boolean entityCollisionAbortPropagation = true;
+
+        @ConfigComment({
+                "Use a direct consumer path for entity push scans when the caller",
+                "does not need a stable result list. Callers that depend on list",
+                "snapshot semantics, such as cramming checks, keep the vanilla",
+                "collection path. Results are identical to vanilla."
+        })
+        public volatile boolean pushableEntityConsumer = true;
+
+        @ConfigComment({
+                "Use lazy collider iteration for single-axis entity movement so",
+                "block/entity/world-border colliders do not need to be copied into",
+                "one immutable list. Multi-axis and step-up movement keep the",
+                "materialized vanilla path. Results are identical to vanilla."
+        })
+        public volatile boolean entityMovementLazyColliders = true;
     }
 
     public static final class Console {
