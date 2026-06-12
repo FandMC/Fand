@@ -4,6 +4,10 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.FlowLayout;
 import java.awt.Window;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.net.URL;
+import javax.imageio.ImageIO;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComponent;
@@ -30,6 +34,7 @@ import org.slf4j.LoggerFactory;
 public final class FandGuiSupport {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FandGuiSupport.class);
+    private static final String ICON_RESOURCE = "/assets/icon.png";
 
     private FandGuiSupport() {
     }
@@ -86,6 +91,24 @@ public final class FandGuiSupport {
         runOnEdt(() -> applyTheme(root));
         AutoCloseable handle = themes().addListener(() -> runOnEdt(() -> applyTheme(root)));
         return releasing(handle);
+    }
+    public static void applyWindowIcon(Window window) {
+        URL resource = FandGuiSupport.class.getResource(ICON_RESOURCE);
+        if (resource == null) {
+            LOGGER.warn("Window icon resource {} is missing; keeping the default icon", (Object)ICON_RESOURCE);
+            return;
+        }
+        try {
+            BufferedImage icon = ImageIO.read(resource);
+            if (icon == null) {
+                LOGGER.warn("Window icon resource {} is not a readable image; keeping the default icon", (Object)ICON_RESOURCE);
+                return;
+            }
+            FandGuiSupport.runOnEdt(() -> window.setIconImage(icon));
+        }
+        catch (IOException failure) {
+            LOGGER.warn("Failed to load window icon resource {}", (Object)ICON_RESOURCE, (Object)failure);
+        }
     }
 
     /** Wraps a listener handle as an idempotent, exception-swallowing finalizer. */
