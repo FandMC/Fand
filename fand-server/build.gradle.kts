@@ -30,6 +30,7 @@ dependencies {
     compileOnly("org.apache.logging.log4j:log4j-core:2.25.2")
     implementation("com.google.code.gson:gson:2.11.0")
     implementation("org.yaml:snakeyaml:2.4")
+    implementation("com.electronwill.night-config:toml:3.8.1")
     implementation("it.unimi.dsi:fastutil:8.5.13")
     implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
     implementation("net.minecrell:terminalconsoleappender:1.3.0")
@@ -73,6 +74,15 @@ configurations.named(benchmarkSourceSet.runtimeOnlyConfigurationName) {
 dependencies {
     log4jPlugins.annotationProcessorConfigurationName("org.apache.logging.log4j:log4j-core:2.25.2")
     "log4jPluginsCompileOnly"("org.apache.logging.log4j:log4j-core:2.25.2")
+}
+
+tasks.named<JavaCompile>(log4jPlugins.compileJavaTaskName) {
+    options.compilerArgs.addAll(
+        listOf(
+            "-Alog4j.graalvm.groupId=${project.group}",
+            "-Alog4j.graalvm.artifactId=${project.name}",
+        )
+    )
 }
 
 val integrationTest by tasks.registering(Test::class) {

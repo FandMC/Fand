@@ -2,6 +2,7 @@ package io.fand.server.plugin;
 
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.config.Configuration;
+import io.fand.api.config.ConfigurationService;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.event.EventBus;
@@ -14,6 +15,7 @@ import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.storage.PluginStorage;
+import io.fand.server.config.FandConfigurationService;
 import io.fand.server.config.YamlConfiguration;
 import java.io.IOException;
 import java.io.InputStream;
@@ -151,6 +153,11 @@ public final class RuntimePluginContext implements PluginContext {
             }
             return storage;
         }
+    }
+
+    @Override
+    public ConfigurationService configurations() {
+        return FandConfigurationService.INSTANCE;
     }
 
     @Override

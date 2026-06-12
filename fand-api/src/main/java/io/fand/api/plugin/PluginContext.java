@@ -2,6 +2,7 @@ package io.fand.api.plugin;
 
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.config.Configuration;
+import io.fand.api.config.ConfigurationService;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.event.EventBus;
@@ -57,6 +58,9 @@ public interface PluginContext {
 
     /** Persistent JSON/KV gameplay storage scoped to this plugin. */
     PluginStorage storage();
+
+    /** Generic configuration loader for YAML, JSON, TOML, and properties files. */
+    ConfigurationService configurations();
 
     /** Writable data directory unique to this plugin. Created on first access. */
     Path dataDirectory();

@@ -25,7 +25,7 @@ subprojects {
     }
 
     dependencies {
-        "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
+        "testRuntimeOnly"("org.junit.platform:junit-platform-launcher:1.10.2")
     }
 
     tasks.withType<JavaCompile>().configureEach {
@@ -40,5 +40,9 @@ subprojects {
 
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
+        jvmArgs(
+            "--enable-native-access=ALL-UNNAMED",
+            "--sun-misc-unsafe-memory-access=allow",
+        )
     }
 }
