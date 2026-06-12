@@ -1114,7 +1114,24 @@ public final class FandPlayer implements Player {
     @Override
     public void openBook(ItemStack book) {
         Objects.requireNonNull(book, "book");
-        runOnServerThread(() -> bound.handle.openItemGui(FandItemStacks.toVanilla(book), InteractionHand.MAIN_HAND));
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            if (handle.connection == null) {
+                return;
+            }
+            var inventory = handle.getInventory();
+            var selectedSlot = inventory.getSelectedSlot();
+            var previous = inventory.getSelectedItem().copy();
+            var vanillaBook = FandItemStacks.toVanilla(book);
+            inventory.setItem(selectedSlot, vanillaBook);
+            try {
+                handle.containerMenu.broadcastChanges();
+                handle.openItemGui(vanillaBook, InteractionHand.MAIN_HAND);
+            } finally {
+                inventory.setItem(selectedSlot, previous);
+                handle.containerMenu.broadcastChanges();
+            }
+        });
     }
 
     @Override

@@ -2,7 +2,6 @@ package io.fand.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.google.gson.JsonPrimitive;
 import io.fand.api.command.CommandArgument;
 import io.fand.api.command.CommandArgumentType;
 import io.fand.api.event.entity.DamageCause;
@@ -12,6 +11,7 @@ import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
 import io.fand.api.persistence.PersistentDataContainer;
 import java.util.List;
+import java.util.Map;
 import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
 
@@ -51,6 +51,10 @@ class ApiGapModelsTest {
         event.setModifier(DamageModifier.ARMOR, -2.0);
         assertThat(event.amount()).isEqualTo(5.0);
         assertThat(event.modifiers()).containsEntry(DamageModifier.BASE, 7.0);
+
+        event.setAmount(3.0);
+        assertThat(event.amount()).isEqualTo(3.0);
+        assertThat(event.modifiers()).containsOnly(Map.entry(DamageModifier.BASE, 3.0));
     }
 
     private record TestItemType(Key key, int maxStackSize) implements ItemType {

@@ -101,6 +101,7 @@ public class EntityDamageEvent implements Event, Cancellable {
 
     public void setAmount(double amount) {
         this.amount = amount;
+        this.modifiers.clear();
         this.modifiers.put(DamageModifier.BASE, amount);
     }
 
