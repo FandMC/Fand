@@ -1,0 +1,131 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Fri, 12 Jun 2026 09:32:53 +0800
+Subject: [PATCH] Add Lithium sea level cache
+
+
+diff --git a/net/minecraft/data/recipes/RecipeProvider.java b/net/minecraft/data/recipes/RecipeProvider.java
+index ed140290dfa4bd9f2b8f5ef5ebbc733785fca216..cd57bb713baf63f6efde9bfd26fce6eb13777471 100644
+--- a/net/minecraft/data/recipes/RecipeProvider.java
++++ b/net/minecraft/data/recipes/RecipeProvider.java
+@@ -903,6 +903,7 @@ public abstract class RecipeProvider {
+                             }
+ 
+                             @Override
++                            @SuppressWarnings("removal")
+                             public Advancement.Builder advancement() {
+                                 return Advancement.Builder.recipeAdvancement().parent(RecipeBuilder.ROOT_RECIPE_ADVANCEMENT);
+                             }
+diff --git a/net/minecraft/server/packs/FilePackResources.java b/net/minecraft/server/packs/FilePackResources.java
+index e3f355d39efd726bbe88fc0b8e1d86b91c32b6fb..12d38e657b884526b568bfe142adab3c09fcbf49 100644
+--- a/net/minecraft/server/packs/FilePackResources.java
++++ b/net/minecraft/server/packs/FilePackResources.java
+@@ -201,6 +201,7 @@ public class FilePackResources extends AbstractPackResources {
+         }
+ 
+         @Override
++        @SuppressWarnings("removal")
+         protected void finalize() throws Throwable {
+             this.close();
+             super.finalize();
+diff --git a/net/minecraft/server/packs/resources/FallbackResourceManager.java b/net/minecraft/server/packs/resources/FallbackResourceManager.java
+index e39b49791eeeccc2c9d526b0f7f565ac1c5cf0ad..4e438a09c6a11c12ce58e18e403453a9b68fd7af 100644
+--- a/net/minecraft/server/packs/resources/FallbackResourceManager.java
++++ b/net/minecraft/server/packs/resources/FallbackResourceManager.java
+@@ -343,6 +343,7 @@ public class FallbackResourceManager implements ResourceManager {
+         }
+ 
+         @Override
++        @SuppressWarnings("removal")
+         protected void finalize() throws Throwable {
+             if (!this.closed) {
+                 FallbackResourceManager.LOGGER.warn("{}", this.message.get());
+diff --git a/net/minecraft/world/level/biome/BiomeSpecialEffects.java b/net/minecraft/world/level/biome/BiomeSpecialEffects.java
+index 5fbfd63f9531489b6754bdd32d19ba36625740f3..c2b3c80f1b5a5a782d4e4f2104ec6b0e4a2ba4da 100644
+--- a/net/minecraft/world/level/biome/BiomeSpecialEffects.java
++++ b/net/minecraft/world/level/biome/BiomeSpecialEffects.java
+@@ -86,6 +86,7 @@ public record BiomeSpecialEffects(
+         },
+         SWAMP("swamp") {
+             @Override
++            @SuppressWarnings("removal")
+             public int modifyColor(final double x, final double z, final int baseColor) {
+                 double groundValue = Biome.BIOME_INFO_NOISE.getValue(x * 0.0225, z * 0.0225, false);
+                 return groundValue < -0.1 ? -11766212 : -9801671;
+diff --git a/net/minecraft/world/level/block/entity/TheEndGatewayBlockEntity.java b/net/minecraft/world/level/block/entity/TheEndGatewayBlockEntity.java
+index 8f1e79da9f06a4cf2a4b9fb046c5c53a869c1ceb..bc6b22054015a83ddd32234f92b6961d96202a74 100644
+--- a/net/minecraft/world/level/block/entity/TheEndGatewayBlockEntity.java
++++ b/net/minecraft/world/level/block/entity/TheEndGatewayBlockEntity.java
+@@ -225,6 +225,7 @@ public class TheEndGatewayBlockEntity extends TheEndPortalBlockEntity {
+         return level.getChunk(Mth.floor(pos.x / 16.0), Mth.floor(pos.z / 16.0));
+     }
+ 
++    @SuppressWarnings("removal")
+     private static @Nullable BlockPos findValidSpawnInChunk(final LevelChunk chunk) {
+         ChunkPos chunkPos = chunk.getPos();
+         BlockPos start = new BlockPos(chunkPos.getMinBlockX(), 30, chunkPos.getMinBlockZ());
+diff --git a/net/minecraft/world/level/levelgen/Heightmap.java b/net/minecraft/world/level/levelgen/Heightmap.java
+index 3e980d92fdf0a15c9437e9610430b28fd4e6fc12..85338c4b7e2ee667da0e879d4bd0eba95a2b1b9f 100644
+--- a/net/minecraft/world/level/levelgen/Heightmap.java
++++ b/net/minecraft/world/level/levelgen/Heightmap.java
+@@ -40,6 +40,7 @@ public class Heightmap {
+         this.data = new SimpleBitStorage(heightBits, 256);
+     }
+ 
++    @SuppressWarnings("removal")
+     public static void primeHeightmaps(final ChunkAccess chunk, final Set<Heightmap.Types> types) {
+         if (!types.isEmpty()) {
+             int size = types.size();
+diff --git a/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java b/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java
+index f54ccd261940d1c772fcdaaffdc510ffa277c7ae..aeb37ccfcf3ef8cc10575215b45922175ba5d3e3 100644
+--- a/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java
++++ b/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java
+@@ -59,6 +59,8 @@ public final class NoiseBasedChunkGenerator extends ChunkGenerator {
+     private static final BlockState AIR = Blocks.AIR.defaultBlockState();
+     private final Holder<NoiseGeneratorSettings> settings;
+     private final Supplier<Aquifer.FluidPicker> globalFluidPicker;
++    private int fand$cachedSeaLevel;
++    private volatile boolean fand$hasCachedSeaLevel;
+ 
+     public NoiseBasedChunkGenerator(final BiomeSource biomeSource, final Holder<NoiseGeneratorSettings> settings) {
+         super(biomeSource);
+@@ -481,7 +483,14 @@ public final class NoiseBasedChunkGenerator extends ChunkGenerator {
+ 
+     @Override
+     public int getSeaLevel() {
+-        return this.settings.value().seaLevel();
++        if (!io.fand.server.hooks.FandHooks.worldgenSeaLevelCacheEnabled()) {
++            return this.settings.value().seaLevel();
++        }
++        if (!this.fand$hasCachedSeaLevel) {
++            this.fand$cachedSeaLevel = this.settings.value().seaLevel();
++            this.fand$hasCachedSeaLevel = true;
++        }
++        return this.fand$cachedSeaLevel;
+     }
+ 
+     @Override
+diff --git a/net/minecraft/world/level/levelgen/placement/NoiseBasedCountPlacement.java b/net/minecraft/world/level/levelgen/placement/NoiseBasedCountPlacement.java
+index ae88d1b915743dc9344005326152a99b6bbe46cb..7d8cfad6e4daa183166da35c3f663669ad352874 100644
+--- a/net/minecraft/world/level/levelgen/placement/NoiseBasedCountPlacement.java
++++ b/net/minecraft/world/level/levelgen/placement/NoiseBasedCountPlacement.java
+@@ -31,6 +31,7 @@ public class NoiseBasedCountPlacement extends RepeatingPlacement {
+     }
+ 
+     @Override
++    @SuppressWarnings("removal")
+     protected int count(final RandomSource random, final BlockPos origin) {
+         double flowerNoise = Biome.BIOME_INFO_NOISE.getValue(origin.getX() / this.noiseFactor, origin.getZ() / this.noiseFactor, false);
+         return (int)Math.ceil((flowerNoise + this.noiseOffset) * this.noiseToCountRatio);
+diff --git a/net/minecraft/world/level/levelgen/placement/NoiseThresholdCountPlacement.java b/net/minecraft/world/level/levelgen/placement/NoiseThresholdCountPlacement.java
+index 3b0fd1b1b821132daaecaf2a0168616c609e78ea..d118679810dade49d7085f5d83efd9bca511ce83 100644
+--- a/net/minecraft/world/level/levelgen/placement/NoiseThresholdCountPlacement.java
++++ b/net/minecraft/world/level/levelgen/placement/NoiseThresholdCountPlacement.java
+@@ -31,6 +31,7 @@ public class NoiseThresholdCountPlacement extends RepeatingPlacement {
+     }
+ 
+     @Override
++    @SuppressWarnings("removal")
+     protected int count(final RandomSource random, final BlockPos origin) {
+         double flowerNoise = Biome.BIOME_INFO_NOISE.getValue(origin.getX() / 200.0, origin.getZ() / 200.0, false);
+         return flowerNoise < this.noiseLevel ? this.belowNoise : this.aboveNoise;

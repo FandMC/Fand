@@ -122,6 +122,7 @@ public final class FandHooks {
     private static volatile boolean chunkGenerationTaskPlanCache = true;
     private static volatile boolean chunkTaskDispatcherBatchLoop = true;
     private static volatile boolean chunkStorageRegionScanFastPath = true;
+    private static volatile boolean worldgenSeaLevelCache = true;
     private static volatile int chunkWorldgenParallelism = 0;
     private static volatile boolean chunkDedicatedLightThread = true;
     private static volatile boolean chunkLightTaskQueueFastPath = true;
@@ -177,6 +178,7 @@ public final class FandHooks {
         chunkGenerationTaskPlanCache = performance.chunkGenerationTaskPlanCache;
         chunkTaskDispatcherBatchLoop = performance.chunkTaskDispatcherBatchLoop;
         chunkStorageRegionScanFastPath = performance.chunkStorageRegionScanFastPath;
+        worldgenSeaLevelCache = performance.worldgenSeaLevelCache;
     }
 
     public static void applyChunkConfig(io.fand.server.config.FandConfig.Chunks chunks) {
@@ -294,6 +296,10 @@ public final class FandHooks {
 
     public static boolean chunkStorageRegionScanFastPathEnabled() {
         return chunkStorageRegionScanFastPath;
+    }
+
+    public static boolean worldgenSeaLevelCacheEnabled() {
+        return worldgenSeaLevelCache;
     }
 
     public static int chunkWorldgenParallelism() {

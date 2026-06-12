@@ -112,6 +112,7 @@ final class ConfigReloadResultTest {
                   chunkGenerationTaskPlanCache: false
                   chunkTaskDispatcherBatchLoop: false
                   chunkStorageRegionScanFastPath: false
+                  worldgenSeaLevelCache: false
                 """);
 
         var initial = FandConfig.load(path);
@@ -131,6 +132,7 @@ final class ConfigReloadResultTest {
                   chunkGenerationTaskPlanCache: true
                   chunkTaskDispatcherBatchLoop: true
                   chunkStorageRegionScanFastPath: true
+                  worldgenSeaLevelCache: true
                 """);
 
         var result = server.reloadConfig();
@@ -147,7 +149,8 @@ final class ConfigReloadResultTest {
                 "performance.randomTickPositionMask",
                 "performance.chunkGenerationTaskPlanCache",
                 "performance.chunkTaskDispatcherBatchLoop",
-                "performance.chunkStorageRegionScanFastPath"
+                "performance.chunkStorageRegionScanFastPath",
+                "performance.worldgenSeaLevelCache"
         );
         assertThat(result.requiresRestart()).isEmpty();
     }

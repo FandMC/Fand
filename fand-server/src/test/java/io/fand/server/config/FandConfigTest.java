@@ -46,6 +46,7 @@ final class FandConfigTest {
         assertThat(config.performance.chunkGenerationTaskPlanCache).isTrue();
         assertThat(config.performance.chunkTaskDispatcherBatchLoop).isTrue();
         assertThat(config.performance.chunkStorageRegionScanFastPath).isTrue();
+        assertThat(config.performance.worldgenSeaLevelCache).isTrue();
         assertThat(config.technical.zeroTickPlants).isFalse();
         assertThat(config.technical.oldHopperSuckInBehavior).isFalse();
         assertThat(config.technical.shearsInDispenserCanZeroAmount).isFalse();
@@ -112,6 +113,7 @@ final class FandConfigTest {
                 .contains("chunkGenerationTaskPlanCache: true")
                 .contains("chunkTaskDispatcherBatchLoop: true")
                 .contains("chunkStorageRegionScanFastPath: true")
+                .contains("worldgenSeaLevelCache: true")
                 .contains("technical:")
                 .contains("zeroTickPlants: false")
                 .contains("oldHopperSuckInBehavior: false")
@@ -189,6 +191,7 @@ final class FandConfigTest {
                   chunkGenerationTaskPlanCache: false
                   chunkTaskDispatcherBatchLoop: false
                   chunkStorageRegionScanFastPath: false
+                  worldgenSeaLevelCache: false
 
                 technical:
                   zeroTickPlants: true
@@ -250,6 +253,7 @@ final class FandConfigTest {
         assertThat(config.performance.chunkGenerationTaskPlanCache).isFalse();
         assertThat(config.performance.chunkTaskDispatcherBatchLoop).isFalse();
         assertThat(config.performance.chunkStorageRegionScanFastPath).isFalse();
+        assertThat(config.performance.worldgenSeaLevelCache).isFalse();
         assertThat(config.technical.zeroTickPlants).isTrue();
         assertThat(config.technical.oldHopperSuckInBehavior).isTrue();
         assertThat(config.technical.shearsInDispenserCanZeroAmount).isTrue();

@@ -291,6 +291,14 @@ public final class FandConfig {
                 "unchanged."
         })
         public volatile boolean chunkStorageRegionScanFastPath = true;
+
+        @ConfigComment({
+                "Lithium: cache NoiseBasedChunkGenerator sea level after the first",
+                "settings lookup. Worldgen, structures, biome checks, and vanilla",
+                "random sequences are unchanged; only repeated Holder.value()",
+                "lookups are avoided."
+        })
+        public volatile boolean worldgenSeaLevelCache = true;
     }
 
     public static final class Technical {

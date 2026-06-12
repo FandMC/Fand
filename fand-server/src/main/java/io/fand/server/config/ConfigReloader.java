@@ -160,6 +160,9 @@ public final class ConfigReloader {
         if (previous.performance.chunkStorageRegionScanFastPath != reloaded.performance.chunkStorageRegionScanFastPath) {
             hotApplied.add("performance.chunkStorageRegionScanFastPath");
         }
+        if (previous.performance.worldgenSeaLevelCache != reloaded.performance.worldgenSeaLevelCache) {
+            hotApplied.add("performance.worldgenSeaLevelCache");
+        }
         io.fand.server.hooks.FandHooks.applyPerformanceConfig(reloaded.performance);
         if (previous.technical.zeroTickPlants != reloaded.technical.zeroTickPlants) {
             hotApplied.add("technical.zeroTickPlants");
