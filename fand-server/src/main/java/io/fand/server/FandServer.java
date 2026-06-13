@@ -47,6 +47,7 @@ import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.recipe.FandRecipeRegistry;
 import io.fand.server.scheduler.TaskScheduler;
 import io.fand.server.scoreboard.FandScoreboardService;
+import io.fand.server.tag.FandTags;
 import io.fand.server.world.WorldRegistry;
 import java.nio.file.Path;
 import java.util.Collection;
@@ -57,10 +58,14 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.Level;
@@ -501,25 +506,55 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public Optional<? extends io.fand.api.block.BlockType> blockType(Key key) {
         Objects.requireNonNull(key, "key");
-        var id = net.minecraft.resources.Identifier.fromNamespaceAndPath(key.namespace(), key.value());
-        return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getOptional(id)
+        return blockRegistry().getOptional(identifier(key))
                 .map(io.fand.server.block.FandBlockType::of);
+    }
+
+    @Override
+    public Optional<? extends io.fand.api.tag.Tag<io.fand.api.block.BlockType>> blockTag(Key key) {
+        Objects.requireNonNull(key, "key");
+        return blockRegistry().get(FandTags.blockTagKey(key)).map(FandTags::block);
+    }
+
+    @Override
+    public Collection<? extends io.fand.api.tag.Tag<io.fand.api.block.BlockType>> blockTags() {
+        return blockRegistry().getTags().map(FandTags::block).toList();
     }
 
     @Override
     public Optional<? extends io.fand.api.item.ItemType> itemType(Key key) {
         Objects.requireNonNull(key, "key");
-        var id = net.minecraft.resources.Identifier.fromNamespaceAndPath(key.namespace(), key.value());
-        return net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(id)
+        return itemRegistry().getOptional(identifier(key))
                 .map(io.fand.server.item.FandItemType::of);
+    }
+
+    @Override
+    public Optional<? extends io.fand.api.tag.Tag<io.fand.api.item.ItemType>> itemTag(Key key) {
+        Objects.requireNonNull(key, "key");
+        return itemRegistry().get(FandTags.itemTagKey(key)).map(FandTags::item);
+    }
+
+    @Override
+    public Collection<? extends io.fand.api.tag.Tag<io.fand.api.item.ItemType>> itemTags() {
+        return itemRegistry().getTags().map(FandTags::item).toList();
     }
 
     @Override
     public Optional<? extends io.fand.api.entity.EntityType> entityType(Key key) {
         Objects.requireNonNull(key, "key");
-        var id = net.minecraft.resources.Identifier.fromNamespaceAndPath(key.namespace(), key.value());
-        return net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getOptional(id)
+        return entityTypeRegistry().getOptional(identifier(key))
                 .map(io.fand.server.entity.FandEntityType::of);
+    }
+
+    @Override
+    public Optional<? extends io.fand.api.tag.Tag<io.fand.api.entity.EntityType>> entityTypeTag(Key key) {
+        Objects.requireNonNull(key, "key");
+        return entityTypeRegistry().get(FandTags.entityTypeTagKey(key)).map(FandTags::entityType);
+    }
+
+    @Override
+    public Collection<? extends io.fand.api.tag.Tag<io.fand.api.entity.EntityType>> entityTypeTags() {
+        return entityTypeRegistry().getTags().map(FandTags::entityType).toList();
     }
 
     @Override
@@ -690,6 +725,23 @@ public final class FandServer implements Server, AutoCloseable {
 
     private static Identifier identifier(Key key) {
         return Identifier.fromNamespaceAndPath(key.namespace(), key.value());
+    }
+
+    private Registry<Block> blockRegistry() {
+        var server = minecraftServer.get();
+        return server == null ? BuiltInRegistries.BLOCK : server.registryAccess().lookupOrThrow(Registries.BLOCK);
+    }
+
+    private Registry<Item> itemRegistry() {
+        var server = minecraftServer.get();
+        return server == null ? BuiltInRegistries.ITEM : server.registryAccess().lookupOrThrow(Registries.ITEM);
+    }
+
+    private Registry<net.minecraft.world.entity.EntityType<?>> entityTypeRegistry() {
+        var server = minecraftServer.get();
+        return server == null
+                ? BuiltInRegistries.ENTITY_TYPE
+                : server.registryAccess().lookupOrThrow(Registries.ENTITY_TYPE);
     }
 
     private static io.fand.server.world.FandWorld requireFandWorld(io.fand.api.world.World world) {

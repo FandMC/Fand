@@ -1,12 +1,15 @@
 package io.fand.api;
 
 import io.fand.api.command.CommandRegistry;
+import io.fand.api.block.BlockTagKey;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.entity.EntityKey;
+import io.fand.api.entity.EntityTypeTagKey;
 import io.fand.api.entity.Player;
 import io.fand.api.event.EventBus;
 import io.fand.api.gui.GuiService;
+import io.fand.api.item.ItemTagKey;
 import io.fand.api.lifecycle.LifecyclePhase;
 import io.fand.api.performance.ServerPerformance;
 import io.fand.api.packet.PacketRegistry;
@@ -16,6 +19,7 @@ import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
+import io.fand.api.tag.Tag;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldCreateOptions;
 import io.fand.api.world.WorldTemplate;
@@ -152,11 +156,44 @@ public interface Server extends ForwardingAudience {
     /** Looks up a block type by its registry key. */
     Optional<? extends io.fand.api.block.BlockType> blockType(Key key);
 
+    /** Looks up a block tag by its tag key. */
+    Optional<? extends Tag<io.fand.api.block.BlockType>> blockTag(Key key);
+
+    /** Convenience overload for generated vanilla block tag keys. */
+    default Optional<? extends Tag<io.fand.api.block.BlockType>> blockTag(BlockTagKey key) {
+        return blockTag(key.key());
+    }
+
+    /** Snapshot of currently known block tags. */
+    Collection<? extends Tag<io.fand.api.block.BlockType>> blockTags();
+
     /** Looks up an item type by its registry key. */
     Optional<? extends io.fand.api.item.ItemType> itemType(Key key);
 
+    /** Looks up an item tag by its tag key. */
+    Optional<? extends Tag<io.fand.api.item.ItemType>> itemTag(Key key);
+
+    /** Convenience overload for generated vanilla item tag keys. */
+    default Optional<? extends Tag<io.fand.api.item.ItemType>> itemTag(ItemTagKey key) {
+        return itemTag(key.key());
+    }
+
+    /** Snapshot of currently known item tags. */
+    Collection<? extends Tag<io.fand.api.item.ItemType>> itemTags();
+
     /** Looks up an entity type by its registry key. */
     Optional<? extends io.fand.api.entity.EntityType> entityType(Key key);
+
+    /** Looks up an entity type tag by its tag key. */
+    Optional<? extends Tag<io.fand.api.entity.EntityType>> entityTypeTag(Key key);
+
+    /** Convenience overload for generated vanilla entity type tag keys. */
+    default Optional<? extends Tag<io.fand.api.entity.EntityType>> entityTypeTag(EntityTypeTagKey key) {
+        return entityTypeTag(key.key());
+    }
+
+    /** Snapshot of currently known entity type tags. */
+    Collection<? extends Tag<io.fand.api.entity.EntityType>> entityTypeTags();
 
     /** Convenience overload for generated vanilla entity keys. */
     default Optional<? extends io.fand.api.entity.EntityType> entityType(EntityKey key) {
