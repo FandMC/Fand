@@ -8,7 +8,10 @@ import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.scheduler.TaskScheduler;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 /**
  * Diffs an in-memory {@link FandConfig} against the freshly loaded one and
@@ -18,6 +21,107 @@ import java.util.concurrent.atomic.AtomicReference;
  * lifecycle owner ({@code FandServer}) does not grow with each new config key.
  */
 public final class ConfigReloader {
+
+    private static final List<ReloadField<FandConfig.Identity, ?>> HOT_IDENTITY_FIELDS = List.of(
+            field("identity.brand", (FandConfig.Identity config) -> config.brand)
+    );
+    private static final List<ReloadField<FandConfig.Plugins, ?>> HOT_PLUGIN_FIELDS = List.of(
+            field("plugins.continueOnLoadFailure", (FandConfig.Plugins config) -> config.continueOnLoadFailure),
+            field("plugins.continueOnEnableFailure", (FandConfig.Plugins config) -> config.continueOnEnableFailure),
+            field("plugins.logSummary", (FandConfig.Plugins config) -> config.logSummary)
+    );
+    private static final List<ReloadField<FandConfig.Plugins, ?>> RESTART_PLUGIN_FIELDS = List.of(
+            field("plugins.directory", (FandConfig.Plugins config) -> config.directory)
+    );
+    private static final List<ReloadField<FandConfig.Chunks, ?>> HOT_CHUNK_FIELDS = List.of(
+            field("chunks.workerThreads", (FandConfig.Chunks config) -> config.workerThreads),
+            field("chunks.trackingDiffApplyBudget", (FandConfig.Chunks config) -> config.trackingDiffApplyBudget)
+    );
+    private static final List<ReloadField<FandConfig.Chunks, ?>> RESTART_CHUNK_FIELDS = List.of(
+            field("chunks.worldgenParallelism", (FandConfig.Chunks config) -> config.worldgenParallelism),
+            field("chunks.dedicatedLightThread", (FandConfig.Chunks config) -> config.dedicatedLightThread),
+            field("chunks.lightTaskQueueFastPath", (FandConfig.Chunks config) -> config.lightTaskQueueFastPath)
+    );
+    private static final List<ReloadField<FandConfig.Performance, ?>> HOT_PERFORMANCE_FIELDS = List.of(
+            field("performance.explosionDensityCache", (FandConfig.Performance config) -> config.explosionDensityCache),
+            field("performance.collisionTeamCache", (FandConfig.Performance config) -> config.collisionTeamCache),
+            field("performance.explosionBlockCache", (FandConfig.Performance config) -> config.explosionBlockCache),
+            field("performance.tntDetonationBudget", (FandConfig.Performance config) -> config.tntDetonationBudget),
+            field("performance.explosionDropHashMerge",
+                    (FandConfig.Performance config) -> config.explosionDropHashMerge),
+            field("performance.explosionExposureClipCache",
+                    (FandConfig.Performance config) -> config.explosionExposureClipCache),
+            field("performance.explosionEntityCache", (FandConfig.Performance config) -> config.explosionEntityCache),
+            field("performance.entityHardCollisionCandidateIndex",
+                    (FandConfig.Performance config) -> config.entityHardCollisionCandidateIndex),
+            field("performance.entitySectionChunkScan",
+                    (FandConfig.Performance config) -> config.entitySectionChunkScan),
+            field("performance.entityCollisionAbortPropagation",
+                    (FandConfig.Performance config) -> config.entityCollisionAbortPropagation),
+            field("performance.pushableEntityConsumer",
+                    (FandConfig.Performance config) -> config.pushableEntityConsumer),
+            field("performance.entityMovementLazyColliders",
+                    (FandConfig.Performance config) -> config.entityMovementLazyColliders),
+            field("performance.entityTrackerFastPath", (FandConfig.Performance config) -> config.entityTrackerFastPath),
+            field("performance.deepPassengerIteration",
+                    (FandConfig.Performance config) -> config.deepPassengerIteration),
+            field("performance.entityTypeLookupFastPath",
+                    (FandConfig.Performance config) -> config.entityTypeLookupFastPath),
+            field("performance.randomTickPositionMask",
+                    (FandConfig.Performance config) -> config.randomTickPositionMask),
+            field("performance.chunkGenerationTaskPlanCache",
+                    (FandConfig.Performance config) -> config.chunkGenerationTaskPlanCache),
+            field("performance.chunkTaskDispatcherBatchLoop",
+                    (FandConfig.Performance config) -> config.chunkTaskDispatcherBatchLoop),
+            field("performance.chunkStorageRegionScanFastPath",
+                    (FandConfig.Performance config) -> config.chunkStorageRegionScanFastPath),
+            field("performance.worldgenSeaLevelCache", (FandConfig.Performance config) -> config.worldgenSeaLevelCache)
+    );
+    private static final List<ReloadField<FandConfig.Technical, ?>> HOT_TECHNICAL_FIELDS = List.of(
+            field("technical.zeroTickPlants", (FandConfig.Technical config) -> config.zeroTickPlants),
+            field("technical.oldHopperSuckInBehavior", (FandConfig.Technical config) -> config.oldHopperSuckInBehavior),
+            field("technical.shearsInDispenserCanZeroAmount",
+                    (FandConfig.Technical config) -> config.shearsInDispenserCanZeroAmount),
+            field("technical.allowEntityPortalWithPassenger",
+                    (FandConfig.Technical config) -> config.allowEntityPortalWithPassenger),
+            field("technical.disableGatewayPortalEntityTicking",
+                    (FandConfig.Technical config) -> config.disableGatewayPortalEntityTicking),
+            field("technical.disableLivingEntityAiStepAliveCheck",
+                    (FandConfig.Technical config) -> config.disableLivingEntityAiStepAliveCheck),
+            field("technical.spawnInvulnerableTime", (FandConfig.Technical config) -> config.spawnInvulnerableTime),
+            field("technical.oldZombiePiglinDrop", (FandConfig.Technical config) -> config.oldZombiePiglinDrop),
+            field("technical.oldZombieReinforcement", (FandConfig.Technical config) -> config.oldZombieReinforcement),
+            field("technical.allowAnvilDestroyItemEntities",
+                    (FandConfig.Technical config) -> config.allowAnvilDestroyItemEntities),
+            field("technical.disableItemDamageCheck", (FandConfig.Technical config) -> config.disableItemDamageCheck),
+            field("technical.keepLeashConnectWhenUseFirework",
+                    (FandConfig.Technical config) -> config.keepLeashConnectWhenUseFirework),
+            field("technical.tntWetExplosionNoItemDamage",
+                    (FandConfig.Technical config) -> config.tntWetExplosionNoItemDamage),
+            field("technical.oldProjectileExplosionBehavior",
+                    (FandConfig.Technical config) -> config.oldProjectileExplosionBehavior),
+            field("technical.oldThrowableProjectileTickOrder",
+                    (FandConfig.Technical config) -> config.oldThrowableProjectileTickOrder),
+            field("technical.oldMinecartMotionBehavior",
+                    (FandConfig.Technical config) -> config.oldMinecartMotionBehavior),
+            field("technical.copperBulbOneGameTickDelay",
+                    (FandConfig.Technical config) -> config.copperBulbOneGameTickDelay),
+            field("technical.crafterOneGameTickDelay",
+                    (FandConfig.Technical config) -> config.crafterOneGameTickDelay),
+            field("technical.noTntPlaceUpdate", (FandConfig.Technical config) -> config.noTntPlaceUpdate),
+            field("technical.allowPistonDuplication", (FandConfig.Technical config) -> config.allowPistonDuplication),
+            field("technical.allowTntDuplication", (FandConfig.Technical config) -> config.allowTntDuplication),
+            field("technical.allowRailDuplication", (FandConfig.Technical config) -> config.allowRailDuplication),
+            field("technical.allowCarpetDuplication", (FandConfig.Technical config) -> config.allowCarpetDuplication),
+            field("technical.allowGravityBlockEndPortalDuplication",
+                    (FandConfig.Technical config) -> config.allowGravityBlockEndPortalDuplication),
+            field("technical.redstoneIgnoreUpwardsUpdate",
+                    (FandConfig.Technical config) -> config.redstoneIgnoreUpwardsUpdate),
+            field("technical.movableBuddingAmethyst", (FandConfig.Technical config) -> config.movableBuddingAmethyst),
+            field("technical.stringTripwireHookDuplicate",
+                    (FandConfig.Technical config) -> config.stringTripwireHookDuplicate),
+            field("technical.tripwireBehavior", (FandConfig.Technical config) -> config.tripwireBehavior)
+    );
 
     private final Path configPath;
     private final AtomicReference<FandConfig> current;
@@ -45,214 +149,43 @@ public final class ConfigReloader {
     public ConfigReloadResult reload() {
         var previous = current.get();
         var reloaded = FandConfig.load(configPath);
-        var hotApplied = new ArrayList<String>();
-        var requiresRestart = new ArrayList<String>();
+        var changes = new Changes();
 
-        if (!previous.identity.brand.equals(reloaded.identity.brand)) {
-            hotApplied.add("identity.brand");
-        }
-        if (previous.plugins.continueOnLoadFailure != reloaded.plugins.continueOnLoadFailure) {
-            hotApplied.add("plugins.continueOnLoadFailure");
-        }
-        if (previous.plugins.continueOnEnableFailure != reloaded.plugins.continueOnEnableFailure) {
-            hotApplied.add("plugins.continueOnEnableFailure");
-        }
-        if (previous.plugins.logSummary != reloaded.plugins.logSummary) {
-            hotApplied.add("plugins.logSummary");
-        }
-        if (!previous.plugins.directory.equals(reloaded.plugins.directory)) {
-            requiresRestart.add("plugins.directory");
-        }
-        if (previous.scheduler.asyncThreads != reloaded.scheduler.asyncThreads) {
+        markHot(changes, HOT_IDENTITY_FIELDS, previous.identity, reloaded.identity);
+        markHot(changes, HOT_PLUGIN_FIELDS, previous.plugins, reloaded.plugins);
+        markRestart(changes, RESTART_PLUGIN_FIELDS, previous.plugins, reloaded.plugins);
+        if (changed(previous.scheduler.asyncThreads, reloaded.scheduler.asyncThreads)) {
             scheduler.reconfigureAsyncThreads(reloaded.scheduler.asyncThreads);
-            hotApplied.add("scheduler.asyncThreads");
+            changes.hot("scheduler.asyncThreads");
         }
-        if (previous.chunks.workerThreads != reloaded.chunks.workerThreads) {
-            hotApplied.add("chunks.workerThreads");
-        }
-        if (previous.chunks.trackingDiffApplyBudget != reloaded.chunks.trackingDiffApplyBudget) {
-            hotApplied.add("chunks.trackingDiffApplyBudget");
-        }
-        if (previous.chunks.worldgenParallelism != reloaded.chunks.worldgenParallelism) {
-            requiresRestart.add("chunks.worldgenParallelism");
-        }
-        if (previous.chunks.dedicatedLightThread != reloaded.chunks.dedicatedLightThread) {
-            requiresRestart.add("chunks.dedicatedLightThread");
-        }
-        if (previous.chunks.lightTaskQueueFastPath != reloaded.chunks.lightTaskQueueFastPath) {
-            requiresRestart.add("chunks.lightTaskQueueFastPath");
-        }
-        if (previous.chunks.workerThreads != reloaded.chunks.workerThreads
-                || previous.chunks.trackingDiffApplyBudget != reloaded.chunks.trackingDiffApplyBudget) {
+        if (markHot(changes, HOT_CHUNK_FIELDS, previous.chunks, reloaded.chunks)) {
             chunks.reconfigure(reloaded.chunks);
         }
+        markRestart(changes, RESTART_CHUNK_FIELDS, previous.chunks, reloaded.chunks);
         io.fand.server.hooks.FandHooks.applyChunkConfig(reloaded.chunks);
-        if (ProxyForwardingMode.fromConfig(previous.network.forwarding.mode)
-                != ProxyForwardingMode.fromConfig(reloaded.network.forwarding.mode)) {
-            requiresRestart.add("network.forwarding.mode");
-        }
-        if (!previous.network.forwarding.secret.equals(reloaded.network.forwarding.secret)) {
-            requiresRestart.add("network.forwarding.secret");
-        }
+        changes.restart(
+                "network.forwarding.mode",
+                ProxyForwardingMode.fromConfig(previous.network.forwarding.mode),
+                ProxyForwardingMode.fromConfig(reloaded.network.forwarding.mode));
+        changes.restart(
+                "network.forwarding.secret",
+                previous.network.forwarding.secret,
+                reloaded.network.forwarding.secret);
         var previousTheme = GuiTheme.fromConfig(previous.console.gui.theme);
         var reloadedTheme = GuiTheme.fromConfig(reloaded.console.gui.theme);
-        if (previousTheme != reloadedTheme) {
+        if (changed(previousTheme, reloadedTheme)) {
             guiThemes.set(reloadedTheme);
-            hotApplied.add("console.gui.theme");
+            changes.hot("console.gui.theme");
         }
-        if (previous.console.gui.enabled != reloaded.console.gui.enabled) {
-            requiresRestart.add("console.gui.enabled");
-        }
-        if (previous.performance.explosionDensityCache != reloaded.performance.explosionDensityCache) {
-            hotApplied.add("performance.explosionDensityCache");
-        }
-        if (previous.performance.collisionTeamCache != reloaded.performance.collisionTeamCache) {
-            hotApplied.add("performance.collisionTeamCache");
-        }
-        if (previous.performance.explosionBlockCache != reloaded.performance.explosionBlockCache) {
-            hotApplied.add("performance.explosionBlockCache");
-        }
-        if (previous.performance.tntDetonationBudget != reloaded.performance.tntDetonationBudget) {
-            hotApplied.add("performance.tntDetonationBudget");
-        }
-        if (previous.performance.explosionDropHashMerge != reloaded.performance.explosionDropHashMerge) {
-            hotApplied.add("performance.explosionDropHashMerge");
-        }
-        if (previous.performance.explosionExposureClipCache != reloaded.performance.explosionExposureClipCache) {
-            hotApplied.add("performance.explosionExposureClipCache");
-        }
-        if (previous.performance.explosionEntityCache != reloaded.performance.explosionEntityCache) {
-            hotApplied.add("performance.explosionEntityCache");
-        }
-        if (previous.performance.entityHardCollisionCandidateIndex != reloaded.performance.entityHardCollisionCandidateIndex) {
-            hotApplied.add("performance.entityHardCollisionCandidateIndex");
-        }
-        if (previous.performance.entitySectionChunkScan != reloaded.performance.entitySectionChunkScan) {
-            hotApplied.add("performance.entitySectionChunkScan");
-        }
-        if (previous.performance.entityCollisionAbortPropagation != reloaded.performance.entityCollisionAbortPropagation) {
-            hotApplied.add("performance.entityCollisionAbortPropagation");
-        }
-        if (previous.performance.pushableEntityConsumer != reloaded.performance.pushableEntityConsumer) {
-            hotApplied.add("performance.pushableEntityConsumer");
-        }
-        if (previous.performance.entityMovementLazyColliders != reloaded.performance.entityMovementLazyColliders) {
-            hotApplied.add("performance.entityMovementLazyColliders");
-        }
-        if (previous.performance.entityTrackerFastPath != reloaded.performance.entityTrackerFastPath) {
-            hotApplied.add("performance.entityTrackerFastPath");
-        }
-        if (previous.performance.deepPassengerIteration != reloaded.performance.deepPassengerIteration) {
-            hotApplied.add("performance.deepPassengerIteration");
-        }
-        if (previous.performance.entityTypeLookupFastPath != reloaded.performance.entityTypeLookupFastPath) {
-            hotApplied.add("performance.entityTypeLookupFastPath");
-        }
-        if (previous.performance.randomTickPositionMask != reloaded.performance.randomTickPositionMask) {
-            hotApplied.add("performance.randomTickPositionMask");
-        }
-        if (previous.performance.chunkGenerationTaskPlanCache != reloaded.performance.chunkGenerationTaskPlanCache) {
-            hotApplied.add("performance.chunkGenerationTaskPlanCache");
-        }
-        if (previous.performance.chunkTaskDispatcherBatchLoop != reloaded.performance.chunkTaskDispatcherBatchLoop) {
-            hotApplied.add("performance.chunkTaskDispatcherBatchLoop");
-        }
-        if (previous.performance.chunkStorageRegionScanFastPath != reloaded.performance.chunkStorageRegionScanFastPath) {
-            hotApplied.add("performance.chunkStorageRegionScanFastPath");
-        }
-        if (previous.performance.worldgenSeaLevelCache != reloaded.performance.worldgenSeaLevelCache) {
-            hotApplied.add("performance.worldgenSeaLevelCache");
-        }
+        changes.restart("console.gui.enabled", previous.console.gui.enabled, reloaded.console.gui.enabled);
+        markHot(changes, HOT_PERFORMANCE_FIELDS, previous.performance, reloaded.performance);
         io.fand.server.hooks.FandHooks.applyPerformanceConfig(reloaded.performance);
-        if (previous.technical.zeroTickPlants != reloaded.technical.zeroTickPlants) {
-            hotApplied.add("technical.zeroTickPlants");
-        }
-        if (previous.technical.oldHopperSuckInBehavior != reloaded.technical.oldHopperSuckInBehavior) {
-            hotApplied.add("technical.oldHopperSuckInBehavior");
-        }
-        if (previous.technical.shearsInDispenserCanZeroAmount != reloaded.technical.shearsInDispenserCanZeroAmount) {
-            hotApplied.add("technical.shearsInDispenserCanZeroAmount");
-        }
-        if (previous.technical.allowEntityPortalWithPassenger != reloaded.technical.allowEntityPortalWithPassenger) {
-            hotApplied.add("technical.allowEntityPortalWithPassenger");
-        }
-        if (previous.technical.disableGatewayPortalEntityTicking != reloaded.technical.disableGatewayPortalEntityTicking) {
-            hotApplied.add("technical.disableGatewayPortalEntityTicking");
-        }
-        if (previous.technical.disableLivingEntityAiStepAliveCheck != reloaded.technical.disableLivingEntityAiStepAliveCheck) {
-            hotApplied.add("technical.disableLivingEntityAiStepAliveCheck");
-        }
-        if (previous.technical.spawnInvulnerableTime != reloaded.technical.spawnInvulnerableTime) {
-            hotApplied.add("technical.spawnInvulnerableTime");
-        }
-        if (previous.technical.oldZombiePiglinDrop != reloaded.technical.oldZombiePiglinDrop) {
-            hotApplied.add("technical.oldZombiePiglinDrop");
-        }
-        if (previous.technical.oldZombieReinforcement != reloaded.technical.oldZombieReinforcement) {
-            hotApplied.add("technical.oldZombieReinforcement");
-        }
-        if (previous.technical.allowAnvilDestroyItemEntities != reloaded.technical.allowAnvilDestroyItemEntities) {
-            hotApplied.add("technical.allowAnvilDestroyItemEntities");
-        }
-        if (previous.technical.disableItemDamageCheck != reloaded.technical.disableItemDamageCheck) {
-            hotApplied.add("technical.disableItemDamageCheck");
-        }
-        if (previous.technical.keepLeashConnectWhenUseFirework != reloaded.technical.keepLeashConnectWhenUseFirework) {
-            hotApplied.add("technical.keepLeashConnectWhenUseFirework");
-        }
-        if (previous.technical.tntWetExplosionNoItemDamage != reloaded.technical.tntWetExplosionNoItemDamage) {
-            hotApplied.add("technical.tntWetExplosionNoItemDamage");
-        }
-        if (previous.technical.oldProjectileExplosionBehavior != reloaded.technical.oldProjectileExplosionBehavior) {
-            hotApplied.add("technical.oldProjectileExplosionBehavior");
-        }
-        if (previous.technical.oldThrowableProjectileTickOrder != reloaded.technical.oldThrowableProjectileTickOrder) {
-            hotApplied.add("technical.oldThrowableProjectileTickOrder");
-        }
-        if (previous.technical.oldMinecartMotionBehavior != reloaded.technical.oldMinecartMotionBehavior) {
-            hotApplied.add("technical.oldMinecartMotionBehavior");
-        }
-        if (previous.technical.copperBulbOneGameTickDelay != reloaded.technical.copperBulbOneGameTickDelay) {
-            hotApplied.add("technical.copperBulbOneGameTickDelay");
-        }
-        if (previous.technical.crafterOneGameTickDelay != reloaded.technical.crafterOneGameTickDelay) {
-            hotApplied.add("technical.crafterOneGameTickDelay");
-        }
-        if (previous.technical.noTntPlaceUpdate != reloaded.technical.noTntPlaceUpdate) {
-            hotApplied.add("technical.noTntPlaceUpdate");
-        }
-        if (previous.technical.allowPistonDuplication != reloaded.technical.allowPistonDuplication) {
-            hotApplied.add("technical.allowPistonDuplication");
-        }
-        if (previous.technical.allowTntDuplication != reloaded.technical.allowTntDuplication) {
-            hotApplied.add("technical.allowTntDuplication");
-        }
-        if (previous.technical.allowRailDuplication != reloaded.technical.allowRailDuplication) {
-            hotApplied.add("technical.allowRailDuplication");
-        }
-        if (previous.technical.allowCarpetDuplication != reloaded.technical.allowCarpetDuplication) {
-            hotApplied.add("technical.allowCarpetDuplication");
-        }
-        if (previous.technical.allowGravityBlockEndPortalDuplication != reloaded.technical.allowGravityBlockEndPortalDuplication) {
-            hotApplied.add("technical.allowGravityBlockEndPortalDuplication");
-        }
-        if (previous.technical.redstoneIgnoreUpwardsUpdate != reloaded.technical.redstoneIgnoreUpwardsUpdate) {
-            hotApplied.add("technical.redstoneIgnoreUpwardsUpdate");
-        }
-        if (previous.technical.movableBuddingAmethyst != reloaded.technical.movableBuddingAmethyst) {
-            hotApplied.add("technical.movableBuddingAmethyst");
-        }
-        if (previous.technical.stringTripwireHookDuplicate != reloaded.technical.stringTripwireHookDuplicate) {
-            hotApplied.add("technical.stringTripwireHookDuplicate");
-        }
-        if (!previous.technical.tripwireBehavior.equals(reloaded.technical.tripwireBehavior)) {
-            hotApplied.add("technical.tripwireBehavior");
-        }
+        markHot(changes, HOT_TECHNICAL_FIELDS, previous.technical, reloaded.technical);
         io.fand.server.hooks.FandHooks.applyTechnicalConfig(reloaded.technical);
 
         plugins.reconfigure(toPluginOptions(reloaded));
         current.set(reloaded);
-        return new ConfigReloadResult(hotApplied, requiresRestart);
+        return changes.result();
     }
 
     public static PluginRuntime.Options toPluginOptions(FandConfig config) {
@@ -261,5 +194,76 @@ public final class ConfigReloader {
                 config.plugins.continueOnEnableFailure,
                 config.plugins.logSummary
         );
+    }
+
+    private static <C, V> ReloadField<C, V> field(String key, Function<C, V> value) {
+        return new ReloadField<>(key, value);
+    }
+
+    private static <C> boolean markHot(
+            Changes changes,
+            List<ReloadField<C, ?>> fields,
+            C previous,
+            C reloaded
+    ) {
+        var changed = false;
+        for (var field : fields) {
+            changed |= field.hot(changes, previous, reloaded);
+        }
+        return changed;
+    }
+
+    private static <C> void markRestart(
+            Changes changes,
+            List<ReloadField<C, ?>> fields,
+            C previous,
+            C reloaded
+    ) {
+        for (var field : fields) {
+            field.restart(changes, previous, reloaded);
+        }
+    }
+
+    private static boolean changed(Object previous, Object reloaded) {
+        return !Objects.equals(previous, reloaded);
+    }
+
+    private record ReloadField<C, V>(String key, Function<C, V> value) {
+
+        private boolean hot(Changes changes, C previous, C reloaded) {
+            return changes.hot(key, value.apply(previous), value.apply(reloaded));
+        }
+
+        private void restart(Changes changes, C previous, C reloaded) {
+            changes.restart(key, value.apply(previous), value.apply(reloaded));
+        }
+    }
+
+    private static final class Changes {
+
+        private final ArrayList<String> hotApplied = new ArrayList<>();
+        private final ArrayList<String> requiresRestart = new ArrayList<>();
+
+        private boolean hot(String key, Object previous, Object reloaded) {
+            if (!changed(previous, reloaded)) {
+                return false;
+            }
+            hot(key);
+            return true;
+        }
+
+        private void hot(String key) {
+            hotApplied.add(key);
+        }
+
+        private void restart(String key, Object previous, Object reloaded) {
+            if (changed(previous, reloaded)) {
+                requiresRestart.add(key);
+            }
+        }
+
+        private ConfigReloadResult result() {
+            return new ConfigReloadResult(hotApplied, requiresRestart);
+        }
     }
 }
