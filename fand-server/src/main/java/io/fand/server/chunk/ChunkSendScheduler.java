@@ -3,13 +3,9 @@ package io.fand.server.chunk;
 import io.fand.server.config.FandConfig;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
@@ -18,7 +14,6 @@ import org.slf4j.LoggerFactory;
 public final class ChunkSendScheduler implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ChunkSendScheduler.class);
-    private static final int DEFAULT_MAX_AUTO_THREADS = 4;
 
     // Keyed by an opaque per-level identity (the patched caller passes the
     // level's dimension ResourceKey, which is identity-stable for the lifetime
@@ -35,13 +30,13 @@ public final class ChunkSendScheduler implements AutoCloseable {
     private final AtomicLong totalWorkerNanos = new AtomicLong();
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    private volatile ExecutorService worker;
+    private final RegionTaskScheduler worker;
     private volatile int applyBudget;
     private volatile int dynamicBudget;
 
     public ChunkSendScheduler(FandConfig.Chunks config) {
         Objects.requireNonNull(config, "config");
-        this.worker = createWorker(config.workerThreads);
+        this.worker = new RegionTaskScheduler(config.workerThreads);
         this.applyBudget = config.trackingDiffApplyBudget;
         this.dynamicBudget = config.trackingDiffApplyBudget;
     }
@@ -54,8 +49,7 @@ public final class ChunkSendScheduler implements AutoCloseable {
         }
         submittedJobs.incrementAndGet();
         try {
-            CompletableFuture
-                    .supplyAsync(() -> compute(snapshot), worker)
+            worker.submit(levelId, schedulingCenter(snapshot), () -> compute(snapshot))
                     .whenComplete((diff, failure) -> {
                         if (failure != null) {
                             failedJobs.incrementAndGet();
@@ -129,10 +123,7 @@ public final class ChunkSendScheduler implements AutoCloseable {
         Objects.requireNonNull(config, "config");
         applyBudget = config.trackingDiffApplyBudget;
         dynamicBudget = config.trackingDiffApplyBudget;
-        var replacement = createWorker(config.workerThreads);
-        var previous = worker;
-        worker = replacement;
-        previous.shutdown();
+        worker.reconfigure(config.workerThreads);
     }
 
     @Override
@@ -140,7 +131,7 @@ public final class ChunkSendScheduler implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        worker.shutdownNow();
+        worker.close();
         completedByLevel.clear();
     }
 
@@ -157,27 +148,14 @@ public final class ChunkSendScheduler implements AutoCloseable {
         return ChunkTrackingDiffs.compute(snapshot);
     }
 
-    private static ExecutorService createWorker(int configuredThreads) {
-        return Executors.newFixedThreadPool(workerThreadCount(configuredThreads), threadFactory());
-    }
-
-    static int workerThreadCount(int configuredThreads) {
-        if (configuredThreads < 0) {
-            throw new IllegalArgumentException("configuredThreads must not be negative");
+    private static long schedulingCenter(ChunkTrackingSnapshot snapshot) {
+        if (snapshot.nextPositioned()) {
+            return snapshot.nextCenter();
         }
-        if (configuredThreads > 0) {
-            return configuredThreads;
+        if (snapshot.previousPositioned()) {
+            return snapshot.previousCenter();
         }
-        return Math.max(1, Math.min(DEFAULT_MAX_AUTO_THREADS, Runtime.getRuntime().availableProcessors() / 2));
-    }
-
-    private static ThreadFactory threadFactory() {
-        var threadId = new AtomicLong();
-        return task -> {
-            var thread = new Thread(task, "Fand Chunk Worker-" + threadId.incrementAndGet());
-            thread.setDaemon(true);
-            return thread;
-        };
+        return 0L;
     }
 
     @FunctionalInterface
