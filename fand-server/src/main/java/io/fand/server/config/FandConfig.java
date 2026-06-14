@@ -107,6 +107,7 @@ public final class FandConfig {
                 "Maximum chunk-generation batches allowed to run at the same",
                 "time. Set to 1 for vanilla's serialized worldgen dispatcher,",
                 "or 0 to derive a conservative value from available processors.",
+                "Values above 1 run on dedicated Fand worldgen worker lanes.",
                 "Parallel batches are limited to non-overlapping block-write",
                 "envelopes, preserving vanilla chunk status dependencies and",
                 "generated content. Existing worlds need a restart to replace",
