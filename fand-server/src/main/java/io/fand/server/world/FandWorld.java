@@ -57,6 +57,9 @@ import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -81,6 +84,7 @@ public final class FandWorld implements World {
     private final @Nullable WorldRegistry worldRegistry;
     private final @Nullable TaskScheduler scheduler;
     private final WorldBorder worldBorder;
+    private final LastAccessedChunkCache lastAccessedChunks = LastAccessedChunkCache.getInstance();
 
     public FandWorld(ServerLevel handle) {
         this(handle, null, null, null);
@@ -111,6 +115,29 @@ public final class FandWorld implements World {
 
     public ServerLevel handle() {
         return handle;
+    }
+
+    public BlockState blockState(BlockPos pos) {
+        if (!handle.isInValidBounds(pos)) {
+            return handle.getBlockState(pos);
+        }
+        var server = handle.getServer();
+        if (server == null || !server.isSameThread()) {
+            return handle.getBlockState(pos);
+        }
+        return lastAccessedChunks.getOrLoad(handle, pos.getX() >> 4, pos.getZ() >> 4).getBlockState(pos);
+    }
+
+    public @Nullable BlockEntity blockEntity(BlockPos pos) {
+        if (!handle.isInValidBounds(pos)) {
+            return handle.getBlockEntity(pos);
+        }
+        var server = handle.getServer();
+        if (server == null || !server.isSameThread()) {
+            return handle.getBlockEntity(pos);
+        }
+        return lastAccessedChunks.getOrLoad(handle, pos.getX() >> 4, pos.getZ() >> 4)
+                .getBlockEntity(pos, LevelChunk.EntityCreationType.IMMEDIATE);
     }
 
     @Override
@@ -633,13 +660,14 @@ public final class FandWorld implements World {
 
     @Override
     public boolean chunkLoaded(int chunkX, int chunkZ) {
-        return callOnServerThread(() -> handle.getChunkSource().hasChunk(chunkX, chunkZ));
+        return callOnServerThread(() -> lastAccessedChunks.isLoaded(handle, chunkX, chunkZ));
     }
 
     @Override
     public CompletableFuture<Boolean> loadChunk(int chunkX, int chunkZ) {
         return runOnServerThreadFuture(() -> {
             var chunk = handle.getChunk(chunkX, chunkZ, ChunkStatus.FULL, true);
+            lastAccessedChunks.remember(handle, chunkX, chunkZ, chunk);
             return chunk != null;
         });
     }
@@ -649,6 +677,7 @@ public final class FandWorld implements World {
         return runOnServerThreadFuture(() -> {
             boolean updated = handle.setChunkForced(chunkX, chunkZ, false);
             handle.getChunkSource().tick(() -> true, false);
+            lastAccessedChunks.invalidate(handle, chunkX, chunkZ);
             return updated;
         });
     }
@@ -693,7 +722,7 @@ public final class FandWorld implements World {
     @Override
     public ChunkSnapshot chunkSnapshot(int chunkX, int chunkZ) {
         return callOnServerThread(() -> {
-            boolean loaded = handle.getChunkSource().hasChunk(chunkX, chunkZ);
+            boolean loaded = lastAccessedChunks.isLoaded(handle, chunkX, chunkZ);
             boolean forceLoaded = handle.getForceLoadedChunks().contains(ChunkPos.pack(chunkX, chunkZ));
             int entities = loaded ? countEntitiesInBox(chunkBox(chunkX, chunkZ), entity -> true) : 0;
             return new ChunkSnapshot(this, chunkX, chunkZ, loaded, forceLoaded, entities);

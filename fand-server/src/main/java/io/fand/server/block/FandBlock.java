@@ -61,21 +61,18 @@ public final class FandBlock implements Block {
 
     @Override
     public BlockType type() {
-        ServerLevel level = world.handle();
-        return callOnServerThread(() -> FandBlockType.of(level.getBlockState(pos).getBlock()));
+        return callOnServerThread(() -> FandBlockType.of(world.blockState(pos).getBlock()));
     }
 
     @Override
     public boolean air() {
-        ServerLevel level = world.handle();
-        return callOnServerThread(() -> level.getBlockState(pos).isAir());
+        return callOnServerThread(() -> world.blockState(pos).isAir());
     }
 
     @Override
     public Map<String, String> stateProperties() {
-        ServerLevel level = world.handle();
         return callOnServerThread(() -> {
-            var state = level.getBlockState(pos);
+            var state = world.blockState(pos);
             var properties = new LinkedHashMap<String, String>();
             for (var property : state.getProperties()) {
                 properties.put(property.getName(), propertyName(state, property));
@@ -87,9 +84,8 @@ public final class FandBlock implements Block {
     @Override
     public Optional<String> stateProperty(String name) {
         Objects.requireNonNull(name, "name");
-        ServerLevel level = world.handle();
         return callOnServerThread(() -> {
-            var state = level.getBlockState(pos);
+            var state = world.blockState(pos);
             return findProperty(state, name).map(property -> propertyName(state, property));
         });
     }
@@ -100,7 +96,7 @@ public final class FandBlock implements Block {
         Objects.requireNonNull(value, "value");
         ServerLevel level = world.handle();
         return callOnServerThread(() -> {
-            var state = level.getBlockState(pos);
+            var state = world.blockState(pos);
             var next = stateWithProperty(state, name, value);
             if (next.isEmpty() || next.get() == state) {
                 return false;
@@ -111,8 +107,7 @@ public final class FandBlock implements Block {
 
     @Override
     public Optional<? extends BlockEntity> blockEntity() {
-        ServerLevel level = world.handle();
-        return callOnServerThread(() -> Optional.ofNullable(level.getBlockEntity(pos)).map(this::wrapBlockEntity));
+        return callOnServerThread(() -> Optional.ofNullable(world.blockEntity(pos)).map(this::wrapBlockEntity));
     }
 
     @Override
