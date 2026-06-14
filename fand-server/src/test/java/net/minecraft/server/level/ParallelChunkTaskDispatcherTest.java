@@ -3,6 +3,7 @@ package net.minecraft.server.level;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import net.minecraft.SharedConstants;
 import net.minecraft.server.Bootstrap;
@@ -20,20 +21,17 @@ final class ParallelChunkTaskDispatcherTest {
     }
 
     @Test
-    void skipsBusyLaneAndSchedulesAvailableLane() throws Exception {
-        try (
-                var lanes = new RegionizedChunkTaskScheduler(2, "test");
-                var dispatcher = new ParallelChunkTaskDispatcher(
-                    TaskScheduler.wrapExecutor("test-worldgen", Runnable::run),
-                    Runnable::run,
-                    2,
-                    lanes
-                )
-        ) {
+    void skipsChunksWithOverlappingWriteEnvelopes() throws Exception {
+        var worker = Executors.newFixedThreadPool(2);
+        try (var dispatcher = new ParallelChunkTaskDispatcher(
+                TaskScheduler.wrapExecutor("test-worldgen", worker),
+                Runnable::run,
+                2
+        )) {
             var firstStarted = new CountDownLatch(1);
             var releaseFirst = new CountDownLatch(1);
-            var sameLaneStarted = new CountDownLatch(1);
-            var otherLaneStarted = new CountDownLatch(1);
+            var overlappingStarted = new CountDownLatch(1);
+            var nonOverlappingStarted = new CountDownLatch(1);
 
             dispatcher.submit(() -> {
                 firstStarted.countDown();
@@ -41,33 +39,30 @@ final class ParallelChunkTaskDispatcherTest {
             }, ChunkPos.pack(0, 0), () -> 1);
             assertThat(firstStarted.await(5L, TimeUnit.SECONDS)).isTrue();
 
-            dispatcher.submit(sameLaneStarted::countDown, ChunkPos.pack(7, 7), () -> 1);
-            dispatcher.submit(otherLaneStarted::countDown, ChunkPos.pack(RegionizedChunkTaskScheduler.REGION_SIZE_CHUNKS, 0), () -> 1);
+            dispatcher.submit(overlappingStarted::countDown, ChunkPos.pack(4, 0), () -> 1);
+            dispatcher.submit(nonOverlappingStarted::countDown, ChunkPos.pack(5, 0), () -> 1);
 
-            assertThat(otherLaneStarted.await(5L, TimeUnit.SECONDS)).isTrue();
-            assertThat(sameLaneStarted.await(100L, TimeUnit.MILLISECONDS)).isFalse();
+            assertThat(nonOverlappingStarted.await(5L, TimeUnit.SECONDS)).isTrue();
+            assertThat(overlappingStarted.await(100L, TimeUnit.MILLISECONDS)).isFalse();
 
             releaseFirst.countDown();
-            assertThat(sameLaneStarted.await(5L, TimeUnit.SECONDS)).isTrue();
+            assertThat(overlappingStarted.await(5L, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            worker.shutdownNow();
         }
     }
 
     @Test
-    void preservesPriorityAcrossAvailableLanes() throws Exception {
-        try (
-                var lanes = new RegionizedChunkTaskScheduler(3, "test");
-                var dispatcher = new ParallelChunkTaskDispatcher(
-                    TaskScheduler.wrapExecutor("test-worldgen", Runnable::run),
-                    Runnable::run,
-                    1,
-                    lanes
-                )
-        ) {
+    void maxChunksInExecutionLimitsConcurrentTasks() throws Exception {
+        var worker = Executors.newFixedThreadPool(2);
+        try (var dispatcher = new ParallelChunkTaskDispatcher(
+                TaskScheduler.wrapExecutor("test-worldgen", worker),
+                Runnable::run,
+                1
+        )) {
             var firstStarted = new CountDownLatch(1);
             var releaseFirst = new CountDownLatch(1);
-            var highPriorityStarted = new CountDownLatch(1);
-            var releaseHighPriority = new CountDownLatch(1);
-            var lowPriorityStarted = new CountDownLatch(1);
+            var secondStarted = new CountDownLatch(1);
 
             dispatcher.submit(() -> {
                 firstStarted.countDown();
@@ -75,19 +70,13 @@ final class ParallelChunkTaskDispatcherTest {
             }, ChunkPos.pack(0, 0), () -> 1);
             assertThat(firstStarted.await(5L, TimeUnit.SECONDS)).isTrue();
 
-            dispatcher.submit(lowPriorityStarted::countDown, ChunkPos.pack(RegionizedChunkTaskScheduler.REGION_SIZE_CHUNKS, 0), () -> 2);
-            dispatcher.submit(() -> {
-                highPriorityStarted.countDown();
-                await(releaseHighPriority);
-            }, ChunkPos.pack(RegionizedChunkTaskScheduler.REGION_SIZE_CHUNKS * 2, 0), () -> 1);
+            dispatcher.submit(secondStarted::countDown, ChunkPos.pack(5, 0), () -> 1);
+            assertThat(secondStarted.await(100L, TimeUnit.MILLISECONDS)).isFalse();
 
             releaseFirst.countDown();
-
-            assertThat(highPriorityStarted.await(5L, TimeUnit.SECONDS)).isTrue();
-            assertThat(lowPriorityStarted.await(100L, TimeUnit.MILLISECONDS)).isFalse();
-
-            releaseHighPriority.countDown();
-            assertThat(lowPriorityStarted.await(5L, TimeUnit.SECONDS)).isTrue();
+            assertThat(secondStarted.await(5L, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            worker.shutdownNow();
         }
     }
 

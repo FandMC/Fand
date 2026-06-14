@@ -41,22 +41,24 @@ final class ChunkTaskPriorityQueueTest {
     }
 
     @Test
-    void popChunkAtPriorityRemovesOnlyRequestedPriority() {
+    void popChoosesHighestPriorityForSameChunk() {
         var queue = new ChunkTaskPriorityQueue("test");
         long chunk = net.minecraft.world.level.ChunkPos.pack(0, 0);
 
         queue.submit(() -> {}, chunk, 2);
         queue.submit(() -> {}, chunk, 1);
 
-        var priorityTwo = queue.popChunkAtPriority(chunk, 2);
-        assertThat(priorityTwo).isNotNull();
-        assertThat(priorityTwo.tasks()).hasSize(1);
-
-        var priorityOne = queue.popChunkAtPriority(chunk, 1);
+        var priorityOne = queue.pop();
         assertThat(priorityOne).isNotNull();
+        assertThat(priorityOne.chunkPos()).isEqualTo(chunk);
         assertThat(priorityOne.tasks()).hasSize(1);
 
-        assertThat(queue.popChunkAtPriority(chunk, 1)).isNull();
+        var priorityTwo = queue.pop();
+        assertThat(priorityTwo).isNotNull();
+        assertThat(priorityTwo.chunkPos()).isEqualTo(chunk);
+        assertThat(priorityTwo.tasks()).hasSize(1);
+
+        assertThat(queue.pop()).isNull();
     }
 
     @Test

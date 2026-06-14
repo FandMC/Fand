@@ -21,30 +21,24 @@ public final class LastAccessedChunkCache {
     @Nullable
     LevelChunk getIfLoaded(Level level, int chunkX, int chunkZ) {
         var entry = entries.get();
-        var cached = entry.get(level, chunkX, chunkZ);
-        if (cached != null) {
-            return cached;
-        }
         var chunk = level.getChunkSource().getChunkNow(chunkX, chunkZ);
         if (chunk != null) {
             entry.update(level, chunkX, chunkZ, chunk);
+        } else {
+            entry.clearIf(level, chunkX, chunkZ);
         }
         return chunk;
     }
 
     LevelChunk getOrLoad(Level level, int chunkX, int chunkZ) {
         var entry = entries.get();
-        var cached = entry.get(level, chunkX, chunkZ);
-        if (cached != null) {
-            return cached;
-        }
         var chunk = level.getChunk(chunkX, chunkZ);
         entry.update(level, chunkX, chunkZ, chunk);
         return chunk;
     }
 
     boolean isLoaded(Level level, int chunkX, int chunkZ) {
-        return getIfLoaded(level, chunkX, chunkZ) != null;
+        return level.getChunkSource().getChunkNow(chunkX, chunkZ) != null;
     }
 
     void remember(Level level, int chunkX, int chunkZ, @Nullable ChunkAccess chunk) {

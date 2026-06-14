@@ -23,18 +23,9 @@ public final class LevelChunkInterceptor {
             @Argument(3) boolean load,
             @SuperCall Callable<ChunkAccess> original
     ) throws Exception {
-        var cache = LastAccessedChunkCache.getInstance();
-        var server = level.getServer();
-        if (server != null && server.isSameThread() && status == ChunkStatus.FULL) {
-            var cached = cache.getIfLoaded(level, chunkX, chunkZ);
-            if (cached != null) {
-                return cached;
-            }
-        }
-
         var chunk = original.call();
         if (chunk instanceof LevelChunk levelChunk && status == ChunkStatus.FULL) {
-            cache.update(level, chunkX, chunkZ, levelChunk);
+            LastAccessedChunkCache.getInstance().update(level, chunkX, chunkZ, levelChunk);
         }
         return chunk;
     }
