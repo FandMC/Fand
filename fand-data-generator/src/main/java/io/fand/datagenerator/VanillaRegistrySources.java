@@ -34,8 +34,12 @@ final class VanillaRegistrySources {
 
     VanillaRegistrySources(MinecraftSourceSet sources) throws IOException {
         this.sources = sources;
-        this.blockIds = resourceKeys("net/minecraft/references/BlockIds.java", "Block");
-        this.itemIds = resourceKeys("net/minecraft/references/ItemIds.java", "Item");
+        this.blockIds = mergedKeys(
+                resourceKeys("net/minecraft/references/BlockIds.java", "Block"),
+                blockItemKeys(true));
+        this.itemIds = mergedKeys(
+                resourceKeys("net/minecraft/references/ItemIds.java", "Item"),
+                blockItemKeys(false));
         this.resourceKeys = allResourceKeys();
         this.blockKeys = KeyNames.entriesByName(blockKeys());
     }
@@ -521,6 +525,29 @@ final class VanillaRegistrySources {
             KeyExtractors.firstCreateKey(field.initializer())
                     .map(KeyNames::vanillaKey)
                     .ifPresent(key -> keys.put(field.name(), key));
+        }
+        return keys;
+    }
+
+    private Map<String, String> blockItemKeys(boolean blockSide) throws IOException {
+        var keys = new LinkedHashMap<String, String>();
+        for (var field : staticFields("net/minecraft/references/BlockItemIds.java")) {
+            if (!field.type().equals("BlockItemId")) {
+                continue;
+            }
+            var key = blockSide
+                    ? KeyExtractors.firstBlockItemBlockId(field.initializer())
+                    : KeyExtractors.firstBlockItemItemId(field.initializer());
+            key.map(KeyNames::vanillaKey).ifPresent(value -> keys.put(field.name(), value));
+        }
+        return keys;
+    }
+
+    @SafeVarargs
+    private static Map<String, String> mergedKeys(Map<String, String>... maps) {
+        var keys = new LinkedHashMap<String, String>();
+        for (var map : maps) {
+            keys.putAll(map);
         }
         return keys;
     }

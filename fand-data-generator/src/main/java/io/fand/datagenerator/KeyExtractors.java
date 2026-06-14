@@ -15,6 +15,8 @@ final class KeyExtractors {
             "\\b([A-Z][A-Za-z0-9_]*Ids)\\.([A-Z][A-Z0-9_]*)\\b");
     private static final Pattern CREATE_KEY_PATTERN = Pattern.compile(
             "\\b(?:createKey|create|register)\\s*\\(\\s*\"([^\"]+)\"");
+    private static final Pattern BLOCK_ITEM_ID_PATTERN = Pattern.compile(
+            "\\bBlockItemId\\.create\\s*\\(\\s*\"([^\"]+)\"(?:\\s*,\\s*\"([^\"]+)\")?");
     private static final Pattern STRING_KEY_ARGUMENT_PATTERN = Pattern.compile(
             "\\b(?:(?:register\\w*|createKey|createId|create|registryKey|key|bind)\\s*\\(\\s*"
                     + "|(?:Registry|SurfaceRules)\\.register\\s*\\(\\s*[^,]+\\s*,\\s*)\"([^\"]+)\"");
@@ -54,6 +56,20 @@ final class KeyExtractors {
     static Optional<String> firstCreateKey(String initializer) {
         var matcher = CREATE_KEY_PATTERN.matcher(initializer);
         return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
+    }
+
+    static Optional<String> firstBlockItemBlockId(String initializer) {
+        var matcher = BLOCK_ITEM_ID_PATTERN.matcher(initializer);
+        return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
+    }
+
+    static Optional<String> firstBlockItemItemId(String initializer) {
+        var matcher = BLOCK_ITEM_ID_PATTERN.matcher(initializer);
+        if (!matcher.find()) {
+            return Optional.empty();
+        }
+        var itemId = matcher.group(2);
+        return Optional.of(itemId == null ? matcher.group(1) : itemId);
     }
 
     static Optional<String> firstRegistryKeyId(String initializer) {
