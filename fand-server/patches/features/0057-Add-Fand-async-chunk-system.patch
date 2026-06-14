@@ -1,0 +1,298 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 14 Jun 2026 18:29:11 +0800
+Subject: [PATCH] Add Fand async chunk system
+
+
+diff --git a/net/minecraft/server/level/ChunkGenerationTask.java b/net/minecraft/server/level/ChunkGenerationTask.java
+index 6c59059545073b1d4f20137011c5be34146e58c1..d76fbed278066352c95853b13528583d64bcfff7 100644
+--- a/net/minecraft/server/level/ChunkGenerationTask.java
++++ b/net/minecraft/server/level/ChunkGenerationTask.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.server.level;
+ 
++import com.google.common.annotations.VisibleForTesting;
+ import java.util.ArrayList;
+ import java.util.List;
+ import java.util.concurrent.CompletableFuture;
+@@ -147,6 +148,10 @@ public class ChunkGenerationTask {
+         return this.cache.get(this.pos.x(), this.pos.z());
+     }
+ 
++    public ChunkPos getPos() {
++        return this.pos;
++    }
++
+     private void scheduleLayer(final ChunkStatus status, final boolean needsGeneration) {
+         try (Zone zone = Profiler.get().zone("scheduleLayer")) {
+             zone.addText(status::getName);
+@@ -201,20 +206,29 @@ public class ChunkGenerationTask {
+     }
+ 
+     private @Nullable CompletableFuture<?> waitForScheduledLayer() {
+-        while (!this.scheduledLayer.isEmpty()) {
+-            CompletableFuture<ChunkResult<ChunkAccess>> lastFuture = this.scheduledLayer.getLast();
+-            ChunkResult<ChunkAccess> resultNow = lastFuture.getNow(null);
++        return waitForScheduledLayer(this.scheduledLayer, this::markForCancellation);
++    }
++
++    @VisibleForTesting
++    static @Nullable CompletableFuture<?> waitForScheduledLayer(
++        final List<CompletableFuture<ChunkResult<ChunkAccess>>> scheduledLayer, final Runnable markForCancellation
++    ) {
++        CompletableFuture<?> waitFor = null;
++        for (int index = scheduledLayer.size() - 1; index >= 0; index--) {
++            CompletableFuture<ChunkResult<ChunkAccess>> future = scheduledLayer.get(index);
++            ChunkResult<ChunkAccess> resultNow = future.getNow(null);
+             if (resultNow == null) {
+-                return lastFuture;
++                waitFor = waitFor == null ? future : CompletableFuture.allOf(waitFor, future);
++                continue;
+             }
+ 
+-            this.scheduledLayer.removeLast();
++            scheduledLayer.remove(index);
+             if (!resultNow.isSuccess()) {
+-                this.markForCancellation();
++                markForCancellation.run();
+             }
+         }
+ 
+-        return null;
++        return waitFor;
+     }
+ 
+     private record Plan(
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index 36624b3bb387998d5c3826f7587c1a77d8e2be71..cd54fdccc07c0dd7267289721b22d6d9488fcd4f 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -134,7 +134,6 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     private final Long2ObjectLinkedOpenHashMap<ChunkHolder> updatingChunkMap = new Long2ObjectLinkedOpenHashMap<>();
+     private volatile Long2ObjectLinkedOpenHashMap<ChunkHolder> visibleChunkMap = this.updatingChunkMap.clone();
+     private final Long2ObjectLinkedOpenHashMap<ChunkHolder> pendingUnloads = new Long2ObjectLinkedOpenHashMap<>();
+-    private final List<ChunkGenerationTask> pendingGenerationTasks = new ArrayList<>();
+     private final Map<UUID, io.fand.server.chunk.ChunkTrackingSnapshot> fandChunkTrackingDiffs = new HashMap<>();
+     private final ServerLevel level;
+     private final ThreadedLevelLightEngine lightEngine;
+@@ -149,6 +148,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     private final ChunkTaskDispatcher lightTaskDispatcher;
+     private final @Nullable RegionizedChunkTaskScheduler dedicatedWorldgenScheduler;
+     private final @Nullable ExecutorService dedicatedLightExecutor;
++    private final FandAsyncChunkSystem asyncChunkSystem;
+     private final ChunkStatusUpdateListener chunkStatusListener;
+     private final ChunkMap.DistanceManager distanceManager;
+     private final String storageName;
+@@ -226,6 +226,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+             this.worldgenTaskDispatcher = new ChunkTaskDispatcher(worldgen, executor);
+         }
+         this.dedicatedWorldgenScheduler = dedicatedWorldgenScheduler;
++        this.asyncChunkSystem = new FandAsyncChunkSystem(this, this.worldgenTaskDispatcher, dedicatedWorldgenScheduler);
+         this.lightTaskDispatcher = new ChunkTaskDispatcher(light, lightDispatcherExecutor);
+         this.lightEngine = new ThreadedLevelLightEngine(chunkGetter, this, this.level.dimensionType().hasSkyLight(), light, this.lightTaskDispatcher);
+         this.distanceManager = new ChunkMap.DistanceManager(ticketStorage, executor, mainThreadExecutor);
+@@ -696,25 +697,12 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+ 
+     @Override
+     public ChunkGenerationTask scheduleGenerationTask(final ChunkStatus targetStatus, final ChunkPos pos) {
+-        ChunkGenerationTask task = ChunkGenerationTask.create(this, targetStatus, pos);
+-        this.pendingGenerationTasks.add(task);
+-        return task;
+-    }
+-
+-    private void runGenerationTask(final ChunkGenerationTask task) {
+-        GenerationChunkHolder chunk = task.getCenter();
+-        this.worldgenTaskDispatcher.submit(() -> {
+-            CompletableFuture<?> future = task.runUntilWait();
+-            if (future != null) {
+-                future.thenRun(() -> this.runGenerationTask(task));
+-            }
+-        }, chunk.getPos().pack(), chunk::getQueueLevel);
++        return this.asyncChunkSystem.scheduleGenerationTask(targetStatus, pos);
+     }
+ 
+     @Override
+     public void runGenerationTasks() {
+-        this.pendingGenerationTasks.forEach(this::runGenerationTask);
+-        this.pendingGenerationTasks.clear();
++        this.asyncChunkSystem.runGenerationTasks();
+     }
+ 
+     public CompletableFuture<ChunkResult<LevelChunk>> prepareTickingChunk(final ChunkHolder chunk) {
+diff --git a/net/minecraft/server/level/FandAsyncChunkSystem.java b/net/minecraft/server/level/FandAsyncChunkSystem.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..4ba0cdbe3adbc5a83d0736da470417e95b4f5b67
+--- /dev/null
++++ b/net/minecraft/server/level/FandAsyncChunkSystem.java
+@@ -0,0 +1,171 @@
++package net.minecraft.server.level;
++
++import com.google.common.annotations.VisibleForTesting;
++import java.util.ArrayDeque;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.concurrent.CompletableFuture;
++import net.minecraft.world.level.ChunkPos;
++import net.minecraft.world.level.chunk.status.ChunkStatus;
++import org.jspecify.annotations.Nullable;
++
++/**
++ * Fand-owned async chunk generation control plane.
++ *
++ * <p>ChunkHolder remains the source of ticket/future truth for now, but task
++ * queuing, wakeups, and execution dispatch are intentionally kept out of
++ * ChunkMap so the scheduler can grow into a region-aware task graph.
++ */
++final class FandAsyncChunkSystem {
++    private final GeneratingChunkMap chunkMap;
++    private final ChunkTaskDispatcher worldgenTaskDispatcher;
++    private final @Nullable RegionizedChunkTaskScheduler regionizedTaskScheduler;
++    private final List<ArrayDeque<FandAsyncChunkSystem.TaskHandle>> readyTasksByLane;
++    private final boolean[] activeTasksByLane;
++    private int readyTaskCount;
++    private int nextDrainLane;
++
++    FandAsyncChunkSystem(
++        final GeneratingChunkMap chunkMap,
++        final ChunkTaskDispatcher worldgenTaskDispatcher,
++        final @Nullable RegionizedChunkTaskScheduler regionizedTaskScheduler
++    ) {
++        this.chunkMap = chunkMap;
++        this.worldgenTaskDispatcher = worldgenTaskDispatcher;
++        this.regionizedTaskScheduler = regionizedTaskScheduler;
++        int laneCount = regionizedTaskScheduler == null ? 1 : regionizedTaskScheduler.laneCount();
++        this.readyTasksByLane = new ArrayList<>(laneCount);
++        this.activeTasksByLane = new boolean[laneCount];
++        for (int lane = 0; lane < laneCount; lane++) {
++            this.readyTasksByLane.add(new ArrayDeque<>());
++        }
++    }
++
++    ChunkGenerationTask scheduleGenerationTask(final ChunkStatus targetStatus, final ChunkPos pos) {
++        ChunkGenerationTask task = ChunkGenerationTask.create(this.chunkMap, targetStatus, pos);
++        this.enqueueReadyTask(new ChunkGenerationTaskHandle(task), pos.pack());
++        return task;
++    }
++
++    void runGenerationTasks() {
++        List<ScheduledTask> tasks = this.drainReadyTasks();
++
++        for (ScheduledTask task : tasks) {
++            this.dispatchTask(task);
++        }
++    }
++
++    private void dispatchTask(final ScheduledTask scheduledTask) {
++        GenerationChunkHolder chunk = scheduledTask.task().center();
++        this.worldgenTaskDispatcher.submit(() -> this.advanceTask(scheduledTask), chunk.getPos().pack(), chunk::getQueueLevel);
++    }
++
++    private void advanceTask(final ScheduledTask scheduledTask) {
++        TaskHandle task = scheduledTask.task();
++        CompletableFuture<?> waitingFor;
++        try {
++            waitingFor = task.runUntilWait();
++        } catch (Throwable throwable) {
++            this.releaseLaneAndRunReadyTasks(scheduledTask.lane());
++            throw throwable;
++        }
++
++        if (waitingFor != null) {
++            this.releaseLaneAndRunReadyTasks(scheduledTask.lane());
++            waitingFor.thenRun(() -> {
++                this.enqueueReadyTask(task, task.pos().pack());
++                this.runGenerationTasks();
++            });
++        } else {
++            this.releaseLaneAndRunReadyTasks(scheduledTask.lane());
++        }
++    }
++
++    private void enqueueReadyTask(final TaskHandle task, final long chunkPos) {
++        synchronized (this.readyTasksByLane) {
++            this.readyTasksByLane.get(this.laneIndex(chunkPos)).addLast(task);
++            this.readyTaskCount++;
++        }
++    }
++
++    @VisibleForTesting
++    void enqueueReadyTaskForTesting(final TaskHandle task, final long chunkPos) {
++        this.enqueueReadyTask(task, chunkPos);
++    }
++
++    private List<ScheduledTask> drainReadyTasks() {
++        synchronized (this.readyTasksByLane) {
++            if (this.readyTaskCount == 0) {
++                return List.of();
++            }
++
++            List<ScheduledTask> tasks = new ArrayList<>(this.readyTasksByLane.size());
++            while (this.readyTaskCount > 0) {
++                ScheduledTask task = this.pollNextReadyTask();
++                if (task == null) {
++                    break;
++                }
++                tasks.add(task);
++            }
++            return tasks;
++        }
++    }
++
++    private @Nullable ScheduledTask pollNextReadyTask() {
++        for (int offset = 0; offset < this.readyTasksByLane.size(); offset++) {
++            int lane = (this.nextDrainLane + offset) % this.readyTasksByLane.size();
++            if (this.activeTasksByLane[lane]) {
++                continue;
++            }
++            TaskHandle task = this.readyTasksByLane.get(lane).pollFirst();
++            if (task != null) {
++                this.activeTasksByLane[lane] = true;
++                this.readyTaskCount--;
++                this.nextDrainLane = (lane + 1) % this.readyTasksByLane.size();
++                return new ScheduledTask(task, lane);
++            }
++        }
++
++        return null;
++    }
++
++    private void releaseLaneAndRunReadyTasks(final int lane) {
++        synchronized (this.readyTasksByLane) {
++            this.activeTasksByLane[lane] = false;
++        }
++        this.runGenerationTasks();
++    }
++
++    private int laneIndex(final long chunkPos) {
++        return this.regionizedTaskScheduler == null ? 0 : this.regionizedTaskScheduler.laneIndex(chunkPos);
++    }
++
++    @VisibleForTesting
++    interface TaskHandle {
++        ChunkPos pos();
++
++        GenerationChunkHolder center();
++
++        @Nullable CompletableFuture<?> runUntilWait();
++    }
++
++    private record ChunkGenerationTaskHandle(ChunkGenerationTask task) implements TaskHandle {
++        @Override
++        public ChunkPos pos() {
++            return this.task.getPos();
++        }
++
++        @Override
++        public GenerationChunkHolder center() {
++            return this.task.getCenter();
++        }
++
++        @Override
++        public @Nullable CompletableFuture<?> runUntilWait() {
++            return this.task.runUntilWait();
++        }
++    }
++
++    private record ScheduledTask(TaskHandle task, int lane) {
++    }
++}
