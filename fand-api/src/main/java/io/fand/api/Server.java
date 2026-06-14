@@ -12,6 +12,7 @@ import io.fand.api.entity.Player;
 import io.fand.api.event.EventBus;
 import io.fand.api.gui.GuiService;
 import io.fand.api.item.ItemTagKey;
+import io.fand.api.item.ItemType;
 import io.fand.api.lifecycle.LifecyclePhase;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
@@ -25,6 +26,7 @@ import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.structure.StructureService;
+import io.fand.api.tag.Tag;
 import io.fand.api.tag.TagRegistry;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldCreateOptions;
@@ -225,7 +227,7 @@ public interface Server extends ForwardingAudience {
     Optional<? extends Tag<io.fand.api.item.ItemType>> itemTag(Key key);
 
     /** Convenience overload for generated vanilla item tag keys. */
-    default Optional<? extends Tag<io.fand.api.item.ItemType>> itemTag(ItemTagKey key) {
+    default Optional<? extends Tag<ItemType>> itemTag(ItemTagKey key) {
         return itemTag(key.key());
     }
 
