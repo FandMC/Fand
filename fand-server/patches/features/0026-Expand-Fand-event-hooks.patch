@@ -8,10 +8,10 @@ Add vanilla hook points for world saves, weather changes, chunk lifecycle, entit
 Keep patched code thin by routing all API wrapping and listener failure handling through Fand server bridge classes.
 
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index 1c9fad515b99267d72dcaf041d46cb5e500a9d18..0cd5067498fb439a3623e1725e6a6b590536903a 100644
+index 7495123832e3cea30bf6b85e8951e3cde799a091..2853b008b3706795cc48cfffa9d85a1099cf5507 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
-@@ -608,6 +608,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -601,6 +601,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
                  LOGGER.info("Saving chunks for level '{}'/{}", level, level.dimension().identifier());
              }
  
@@ -19,7 +19,7 @@ index 1c9fad515b99267d72dcaf041d46cb5e500a9d18..0cd5067498fb439a3623e1725e6a6b59
              level.save(null, flush, SharedConstants.DEBUG_DONT_SAVE_WORLD || level.noSave && !force);
              result = true;
          }
-@@ -1252,6 +1253,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1242,6 +1243,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
              return false;
          }
  
@@ -27,7 +27,7 @@ index 1c9fad515b99267d72dcaf041d46cb5e500a9d18..0cd5067498fb439a3623e1725e6a6b59
          this.scoreboard.storeToSaveDataIfDirty(this.getDataStorage().computeIfAbsent(ScoreboardSaveData.TYPE));
          level.save(null, true, SharedConstants.DEBUG_DONT_SAVE_WORLD);
          GameProfile singleplayerProfile = this.getSingleplayerProfile();
-@@ -1896,6 +1898,9 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1894,6 +1896,9 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
      }
  
      public void setWeatherParameters(final int clearTime, final int rainTime, final boolean raining, final boolean thundering) {
@@ -38,10 +38,10 @@ index 1c9fad515b99267d72dcaf041d46cb5e500a9d18..0cd5067498fb439a3623e1725e6a6b59
          weatherData.setClearWeatherTime(clearTime);
          weatherData.setRainTime(rainTime);
 diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
-index ac08b0343d22885cceea56092d6e7e9e8410da3c..a4c9130e21a7bd07f217c1e55ef964e7fe8cfdac 100644
+index 54c792505e26a2cdd5c8a5bebeb7ebcfa890226a..9e94701afafca0336473c34e74f7f0991d7e894a 100644
 --- a/net/minecraft/server/level/ChunkMap.java
 +++ b/net/minecraft/server/level/ChunkMap.java
-@@ -1275,6 +1275,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+@@ -1280,6 +1280,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
      }
  
      void onFullChunkStatusChange(final ChunkPos pos, final FullChunkStatus status) {
@@ -50,10 +50,10 @@ index ac08b0343d22885cceea56092d6e7e9e8410da3c..a4c9130e21a7bd07f217c1e55ef964e7
      }
  
 diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
-index 810b9a46d1170f601918cde78d26189beb2ad475..a92ede04cc65611de0292e399803dc3a978cffa5 100644
+index 7984bdb86081ffa862f5c71940b749179a694c5e..34250c80d89dd00b2176e9c2328c5d0f44413501 100644
 --- a/net/minecraft/server/level/ServerLevel.java
 +++ b/net/minecraft/server/level/ServerLevel.java
-@@ -960,7 +960,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+@@ -972,7 +972,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
          if (entity instanceof ServerPlayer player) {
              this.addPlayer(player);
          } else {
@@ -62,7 +62,7 @@ index 810b9a46d1170f601918cde78d26189beb2ad475..a92ede04cc65611de0292e399803dc3a
          }
      }
  
-@@ -984,9 +984,15 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+@@ -996,9 +996,15 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
      }
  
      private boolean addEntity(final Entity entity) {
@@ -78,7 +78,7 @@ index 810b9a46d1170f601918cde78d26189beb2ad475..a92ede04cc65611de0292e399803dc3a
          } else {
              return this.entityManager.addNewEntity(entity);
          }
-@@ -1173,6 +1179,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+@@ -1185,6 +1191,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
  
      @Override
      public void neighborChanged(final BlockPos pos, final Block changedBlock, final @Nullable Orientation orientation) {
@@ -88,7 +88,7 @@ index 810b9a46d1170f601918cde78d26189beb2ad475..a92ede04cc65611de0292e399803dc3a
          this.neighborUpdater.neighborChanged(pos, changedBlock, orientation);
      }
  
-@@ -1180,6 +1189,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+@@ -1192,6 +1201,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
      public void neighborChanged(
          final BlockState state, final BlockPos pos, final Block changedBlock, final @Nullable Orientation orientation, final boolean movedByPiston
      ) {
@@ -98,7 +98,7 @@ index 810b9a46d1170f601918cde78d26189beb2ad475..a92ede04cc65611de0292e399803dc3a
          this.neighborUpdater.neighborChanged(state, pos, changedBlock, orientation, movedByPiston);
      }
  
-@@ -1224,14 +1236,22 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+@@ -1236,14 +1248,22 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
              case TRIGGER -> Explosion.BlockInteraction.TRIGGER_BLOCK;
          };
          Vec3 center = new Vec3(x, y, z);
@@ -123,7 +123,7 @@ index 810b9a46d1170f601918cde78d26189beb2ad475..a92ede04cc65611de0292e399803dc3a
              }
          }
      }
-@@ -1741,11 +1761,15 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+@@ -1749,11 +1769,15 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
      }
  
      public void addLegacyChunkEntities(final Stream<Entity> loaded) {
@@ -141,7 +141,7 @@ index 810b9a46d1170f601918cde78d26189beb2ad475..a92ede04cc65611de0292e399803dc3a
      }
  
      public void startTickingChunk(final LevelChunk levelChunk) {
-@@ -1909,6 +1933,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+@@ -1910,6 +1934,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
  
          @Override
          public void onDestroyed(final Entity entity) {
@@ -150,10 +150,10 @@ index 810b9a46d1170f601918cde78d26189beb2ad475..a92ede04cc65611de0292e399803dc3a
                  ServerLevel.this.getWaypointManager().untrackWaypoint(waypoint);
              }
 diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
-index 7d1d6831d9569bc6d02bc92132257540ded786d0..cd63e13409a14a8b95efb70c2783a99e436c84b4 100644
+index 74114700abf6f76b6a49a740ac952edf5d9a8f39..ad06b9a2e99653027c4b3e478766ee96bae23986 100644
 --- a/net/minecraft/server/level/ServerPlayer.java
 +++ b/net/minecraft/server/level/ServerPlayer.java
-@@ -1621,6 +1621,10 @@ public class ServerPlayer extends Player {
+@@ -1614,6 +1614,10 @@ public class ServerPlayer extends Player {
      @Override
      protected void completeUsingItem() {
          if (!this.useItem.isEmpty() && this.isUsingItem()) {
@@ -164,7 +164,7 @@ index 7d1d6831d9569bc6d02bc92132257540ded786d0..cd63e13409a14a8b95efb70c2783a99e
              this.connection.send(new ClientboundEntityEventPacket(this, EntityEvent.USE_ITEM_COMPLETE));
              super.completeUsingItem();
          }
-@@ -1812,11 +1816,15 @@ public class ServerPlayer extends Player {
+@@ -1807,12 +1811,16 @@ public class ServerPlayer extends Player {
  
      public boolean setGameMode(final GameType mode) {
          boolean wasSpectator = this.isSpectator();
@@ -175,19 +175,20 @@ index 7d1d6831d9569bc6d02bc92132257540ded786d0..cd63e13409a14a8b95efb70c2783a99e
 +        }
 +        if (!this.gameMode.changeGameModeForPlayer(fandMode)) {
              return false;
-         } else {
--            this.connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.CHANGE_GAME_MODE, mode.getId()));
--            if (mode == GameType.SPECTATOR) {
-+            this.connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.CHANGE_GAME_MODE, fandMode.getId()));
-+            if (fandMode == GameType.SPECTATOR) {
-                 this.removeEntitiesOnShoulder();
-                 this.stopRiding();
-                 this.stopUsingItem();
+         }
+ 
+-        this.connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.CHANGE_GAME_MODE, mode.getId()));
+-        if (mode == GameType.SPECTATOR) {
++        this.connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.CHANGE_GAME_MODE, fandMode.getId()));
++        if (fandMode == GameType.SPECTATOR) {
+             this.removeEntitiesOnShoulder();
+             this.stopRiding();
+             this.stopUsingItem();
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index bdf961c914a610f8e2c4ab6835a77a99be0fc39b..dd631bb943275cdb63ef2fdd9742c77865d3ec42 100644
+index 6a5633930a0f1196436cce3386977d6d95d99bcc..0ceea7766431d2f15688f509555d53626e2ce9c8 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -1322,9 +1322,14 @@ public class ServerGamePacketListenerImpl
+@@ -1331,9 +1331,14 @@ public class ServerGamePacketListenerImpl
                      }
                  case SWAP_ITEM_WITH_OFFHAND:
                      if (!this.player.isSpectator()) {
@@ -205,7 +206,7 @@ index bdf961c914a610f8e2c4ab6835a77a99be0fc39b..dd631bb943275cdb63ef2fdd9742c778
                          this.player.stopUsingItem();
                      }
  
-@@ -1545,6 +1550,15 @@ public class ServerGamePacketListenerImpl
+@@ -1554,6 +1559,15 @@ public class ServerGamePacketListenerImpl
          super.onDisconnect(details);
      }
  
@@ -222,10 +223,10 @@ index bdf961c914a610f8e2c4ab6835a77a99be0fc39b..dd631bb943275cdb63ef2fdd9742c778
          this.chatMessageChain.close();
          this.server.invalidateStatus();
 diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
-index ce003bf7375d340d4e6d03774eabeb2d53bcb0bc..597557faa37bb349067de68d3e24b1d7dc756438 100644
+index 5582a59feda2c24c3b5a1dd60ce2e3b446fbb4f6..7520c9029d67c989f67b54728e7c6f921b3963fb 100644
 --- a/net/minecraft/world/entity/Entity.java
 +++ b/net/minecraft/world/entity/Entity.java
-@@ -2606,6 +2606,11 @@ public abstract class Entity
+@@ -2680,6 +2680,11 @@ public abstract class Entity
      }
  
      public void setShiftKeyDown(final boolean shiftKeyDown) {
@@ -237,7 +238,7 @@ index ce003bf7375d340d4e6d03774eabeb2d53bcb0bc..597557faa37bb349067de68d3e24b1d7
          this.setSharedFlag(FLAG_SHIFT_KEY_DOWN, shiftKeyDown);
      }
  
-@@ -2971,13 +2976,17 @@ public abstract class Entity
+@@ -3049,13 +3054,17 @@ public abstract class Entity
  
      public @Nullable Entity teleport(final TeleportTransition transition) {
          if (this.level() instanceof ServerLevel serverLevel && !this.isRemoved()) {
@@ -259,10 +260,10 @@ index ce003bf7375d340d4e6d03774eabeb2d53bcb0bc..597557faa37bb349067de68d3e24b1d7
              return null;
          }
 diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
-index 3c6c44b3e23fb1e4308a84e0fff08a38932530ab..df17a7f8ba196b283a10fe8fbd9887b51fb04afa 100644
+index face2a8d9e290e2413b93ba1e566d2ad5e52198c..dbe64cb63ab1731e3d09973052a12e4211e952b5 100644
 --- a/net/minecraft/world/entity/LivingEntity.java
 +++ b/net/minecraft/world/entity/LivingEntity.java
-@@ -2300,6 +2300,11 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+@@ -2349,6 +2349,11 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
  
      @Override
      public void setSprinting(final boolean isSprinting) {
@@ -275,10 +276,10 @@ index 3c6c44b3e23fb1e4308a84e0fff08a38932530ab..df17a7f8ba196b283a10fe8fbd9887b5
          AttributeInstance speed = this.getAttribute(Attributes.MOVEMENT_SPEED);
          speed.removeModifier(SPEED_MODIFIER_SPRINTING.id());
 diff --git a/net/minecraft/world/item/ItemStack.java b/net/minecraft/world/item/ItemStack.java
-index 5f789cbc111b143d25ad870e171b6c07add88c4a..3931c7a25baac9d213986c86b3293e0f6d8a77d8 100644
+index 2c945a3f9a9ebc2dc374b1714f0776fbe01bef78..31b665ce3b35f36c4cff26ae844713511d46cbc9 100644
 --- a/net/minecraft/world/item/ItemStack.java
 +++ b/net/minecraft/world/item/ItemStack.java
-@@ -449,7 +449,8 @@ public final class ItemStack implements DataComponentHolder, ItemInstance {
+@@ -448,7 +448,8 @@ public final class ItemStack implements DataComponentHolder, ItemInstance {
      }
  
      public void hurtAndBreak(final int amount, final ServerLevel level, final @Nullable ServerPlayer player, final Consumer<Item> onBreak) {
@@ -289,22 +290,22 @@ index 5f789cbc111b143d25ad870e171b6c07add88c4a..3931c7a25baac9d213986c86b3293e0f
              this.applyDamage(this.getDamageValue() + newAmount, player, onBreak);
          }
 diff --git a/net/minecraft/world/level/Level.java b/net/minecraft/world/level/Level.java
-index a0ee0af1191ed0447ca143fecd9163272ceeaa42..305aa7fc9d2a61c751fc83de7fc32b1d4cde137c 100644
+index 6886aaef58a66f7e9404c4a7e896c7711784dbb1..5655bb80ad16ccd2cc91ee80d52beb13f55e61d3 100644
 --- a/net/minecraft/world/level/Level.java
 +++ b/net/minecraft/world/level/Level.java
-@@ -224,7 +224,14 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
-         } else {
-             LevelChunk chunk = this.getChunkAt(pos);
-             Block block = blockState.getBlock();
--            BlockState oldState = chunk.setBlockState(pos, blockState, updateFlags);
-+            BlockState oldState = chunk.getBlockState(pos);
-+            if (!this.isClientSide()
-+                && this instanceof net.minecraft.server.level.ServerLevel fandServerLevel
-+                && !io.fand.server.event.BlockEvents.fireChange(fandServerLevel, pos, oldState, blockState, updateFlags)) {
-+                return false;
-+            }
+@@ -232,7 +232,14 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+ 
+         LevelChunk chunk = this.getChunkAt(pos);
+         Block block = blockState.getBlock();
+-        BlockState oldState = chunk.setBlockState(pos, blockState, updateFlags);
++        BlockState oldState = chunk.getBlockState(pos);
++        if (!this.isClientSide()
++            && this instanceof net.minecraft.server.level.ServerLevel serverLevel
++            && !io.fand.server.event.BlockEvents.fireChange(serverLevel, pos, oldState, blockState, updateFlags)) {
++            return false;
++        }
 +
-+            oldState = chunk.setBlockState(pos, blockState, updateFlags);
-             if (oldState == null) {
-                 return false;
-             } else {
++        oldState = chunk.setBlockState(pos, blockState, updateFlags);
+         if (oldState == null) {
+             return false;
+         }

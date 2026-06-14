@@ -5,7 +5,7 @@ Subject: [PATCH] Add Fand packet interception hooks
 
 
 diff --git a/net/minecraft/network/Connection.java b/net/minecraft/network/Connection.java
-index b1453c77156973db924ea4c0df396351abed86f5..5a55672fc0bba5c5a175fafbe4f4543fce9370e4 100644
+index 774884321bef43a5a538ba688f4930b392e5f213..6c220b1e64053a00c10f173078c4448a3da16594 100644
 --- a/net/minecraft/network/Connection.java
 +++ b/net/minecraft/network/Connection.java
 @@ -31,10 +31,10 @@ import java.util.concurrent.RejectedExecutionException;
@@ -21,29 +21,29 @@ index b1453c77156973db924ea4c0df396351abed86f5..5a55672fc0bba5c5a175fafbe4f4543f
  import net.minecraft.network.protocol.handshake.ClientIntent;
  import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
 @@ -81,6 +81,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
-     private boolean handlingFault;
      private volatile @Nullable DisconnectionDetails delayedDisconnect;
      private @Nullable BandwidthDebugMonitor bandwidthDebugMonitor;
+     private @Nullable UUID intendedProfileId;
 +    private volatile ConnectionProtocol currentOutboundProtocol = INITIAL_PROTOCOL.id();
  
      public Connection(final PacketFlow receiving) {
          this.receiving = receiving;
-@@ -152,7 +153,14 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
-             } else {
-                 if (packetListener.shouldHandleMessage(packet)) {
-                     try {
--                        genericsFtw(packet, packetListener);
-+                        if (this.shouldInterceptInboundDirectly(packetListener)) {
-+                            Packet<?> intercepted = io.fand.server.hooks.FandHooks.interceptInboundPacket(packetListener, packet, this.address);
-+                            if (intercepted != null) {
-+                                genericsFtw(intercepted, packetListener);
-+                            }
-+                        } else {
-+                            genericsFtw(packet, packetListener);
+@@ -153,7 +154,14 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+ 
+             if (packetListener.shouldHandleMessage(packet)) {
+                 try {
+-                    genericsFtw(packet, packetListener);
++                    if (this.shouldInterceptInboundDirectly(packetListener)) {
++                        Packet<?> intercepted = io.fand.server.hooks.FandHooks.interceptInboundPacket(packetListener, packet, this.address);
++                        if (intercepted != null) {
++                            genericsFtw(intercepted, packetListener);
 +                        }
-                     } catch (RunningOnDifferentThreadException var5) {
-                     } catch (RejectedExecutionException var6) {
-                         this.disconnect(Component.translatable("multiplayer.disconnect.server_shutdown"));
++                    } else {
++                        genericsFtw(packet, packetListener);
++                    }
+                 } catch (RunningOnDifferentThreadException var5) {
+                 } catch (RejectedExecutionException ignored) {
+                     this.disconnect(Component.translatable("multiplayer.disconnect.server_shutdown"));
 @@ -171,6 +179,12 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
          packet.handle((T)listener);
      }
@@ -57,14 +57,14 @@ index b1453c77156973db924ea4c0df396351abed86f5..5a55672fc0bba5c5a175fafbe4f4543f
      private void validateListener(final ProtocolInfo<?> protocol, final PacketListener packetListener) {
          Objects.requireNonNull(packetListener, "packetListener");
          PacketFlow listenerFlow = packetListener.flow();
-@@ -218,6 +232,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
-         if (protocol.flow() != this.getSending()) {
+@@ -219,6 +233,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
              throw new IllegalStateException("Invalid outbound protocol: " + protocol.id());
-         } else {
-+            this.currentOutboundProtocol = protocol.id();
-             UnconfiguredPipelineHandler.OutboundConfigurationTask configMessage = UnconfiguredPipelineHandler.setupOutboundProtocol(protocol);
-             BundlerInfo bundlerInfo = protocol.bundlerInfo();
-             if (bundlerInfo != null) {
+         }
+ 
++        this.currentOutboundProtocol = protocol.id();
+         UnconfiguredPipelineHandler.OutboundConfigurationTask configMessage = UnconfiguredPipelineHandler.setupOutboundProtocol(protocol);
+         BundlerInfo bundlerInfo = protocol.bundlerInfo();
+         if (bundlerInfo != null) {
 @@ -298,11 +313,17 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
      }
  
@@ -86,7 +86,7 @@ index b1453c77156973db924ea4c0df396351abed86f5..5a55672fc0bba5c5a175fafbe4f4543f
      }
  
 diff --git a/net/minecraft/network/PacketProcessor.java b/net/minecraft/network/PacketProcessor.java
-index 82bd316d094e2c1a43938313fab2283035610ef3..237f6f95c8aa6f036f60dd1257c3faa8afdeca4f 100644
+index e5fc00cacaa5ee57b215d90b99c782029785e127..a5cd3236ad57283853283412f8e32ecc9669e6c6 100644
 --- a/net/minecraft/network/PacketProcessor.java
 +++ b/net/minecraft/network/PacketProcessor.java
 @@ -48,7 +48,10 @@ public class PacketProcessor implements AutoCloseable {
@@ -98,9 +98,9 @@ index 82bd316d094e2c1a43938313fab2283035610ef3..237f6f95c8aa6f036f60dd1257c3faa8
 +                    if (intercepted != null) {
 +                        handlePacket(this.listener, intercepted);
 +                    }
-                 } catch (Exception var3) {
-                     if (var3 instanceof ReportedException re && re.getCause() instanceof OutOfMemoryError) {
-                         throw PacketUtils.makeReportedException(var3, this.packet, this.listener);
+                 } catch (Exception e) {
+                     if (e instanceof ReportedException re && re.getCause() instanceof OutOfMemoryError) {
+                         throw PacketUtils.makeReportedException(e, this.packet, this.listener);
 @@ -60,5 +63,9 @@ public class PacketProcessor implements AutoCloseable {
                  PacketProcessor.LOGGER.debug("Ignoring packet due to disconnection: {}", this.packet);
              }

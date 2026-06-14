@@ -5,10 +5,10 @@ Subject: [PATCH] Flush Fand world saves to disk
 
 
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index a826cfce5f127d347aaa8f0b1262d119b661713f..1c9fad515b99267d72dcaf041d46cb5e500a9d18 100644
+index f95dc2e80ca86cae21cca21d0d094ead67db3823..7495123832e3cea30bf6b85e8951e3cde799a091 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
-@@ -1242,6 +1242,24 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1232,6 +1232,24 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
          return this.levels.values();
      }
  
@@ -33,7 +33,7 @@ index a826cfce5f127d347aaa8f0b1262d119b661713f..1c9fad515b99267d72dcaf041d46cb5e
      public ServerLevel fand$createDynamicLevel(final ResourceKey<Level> dimension, final ResourceKey<LevelStem> template) {
          if (!this.isSameThread()) {
              throw new IllegalStateException("Dynamic worlds must be created on the server thread");
-@@ -1294,7 +1312,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1284,7 +1302,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
          }
  
          level.noSave = false;

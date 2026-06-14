@@ -12,9 +12,9 @@ final class KeyExtractors {
     private static final Pattern REGISTER_HOLDER_PATTERN = Pattern.compile(
             "\\bregisterForHolder\\s*\\(\\s*\"([^\"]+)\"");
     private static final Pattern KEY_REFERENCE_PATTERN = Pattern.compile(
-            "\\b(?:BlockIds|ItemIds)\\.([A-Z][A-Z0-9_]*)\\b");
+            "\\b([A-Z][A-Za-z0-9_]*Ids)\\.([A-Z][A-Z0-9_]*)\\b");
     private static final Pattern CREATE_KEY_PATTERN = Pattern.compile(
-            "\\bcreateKey\\s*\\(\\s*\"([^\"]+)\"");
+            "\\b(?:createKey|create|register)\\s*\\(\\s*\"([^\"]+)\"");
     private static final Pattern STRING_KEY_ARGUMENT_PATTERN = Pattern.compile(
             "\\b(?:(?:register\\w*|createKey|createId|create|registryKey|key|bind)\\s*\\(\\s*"
                     + "|(?:Registry|SurfaceRules)\\.register\\s*\\(\\s*[^,]+\\s*,\\s*)\"([^\"]+)\"");
@@ -90,7 +90,11 @@ final class KeyExtractors {
     static Optional<String> firstReferencedKey(String initializer, Map<String, String> keys) {
         var matcher = KEY_REFERENCE_PATTERN.matcher(initializer);
         while (matcher.find()) {
-            var key = keys.get(matcher.group(1));
+            var fieldName = matcher.group(2);
+            var key = keys.get(matcher.group(1) + "." + fieldName);
+            if (key == null) {
+                key = keys.get(fieldName);
+            }
             if (key != null) {
                 return Optional.of(key);
             }

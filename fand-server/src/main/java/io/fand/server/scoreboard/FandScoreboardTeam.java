@@ -67,12 +67,12 @@ final class FandScoreboardTeam implements ScoreboardTeam {
 
     @Override
     public @Nullable NamedTextColor color() {
-        return ScoreboardThreading.call(service.server(), () -> ScoreboardConversions.fromVanilla(handle.getColor()));
+        return ScoreboardThreading.call(service.server(), () -> ScoreboardConversions.fromVanillaTeamColor(handle.getColor()));
     }
 
     @Override
     public void setColor(@Nullable NamedTextColor color) {
-        ScoreboardThreading.run(service.server(), () -> handle.setColor(ScoreboardConversions.toVanilla(color)));
+        ScoreboardThreading.run(service.server(), () -> handle.setColor(ScoreboardConversions.toVanillaTeamColor(color)));
     }
 
     @Override

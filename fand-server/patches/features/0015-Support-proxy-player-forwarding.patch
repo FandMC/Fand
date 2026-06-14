@@ -5,7 +5,7 @@ Subject: [PATCH] Support proxy player forwarding
 
 
 diff --git a/net/minecraft/network/Connection.java b/net/minecraft/network/Connection.java
-index ca22785306bbaa55fcaa7fe79548618802a0488a..b1453c77156973db924ea4c0df396351abed86f5 100644
+index 454a3b16dba1ae5f7621eb90c6b31bf0f20ea3cf..774884321bef43a5a538ba688f4930b392e5f213 100644
 --- a/net/minecraft/network/Connection.java
 +++ b/net/minecraft/network/Connection.java
 @@ -378,6 +378,10 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
@@ -20,10 +20,10 @@ index ca22785306bbaa55fcaa7fe79548618802a0488a..b1453c77156973db924ea4c0df396351
          if (this.address == null) {
              return "local";
 diff --git a/net/minecraft/network/protocol/handshake/ClientIntentionPacket.java b/net/minecraft/network/protocol/handshake/ClientIntentionPacket.java
-index d88b5d053f612f86c6a380556e0b5227f0b4b513..31ef2a085a76a58f383b9f0b081eb660eb885d00 100644
+index bcc08811ec7a9709e5c847d5a335056411306f6f..b4a4fea22bffaf1562518b0f8069f5deff4c17a5 100644
 --- a/net/minecraft/network/protocol/handshake/ClientIntentionPacket.java
 +++ b/net/minecraft/network/protocol/handshake/ClientIntentionPacket.java
-@@ -9,7 +9,7 @@ public record ClientIntentionPacket(int protocolVersion, String hostName, int po
+@@ -9,14 +9,14 @@ public record ClientIntentionPacket(int protocolVersion, String hostName, int po
      public static final StreamCodec<FriendlyByteBuf, ClientIntentionPacket> STREAM_CODEC = Packet.codec(
          ClientIntentionPacket::write, ClientIntentionPacket::new
      );
@@ -31,8 +31,7 @@ index d88b5d053f612f86c6a380556e0b5227f0b4b513..31ef2a085a76a58f383b9f0b081eb660
 +    private static final int MAX_HOST_LENGTH = Short.MAX_VALUE;
  
      @Deprecated
-     public ClientIntentionPacket(int protocolVersion, String hostName, int port, ClientIntent intention) {
-@@ -20,7 +20,7 @@ public record ClientIntentionPacket(int protocolVersion, String hostName, int po
+     public ClientIntentionPacket {
      }
  
      private ClientIntentionPacket(final FriendlyByteBuf input) {
@@ -83,7 +82,7 @@ index c77342c64fd36f6fa76f06360dfb378a69cf6120..40034da46c788bc9c8d4d94d60c4f8a8
      }
  
 diff --git a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
-index 42241bb2c8420614c6b93333e329cd46f5eda6b1..c2aaa52e90d431de03445c937577d77966699dc0 100644
+index 3ef1fb27f908f28627f21aa456ca3ac530038869..0ba4efa062e897c74e46be6218d238d23bd88f89 100644
 --- a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
 @@ -5,6 +5,12 @@ import com.mojang.authlib.GameProfile;
@@ -191,7 +190,7 @@ index 42241bb2c8420614c6b93333e329cd46f5eda6b1..c2aaa52e90d431de03445c937577d779
      private void startClientVerification(final GameProfile profile) {
          this.authenticatedProfile = profile;
          this.state = ServerLoginPacketListenerImpl.State.VERIFYING;
-@@ -236,6 +299,12 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+@@ -234,6 +297,12 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
  
      @Override
      public void handleCustomQueryPacket(final ServerboundCustomQueryAnswerPacket packet) {

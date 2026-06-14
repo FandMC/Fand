@@ -5,10 +5,10 @@ Subject: [PATCH] Expose world status and profile hooks
 
 
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index 360bac4ca63e51e2e2b0e1ab4042e65c56ec718c..a5e1ff8d6904569eedcb2930538934727235a142 100644
+index 1d12863d48fccea290144f5948943c26c5cdac6b..170c965a253eebec8eb3951149629904d6d8ce31 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
-@@ -169,10 +169,13 @@ import net.minecraft.world.level.gamerules.GameRuleMap;
+@@ -167,10 +167,13 @@ import net.minecraft.world.level.gamerules.GameRuleMap;
  import net.minecraft.world.level.gamerules.GameRuleTypeVisitor;
  import net.minecraft.world.level.gamerules.GameRules;
  import net.minecraft.world.level.levelgen.Heightmap;
@@ -22,7 +22,7 @@ index 360bac4ca63e51e2e2b0e1ab4042e65c56ec718c..a5e1ff8d6904569eedcb293053893472
  import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
  import net.minecraft.world.level.saveddata.WeatherData;
  import net.minecraft.world.level.storage.CommandStorage;
-@@ -1101,13 +1104,18 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1091,13 +1094,18 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
      private ServerStatus buildServerStatus() {
          ServerStatus.Players players = this.buildPlayerStatus();
          var fandStatus = io.fand.server.event.ServerEvents.fireServerListPing(
@@ -44,7 +44,7 @@ index 360bac4ca63e51e2e2b0e1ab4042e65c56ec718c..a5e1ff8d6904569eedcb293053893472
              this.enforceSecureProfile()
          );
      }
-@@ -1266,6 +1274,15 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1256,6 +1264,15 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
      }
  
      public ServerLevel fand$createDynamicLevel(final ResourceKey<Level> dimension, final ResourceKey<LevelStem> template) {
@@ -60,7 +60,7 @@ index 360bac4ca63e51e2e2b0e1ab4042e65c56ec718c..a5e1ff8d6904569eedcb293053893472
          if (!this.isSameThread()) {
              throw new IllegalStateException("Dynamic worlds must be created on the server thread");
          }
-@@ -1273,12 +1290,6 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1263,12 +1280,6 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
              throw new IllegalArgumentException("World is already loaded: " + dimension.identifier());
          }
  
@@ -73,7 +73,7 @@ index 360bac4ca63e51e2e2b0e1ab4042e65c56ec718c..a5e1ff8d6904569eedcb293053893472
          ServerLevelData levelData = new DerivedLevelData(this.worldData, this.worldData.overworldData());
          boolean isDebug = this.worldData.isDebugWorld();
          long biomeZoomSeed = BiomeManager.obfuscateSeed(this.worldGenSettings.options().seed());
-@@ -1300,6 +1311,20 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1290,6 +1301,20 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
          return level;
      }
  
@@ -95,7 +95,7 @@ index 360bac4ca63e51e2e2b0e1ab4042e65c56ec718c..a5e1ff8d6904569eedcb293053893472
          if (!this.isSameThread()) {
              throw new IllegalStateException("Dynamic worlds must be unloaded on the server thread");
 diff --git a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
-index d0bbfb6b7e04baa1fcf8fe9d8ee3771f240226a4..3faf1f66a8bd27f8b03da1598e83c20cea0c732d 100644
+index 2942191dfdf707eb748e8022a5a2a0469fdab512..dfd2c07c3507d645788851627723ab2ec51ce24f 100644
 --- a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
 @@ -46,7 +46,7 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
@@ -122,12 +122,12 @@ index d0bbfb6b7e04baa1fcf8fe9d8ee3771f240226a4..3faf1f66a8bd27f8b03da1598e83c20c
 +            this.gameProfile = login.profile();
  
              Objects.requireNonNull(this.prepareSpawnTask).spawnPlayer(this.connection, this.createCookie(this.clientInformation));
-         } catch (Exception var4) {
+         } catch (Exception e) {
 diff --git a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
-index 1b0c65c8ae0d1bd68fc7f74449a323de1baaf5af..4cecbdb573e71305413a414275f6f77c1cb4819f 100644
+index 5869301f73d74188516fbb41869b9359704b1cd8..07c6b9c2e849bd9d3014285619b256cc8a43771b 100644
 --- a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
-@@ -196,24 +196,24 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+@@ -196,27 +196,31 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
      }
  
      private void startClientVerification(final GameProfile profile) {
@@ -154,18 +154,26 @@ index 1b0c65c8ae0d1bd68fc7f74449a323de1baaf5af..4cecbdb573e71305413a414275f6f77c
 -        Component error = playerList.canPlayerLogin(this.connection.getRemoteAddress(), new NameAndId(profile));
 -        if (error != null) {
 -            this.disconnect(error);
+-        } else if (this.connection.getIntendedProfileId() != null && !profile.id().equals(this.connection.getIntendedProfileId())) {
+-            this.disconnect(CommonComponents.CONNECT_FAILED);
 +        var login = playerList.canPlayerLogin(this.connection.getRemoteAddress(), profile);
 +        if (login.reason() != null) {
 +            this.disconnect(login.reason());
          } else {
++            GameProfile finalProfile = login.profile();
++            if (this.connection.getIntendedProfileId() != null && !finalProfile.id().equals(this.connection.getIntendedProfileId())) {
++                this.disconnect(CommonComponents.CONNECT_FAILED);
++                return;
++            }
++
              if (this.server.getCompressionThreshold() >= 0 && !this.connection.isMemoryConnection()) {
                  this.connection
-@@ -223,11 +223,14 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+                     .send(
+@@ -225,11 +229,13 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
                      );
              }
  
 -            boolean waitForDisconnection = playerList.disconnectAllPlayersWithProfile(profile.id());
-+            GameProfile finalProfile = login.profile();
 +            this.authenticatedProfile = finalProfile;
 +            this.requestedUsername = finalProfile.name();
 +            boolean waitForDisconnection = playerList.disconnectAllPlayersWithProfile(finalProfile.id());
@@ -178,10 +186,10 @@ index 1b0c65c8ae0d1bd68fc7f74449a323de1baaf5af..4cecbdb573e71305413a414275f6f77c
          }
      }
 diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
-index 96c28268ab600adb8a4df6dc22b17405cfb53d5b..e8f5c3b9bab9fbc6b4558d33cd09537558d8012c 100644
+index 5a026d6a83674c8eabc3c1afc975979fcdafdf5f..8ee74fa39806c3090fb801b556a4a9fb451ffd32 100644
 --- a/net/minecraft/server/players/PlayerList.java
 +++ b/net/minecraft/server/players/PlayerList.java
-@@ -368,7 +368,8 @@ public abstract class PlayerList {
+@@ -364,7 +364,8 @@ public abstract class PlayerList {
          this.broadcastAll(new ClientboundPlayerInfoRemovePacket(List.of(player.getUUID())));
      }
  
@@ -191,7 +199,7 @@ index 96c28268ab600adb8a4df6dc22b17405cfb53d5b..e8f5c3b9bab9fbc6b4558d33cd095375
          Component reason;
          if (this.bans.isBanned(nameAndId)) {
              UserBanListEntry ban = this.bans.get(nameAndId);
-@@ -393,7 +394,7 @@ public abstract class PlayerList {
+@@ -389,7 +390,7 @@ public abstract class PlayerList {
                  ? Component.translatable("multiplayer.disconnect.server_full")
                  : null;
          }
@@ -201,7 +209,7 @@ index 96c28268ab600adb8a4df6dc22b17405cfb53d5b..e8f5c3b9bab9fbc6b4558d33cd095375
  
      public boolean disconnectAllPlayersWithProfile(final UUID playerId) {
 diff --git a/net/minecraft/world/entity/player/Player.java b/net/minecraft/world/entity/player/Player.java
-index dfa9436d5ccef103eeea939ef1fcf16590167120..77fcc134651ed06ca422546e9f89ab7a4e8ad3a2 100644
+index eae5316f32ac555572de129b226ffc3c22eb3442..288fb5bbf8ef9e93aff26fdca64820972e9382d7 100644
 --- a/net/minecraft/world/entity/player/Player.java
 +++ b/net/minecraft/world/entity/player/Player.java
 @@ -165,7 +165,7 @@ public abstract class Player extends Avatar implements ContainerUser {
@@ -213,7 +221,7 @@ index dfa9436d5ccef103eeea939ef1fcf16590167120..77fcc134651ed06ca422546e9f89ab7a
      private boolean reducedDebugInfo;
      private ItemStack lastItemInMainHand = ItemStack.EMPTY;
      private final ItemCooldowns cooldowns = this.createItemCooldowns();
-@@ -1267,6 +1267,10 @@ public abstract class Player extends Avatar implements ContainerUser {
+@@ -1288,6 +1288,10 @@ public abstract class Player extends Avatar implements ContainerUser {
          return this.gameProfile;
      }
  

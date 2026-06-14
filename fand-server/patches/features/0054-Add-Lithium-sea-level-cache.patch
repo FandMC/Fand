@@ -5,10 +5,10 @@ Subject: [PATCH] Add Lithium sea level cache
 
 
 diff --git a/net/minecraft/data/recipes/RecipeProvider.java b/net/minecraft/data/recipes/RecipeProvider.java
-index ed140290dfa4bd9f2b8f5ef5ebbc733785fca216..cd57bb713baf63f6efde9bfd26fce6eb13777471 100644
+index c1e1f9aafd1cef8c33577f52a680c930cce84243..ea050845bfbb8a2c4e27f693d6f1e371be26003f 100644
 --- a/net/minecraft/data/recipes/RecipeProvider.java
 +++ b/net/minecraft/data/recipes/RecipeProvider.java
-@@ -903,6 +903,7 @@ public abstract class RecipeProvider {
+@@ -920,6 +920,7 @@ public abstract class RecipeProvider {
                              }
  
                              @Override
@@ -17,7 +17,7 @@ index ed140290dfa4bd9f2b8f5ef5ebbc733785fca216..cd57bb713baf63f6efde9bfd26fce6eb
                                  return Advancement.Builder.recipeAdvancement().parent(RecipeBuilder.ROOT_RECIPE_ADVANCEMENT);
                              }
 diff --git a/net/minecraft/server/packs/FilePackResources.java b/net/minecraft/server/packs/FilePackResources.java
-index e3f355d39efd726bbe88fc0b8e1d86b91c32b6fb..12d38e657b884526b568bfe142adab3c09fcbf49 100644
+index d1cc82f1795da98c666236d9af4805ffc58e2682..461d6eaef80a563c6bbc3c1ddf2d077d32867a61 100644
 --- a/net/minecraft/server/packs/FilePackResources.java
 +++ b/net/minecraft/server/packs/FilePackResources.java
 @@ -201,6 +201,7 @@ public class FilePackResources extends AbstractPackResources {
@@ -29,10 +29,10 @@ index e3f355d39efd726bbe88fc0b8e1d86b91c32b6fb..12d38e657b884526b568bfe142adab3c
              this.close();
              super.finalize();
 diff --git a/net/minecraft/server/packs/resources/FallbackResourceManager.java b/net/minecraft/server/packs/resources/FallbackResourceManager.java
-index e39b49791eeeccc2c9d526b0f7f565ac1c5cf0ad..4e438a09c6a11c12ce58e18e403453a9b68fd7af 100644
+index 42ae20333e08a14a0112547c8d8ce80ee4897efb..28c179ff58b778c958896feb367a8edd707e7582 100644
 --- a/net/minecraft/server/packs/resources/FallbackResourceManager.java
 +++ b/net/minecraft/server/packs/resources/FallbackResourceManager.java
-@@ -343,6 +343,7 @@ public class FallbackResourceManager implements ResourceManager {
+@@ -340,6 +340,7 @@ public class FallbackResourceManager implements ResourceManager {
          }
  
          @Override
@@ -41,7 +41,7 @@ index e39b49791eeeccc2c9d526b0f7f565ac1c5cf0ad..4e438a09c6a11c12ce58e18e403453a9
              if (!this.closed) {
                  FallbackResourceManager.LOGGER.warn("{}", this.message.get());
 diff --git a/net/minecraft/world/level/biome/BiomeSpecialEffects.java b/net/minecraft/world/level/biome/BiomeSpecialEffects.java
-index 5fbfd63f9531489b6754bdd32d19ba36625740f3..c2b3c80f1b5a5a782d4e4f2104ec6b0e4a2ba4da 100644
+index 0462f1a13556f09f14c905bdcefe29984c9f1baf..07a18d6a2018c06cb2a3aad6c8e0a7907b8e6716 100644
 --- a/net/minecraft/world/level/biome/BiomeSpecialEffects.java
 +++ b/net/minecraft/world/level/biome/BiomeSpecialEffects.java
 @@ -86,6 +86,7 @@ public record BiomeSpecialEffects(
@@ -53,7 +53,7 @@ index 5fbfd63f9531489b6754bdd32d19ba36625740f3..c2b3c80f1b5a5a782d4e4f2104ec6b0e
                  double groundValue = Biome.BIOME_INFO_NOISE.getValue(x * 0.0225, z * 0.0225, false);
                  return groundValue < -0.1 ? -11766212 : -9801671;
 diff --git a/net/minecraft/world/level/block/entity/TheEndGatewayBlockEntity.java b/net/minecraft/world/level/block/entity/TheEndGatewayBlockEntity.java
-index 8f1e79da9f06a4cf2a4b9fb046c5c53a869c1ceb..bc6b22054015a83ddd32234f92b6961d96202a74 100644
+index 3cc70584d02708b6d96d6a80036a9ab5bdf1a369..268191721627cf607e5949b4654ae3906a900e7f 100644
 --- a/net/minecraft/world/level/block/entity/TheEndGatewayBlockEntity.java
 +++ b/net/minecraft/world/level/block/entity/TheEndGatewayBlockEntity.java
 @@ -225,6 +225,7 @@ public class TheEndGatewayBlockEntity extends TheEndPortalBlockEntity {
@@ -65,7 +65,7 @@ index 8f1e79da9f06a4cf2a4b9fb046c5c53a869c1ceb..bc6b22054015a83ddd32234f92b6961d
          ChunkPos chunkPos = chunk.getPos();
          BlockPos start = new BlockPos(chunkPos.getMinBlockX(), 30, chunkPos.getMinBlockZ());
 diff --git a/net/minecraft/world/level/levelgen/Heightmap.java b/net/minecraft/world/level/levelgen/Heightmap.java
-index 3e980d92fdf0a15c9437e9610430b28fd4e6fc12..85338c4b7e2ee667da0e879d4bd0eba95a2b1b9f 100644
+index dffa0d4859ecd7e21a9345f946083c56205145a3..8233854d5413cc75bf7d4b8e272bcfbcdb051a2c 100644
 --- a/net/minecraft/world/level/levelgen/Heightmap.java
 +++ b/net/minecraft/world/level/levelgen/Heightmap.java
 @@ -40,6 +40,7 @@ public class Heightmap {
@@ -77,10 +77,10 @@ index 3e980d92fdf0a15c9437e9610430b28fd4e6fc12..85338c4b7e2ee667da0e879d4bd0eba9
          if (!types.isEmpty()) {
              int size = types.size();
 diff --git a/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java b/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java
-index f54ccd261940d1c772fcdaaffdc510ffa277c7ae..aeb37ccfcf3ef8cc10575215b45922175ba5d3e3 100644
+index 94d9cf158b42acfdb121bbf66a95d88fe4d179ea..bcaeec31c5f521a4c1bb0f5658cf5994ad517fec 100644
 --- a/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java
 +++ b/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java
-@@ -59,6 +59,8 @@ public final class NoiseBasedChunkGenerator extends ChunkGenerator {
+@@ -58,6 +58,8 @@ public final class NoiseBasedChunkGenerator extends ChunkGenerator {
      private static final BlockState AIR = Blocks.AIR.defaultBlockState();
      private final Holder<NoiseGeneratorSettings> settings;
      private final Supplier<Aquifer.FluidPicker> globalFluidPicker;
@@ -89,7 +89,7 @@ index f54ccd261940d1c772fcdaaffdc510ffa277c7ae..aeb37ccfcf3ef8cc10575215b4592217
  
      public NoiseBasedChunkGenerator(final BiomeSource biomeSource, final Holder<NoiseGeneratorSettings> settings) {
          super(biomeSource);
-@@ -481,7 +483,14 @@ public final class NoiseBasedChunkGenerator extends ChunkGenerator {
+@@ -483,7 +485,14 @@ public final class NoiseBasedChunkGenerator extends ChunkGenerator {
  
      @Override
      public int getSeaLevel() {
@@ -106,7 +106,7 @@ index f54ccd261940d1c772fcdaaffdc510ffa277c7ae..aeb37ccfcf3ef8cc10575215b4592217
  
      @Override
 diff --git a/net/minecraft/world/level/levelgen/placement/NoiseBasedCountPlacement.java b/net/minecraft/world/level/levelgen/placement/NoiseBasedCountPlacement.java
-index ae88d1b915743dc9344005326152a99b6bbe46cb..7d8cfad6e4daa183166da35c3f663669ad352874 100644
+index 76eb9e00d319742bb5e954da0dbd52800cb024d7..8aaa7dcc96e6b64f36ce339f37e40cee263a6f21 100644
 --- a/net/minecraft/world/level/levelgen/placement/NoiseBasedCountPlacement.java
 +++ b/net/minecraft/world/level/levelgen/placement/NoiseBasedCountPlacement.java
 @@ -31,6 +31,7 @@ public class NoiseBasedCountPlacement extends RepeatingPlacement {

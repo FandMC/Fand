@@ -8,10 +8,10 @@ Add vanilla hook points for the next set of high-value ecosystem events, includi
 Keep patched Minecraft code thin by routing event construction, cancellation semantics, mutable payload application, and listener failure handling through Fand bridge helpers. Preserve cancellable structure growth by snapshotting generated blocks and restoring both block states and Fand block components when listeners cancel.
 
 diff --git a/net/minecraft/server/level/ServerEntity.java b/net/minecraft/server/level/ServerEntity.java
-index b47567c1a7a303044ef768dd2639e2272f51323d..a3afb5e02199dfe62264d63e26ea62f1131cafae 100644
+index 6f76f522fd4799da918cd5a51738b8e6c6fae6fd..30949491eba6d8f6108c460cc5ac62ca9b9b8aeb 100644
 --- a/net/minecraft/server/level/ServerEntity.java
 +++ b/net/minecraft/server/level/ServerEntity.java
-@@ -219,7 +219,15 @@ public class ServerEntity {
+@@ -224,7 +224,15 @@ public class ServerEntity {
          this.tickCount++;
          if (this.entity.hurtMarked) {
              this.entity.hurtMarked = false;
@@ -29,10 +29,10 @@ index b47567c1a7a303044ef768dd2639e2272f51323d..a3afb5e02199dfe62264d63e26ea62f1
      }
  
 diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
-index 8889b6b86fdfccd42752de40f67f20e6a9477a6b..57b1d5b799d46e8607b8837349911a244bb7a25d 100644
+index 6f83d9de6cfd4b4ddebc98202c6e5b83bcdc4a64..5a46c60962874491a3d3f8d430b3cf3f69b4c28d 100644
 --- a/net/minecraft/server/level/ServerPlayer.java
 +++ b/net/minecraft/server/level/ServerPlayer.java
-@@ -540,16 +540,20 @@ public class ServerPlayer extends Player {
+@@ -529,16 +529,20 @@ public class ServerPlayer extends Player {
  
      public void setExperienceLevels(final int amount) {
          if (amount != this.experienceLevel) {
@@ -53,7 +53,7 @@ index 8889b6b86fdfccd42752de40f67f20e6a9477a6b..57b1d5b799d46e8607b8837349911a24
          }
      }
  
-@@ -1580,6 +1584,9 @@ public class ServerPlayer extends Player {
+@@ -1573,6 +1577,9 @@ public class ServerPlayer extends Player {
  
      @Override
      public int awardRecipes(final Collection<RecipeHolder<?>> recipes) {
@@ -63,7 +63,7 @@ index 8889b6b86fdfccd42752de40f67f20e6a9477a6b..57b1d5b799d46e8607b8837349911a24
          return this.recipeBook.addRecipes(recipes, this);
      }
  
-@@ -1616,8 +1623,10 @@ public class ServerPlayer extends Player {
+@@ -1609,8 +1616,10 @@ public class ServerPlayer extends Player {
      public void giveExperiencePoints(final int i) {
          int fandAmount = io.fand.server.event.PlayerEvents.fireExperienceChange(this, i);
          if (fandAmount != 0) {
@@ -75,10 +75,10 @@ index 8889b6b86fdfccd42752de40f67f20e6a9477a6b..57b1d5b799d46e8607b8837349911a24
      }
  
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 9f27b1b5154857ad8285802611aa355d6c44c131..96ef5ccb191923e5a9165c667a31e9071353bb58 100644
+index f3359de3909bd0a7a567e3fd7782a2cc5dd1dc7b..e4998ec89d0424633ccba67d147a837e360ddf54 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -1011,7 +1011,7 @@ public class ServerGamePacketListenerImpl
+@@ -1018,7 +1018,7 @@ public class ServerGamePacketListenerImpl
              title.ifPresent(contents::add);
              contents.addAll(packet.pages());
              Consumer<List<FilteredText>> handler = title.isPresent()
@@ -87,7 +87,7 @@ index 9f27b1b5154857ad8285802611aa355d6c44c131..96ef5ccb191923e5a9165c667a31e907
                  : filteredContents -> this.updateBookContents(filteredContents, slot);
              this.filterTextPacket(contents).thenAcceptAsync(handler, this.server);
          }
-@@ -1020,21 +1020,38 @@ public class ServerGamePacketListenerImpl
+@@ -1027,21 +1027,38 @@ public class ServerGamePacketListenerImpl
      private void updateBookContents(final List<FilteredText> contents, final int slot) {
          ItemStack carried = this.player.getInventory().getItem(slot);
          if (carried.has(DataComponents.WRITABLE_BOOK_CONTENT)) {
@@ -129,7 +129,7 @@ index 9f27b1b5154857ad8285802611aa355d6c44c131..96ef5ccb191923e5a9165c667a31e907
          }
      }
  
-@@ -2269,6 +2286,7 @@ public class ServerGamePacketListenerImpl
+@@ -2287,6 +2304,7 @@ public class ServerGamePacketListenerImpl
          var oldInformation = this.player.clientInformation();
          this.player.updateOptions(packet.information());
          io.fand.server.event.PlayerEvents.fireLocaleChange(this.player, oldInformation.language(), packet.information().language());
@@ -138,7 +138,7 @@ index 9f27b1b5154857ad8285802611aa355d6c44c131..96ef5ccb191923e5a9165c667a31e907
              this.server.getPlayerList().broadcastAll(new ClientboundPlayerInfoUpdatePacket(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_HAT, this.player));
          }
 diff --git a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
-index c2aaa52e90d431de03445c937577d77966699dc0..1b0c65c8ae0d1bd68fc7f74449a323de1baaf5af 100644
+index 0ba4efa062e897c74e46be6218d238d23bd88f89..5869301f73d74188516fbb41869b9359704b1cd8 100644
 --- a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
 @@ -196,6 +196,15 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
@@ -158,7 +158,7 @@ index c2aaa52e90d431de03445c937577d77966699dc0..1b0c65c8ae0d1bd68fc7f74449a323de
          this.state = ServerLoginPacketListenerImpl.State.VERIFYING;
      }
 diff --git a/net/minecraft/stats/ServerStatsCounter.java b/net/minecraft/stats/ServerStatsCounter.java
-index d8ad3c3191a9bb81f4353f554630393c245deb42..e101b973eee68447155ec8769ad1dc04b6cc38df 100644
+index 75f463a99f88d54043b2deae3b38c0c3c8e03f3c..f2978dad68ddcaa9b6982831bbe1d1a6398a75cc 100644
 --- a/net/minecraft/stats/ServerStatsCounter.java
 +++ b/net/minecraft/stats/ServerStatsCounter.java
 @@ -91,7 +91,16 @@ public class ServerStatsCounter extends StatsCounter {
@@ -180,10 +180,10 @@ index d8ad3c3191a9bb81f4353f554630393c245deb42..e101b973eee68447155ec8769ad1dc04
      }
  
 diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
-index f9ae61d37fdfa8eee84ff84b00fa0915b7d3364e..2ae1ca112f8da797623aade20952e63744389a7e 100644
+index ea939bb79459faefdc66ea145795e221b3d06ddc..1ef47a9f3995fdb4d33c10462cb91e1650984f16 100644
 --- a/net/minecraft/world/entity/Entity.java
 +++ b/net/minecraft/world/entity/Entity.java
-@@ -601,14 +601,26 @@ public abstract class Entity
+@@ -607,14 +607,26 @@ public abstract class Entity
  
      public void lavaIgnite() {
          if (!this.fireImmune()) {
@@ -212,7 +212,7 @@ index f9ae61d37fdfa8eee84ff84b00fa0915b7d3364e..2ae1ca112f8da797623aade20952e637
                  && this.shouldPlayLavaHurtSound()
                  && !this.isSilent()) {
                  serverLevel.playSound(
-@@ -2578,6 +2590,7 @@ public abstract class Entity
+@@ -2652,6 +2664,7 @@ public abstract class Entity
      }
  
      public void setAsInsidePortal(final Portal portal, final BlockPos pos) {
@@ -220,7 +220,7 @@ index f9ae61d37fdfa8eee84ff84b00fa0915b7d3364e..2ae1ca112f8da797623aade20952e637
          if (this.isOnPortalCooldown()) {
              this.setPortalCooldown();
          } else {
-@@ -2606,15 +2619,21 @@ public abstract class Entity
+@@ -2680,15 +2693,21 @@ public abstract class Entity
                                  ? io.fand.server.event.PlayerEvents.firePortal(serverPlayer, teleportTransition)
                                  : io.fand.server.event.EntityEvents.firePortal(this, teleportTransition);
                              if (fandTransition != null) {
@@ -245,42 +245,43 @@ index f9ae61d37fdfa8eee84ff84b00fa0915b7d3364e..2ae1ca112f8da797623aade20952e637
                                  }
                              }
 diff --git a/net/minecraft/world/entity/decoration/ArmorStand.java b/net/minecraft/world/entity/decoration/ArmorStand.java
-index 20614240580e50d750998c99d3b372d0a38adeaa..aef3fe608cd920db6e05b96480482b6dac005d8b 100644
+index 9cf7c3fcaadc3e5e290c125c26a8ba4353e940eb..5759f3b797ecdd83fa739e6fc730a9a167680a37 100644
 --- a/net/minecraft/world/entity/decoration/ArmorStand.java
 +++ b/net/minecraft/world/entity/decoration/ArmorStand.java
-@@ -248,6 +248,9 @@ public class ArmorStand extends LivingEntity {
+@@ -257,6 +257,11 @@ public class ArmorStand extends LivingEntity {
              return false;
-         } else if (itemStack.isEmpty() && (this.disabledSlots & 1 << slot.getFilterBit(16)) != 0) {
-             return false;
-+        } else if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer
+         }
+ 
++        if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer
 +            && !io.fand.server.event.PlayerEvents.fireArmorStandManipulate(serverPlayer, this, slot, playerItemStack, itemStack)) {
 +            return false;
-         } else if (player.hasInfiniteMaterials() && itemStack.isEmpty() && !playerItemStack.isEmpty()) {
++        }
++
+         if (player.hasInfiniteMaterials() && itemStack.isEmpty() && !playerItemStack.isEmpty()) {
              this.setItemSlot(slot, playerItemStack.copyWithCount(1));
              return true;
 diff --git a/net/minecraft/world/entity/player/Player.java b/net/minecraft/world/entity/player/Player.java
-index 770bea0d44ee942be29c525cf4082b739ad754d5..dfa9436d5ccef103eeea939ef1fcf16590167120 100644
+index 48fdd562c464c3da6eb404b1949715230a39f39c..eae5316f32ac555572de129b226ffc3c22eb3442 100644
 --- a/net/minecraft/world/entity/player/Player.java
 +++ b/net/minecraft/world/entity/player/Player.java
-@@ -1119,7 +1119,12 @@ public abstract class Player extends Avatar implements ContainerUser {
+@@ -1138,7 +1138,11 @@ public abstract class Player extends Avatar implements ContainerUser {
          }
  
-         if (entity instanceof ServerPlayer && entity.hurtMarked) {
--            ((ServerPlayer)entity).connection.send(new ClientboundSetEntityMotionPacket(entity));
-+            ServerPlayer fandTarget = (ServerPlayer)entity;
-+            Vec3 fandVelocity = io.fand.server.event.PlayerEvents.fireVelocity(fandTarget, entity.getDeltaMovement());
+         if (entity instanceof ServerPlayer serverPlayer && entity.hurtMarked) {
+-            serverPlayer.connection.send(new ClientboundSetEntityMotionPacket(entity));
++            Vec3 fandVelocity = io.fand.server.event.PlayerEvents.fireVelocity(serverPlayer, entity.getDeltaMovement());
 +            if (fandVelocity != null) {
 +                entity.setDeltaMovement(fandVelocity);
-+                fandTarget.connection.send(new ClientboundSetEntityMotionPacket(entity.getId(), fandVelocity));
++                serverPlayer.connection.send(new ClientboundSetEntityMotionPacket(entity.getId(), fandVelocity));
 +            }
              entity.hurtMarked = false;
              entity.setDeltaMovement(oldMovement);
          }
 diff --git a/net/minecraft/world/entity/projectile/hurtingprojectile/SmallFireball.java b/net/minecraft/world/entity/projectile/hurtingprojectile/SmallFireball.java
-index be73a5d5b155c5306e2c481e6a0412438d935886..367b1fea46039eadef82fd2f467ff9e7cbd50b87 100644
+index 57a3996e2523a6156ed344610a1dd46d92bbaefe..532ca67f19a9beba286e6513058c8cbb506c19fd 100644
 --- a/net/minecraft/world/entity/projectile/hurtingprojectile/SmallFireball.java
 +++ b/net/minecraft/world/entity/projectile/hurtingprojectile/SmallFireball.java
-@@ -36,7 +36,17 @@ public class SmallFireball extends Fireball {
+@@ -37,7 +37,17 @@ public class SmallFireball extends Fireball {
              Entity var7 = hitResult.getEntity();
              Entity owner = this.getOwner();
              int remainingFireTicks = var7.getRemainingFireTicks();
@@ -300,10 +301,10 @@ index be73a5d5b155c5306e2c481e6a0412438d935886..367b1fea46039eadef82fd2f467ff9e7
              if (!var7.hurtServer(serverLevel, damageSource, 5.0F)) {
                  var7.setRemainingFireTicks(remainingFireTicks);
 diff --git a/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEgg.java b/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEgg.java
-index dc6e875951c3ccbfec086e4d11dd7d3b9dc40612..1ce1844c931e7969bd764dd5cc8828dac5fcd12b 100644
+index 963682fc1f8b93edeb707a8fe7f534fba5c454de..7342943b957a849d741374dd7acba39f868f95eb 100644
 --- a/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEgg.java
 +++ b/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEgg.java
-@@ -66,12 +66,15 @@ public class ThrownEgg extends ThrowableItemProjectile {
+@@ -67,12 +67,15 @@ public class ThrownEgg extends ThrowableItemProjectile {
      protected void onHit(final HitResult hitResult) {
          super.onHit(hitResult);
          if (!this.level().isClientSide()) {
@@ -322,98 +323,90 @@ index dc6e875951c3ccbfec086e4d11dd7d3b9dc40612..1ce1844c931e7969bd764dd5cc8828da
  
 +            if (hatching) {
                  for (int i = 0; i < count; i++) {
-                     Chicken chicken = EntityType.CHICKEN.create(this.level(), EntitySpawnReason.TRIGGERED);
+                     Chicken chicken = EntityTypes.CHICKEN.create(this.level(), EntitySpawnReason.TRIGGERED);
                      if (chicken != null) {
 diff --git a/net/minecraft/world/item/BlockItem.java b/net/minecraft/world/item/BlockItem.java
-index 31e62e9f986f8b9b2d87ebe94978c7a9e3be8d89..bb4921c7621a5eac4e9543ef3cdfc5610c2f8955 100644
+index 5f8b834f6bae90f7a3fa2178cb3e71241f2ed330..9e4a891f469a166cc2d9eb4722de3a0557028f9a 100644
 --- a/net/minecraft/world/item/BlockItem.java
 +++ b/net/minecraft/world/item/BlockItem.java
-@@ -1,6 +1,9 @@
+@@ -1,5 +1,8 @@
  package net.minecraft.world.item;
  
- import java.util.Map;
 +import java.util.ArrayList;
 +import java.util.HashMap;
 +import java.util.List;
- import net.minecraft.advancements.CriteriaTriggers;
+ import java.util.Map;
+ import net.minecraft.advancements.triggers.CriteriaTriggers;
  import net.minecraft.core.BlockPos;
- import net.minecraft.core.component.DataComponents;
-@@ -66,34 +69,17 @@ public class BlockItem extends Item {
-                     io.fand.api.component.DataComponentMap fandReplacedComponents = fandLevel instanceof net.minecraft.server.level.ServerLevel fandServerLevel
-                             ? io.fand.server.component.BlockComponentStorage.snapshot(fandServerLevel, fandPos)
-                             : io.fand.api.component.DataComponentMap.EMPTY;
-+                    boolean fandTrackPlacement = fandLevel instanceof net.minecraft.server.level.ServerLevel
-+                            && fandContextPlayer instanceof ServerPlayer
-+                            && io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.block.BlockPlaceEvent.class);
-+                    Map<BlockPos, BlockState> fandBeforeStates = fandTrackPlacement ? snapshotPlacementStates(fandLevel, fandPos) : Map.of();
-+                    Map<BlockPos, io.fand.api.component.DataComponentMap> fandBeforeComponents = fandTrackPlacement
-+                            && fandLevel instanceof net.minecraft.server.level.ServerLevel fandServerLevel
-+                            ? snapshotPlacementComponents(fandServerLevel, fandBeforeStates.keySet())
-+                            : Map.of();
-                     if (!this.placeBlock(updatedPlaceContext, placementState)) {
-                         return InteractionResult.FAIL;
-                     }
--                    if (fandLevel instanceof net.minecraft.server.level.ServerLevel fandServerLevel
--                            && fandContextPlayer instanceof ServerPlayer fandServerPlayer
--                            && io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.block.BlockPlaceEvent.class)) {
--                        var fandPlayer = io.fand.server.hooks.FandHooks.findPlayer(fandServerPlayer.getUUID());
--                        if (fandPlayer != null) {
--                            var fandWorld = io.fand.server.hooks.FandHooks.wrapWorld(fandServerLevel);
--                            if (fandWorld != null) {
--                                BlockState fandPlacedState = fandLevel.getBlockState(fandPos);
--                                var fandBlock = new io.fand.server.block.FandBlock(fandWorld, fandPos.getX(), fandPos.getY(), fandPos.getZ());
--                                var fandPlacedType = io.fand.server.block.FandBlockType.of(fandPlacedState.getBlock());
--                                var fandReplacedType = io.fand.server.block.FandBlockType.of(fandReplacedState.getBlock());
--                                var fandPlaceEvent = io.fand.server.hooks.FandHooks.fireOrLog(
--                                        new io.fand.api.event.block.BlockPlaceEvent(fandPlayer, fandBlock, fandPlacedType, fandReplacedType),
--                                        "BlockPlaceEvent");
--                                if (fandPlaceEvent.cancelled()) {
--                                    fandLevel.setBlock(fandPos, fandReplacedState, Block.UPDATE_ALL);
--                                    if (!fandReplacedComponents.isEmpty()) {
--                                        io.fand.server.component.BlockComponentStorage.put(fandServerLevel, fandPos, fandReplacedComponents);
--                                    }
--                                    fandServerPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket(fandLevel, fandPos));
--                                    return InteractionResult.FAIL;
--                                }
--                            }
+@@ -68,6 +71,14 @@ public class BlockItem extends Item {
+         Level level = updatedPlaceContext.getLevel();
+         Player player = updatedPlaceContext.getPlayer();
+         BlockState replacedState = level.getBlockState(pos);
++        boolean trackPlacement = level instanceof net.minecraft.server.level.ServerLevel
++            && player instanceof ServerPlayer
++            && io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.block.BlockPlaceEvent.class);
++        Map<BlockPos, BlockState> beforeStates = trackPlacement ? snapshotPlacementStates(level, pos) : Map.of();
++        Map<BlockPos, io.fand.api.component.DataComponentMap> beforeComponents = trackPlacement
++            && level instanceof net.minecraft.server.level.ServerLevel serverLevel
++            ? snapshotPlacementComponents(serverLevel, beforeStates.keySet())
++            : Map.of();
+         io.fand.api.component.DataComponentMap replacedComponents = level instanceof net.minecraft.server.level.ServerLevel serverLevel
+             ? io.fand.server.component.BlockComponentStorage.snapshot(serverLevel, pos)
+             : io.fand.api.component.DataComponentMap.EMPTY;
+@@ -75,32 +86,6 @@ public class BlockItem extends Item {
+             return InteractionResult.FAIL;
+         }
+ 
+-        if (level instanceof net.minecraft.server.level.ServerLevel serverLevel
+-            && player instanceof ServerPlayer serverPlayer
+-            && io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.block.BlockPlaceEvent.class)) {
+-            var fandPlayer = io.fand.server.hooks.FandHooks.findPlayer(serverPlayer.getUUID());
+-            if (fandPlayer != null) {
+-                var fandWorld = io.fand.server.hooks.FandHooks.wrapWorld(serverLevel);
+-                if (fandWorld != null) {
+-                    BlockState placedEventState = level.getBlockState(pos);
+-                    var fandBlock = new io.fand.server.block.FandBlock(fandWorld, pos.getX(), pos.getY(), pos.getZ());
+-                    var fandPlacedType = io.fand.server.block.FandBlockType.of(placedEventState.getBlock());
+-                    var fandReplacedType = io.fand.server.block.FandBlockType.of(replacedState.getBlock());
+-                    var fandPlaceEvent = io.fand.server.hooks.FandHooks.fireOrLog(
+-                            new io.fand.api.event.block.BlockPlaceEvent(fandPlayer, fandBlock, fandPlacedType, fandReplacedType),
+-                            "BlockPlaceEvent");
+-                    if (fandPlaceEvent.cancelled()) {
+-                        level.setBlock(pos, replacedState, Block.UPDATE_ALL);
+-                        if (!replacedComponents.isEmpty()) {
+-                            io.fand.server.component.BlockComponentStorage.put(serverLevel, pos, replacedComponents);
 -                        }
+-                        serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket(level, pos));
+-                        return InteractionResult.FAIL;
 -                    }
-                     BlockPos pos = fandPos;
-                     Level level = fandLevel;
-                     Player player = fandContextPlayer;
-@@ -105,6 +91,31 @@ public class BlockItem extends Item {
-                         updateBlockEntityComponents(level, pos, itemStack);
-                         placedState.getBlock().setPlacedBy(level, pos, placedState, player, itemStack);
-                         if (player instanceof ServerPlayer) {
-+                            if (fandTrackPlacement && level instanceof net.minecraft.server.level.ServerLevel fandServerLevel) {
-+                                ServerPlayer fandServerPlayer = (ServerPlayer)player;
-+                                List<BlockPos> fandChangedPositions = changedPlacementPositions(level, fandBeforeStates);
-+                                boolean fandAllowed = fandChangedPositions.size() > 1
-+                                        ? io.fand.server.event.BlockEvents.fireMultiPlace(
-+                                                fandServerLevel,
-+                                                pos,
-+                                                fandServerPlayer,
-+                                                placedState,
-+                                                fandReplacedState,
-+                                                fandChangedPositions)
-+                                        : io.fand.server.event.BlockEvents.firePlace(
-+                                                fandServerLevel,
-+                                                pos,
-+                                                fandServerPlayer,
-+                                                placedState,
-+                                                fandReplacedState);
-+                                if (!fandAllowed) {
-+                                    restorePlacement(fandServerLevel, fandBeforeStates, fandBeforeComponents, fandServerPlayer);
-+                                    if (!fandReplacedComponents.isEmpty()) {
-+                                        io.fand.server.component.BlockComponentStorage.put(fandServerLevel, fandPos, fandReplacedComponents);
-+                                    }
-+                                    return InteractionResult.FAIL;
-+                                }
-+                            }
-                             CriteriaTriggers.PLACED_BLOCK.trigger((ServerPlayer)player, pos, itemStack);
-                         }
-                     }
-@@ -145,7 +156,21 @@ public class BlockItem extends Item {
+-                }
+-            }
+-        }
+-
+         ItemStack itemStack = updatedPlaceContext.getItemInHand();
+         BlockState placedState = level.getBlockState(pos);
+         if (placedState.is(placementState.getBlock())) {
+@@ -109,6 +94,19 @@ public class BlockItem extends Item {
+             updateBlockEntityComponents(level, pos, itemStack);
+             placedState.getBlock().setPlacedBy(level, pos, placedState, player, itemStack);
+             if (player instanceof ServerPlayer serverPlayer) {
++                if (trackPlacement && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
++                    List<BlockPos> changedPositions = changedPlacementPositions(level, beforeStates);
++                    boolean allowed = changedPositions.size() > 1
++                        ? io.fand.server.event.BlockEvents.fireMultiPlace(serverLevel, pos, serverPlayer, placedState, replacedState, changedPositions)
++                        : io.fand.server.event.BlockEvents.firePlace(serverLevel, pos, serverPlayer, placedState, replacedState);
++                    if (!allowed) {
++                        restorePlacement(serverLevel, beforeStates, beforeComponents, serverPlayer);
++                        if (!replacedComponents.isEmpty()) {
++                            io.fand.server.component.BlockComponentStorage.put(serverLevel, pos, replacedComponents);
++                        }
++                        return InteractionResult.FAIL;
++                    }
++                }
+                 CriteriaTriggers.PLACED_BLOCK.trigger(serverPlayer, pos, itemStack);
+             }
+         }
+@@ -144,7 +142,21 @@ public class BlockItem extends Item {
  
      protected @Nullable BlockState getPlacementState(final BlockPlaceContext context) {
          BlockState stateForPlacement = this.getBlock().getStateForPlacement(context);
@@ -436,7 +429,7 @@ index 31e62e9f986f8b9b2d87ebe94978c7a9e3be8d89..bb4921c7621a5eac4e9543ef3cdfc561
      }
  
      private BlockState updateBlockStateFromTag(final BlockPos pos, final Level level, final ItemStack itemStack, final BlockState placedState) {
-@@ -217,6 +242,57 @@ public class BlockItem extends Item {
+@@ -216,6 +228,57 @@ public class BlockItem extends Item {
          return this.block;
      }
  
@@ -495,19 +488,19 @@ index 31e62e9f986f8b9b2d87ebe94978c7a9e3be8d89..bb4921c7621a5eac4e9543ef3cdfc561
          map.put(this.getBlock(), item);
      }
 diff --git a/net/minecraft/world/item/BoneMealItem.java b/net/minecraft/world/item/BoneMealItem.java
-index a3ee3c7f2ae837226bf290551b9f5078b71667df..deb36af7a8f45b46ffa0ae23599c14e10338a552 100644
+index 0ed8ffabced752db6b2d0f21f5a2adf70d04adec..46f88e5a272f9304a3e64e20989515bd7c167311 100644
 --- a/net/minecraft/world/item/BoneMealItem.java
 +++ b/net/minecraft/world/item/BoneMealItem.java
 @@ -82,7 +82,15 @@ public class BoneMealItem extends Item {
                      return false;
                  }
                  if (block.isBonemealSuccess(level, level.getRandom(), pos, state)) {
--                    block.performBonemeal((ServerLevel)level, level.getRandom(), pos, state);
+-                    block.performBonemeal(serverLevel, level.getRandom(), pos, state);
 +                    if (!io.fand.server.event.BlockEvents.withStructureGrowContext(
 +                        player instanceof ServerPlayer serverPlayer ? serverPlayer : null,
 +                        true,
 +                        () -> {
-+                            block.performBonemeal((ServerLevel)level, level.getRandom(), pos, state);
++                            block.performBonemeal(serverLevel, level.getRandom(), pos, state);
 +                            return true;
 +                        })) {
 +                        return false;
@@ -516,7 +509,7 @@ index a3ee3c7f2ae837226bf290551b9f5078b71667df..deb36af7a8f45b46ffa0ae23599c14e1
  
                  itemStack.shrink(1);
 diff --git a/net/minecraft/world/item/MaceItem.java b/net/minecraft/world/item/MaceItem.java
-index fcd959584e1b9d991e8ada0fadd86018c1ea50f9..ec6e96cdfc87767a3266d672c2b4d1b397877cd5 100644
+index 83f733fee48f9efb1ad258e2c40a0cbb5ad1d288..967b883d188b8a74c62c374582216f37b557b30e 100644
 --- a/net/minecraft/world/item/MaceItem.java
 +++ b/net/minecraft/world/item/MaceItem.java
 @@ -59,7 +59,11 @@ public class MaceItem extends Item {
@@ -546,7 +539,7 @@ index fcd959584e1b9d991e8ada0fadd86018c1ea50f9..ec6e96cdfc87767a3266d672c2b4d1b3
              }
          });
 diff --git a/net/minecraft/world/level/block/BaseFireBlock.java b/net/minecraft/world/level/block/BaseFireBlock.java
-index f657a5436cf1998f75c4800c9742de22459f20d1..2af563ab56faa4285f8b9996c959c0cb9e7d980b 100644
+index 0555568ce6e631759da1ff869aee3a2df2d13f25..ab2f318ed497740e798114251fdcac47304c8a1f 100644
 --- a/net/minecraft/world/level/block/BaseFireBlock.java
 +++ b/net/minecraft/world/level/block/BaseFireBlock.java
 @@ -137,8 +137,14 @@ public abstract class BaseFireBlock extends Block {
@@ -637,34 +630,35 @@ index 6700437e22a7dd0f29af24bf7740ea4399dc4008..09e48c6b18cc5020cde004337c80dbd4
  
          super.stepOn(level, pos, onState, entity);
 diff --git a/net/minecraft/world/level/block/MushroomBlock.java b/net/minecraft/world/level/block/MushroomBlock.java
-index 5d482a8df571566f8f46731db81185dba51af608..197afd2492cc0c6e27aba3cd7d33097ea2c93fa4 100644
+index 8d62fed07e1802c0a45b8f4525c13e4943e78cfe..4091110c074fbc0b86657593ab5feb2563f719fc 100644
 --- a/net/minecraft/world/level/block/MushroomBlock.java
 +++ b/net/minecraft/world/level/block/MushroomBlock.java
-@@ -91,11 +91,17 @@ public class MushroomBlock extends VegetationBlock implements BonemealableBlock
-         if (feature.isEmpty()) {
+@@ -92,12 +92,18 @@ public class MushroomBlock extends VegetationBlock implements BonemealableBlock
              return false;
-         } else {
-+            io.fand.server.event.BlockEvents.StructureGrowSnapshot fandSnapshot =
-+                io.fand.server.event.BlockEvents.captureStructureGrow(level, pos);
-             level.removeBlock(pos, false);
-             if (feature.get().value().place(level, level.getChunkSource().getGenerator(), random, pos)) {
--                return true;
-+                return io.fand.server.event.BlockEvents.finishStructureGrow(level, pos, fandSnapshot);
-             } else {
--                level.setBlock(pos, state, Block.UPDATE_ALL);
-+                if (fandSnapshot != null) {
-+                    io.fand.server.event.BlockEvents.restoreStructureGrow(level, fandSnapshot);
-+                } else {
-+                    level.setBlock(pos, state, Block.UPDATE_ALL);
-+                }
-                 return false;
-             }
          }
+ 
++        io.fand.server.event.BlockEvents.StructureGrowSnapshot fandSnapshot =
++            io.fand.server.event.BlockEvents.captureStructureGrow(level, pos);
+         level.removeBlock(pos, false);
+         if (feature.get().value().place(level, level.getChunkSource().getGenerator(), random, pos)) {
+-            return true;
++            return io.fand.server.event.BlockEvents.finishStructureGrow(level, pos, fandSnapshot);
+         }
+ 
+-        level.setBlock(pos, state, Block.UPDATE_ALL);
++        if (fandSnapshot != null) {
++            io.fand.server.event.BlockEvents.restoreStructureGrow(level, fandSnapshot);
++        } else {
++            level.setBlock(pos, state, Block.UPDATE_ALL);
++        }
+         return false;
+     }
+ 
 diff --git a/net/minecraft/world/level/block/NetherPortalBlock.java b/net/minecraft/world/level/block/NetherPortalBlock.java
-index 6ed3a44d417f4eef3d3041c4ae04a2b0867b8b5f..c6dceb0a716f1e939c8b1eb5592704890370ae50 100644
+index 85b5729cad05a337200a2927322fd47169ebeeb2..97db52776420b36aed708d1c98d0b40d62150ff3 100644
 --- a/net/minecraft/world/level/block/NetherPortalBlock.java
 +++ b/net/minecraft/world/level/block/NetherPortalBlock.java
-@@ -171,7 +171,7 @@ public class NetherPortalBlock extends Block implements Portal {
+@@ -173,7 +173,7 @@ public class NetherPortalBlock extends Block implements Portal {
              post = TeleportTransition.PLAY_PORTAL_SOUND.then(e -> e.placePortalTicket(pos));
          } else {
              Direction.Axis sourcePortalAxis = entity.level().getBlockState(portalEntryPos).getOptionalValue(AXIS).orElse(Direction.Axis.X);
@@ -674,7 +668,7 @@ index 6ed3a44d417f4eef3d3041c4ae04a2b0867b8b5f..c6dceb0a716f1e939c8b1eb559270489
                  LOGGER.error("Unable to create a portal, likely target out of worldborder");
                  return null;
 diff --git a/net/minecraft/world/level/block/SweetBerryBushBlock.java b/net/minecraft/world/level/block/SweetBerryBushBlock.java
-index cd4da6c75bb749921d8a7c2d35b7d6bd19d268e7..f08afb52bfc627beceee02efdbc768ead684c097 100644
+index 9e8c17eb20050cac1eca2378c0a20e09be570923..e24e5579313cd278f6c884505a882f2493727936 100644
 --- a/net/minecraft/world/level/block/SweetBerryBushBlock.java
 +++ b/net/minecraft/world/level/block/SweetBerryBushBlock.java
 @@ -95,7 +95,13 @@ public class SweetBerryBushBlock extends VegetationBlock implements Bonemealable
@@ -693,10 +687,10 @@ index cd4da6c75bb749921d8a7c2d35b7d6bd19d268e7..f08afb52bfc627beceee02efdbc768ea
                  }
              }
 diff --git a/net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java b/net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java
-index 74516c411ed56f2695e762b04b4451d1feae0a49..2f58e5c7bd524b13b47e28e1a3b97f0251364ab4 100644
+index e5ad7304025b134fada3c0336fdab41fc56a4712..904a6441b3fd2102c3bdfda084cd97fd088783fd 100644
 --- a/net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java
 +++ b/net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java
-@@ -166,6 +166,20 @@ public abstract class AbstractFurnaceBlockEntity extends BaseContainerBlockEntit
+@@ -161,6 +161,20 @@ public abstract class AbstractFurnaceBlockEntity extends BaseContainerBlockEntit
                      int maxStackSize = entity.getMaxStackSize();
                      ItemStack burnResult = recipe.value().assemble(input);
                      if (!burnResult.isEmpty() && canBurn(entity.items, maxStackSize, burnResult)) {
@@ -718,7 +712,7 @@ index 74516c411ed56f2695e762b04b4451d1feae0a49..2f58e5c7bd524b13b47e28e1a3b97f02
                              int newLitTime = entity.getBurnDuration(level.fuelValues(), fuel);
                              newLitTime = io.fand.server.inventory.InventoryEvents.fireFurnaceBurn(level, pos, entity, fuel, newLitTime);
 diff --git a/net/minecraft/world/level/block/grower/TreeGrower.java b/net/minecraft/world/level/block/grower/TreeGrower.java
-index 9c898521851528c0625e019a72b69a3916e5da0a..d4bb67606af60f00a7bf8b9bc45aba8611a6b31f 100644
+index b434e74686ed59ce94451cc6a8eb9856329d84e4..3cfb322348bc99a801e4cc7053dad8e64ea669b2 100644
 --- a/net/minecraft/world/level/block/grower/TreeGrower.java
 +++ b/net/minecraft/world/level/block/grower/TreeGrower.java
 @@ -136,19 +136,26 @@ public final class TreeGrower {
@@ -754,32 +748,32 @@ index 9c898521851528c0625e019a72b69a3916e5da0a..d4bb67606af60f00a7bf8b9bc45aba86
                              return false;
                          }
                      }
-@@ -166,15 +173,21 @@ public final class TreeGrower {
-             } else {
-                 ConfiguredFeature<?, ?> feature = featureHolder.value();
-                 BlockState emptyBlock = level.getFluidState(pos).createLegacyBlock();
-+                io.fand.server.event.BlockEvents.StructureGrowSnapshot fandSnapshot =
-+                    io.fand.server.event.BlockEvents.captureStructureGrow(level, pos);
-                 level.setBlock(pos, emptyBlock, Block.UPDATE_NONE);
-                 if (feature.place(level, generator, random, pos)) {
-                     if (level.getBlockState(pos) == emptyBlock) {
-                         level.sendBlockUpdated(pos, state, emptyBlock, Block.UPDATE_CLIENTS);
-                     }
+@@ -168,15 +175,21 @@ public final class TreeGrower {
  
--                    return true;
-+                    return io.fand.server.event.BlockEvents.finishStructureGrow(level, pos, fandSnapshot);
-                 } else {
--                    level.setBlock(pos, state, Block.UPDATE_NONE);
-+                    if (fandSnapshot != null) {
-+                        io.fand.server.event.BlockEvents.restoreStructureGrow(level, fandSnapshot);
-+                    } else {
-+                        level.setBlock(pos, state, Block.UPDATE_NONE);
-+                    }
-                     return false;
-                 }
+         ConfiguredFeature<?, ?> feature = featureHolder.value();
+         BlockState emptyBlock = level.getFluidState(pos).createLegacyBlock();
++        io.fand.server.event.BlockEvents.StructureGrowSnapshot fandSnapshot =
++            io.fand.server.event.BlockEvents.captureStructureGrow(level, pos);
+         level.setBlock(pos, emptyBlock, Block.UPDATE_NONE);
+         if (feature.place(level, generator, random, pos)) {
+             if (level.getBlockState(pos) == emptyBlock) {
+                 level.sendBlockUpdated(pos, state, emptyBlock, Block.UPDATE_CLIENTS);
              }
+ 
+-            return true;
++            return io.fand.server.event.BlockEvents.finishStructureGrow(level, pos, fandSnapshot);
+         } else {
+-            level.setBlock(pos, state, Block.UPDATE_NONE);
++            if (fandSnapshot != null) {
++                io.fand.server.event.BlockEvents.restoreStructureGrow(level, fandSnapshot);
++            } else {
++                level.setBlock(pos, state, Block.UPDATE_NONE);
++            }
+             return false;
+         }
+     }
 diff --git a/net/minecraft/world/level/portal/PortalForcer.java b/net/minecraft/world/level/portal/PortalForcer.java
-index 1247b47f564c1b8703c1c9fa57c38e3f27a06f09..c4c5bdd140969f7cba1d6e3080c6e8e61dd22e7b 100644
+index cd001a9d1733d8d429b8132210fd3031c455cada..ff079c9dc4eaa0d06b4845163ad656fb74a3e53c 100644
 --- a/net/minecraft/world/level/portal/PortalForcer.java
 +++ b/net/minecraft/world/level/portal/PortalForcer.java
 @@ -10,6 +10,7 @@ import net.minecraft.core.Vec3i;

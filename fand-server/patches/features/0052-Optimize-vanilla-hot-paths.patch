@@ -5,7 +5,7 @@ Subject: [PATCH] Optimize vanilla hot paths
 
 
 diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
-index 0bd0f4782ff1a459f2b0b1e95b72c6d9472d6ce6..d67541134e990d076ce2205d80b8b1289bd334ec 100644
+index fc17b4530faf2d044ca740606ec797f82f60f322..d685f40f555881dc0af31bed8c9f07ef97e8e0b7 100644
 --- a/net/minecraft/server/level/ChunkMap.java
 +++ b/net/minecraft/server/level/ChunkMap.java
 @@ -19,6 +19,7 @@ import it.unimi.dsi.fastutil.longs.LongLinkedOpenHashSet;
@@ -75,16 +75,19 @@ index 0bd0f4782ff1a459f2b0b1e95b72c6d9472d6ce6..d67541134e990d076ce2205d80b8b128
              this.poiManager.close();
          } finally {
              super.close();
-@@ -1433,7 +1454,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+@@ -1432,9 +1453,10 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         private final Entity entity;
+         private final int range;
+         private SectionPos lastSectionPos;
+-        private final Set<ServerPlayerConnection> seenBy = Sets.newIdentityHashSet();
++        private final Set<ServerPlayerConnection> seenBy;
+ 
          public TrackedEntity(final Entity entity, final int range, final int updateInterval, final boolean trackDelta) {
-             Objects.requireNonNull(ChunkMap.this);
-             super();
--            this.seenBy = Sets.newIdentityHashSet();
 +            this.seenBy = io.fand.server.hooks.FandHooks.entityTrackerFastPathEnabled() ? new ReferenceOpenHashSet<>() : Sets.newIdentityHashSet();
              this.serverEntity = new ServerEntity(ChunkMap.this.level, entity, updateInterval, trackDelta, this);
              this.entity = entity;
              this.range = range;
-@@ -1520,6 +1541,9 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+@@ -1521,6 +1543,9 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
  
          private int getEffectiveRange() {
              int effectiveRange = this.range;
@@ -95,10 +98,10 @@ index 0bd0f4782ff1a459f2b0b1e95b72c6d9472d6ce6..d67541134e990d076ce2205d80b8b128
              for (Entity passenger : this.entity.getIndirectPassengers()) {
                  int passengerRange = passenger.getType().clientTrackingRange() * 16;
 diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
-index 6863d21ba143f3f89ad8540a455ebf15d1690754..6b496b047cb14ca6309a32f7559be566b391be3a 100644
+index b0059fb28bf9c6e5678f5681f17956ddfc933810..5bb27555dafabaa34ec743d17945d3806dfdf634 100644
 --- a/net/minecraft/server/level/ServerLevel.java
 +++ b/net/minecraft/server/level/ServerLevel.java
-@@ -552,6 +552,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+@@ -564,6 +564,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
          profiler.popPush("tickBlocks");
          if (tickSpeed > 0) {
              LevelChunkSection[] sections = chunk.getSections();
@@ -106,8 +109,8 @@ index 6863d21ba143f3f89ad8540a455ebf15d1690754..6b496b047cb14ca6309a32f7559be566
  
              for (int sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
                  LevelChunkSection section = sections[sectionIndex];
-@@ -562,6 +563,11 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
-                     for (int ix = 0; ix < tickSpeed; ix++) {
+@@ -574,6 +575,11 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+                     for (int i = 0; i < tickSpeed; i++) {
                          BlockPos pos = this.getBlockRandomPos(minX, minYInSection, minZ, 15);
                          profiler.push("randomTick");
 +                        if (randomTickPositionMask
@@ -119,7 +122,7 @@ index 6863d21ba143f3f89ad8540a455ebf15d1690754..6b496b047cb14ca6309a32f7559be566
                          if (blockState.isRandomlyTicking()) {
                              blockState.randomTick(this, pos, this.random);
 diff --git a/net/minecraft/server/level/ThreadedLevelLightEngine.java b/net/minecraft/server/level/ThreadedLevelLightEngine.java
-index 46ce24ea601b1525834c1165075fc89d7ed8c69b..0ba4ba5fffca3ed7a8ce1d86aef72f3f3998f5a3 100644
+index 9579dd385417752b07c2ad8d074025f9143bfe85..bee0149b6c2c0dcfe1ce1d7f7dd244a1180a280c 100644
 --- a/net/minecraft/server/level/ThreadedLevelLightEngine.java
 +++ b/net/minecraft/server/level/ThreadedLevelLightEngine.java
 @@ -28,10 +28,13 @@ public class ThreadedLevelLightEngine extends LevelLightEngine implements AutoCl
@@ -229,7 +232,7 @@ index 46ce24ea601b1525834c1165075fc89d7ed8c69b..0ba4ba5fffca3ed7a8ce1d86aef72f3f
          return CompletableFuture.runAsync(() -> {}, r -> this.addTask(chunkX, chunkZ, ThreadedLevelLightEngine.TaskType.POST_UPDATE, r));
      }
 diff --git a/net/minecraft/util/ClassInstanceMultiMap.java b/net/minecraft/util/ClassInstanceMultiMap.java
-index 76d7538142cb07a1d5e108bead75cf972d558fdc..8539a1dcd9c8eacbe40ed711814a5bdb1af98128 100644
+index 021457d7676356ee9d5c7ba174206ba190adc1eb..fc89d759f079c0e710f74e9083fdf8956dec7a7c 100644
 --- a/net/minecraft/util/ClassInstanceMultiMap.java
 +++ b/net/minecraft/util/ClassInstanceMultiMap.java
 @@ -5,6 +5,7 @@ import com.google.common.collect.Iterators;
@@ -240,12 +243,11 @@ index 76d7538142cb07a1d5e108bead75cf972d558fdc..8539a1dcd9c8eacbe40ed711814a5bdb
  import java.util.Collection;
  import java.util.Collections;
  import java.util.Iterator;
-@@ -58,12 +59,31 @@ public class ClassInstanceMultiMap<T> extends AbstractCollection<T> {
+@@ -57,10 +58,30 @@ public class ClassInstanceMultiMap<T> extends AbstractCollection<T> {
+     public <S> Collection<S> find(final Class<S> index) {
          if (!this.baseClass.isAssignableFrom(index)) {
              throw new IllegalArgumentException("Don't know how to search for " + index);
-         } else {
--            List<? extends T> instances = this.byClass
--                .computeIfAbsent(index, k -> this.allInstances.stream().filter(k::isInstance).collect(Util.toMutableList()));
++        } else {
 +            List<? extends T> instances;
 +            if (io.fand.server.hooks.FandHooks.entityTypeLookupFastPathEnabled()) {
 +                instances = this.byClass.get(index);
@@ -257,10 +259,12 @@ index 76d7538142cb07a1d5e108bead75cf972d558fdc..8539a1dcd9c8eacbe40ed711814a5bdb
 +                instances = this.byClass
 +                    .computeIfAbsent(index, k -> this.allInstances.stream().filter(k::isInstance).collect(Util.toMutableList()));
 +            }
-             return (Collection<S>)Collections.unmodifiableCollection(instances);
++            return (Collection<S>)Collections.unmodifiableCollection(instances);
          }
-     }
++    }
  
+-        List<? extends T> instances = this.byClass.computeIfAbsent(index, k -> this.allInstances.stream().filter(k::isInstance).collect(Util.toMutableList()));
+-        return (Collection<S>)Collections.unmodifiableCollection(instances);
 +    private <S> List<T> fand$createAllOfType(final Class<S> index) {
 +        List<T> instances = new ArrayList<>();
 +        for (T instance : this.allInstances) {
@@ -269,13 +273,11 @@ index 76d7538142cb07a1d5e108bead75cf972d558fdc..8539a1dcd9c8eacbe40ed711814a5bdb
 +            }
 +        }
 +        return instances;
-+    }
-+
+     }
+ 
      @Override
-     public Iterator<T> iterator() {
-         return (Iterator<T>)(this.allInstances.isEmpty() ? Collections.emptyIterator() : Iterators.unmodifiableIterator(this.allInstances.iterator()));
 diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
-index 4779377fb838089a28629c7db2c12b2689efe5b3..1a1e115e1603884cc8480765a02832a5cf88c3e1 100644
+index c7d5fa68a32b6ffa4421bfa7dcbc02c1dbf757ec..0b6ebf32f5c4192e922badf39e70fbd18551b110 100644
 --- a/net/minecraft/world/entity/Entity.java
 +++ b/net/minecraft/world/entity/Entity.java
 @@ -20,16 +20,20 @@ import java.lang.annotation.Target;
@@ -299,7 +301,7 @@ index 4779377fb838089a28629c7db2c12b2689efe5b3..1a1e115e1603884cc8480765a02832a5
  import net.minecraft.CrashReport;
  import net.minecraft.CrashReportCategory;
  import net.minecraft.ReportedException;
-@@ -3610,16 +3614,25 @@ public abstract class Entity
+@@ -3690,16 +3694,25 @@ public abstract class Entity
      }
  
      private Stream<Entity> getIndirectPassengersStream() {
@@ -325,7 +327,7 @@ index 4779377fb838089a28629c7db2c12b2689efe5b3..1a1e115e1603884cc8480765a02832a5
          return Stream.concat(this.passengers.stream().flatMap(Entity::getPassengersAndSelf), Stream.of(this));
      }
  
-@@ -3628,6 +3641,19 @@ public abstract class Entity
+@@ -3708,6 +3721,19 @@ public abstract class Entity
      }
  
      public int countPlayerPassengers() {
@@ -345,7 +347,7 @@ index 4779377fb838089a28629c7db2c12b2689efe5b3..1a1e115e1603884cc8480765a02832a5
          return (int)this.getIndirectPassengersStream().filter(e -> e instanceof Player).count();
      }
  
-@@ -3635,6 +3661,105 @@ public abstract class Entity
+@@ -3715,6 +3741,105 @@ public abstract class Entity
          return this.countPlayerPassengers() == 1;
      }
  
@@ -452,19 +454,23 @@ index 4779377fb838089a28629c7db2c12b2689efe5b3..1a1e115e1603884cc8480765a02832a5
          Entity result = this;
  
 diff --git a/net/minecraft/world/level/chunk/LevelChunkSection.java b/net/minecraft/world/level/chunk/LevelChunkSection.java
-index 48f858323f3f47174a8be6c322924a003e3c284d..d9dd4bb33b371ba9e19f58d23f9a97e8845db0b8 100644
+index e16b7997c8a614eef71d5a611544bfb8b134832b..421d037bb1f098aa2006f134043f9dd58979b9b6 100644
 --- a/net/minecraft/world/level/chunk/LevelChunkSection.java
 +++ b/net/minecraft/world/level/chunk/LevelChunkSection.java
 @@ -1,5 +1,6 @@
  package net.minecraft.world.level.chunk;
  
 +import java.util.Arrays;
- import java.util.Objects;
  import java.util.function.Predicate;
  import net.minecraft.core.Holder;
-@@ -15,10 +16,12 @@ public class LevelChunkSection {
-     public static final int SECTION_HEIGHT = 16;
-     public static final int SECTION_SIZE = 4096;
+ import net.minecraft.network.FriendlyByteBuf;
+@@ -10,11 +11,16 @@ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.material.FluidState;
+ 
+ public class LevelChunkSection {
++    public static final int SECTION_WIDTH = 16;
++    public static final int SECTION_HEIGHT = 16;
++    public static final int SECTION_SIZE = 4096;
      public static final int BIOME_CONTAINER_BITS = 2;
 +    private static final int RANDOM_TICK_MASK_WORDS = SECTION_SIZE / Long.SIZE;
      private short nonEmptyBlockCount;
@@ -475,7 +481,7 @@ index 48f858323f3f47174a8be6c322924a003e3c284d..d9dd4bb33b371ba9e19f58d23f9a97e8
      private final PalettedContainer<BlockState> states;
      private PalettedContainerRO<Holder<Biome>> biomes;
  
-@@ -27,6 +30,7 @@ public class LevelChunkSection {
+@@ -23,6 +29,7 @@ public class LevelChunkSection {
          this.fluidCount = source.fluidCount;
          this.tickingBlockCount = source.tickingBlockCount;
          this.tickingFluidCount = source.tickingFluidCount;
@@ -483,7 +489,7 @@ index 48f858323f3f47174a8be6c322924a003e3c284d..d9dd4bb33b371ba9e19f58d23f9a97e8
          this.states = source.states.copy();
          this.biomes = source.biomes.copy();
      }
-@@ -100,6 +104,7 @@ public class LevelChunkSection {
+@@ -96,6 +103,7 @@ public class LevelChunkSection {
              }
          }
  
@@ -491,7 +497,7 @@ index 48f858323f3f47174a8be6c322924a003e3c284d..d9dd4bb33b371ba9e19f58d23f9a97e8
          return previous;
      }
  
-@@ -123,6 +128,15 @@ public class LevelChunkSection {
+@@ -119,6 +127,15 @@ public class LevelChunkSection {
          return this.tickingFluidCount > 0;
      }
  
@@ -507,7 +513,7 @@ index 48f858323f3f47174a8be6c322924a003e3c284d..d9dd4bb33b371ba9e19f58d23f9a97e8
      public void recalcBlockCounts() {
          class BlockCounter implements PalettedContainer.CountConsumer<BlockState> {
              public int nonEmptyBlockCount;
-@@ -160,6 +174,57 @@ public class LevelChunkSection {
+@@ -151,6 +168,57 @@ public class LevelChunkSection {
          this.fluidCount = (short)blockCounter.fluidCount;
          this.tickingBlockCount = (short)blockCounter.tickingBlockCount;
          this.tickingFluidCount = (short)blockCounter.tickingFluidCount;
@@ -565,7 +571,7 @@ index 48f858323f3f47174a8be6c322924a003e3c284d..d9dd4bb33b371ba9e19f58d23f9a97e8
      }
  
      public PalettedContainer<BlockState> getStates() {
-@@ -177,6 +242,7 @@ public class LevelChunkSection {
+@@ -168,6 +236,7 @@ public class LevelChunkSection {
          PalettedContainer<Holder<Biome>> biomes = this.biomes.recreate();
          biomes.read(buffer);
          this.biomes = biomes;

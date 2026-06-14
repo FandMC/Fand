@@ -5,7 +5,7 @@ import io.fand.api.inventory.Inventory;
 import io.fand.api.inventory.InventoryType;
 import io.fand.server.inventory.FandContainerInventory;
 import net.minecraft.world.Container;
-import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.entity.BlockEntityTypes;
 
 public final class FandContainerBlockEntity extends FandBlockEntity implements ContainerBlockEntity {
 
@@ -29,37 +29,37 @@ public final class FandContainerBlockEntity extends FandBlockEntity implements C
 
     private static InventoryType inventoryType(net.minecraft.world.level.block.entity.BlockEntity handle) {
         var type = handle.getType();
-        if (type == BlockEntityType.CHEST || type == BlockEntityType.TRAPPED_CHEST || type == BlockEntityType.BARREL) {
+        if (type == BlockEntityTypes.CHEST || type == BlockEntityTypes.TRAPPED_CHEST || type == BlockEntityTypes.BARREL) {
             return InventoryType.CHEST;
         }
-        if (type == BlockEntityType.DISPENSER) {
+        if (type == BlockEntityTypes.DISPENSER) {
             return InventoryType.DISPENSER;
         }
-        if (type == BlockEntityType.DROPPER) {
+        if (type == BlockEntityTypes.DROPPER) {
             return InventoryType.DROPPER;
         }
-        if (type == BlockEntityType.FURNACE) {
+        if (type == BlockEntityTypes.FURNACE) {
             return InventoryType.FURNACE;
         }
-        if (type == BlockEntityType.BLAST_FURNACE) {
+        if (type == BlockEntityTypes.BLAST_FURNACE) {
             return InventoryType.BLAST_FURNACE;
         }
-        if (type == BlockEntityType.SMOKER) {
+        if (type == BlockEntityTypes.SMOKER) {
             return InventoryType.SMOKER;
         }
-        if (type == BlockEntityType.HOPPER) {
+        if (type == BlockEntityTypes.HOPPER) {
             return InventoryType.HOPPER;
         }
-        if (type == BlockEntityType.BREWING_STAND) {
+        if (type == BlockEntityTypes.BREWING_STAND) {
             return InventoryType.BREWING;
         }
-        if (type == BlockEntityType.SHULKER_BOX) {
+        if (type == BlockEntityTypes.SHULKER_BOX) {
             return InventoryType.SHULKER_BOX;
         }
-        if (type == BlockEntityType.CRAFTER) {
+        if (type == BlockEntityTypes.CRAFTER) {
             return InventoryType.CRAFTER;
         }
-        if (type == BlockEntityType.LECTERN) {
+        if (type == BlockEntityTypes.LECTERN) {
             return InventoryType.LECTERN;
         }
         return InventoryType.UNKNOWN;

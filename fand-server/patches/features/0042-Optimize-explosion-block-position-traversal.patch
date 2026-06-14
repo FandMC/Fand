@@ -5,7 +5,7 @@ Subject: [PATCH] Optimize explosion block position traversal
 
 
 diff --git a/net/minecraft/world/level/ServerExplosion.java b/net/minecraft/world/level/ServerExplosion.java
-index 1c06196938e16e29e37bbd9e5763e48cad4d16bb..70310b5c1aef7e9d28bc35e94bed28cc5c2a8a12 100644
+index 8fead1dc8bfe84cd124d666b861ccdf6ffd7bd6a..7f9dbf69b5f75aea7ff2d573e5a13259853e0b56 100644
 --- a/net/minecraft/world/level/ServerExplosion.java
 +++ b/net/minecraft/world/level/ServerExplosion.java
 @@ -120,7 +120,7 @@ public class ServerExplosion implements Explosion {
@@ -17,16 +17,19 @@ index 1c06196938e16e29e37bbd9e5763e48cad4d16bb..70310b5c1aef7e9d28bc35e94bed28cc
  
          for (int xx = 0; xx < 16; xx++) {
              for (int yy = 0; yy < 16; yy++) {
-@@ -139,7 +139,7 @@ public class ServerExplosion implements Explosion {
+@@ -137,10 +137,9 @@ public class ServerExplosion implements Explosion {
+                         double xp = this.center.x;
+                         double yp = this.center.y;
                          double zp = this.center.z;
+-                        float stepSize = 0.3F;
  
-                         for (float stepSize = 0.3F; remainingPower > 0.0F; remainingPower -= 0.22500001F) {
+                         while (remainingPower > 0.0F) {
 -                            BlockPos pos = BlockPos.containing(xp, yp, zp);
 +                            pos.set(xp, yp, zp);
                              BlockState block = this.level.getBlockState(pos);
                              FluidState fluid = this.level.getFluidState(pos);
                              if (!this.level.isInWorldBounds(pos)) {
-@@ -152,7 +152,7 @@ public class ServerExplosion implements Explosion {
+@@ -153,7 +152,7 @@ public class ServerExplosion implements Explosion {
                              }
  
                              if (remainingPower > 0.0F && this.damageCalculator.shouldBlockExplode(this, this.level, pos, block, remainingPower)) {

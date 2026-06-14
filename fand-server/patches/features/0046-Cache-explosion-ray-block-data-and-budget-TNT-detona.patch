@@ -14,10 +14,10 @@ mass detonations into a wave instead of one watchdog-tripping tick.
 Budget 0 (default) preserves vanilla all-at-once behaviour.
 
 diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
-index 6525ad5eb915e41f12998c40007070f91b6e3ade..adbfbcfb6c29aa75c5b599f2c30a503bd156feea 100644
+index ec387987121c563cc0487015fdb3d071658f32f9..307a4399cff17f3d14781df4a3675d5701cb5a86 100644
 --- a/net/minecraft/server/level/ServerLevel.java
 +++ b/net/minecraft/server/level/ServerLevel.java
-@@ -221,11 +221,33 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+@@ -222,11 +222,33 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
      private final boolean tickTime;
      private final LevelDebugSynchronizers debugSynchronizers = new LevelDebugSynchronizers(this);
      private final io.fand.server.world.ExplosionDensityCache fandExplosionDensityCache = new io.fand.server.world.ExplosionDensityCache();
@@ -51,19 +51,19 @@ index 6525ad5eb915e41f12998c40007070f91b6e3ade..adbfbcfb6c29aa75c5b599f2c30a503b
      public ServerLevel(
          final MinecraftServer server,
          final Executor executor,
-@@ -347,6 +369,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
-         ProfilerFiller profiler = Profiler.get();
+@@ -360,6 +382,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
          this.handlingTick = true;
+         this.environmentAttributes().invalidateTickCache();
          this.fandExplosionDensityCache.clear();
 +        this.fandTntDetonationsThisTick = 0;
          TickRateManager tickRateManager = this.tickRateManager();
          boolean runs = tickRateManager.runsNormally();
          if (runs) {
 diff --git a/net/minecraft/world/entity/item/PrimedTnt.java b/net/minecraft/world/entity/item/PrimedTnt.java
-index 74105c799ceae31dff94dca7b3d4a629e436dcf9..81a91446de3a1d102a3ea7d5c4aca6e5ae2a82e0 100644
+index 69e10ce4d150e47da77d870917b25e1c744bf10b..a12a2501497f2cb4d33af02d536beec4b8bc3a0a 100644
 --- a/net/minecraft/world/entity/item/PrimedTnt.java
 +++ b/net/minecraft/world/entity/item/PrimedTnt.java
-@@ -104,13 +104,20 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+@@ -107,13 +107,20 @@ public class PrimedTnt extends Entity implements TraceableEntity {
          }
  
          int fuse = this.getFuse() - 1;
@@ -86,7 +86,7 @@ index 74105c799ceae31dff94dca7b3d4a629e436dcf9..81a91446de3a1d102a3ea7d5c4aca6e5
              if (this.level().isClientSide()) {
                  this.level().addParticle(ParticleTypes.SMOKE, this.getX(), this.getY() + 0.5, this.getZ(), 0.0, 0.0, 0.0);
 diff --git a/net/minecraft/world/level/ServerExplosion.java b/net/minecraft/world/level/ServerExplosion.java
-index 915733d0529a38e0b844bedcb0608c5c6930a1fb..d308b9acbcfc105be2607e158efeec859e98bbbc 100644
+index addcff811697785b81df0738773caa5ff79fa6de..f7be31040dd9f4df23706fe94f8700ea4f10f669 100644
 --- a/net/minecraft/world/level/ServerExplosion.java
 +++ b/net/minecraft/world/level/ServerExplosion.java
 @@ -129,6 +129,11 @@ public class ServerExplosion implements Explosion {

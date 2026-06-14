@@ -5,7 +5,7 @@ Subject: [PATCH] Optimize entity collision hot paths
 
 
 diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
-index 34b3a0d79677895b6fefbf635376fb2f1017d2fc..4779377fb838089a28629c7db2c12b2689efe5b3 100644
+index 9bf959e8a932b52bb1b3c9f49d6fce452fcc52a5..c7d5fa68a32b6ffa4421bfa7dcbc02c1dbf757ec 100644
 --- a/net/minecraft/world/entity/Entity.java
 +++ b/net/minecraft/world/entity/Entity.java
 @@ -1,6 +1,7 @@
@@ -16,19 +16,19 @@ index 34b3a0d79677895b6fefbf635376fb2f1017d2fc..4779377fb838089a28629c7db2c12b26
  import com.google.common.collect.Lists;
  import com.google.common.collect.Sets;
  import com.google.common.collect.ImmutableList.Builder;
-@@ -1157,6 +1158,11 @@ public abstract class Entity
+@@ -1220,6 +1221,11 @@ public abstract class Entity
      public static Vec3 collideBoundingBox(
-         final @Nullable Entity source, final Vec3 movement, final AABB boundingBox, final Level level, final List<VoxelShape> entityColliders
+         final Entity source, final Vec3 movement, final AABB boundingBox, final Level level, final List<VoxelShape> entityColliders
      ) {
 +        if (io.fand.server.hooks.FandHooks.entityMovementLazyCollidersEnabled() && hasSingleAxisMovement(movement)) {
 +            Iterable<VoxelShape> colliders = collectCollidersIterable(source, level, entityColliders, boundingBox.expandTowards(movement));
 +            return collideWithShapesIterable(movement, boundingBox, colliders);
 +        }
 +
-         List<VoxelShape> colliders = collectColliders(source, level, entityColliders, boundingBox.expandTowards(movement));
+         List<VoxelShape> colliders = collectCollidersIgnoringWorldBorder(source, level, entityColliders, boundingBox.expandTowards(movement));
          return collideWithShapes(movement, boundingBox, colliders);
      }
-@@ -1184,22 +1190,55 @@ public abstract class Entity
+@@ -1266,11 +1272,44 @@ public abstract class Entity
          return colliders.build();
      }
  
@@ -64,37 +64,17 @@ index 34b3a0d79677895b6fefbf635376fb2f1017d2fc..4779377fb838089a28629c7db2c12b26
      private static Vec3 collideWithShapes(final Vec3 movement, final AABB boundingBox, final List<VoxelShape> shapes) {
          if (shapes.isEmpty()) {
              return movement;
-         } else {
--            Vec3 resolvedMovement = Vec3.ZERO;
++        } else {
 +            return collideWithShapesIterable(movement, boundingBox, shapes);
-+        }
+         }
 +    }
  
--            for (Direction.Axis axis : Direction.axisStepOrder(movement)) {
--                double axisMovement = movement.get(axis);
--                if (axisMovement != 0.0) {
--                    double collision = Shapes.collide(axis, boundingBox.move(resolvedMovement), shapes, axisMovement);
--                    resolvedMovement = resolvedMovement.with(axis, collision);
--                }
--            }
 +    private static Vec3 collideWithShapesIterable(final Vec3 movement, final AABB boundingBox, final Iterable<VoxelShape> shapes) {
-+        Vec3 resolvedMovement = Vec3.ZERO;
+         Vec3 resolvedMovement = Vec3.ZERO;
  
--            return resolvedMovement;
-+        for (Direction.Axis axis : Direction.axisStepOrder(movement)) {
-+            double axisMovement = movement.get(axis);
-+            if (axisMovement != 0.0) {
-+                double collision = Shapes.collide(axis, boundingBox.move(resolvedMovement), shapes, axisMovement);
-+                resolvedMovement = resolvedMovement.with(axis, collision);
-+            }
-         }
-+
-+        return resolvedMovement;
-     }
- 
-     protected float nextStep() {
+         for (Direction.Axis axis : Direction.axisStepOrder(movement)) {
 diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
-index 84fb32ba8d2650b8c18cd45911a675f14685ec6c..3d78e1e0f660ce37443fb7485bec6009770f2847 100644
+index e18f2e09f750531420acde1f3451162c3d64d133..c1a67aeacff654ffa9d8e979eccd141e034e6037 100644
 --- a/net/minecraft/world/entity/LivingEntity.java
 +++ b/net/minecraft/world/entity/LivingEntity.java
 @@ -62,6 +62,7 @@ import net.minecraft.tags.EntityTypeTags;
@@ -105,7 +85,7 @@ index 84fb32ba8d2650b8c18cd45911a675f14685ec6c..3d78e1e0f660ce37443fb7485bec6009
  import net.minecraft.util.BlockUtil;
  import net.minecraft.util.Mth;
  import net.minecraft.util.Util;
-@@ -3245,6 +3246,16 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+@@ -3320,6 +3321,16 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
      }
  
      protected void pushEntities() {
@@ -123,7 +103,7 @@ index 84fb32ba8d2650b8c18cd45911a675f14685ec6c..3d78e1e0f660ce37443fb7485bec6009
          if (!pushableEntities.isEmpty()) {
              if (this.level() instanceof ServerLevel serverLevel) {
 diff --git a/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java b/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java
-index b50ae364b7a312197ae55d6f483b487ee60b3b18..51b57b2da43d530492b13a5b8fb206bdff97795e 100644
+index bf4d7a225a3b0c553ab24000fac2ffcdf87af9da..19e6e554b1b3d8fa2841943d72aeec00fa0e530f 100644
 --- a/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java
 +++ b/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java
 @@ -15,6 +15,7 @@ import net.minecraft.sounds.SoundEvent;
@@ -228,7 +208,7 @@ index 0396f291d442b6851d75a9a755b27623c1173021..492ccd0d0dc936f2ea065085aca5b4d8
          return this.minecart.getDeltaMovement();
      }
 diff --git a/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java b/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java
-index 9c57604f53e27720bac73aa22e0f9f8b8e80cc20..50aa2f96350dd2612de1e891bb17e66fa9ea327f 100644
+index f6a456cc75d4eff3a1b0db8a2a69deed7494e9c3..714054a0b68f723f495ca4c0c7beb340dee62dbd 100644
 --- a/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java
 +++ b/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java
 @@ -10,10 +10,10 @@ import net.minecraft.network.codec.ByteBufCodecs;
@@ -243,7 +223,7 @@ index 9c57604f53e27720bac73aa22e0f9f8b8e80cc20..50aa2f96350dd2612de1e891bb17e66f
  import net.minecraft.world.entity.MoverType;
  import net.minecraft.world.entity.animal.golem.IronGolem;
  import net.minecraft.world.entity.player.Player;
-@@ -514,6 +514,22 @@ public class NewMinecartBehavior extends MinecartBehavior {
+@@ -516,6 +516,22 @@ public class NewMinecartBehavior extends MinecartBehavior {
  
      public boolean pickupEntities(final AABB hitbox) {
          if (this.minecart.isRideable() && !this.minecart.isVehicle()) {
@@ -266,7 +246,7 @@ index 9c57604f53e27720bac73aa22e0f9f8b8e80cc20..50aa2f96350dd2612de1e891bb17e66f
              List<Entity> entities = this.level().getEntities(this.minecart, hitbox, EntitySelector.pushableBy(this.minecart));
              if (!entities.isEmpty()) {
                  for (Entity entity : entities) {
-@@ -537,6 +553,22 @@ public class NewMinecartBehavior extends MinecartBehavior {
+@@ -539,6 +555,22 @@ public class NewMinecartBehavior extends MinecartBehavior {
      public boolean pushEntities(final AABB hitbox) {
          boolean pushed = false;
          if (this.minecart.isRideable()) {
@@ -289,15 +269,15 @@ index 9c57604f53e27720bac73aa22e0f9f8b8e80cc20..50aa2f96350dd2612de1e891bb17e66f
              List<Entity> entities = this.level().getPushableEntities(this.minecart, hitbox);
              if (!entities.isEmpty()) {
                  for (Entity entity : entities) {
-@@ -551,12 +583,31 @@ public class NewMinecartBehavior extends MinecartBehavior {
+@@ -553,12 +585,31 @@ public class NewMinecartBehavior extends MinecartBehavior {
                  }
              }
          } else {
--            for (AbstractMinecart entityx : this.level().getEntities(
+-            for (AbstractMinecart entity : this.level().getEntities(
 -                EntityTypeTest.forClass(AbstractMinecart.class), hitbox, entity -> entity != this.minecart && EntitySelector.NO_SPECTATORS.test(entity)
 -            )) {
--                if (!this.minecart.hasPassenger(entityx) && entityx.isPushable()) {
--                    entityx.push(this.minecart);
+-                if (!this.minecart.hasPassenger(entity) && entity.isPushable()) {
+-                    entity.push(this.minecart);
 -                    pushed = true;
 +            if (io.fand.server.hooks.FandHooks.pushableEntityConsumerEnabled()) {
 +                boolean[] pushedMinecart = new boolean[1];
@@ -328,7 +308,7 @@ index 9c57604f53e27720bac73aa22e0f9f8b8e80cc20..50aa2f96350dd2612de1e891bb17e66f
              }
          }
 diff --git a/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java b/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java
-index f942293b6a9426b3ba5c0236d699426f07bacc8a..161966474c07457ae8e8fa29778354d9f49b118f 100644
+index 8c031d55c4b7eecdaeb39e2406c918f38544d18f..161966474c07457ae8e8fa29778354d9f49b118f 100644
 --- a/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java
 +++ b/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java
 @@ -8,6 +8,7 @@ import net.minecraft.core.Vec3i;
@@ -376,11 +356,11 @@ index f942293b6a9426b3ba5c0236d699426f07bacc8a..161966474c07457ae8e8fa29778354d9
                  }
              }
          } else {
--            for (AbstractMinecart entityx : this.level().getEntities(
+-            for (AbstractMinecart entity : this.level().getEntities(
 -                EntityTypeTest.forClass(AbstractMinecart.class), hitbox, entity -> entity != this.minecart && EntitySelector.NO_SPECTATORS.test(entity)
 -            )) {
--                if (!this.minecart.hasPassenger(entityx) && entityx.isPushable()) {
--                    entityx.push(this.minecart);
+-                if (!this.minecart.hasPassenger(entity) && entity.isPushable()) {
+-                    entity.push(this.minecart);
 +            if (io.fand.server.hooks.FandHooks.pushableEntityConsumerEnabled()) {
 +                this.level().forEachEntity(
 +                    MINECART_ENTITY_TYPE,
@@ -423,7 +403,7 @@ index f942293b6a9426b3ba5c0236d699426f07bacc8a..161966474c07457ae8e8fa29778354d9
      public Direction getMotionDirection() {
          return this.minecart.isFlipped() ? this.minecart.getDirection().getOpposite().getClockWise() : this.minecart.getDirection().getClockWise();
 diff --git a/net/minecraft/world/level/Level.java b/net/minecraft/world/level/Level.java
-index 54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5..da8ad802e9527ac607bae3872ab9dc9bf9cb6954 100644
+index 931648b71cee0082647b4b28562835e3818d80b0..96705a2ad7b1b54fb584c175aaa20d04b60a27de 100644
 --- a/net/minecraft/world/level/Level.java
 +++ b/net/minecraft/world/level/Level.java
 @@ -93,6 +93,7 @@ import net.minecraft.world.phys.shapes.BooleanOp;
@@ -434,7 +414,7 @@ index 54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5..da8ad802e9527ac607bae3872ab9dc9b
  import org.apache.commons.lang3.mutable.MutableBoolean;
  import org.apache.commons.lang3.mutable.MutableObject;
  import org.jspecify.annotations.Nullable;
-@@ -112,6 +113,16 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+@@ -113,6 +114,16 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
          .add(new ExplosionParticleInfo(ParticleTypes.POOF, 0.5F, 1.0F))
          .add(new ExplosionParticleInfo(ParticleTypes.SMOKE, 1.0F, 1.0F))
          .build();
@@ -451,7 +431,7 @@ index 54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5..da8ad802e9527ac607bae3872ab9dc9b
      protected final List<TickingBlockEntity> blockEntityTickers = Lists.newArrayList();
      protected final CollectingNeighborUpdater neighborUpdater;
      private final List<TickingBlockEntity> pendingBlockEntityTickers = Lists.newArrayList();
-@@ -818,6 +829,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+@@ -825,6 +836,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
          final EntityTypeTest<Entity, T> type, final AABB bb, final Predicate<? super T> selector, final List<? super T> output, final int maxResults
      ) {
          Profiler.get().incrementCounter("getEntities");
@@ -459,7 +439,7 @@ index 54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5..da8ad802e9527ac607bae3872ab9dc9b
          this.getEntities().get(type, bb, e -> {
              if (selector.test(e)) {
                  output.add(e);
-@@ -826,7 +838,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+@@ -833,7 +845,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
                  }
              }
  
@@ -468,7 +448,7 @@ index 54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5..da8ad802e9527ac607bae3872ab9dc9b
                  for (EnderDragonPart subEntity : enderDragon.getSubEntities()) {
                      T castSubPart = type.tryCast(subEntity);
                      if (castSubPart != null && selector.test(castSubPart)) {
-@@ -842,15 +854,61 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+@@ -849,21 +861,67 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
          });
      }
  
@@ -525,13 +505,26 @@ index 54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5..da8ad802e9527ac607bae3872ab9dc9b
              if (selector.test(e)) {
                  hasEntities.setTrue();
                  return AbortableIterationConsumer.Continuation.ABORT;
-             } else {
--                if (e instanceof EnderDragon enderDragon) {
+-            }
+-
+-            if (e instanceof EnderDragon enderDragon) {
+-                for (EnderDragonPart subEntity : enderDragon.getSubEntities()) {
+-                    T castSubPart = type.tryCast(subEntity);
+-                    if (castSubPart != null && selector.test(castSubPart)) {
+-                        hasEntities.setTrue();
+-                        return AbortableIterationConsumer.Continuation.ABORT;
++            } else {
 +                if (includeDragonParts && e instanceof EnderDragon enderDragon) {
-                     for (EnderDragonPart subEntity : enderDragon.getSubEntities()) {
-                         T castSubPart = type.tryCast(subEntity);
-                         if (castSubPart != null && selector.test(castSubPart)) {
-@@ -866,6 +924,10 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
++                    for (EnderDragonPart subEntity : enderDragon.getSubEntities()) {
++                        T castSubPart = type.tryCast(subEntity);
++                        if (castSubPart != null && selector.test(castSubPart)) {
++                            hasEntities.setTrue();
++                            return AbortableIterationConsumer.Continuation.ABORT;
++                        }
+                     }
+                 }
+             }
+@@ -873,6 +931,10 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
          return hasEntities.isTrue();
      }
  
@@ -542,7 +535,7 @@ index 54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5..da8ad802e9527ac607bae3872ab9dc9b
      @Override
      public boolean isUnobstructed(final @Nullable Entity source, final VoxelShape shape) {
          if (shape.isEmpty()) {
-@@ -873,21 +935,37 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+@@ -880,21 +942,37 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
          }
          Profiler.get().incrementCounter("getEntities");
          AABB bounds = shape.bounds();
@@ -594,7 +587,7 @@ index 54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5..da8ad802e9527ac607bae3872ab9dc9b
          }
  
          for (EnderDragonPart dragonPart : this.dragonParts()) {
-@@ -913,16 +991,27 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+@@ -920,16 +998,27 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
          Profiler.get().incrementCounter("getEntities");
          Predicate<Entity> canCollide = entity == null ? EntitySelector.CAN_BE_COLLIDED_WITH : EntitySelector.NO_SPECTATORS.and(entity::canCollideWith);
          AABB searchArea = aabb.inflate(1.0E-7);
@@ -631,7 +624,7 @@ index 54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5..da8ad802e9527ac607bae3872ab9dc9b
          }
  
          for (EnderDragonPart dragonPart : this.dragonParts()) {
-@@ -942,11 +1031,9 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+@@ -949,11 +1038,9 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
          Profiler.get().incrementCounter("getEntities");
          Predicate<Entity> canCollide = source == null ? EntitySelector.CAN_BE_COLLIDED_WITH : EntitySelector.NO_SPECTATORS.and(source::canCollideWith);
          MutableObject<Builder<VoxelShape>> shapes = new MutableObject<>();
@@ -644,7 +637,7 @@ index 54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5..da8ad802e9527ac607bae3872ab9dc9b
                  if (shapes.getValue() == null) {
                      shapes.setValue(ImmutableList.builder());
                  }
-@@ -957,7 +1044,6 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+@@ -964,7 +1051,6 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
  
          for (EnderDragonPart dragonPart : this.dragonParts()) {
              if (dragonPart != source && dragonPart.parentMob != source && canCollide.test(dragonPart) && searchArea.intersects(dragonPart.getBoundingBox())) {
@@ -652,7 +645,7 @@ index 54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5..da8ad802e9527ac607bae3872ab9dc9b
                  if (shapes.getValue() == null) {
                      shapes.setValue(ImmutableList.builder());
                  }
-@@ -965,10 +1051,22 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+@@ -972,10 +1058,22 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
              }
          }
  
@@ -676,7 +669,7 @@ index 54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5..da8ad802e9527ac607bae3872ab9dc9b
          Profiler.get().incrementCounter("getEntities");
          Predicate<Entity> selector = EntitySelector.pushableBy(pusher);
          MutableObject<List<Entity>> output = new MutableObject<>();
-@@ -997,6 +1095,74 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+@@ -1004,6 +1102,74 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
          return output.getValue() == null ? List.of() : output.getValue();
      }
  
@@ -752,7 +745,7 @@ index 54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5..da8ad802e9527ac607bae3872ab9dc9b
  
      public @Nullable Entity getEntity(final UUID uuid) {
 diff --git a/net/minecraft/world/level/entity/EntitySection.java b/net/minecraft/world/level/entity/EntitySection.java
-index 1fe2fa4a43721a7e0076c828f0e45eb712aa6a51..ce93f863e3d96fdad50bfb306449bfb55fc8d7ae 100644
+index 1328a710b5ee20c1d1ccfa0500ef4aa6bcf6f298..839c6d1f7eb40cb238a1f7d970cd9da128c23364 100644
 --- a/net/minecraft/world/level/entity/EntitySection.java
 +++ b/net/minecraft/world/level/entity/EntitySection.java
 @@ -15,17 +15,25 @@ public class EntitySection<T extends EntityAccess> {
@@ -827,7 +820,7 @@ index 1fe2fa4a43721a7e0076c828f0e45eb712aa6a51..ce93f863e3d96fdad50bfb306449bfb5
          try {
              return type.getMethod(name, parameterTypes).getDeclaringClass() != Entity.class;
 diff --git a/net/minecraft/world/level/entity/EntitySectionStorage.java b/net/minecraft/world/level/entity/EntitySectionStorage.java
-index 4d4b8da878ecc238c9501b8802cf17a729deefec..2c069c0f1bdf0dd2e674f0cd0a7b3537746afe6b 100644
+index acaedb417c89e4145992f336cff91a9453f13d1a..4b6d356428715234a156942e7efb3bdfb0600bc7 100644
 --- a/net/minecraft/world/level/entity/EntitySectionStorage.java
 +++ b/net/minecraft/world/level/entity/EntitySectionStorage.java
 @@ -35,7 +35,7 @@ public class EntitySectionStorage<T extends EntityAccess> {

@@ -54,6 +54,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
@@ -602,7 +603,7 @@ public final class FandWorld implements World {
     public CompletableFuture<Optional<? extends Entity>> strikeLightning(Location location, boolean visualOnly) {
         var checkedLocation = requireThisWorld(location);
         return this.<Optional<? extends Entity>>runOnServerThreadFuture(() -> {
-            var bolt = net.minecraft.world.entity.EntityType.LIGHTNING_BOLT.create(handle, EntitySpawnReason.EVENT);
+            var bolt = EntityTypes.LIGHTNING_BOLT.create(handle, EntitySpawnReason.EVENT);
             if (bolt == null) {
                 return Optional.empty();
             }

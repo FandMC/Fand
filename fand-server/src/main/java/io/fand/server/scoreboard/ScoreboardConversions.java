@@ -7,6 +7,7 @@ import io.fand.api.scoreboard.TeamCollisionRule;
 import io.fand.api.scoreboard.TeamVisibility;
 import io.fand.server.command.AdventureBridge;
 import java.util.Objects;
+import java.util.Optional;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.RegistryAccess;
@@ -16,6 +17,7 @@ import net.minecraft.network.chat.numbers.NumberFormat;
 import net.minecraft.network.chat.numbers.StyledFormat;
 import net.minecraft.world.scores.DisplaySlot;
 import net.minecraft.world.scores.Team;
+import net.minecraft.world.scores.TeamColor;
 import net.minecraft.world.scores.criteria.ObjectiveCriteria;
 import org.jspecify.annotations.Nullable;
 
@@ -165,6 +167,50 @@ final class ScoreboardConversions {
             case WHITE -> NamedTextColor.WHITE;
             default -> null;
         };
+    }
+
+    static Optional<TeamColor> toVanillaTeamColor(@Nullable NamedTextColor color) {
+        if (color == null) {
+            return Optional.empty();
+        }
+        if (color == NamedTextColor.BLACK) return Optional.of(TeamColor.BLACK);
+        if (color == NamedTextColor.DARK_BLUE) return Optional.of(TeamColor.DARK_BLUE);
+        if (color == NamedTextColor.DARK_GREEN) return Optional.of(TeamColor.DARK_GREEN);
+        if (color == NamedTextColor.DARK_AQUA) return Optional.of(TeamColor.DARK_AQUA);
+        if (color == NamedTextColor.DARK_RED) return Optional.of(TeamColor.DARK_RED);
+        if (color == NamedTextColor.DARK_PURPLE) return Optional.of(TeamColor.DARK_PURPLE);
+        if (color == NamedTextColor.GOLD) return Optional.of(TeamColor.GOLD);
+        if (color == NamedTextColor.GRAY) return Optional.of(TeamColor.GRAY);
+        if (color == NamedTextColor.DARK_GRAY) return Optional.of(TeamColor.DARK_GRAY);
+        if (color == NamedTextColor.BLUE) return Optional.of(TeamColor.BLUE);
+        if (color == NamedTextColor.GREEN) return Optional.of(TeamColor.GREEN);
+        if (color == NamedTextColor.AQUA) return Optional.of(TeamColor.AQUA);
+        if (color == NamedTextColor.RED) return Optional.of(TeamColor.RED);
+        if (color == NamedTextColor.LIGHT_PURPLE) return Optional.of(TeamColor.LIGHT_PURPLE);
+        if (color == NamedTextColor.YELLOW) return Optional.of(TeamColor.YELLOW);
+        if (color == NamedTextColor.WHITE) return Optional.of(TeamColor.WHITE);
+        return Optional.empty();
+    }
+
+    static @Nullable NamedTextColor fromVanillaTeamColor(Optional<TeamColor> color) {
+        return color.map(value -> switch (value) {
+            case BLACK -> NamedTextColor.BLACK;
+            case DARK_BLUE -> NamedTextColor.DARK_BLUE;
+            case DARK_GREEN -> NamedTextColor.DARK_GREEN;
+            case DARK_AQUA -> NamedTextColor.DARK_AQUA;
+            case DARK_RED -> NamedTextColor.DARK_RED;
+            case DARK_PURPLE -> NamedTextColor.DARK_PURPLE;
+            case GOLD -> NamedTextColor.GOLD;
+            case GRAY -> NamedTextColor.GRAY;
+            case DARK_GRAY -> NamedTextColor.DARK_GRAY;
+            case BLUE -> NamedTextColor.BLUE;
+            case GREEN -> NamedTextColor.GREEN;
+            case AQUA -> NamedTextColor.AQUA;
+            case RED -> NamedTextColor.RED;
+            case LIGHT_PURPLE -> NamedTextColor.LIGHT_PURPLE;
+            case YELLOW -> NamedTextColor.YELLOW;
+            case WHITE -> NamedTextColor.WHITE;
+        }).orElse(null);
     }
 
     static @Nullable NumberFormat toVanilla(ScoreNumberFormat format, RegistryAccess registries) {

@@ -5,7 +5,7 @@ Subject: [PATCH] Expose player list and explosive owner accessors
 
 
 diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
-index 57b1d5b799d46e8607b8837349911a244bb7a25d..efad39e47cfda2689d1e931a05c9f7ffca784349 100644
+index 5a46c60962874491a3d3f8d430b3cf3f69b4c28d..7227acef8aa6b67b1ec1bf24893e2178a5b8317a 100644
 --- a/net/minecraft/server/level/ServerPlayer.java
 +++ b/net/minecraft/server/level/ServerPlayer.java
 @@ -72,6 +72,7 @@ import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
@@ -16,7 +16,7 @@ index 57b1d5b799d46e8607b8837349911a244bb7a25d..efad39e47cfda2689d1e931a05c9f7ff
  import net.minecraft.network.protocol.game.ClientboundPlayerLookAtPacket;
  import net.minecraft.network.protocol.game.ClientboundPlayerRotationPacket;
  import net.minecraft.network.protocol.game.ClientboundRemoveMobEffectPacket;
-@@ -252,6 +253,8 @@ public class ServerPlayer extends Player {
+@@ -255,6 +256,8 @@ public class ServerPlayer extends Player {
      private @Nullable Vec3 levitationStartPos;
      private int levitationStartTime;
      private boolean disconnected;
@@ -25,7 +25,7 @@ index 57b1d5b799d46e8607b8837349911a244bb7a25d..efad39e47cfda2689d1e931a05c9f7ff
      private int requestedViewDistance = 2;
      private String language = "en_us";
      private @Nullable Vec3 startingToFallPosition;
-@@ -2058,11 +2061,33 @@ public class ServerPlayer extends Player {
+@@ -2053,11 +2056,33 @@ public class ServerPlayer extends Player {
      }
  
      public @Nullable Component getTabListDisplayName() {
@@ -62,10 +62,10 @@ index 57b1d5b799d46e8607b8837349911a244bb7a25d..efad39e47cfda2689d1e931a05c9f7ff
  
      @Override
 diff --git a/net/minecraft/world/entity/item/PrimedTnt.java b/net/minecraft/world/entity/item/PrimedTnt.java
-index 564973efed9a143374fde601da21b4f3c375b3bb..74105c799ceae31dff94dca7b3d4a629e436dcf9 100644
+index 19c600e62d9808eac5ac10be114b26374a1c89c4..69e10ce4d150e47da77d870917b25e1c744bf10b 100644
 --- a/net/minecraft/world/entity/item/PrimedTnt.java
 +++ b/net/minecraft/world/entity/item/PrimedTnt.java
-@@ -159,6 +159,10 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+@@ -162,6 +162,10 @@ public class PrimedTnt extends Entity implements TraceableEntity {
          return EntityReference.getLivingEntity(this.owner, this.level());
      }
  

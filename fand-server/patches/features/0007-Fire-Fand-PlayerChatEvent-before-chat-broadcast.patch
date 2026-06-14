@@ -5,10 +5,10 @@ Subject: [PATCH] Fire Fand PlayerChatEvent before chat broadcast
 
 
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 9e6958b1776a5aac67eca1060c486fcc1fd84ba6..79be2e3e7a0d91e8338b8663083c8245f0d97078 100644
+index 1fed7e2103bbca99770c5411314a7c25441a58d8..8d53467519f0c1a85bb358ad02f113ac058072d9 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -1516,7 +1516,30 @@ public class ServerGamePacketListenerImpl
+@@ -1525,7 +1525,30 @@ public class ServerGamePacketListenerImpl
                  CompletableFuture<FilteredText> filteredFuture = this.filterTextPacket(signedMessage.signedContent());
                  Component decorated = this.server.getChatDecorator().decorate(this.player, signedMessage.decoratedContent());
                  this.chatMessageChain.append(filteredFuture, filtered -> {

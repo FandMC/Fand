@@ -5,11 +5,11 @@ Subject: [PATCH] Use TerminalConsoleAppender for server console
 
 
 diff --git a/net/minecraft/server/dedicated/DedicatedServer.java b/net/minecraft/server/dedicated/DedicatedServer.java
-index c9893cdd5c3281aca6a21a9687df8eafd30a2c1f..ff578c4a7c8201e2a76fe039d2fd955f4d3fbad5 100644
+index d5044deadbd8c390d0271bc27a3fbb12710dabd3..7e22ba953f78c74793b9b7f2dc5adb91e4ddc7c1 100644
 --- a/net/minecraft/server/dedicated/DedicatedServer.java
 +++ b/net/minecraft/server/dedicated/DedicatedServer.java
-@@ -211,6 +211,9 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
- 
+@@ -167,6 +167,9 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         Thread consoleThread = new Thread("Server console handler") {
              @Override
              public void run() {
 +                // Fand start - Use TerminalConsoleAppender
@@ -18,9 +18,9 @@ index c9893cdd5c3281aca6a21a9687df8eafd30a2c1f..ff578c4a7c8201e2a76fe039d2fd955f
                  BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
  
                  String line;
-@@ -221,6 +224,8 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
-                 } catch (IOException var4) {
-                     DedicatedServer.LOGGER.error("Exception handling console input", (Throwable)var4);
+@@ -177,6 +180,8 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+                 } catch (IOException e) {
+                     DedicatedServer.LOGGER.error("Exception handling console input", e);
                  }
 +                */
 +                // Fand end - Use TerminalConsoleAppender

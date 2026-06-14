@@ -5,7 +5,7 @@ Subject: [PATCH] Add Fand async chunk system
 
 
 diff --git a/net/minecraft/server/level/ChunkGenerationTask.java b/net/minecraft/server/level/ChunkGenerationTask.java
-index 6c59059545073b1d4f20137011c5be34146e58c1..d76fbed278066352c95853b13528583d64bcfff7 100644
+index 1827ea06d029ecd4e921b9063022ac476d8e85dc..8363222c9c607fa2f9473390893c5726eef93227 100644
 --- a/net/minecraft/server/level/ChunkGenerationTask.java
 +++ b/net/minecraft/server/level/ChunkGenerationTask.java
 @@ -1,5 +1,6 @@
@@ -26,7 +26,7 @@ index 6c59059545073b1d4f20137011c5be34146e58c1..d76fbed278066352c95853b13528583d
      private void scheduleLayer(final ChunkStatus status, final boolean needsGeneration) {
          try (Zone zone = Profiler.get().zone("scheduleLayer")) {
              zone.addText(status::getName);
-@@ -201,20 +206,29 @@ public class ChunkGenerationTask {
+@@ -203,20 +208,29 @@ public class ChunkGenerationTask {
      }
  
      private @Nullable CompletableFuture<?> waitForScheduledLayer() {
@@ -64,7 +64,7 @@ index 6c59059545073b1d4f20137011c5be34146e58c1..d76fbed278066352c95853b13528583d
  
      private record Plan(
 diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
-index 36624b3bb387998d5c3826f7587c1a77d8e2be71..cd54fdccc07c0dd7267289721b22d6d9488fcd4f 100644
+index 4d8d7d1a1c21da35b39b6b28189a7efea3f11e5c..5bd643c401a3d290343066d7f411cad61ab864a1 100644
 --- a/net/minecraft/server/level/ChunkMap.java
 +++ b/net/minecraft/server/level/ChunkMap.java
 @@ -134,7 +134,6 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP

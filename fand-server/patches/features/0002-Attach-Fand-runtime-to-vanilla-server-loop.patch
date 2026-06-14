@@ -5,10 +5,10 @@ Subject: [PATCH] Attach Fand runtime to vanilla server loop
 
 
 diff --git a/net/minecraft/server/Main.java b/net/minecraft/server/Main.java
-index be7ddd48c71592e21bd793e04a0668ab891a7c78..637b34f411ce5ca1ca9f022b2816e4b2e4006419 100644
+index 45af5e7b74264804eb596052823a89c4acc62f2c..a220de69de1614848df32451ef7831c37e8e8aae 100644
 --- a/net/minecraft/server/Main.java
 +++ b/net/minecraft/server/Main.java
-@@ -213,6 +213,7 @@ public class Main {
+@@ -227,6 +227,7 @@ public class Main {
                          server.showGui();
                      }
  
@@ -17,10 +17,10 @@ index be7ddd48c71592e21bd793e04a0668ab891a7c78..637b34f411ce5ca1ca9f022b2816e4b2
                  }
              );
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index f1e402f1c9d2b2704c8664b36c8161e0ce75d6b1..cffc9034357cd87e9833dbad27f668b5f09c2a43 100644
+index 6d5568909edfa94adaf61e684378cbb81e5326e5..d162ee94c66fd320906272764d700d5b46e4d188 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
-@@ -1025,6 +1025,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1015,6 +1015,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
          profiler.push("scheduledPacketProcessing");
          this.packetProcessor.processQueuedPackets();
          profiler.pop();

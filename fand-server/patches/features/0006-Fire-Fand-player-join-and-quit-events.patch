@@ -5,7 +5,7 @@ Subject: [PATCH] Fire Fand player join and quit events
 
 
 diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
-index f43c77ec4f1227877fadaacce744ec895b7a4352..80e2e3d079dde6b4626b29403e17d09319fc18b6 100644
+index ea360858fd6d7047eaca26185bc6ec894d756e5c..8e0c02e63f0cab18282b4b7638af02614e94dd82 100644
 --- a/net/minecraft/server/players/PlayerList.java
 +++ b/net/minecraft/server/players/PlayerList.java
 @@ -205,7 +205,21 @@ public abstract class PlayerList {
@@ -31,7 +31,7 @@ index f43c77ec4f1227877fadaacce744ec895b7a4352..80e2e3d079dde6b4626b29403e17d093
          playerConnection.teleport(player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
          ServerStatus status = this.server.getStatus();
          if (status != null && !cookie.transferred()) {
-@@ -310,6 +324,23 @@ public abstract class PlayerList {
+@@ -306,6 +320,23 @@ public abstract class PlayerList {
  
      public void remove(final ServerPlayer player) {
          ServerLevel level = player.level();

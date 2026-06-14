@@ -5,10 +5,10 @@ Subject: [PATCH] Expose richer Fand event context
 
 
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index b4e433569c81c1ffa80718d491c876724467ffea..3ab23f47f7b588711bc6cc57f1a694c57f65a4fb 100644
+index c668e107239286b1b70285d7306d74e0d15026e1..21daa4b7833df93ceb1ec9a31dc0b5ac812fdfbe 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -1410,7 +1410,8 @@ public class ServerGamePacketListenerImpl
+@@ -1419,7 +1419,8 @@ public class ServerGamePacketListenerImpl
                                                          fandPlayer,
                                                          io.fand.api.event.player.PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK,
                                                          fandHand,
@@ -18,7 +18,7 @@ index b4e433569c81c1ffa80718d491c876724467ffea..3ab23f47f7b588711bc6cc57f1a694c5
                                                  "PlayerInteractEvent");
                                          if (fandInteractEvent.cancelled()) {
                                              this.send(new ClientboundBlockUpdatePacket(level, pos));
-@@ -1493,7 +1494,8 @@ public class ServerGamePacketListenerImpl
+@@ -1502,7 +1503,8 @@ public class ServerGamePacketListenerImpl
                                          fandPlayer,
                                          io.fand.api.event.player.PlayerInteractEvent.Action.RIGHT_CLICK_AIR,
                                          fandHand,
@@ -29,28 +29,28 @@ index b4e433569c81c1ffa80718d491c876724467ffea..3ab23f47f7b588711bc6cc57f1a694c5
                          if (fandInteractEvent.cancelled()) {
                              return;
 diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
-index bdb292a1f0255a3c60c9b19ab6d05e8d0d81f678..ba0fb195576619e8d29114b903ad219562321276 100644
+index 8b187f802ff1c69e4dcc8b12f47ab9344e6206c7..e9dd47e1d82f5f3f06522d868185dc956239c3e8 100644
 --- a/net/minecraft/world/entity/LivingEntity.java
 +++ b/net/minecraft/world/entity/LivingEntity.java
-@@ -1162,9 +1162,20 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
-                 io.fand.api.entity.LivingEntity fandVictim = io.fand.server.hooks.FandHooks.wrapLivingEntity(this);
-                 if (fandVictim != null) {
-                     var fandDamageType = source.typeHolder().unwrapKey().map(k -> k.identifier().toString()).orElse("minecraft:generic");
+@@ -1192,9 +1192,20 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+             io.fand.api.entity.LivingEntity fandVictim = io.fand.server.hooks.FandHooks.wrapLivingEntity(this);
+             if (fandVictim != null) {
+                 var fandDamageType = source.typeHolder().unwrapKey().map(k -> k.identifier().toString()).orElse("minecraft:generic");
 +                    var fandDirectEntity = java.util.Optional.ofNullable(source.getDirectEntity())
 +                            .filter(entity -> entity instanceof net.minecraft.world.entity.LivingEntity)
 +                            .map(entity -> io.fand.server.hooks.FandHooks.wrapLivingEntity((net.minecraft.world.entity.LivingEntity) entity));
 +                    var fandAttacker = java.util.Optional.ofNullable(source.getEntity())
 +                            .filter(entity -> entity instanceof net.minecraft.world.entity.LivingEntity)
 +                            .map(entity -> io.fand.server.hooks.FandHooks.wrapLivingEntity((net.minecraft.world.entity.LivingEntity) entity));
-                     var fandDamageEvent = io.fand.server.hooks.FandHooks.fireOrLog(
-                             fandBus,
--                            new io.fand.api.event.entity.EntityDamageEvent(fandVictim, fandDamageType, damage),
+                 var fandDamageEvent = io.fand.server.hooks.FandHooks.fireOrLog(
+                         fandBus,
+-                        new io.fand.api.event.entity.EntityDamageEvent(fandVictim, fandDamageType, damage),
 +                            new io.fand.api.event.entity.EntityDamageEvent(
 +                                    fandVictim,
 +                                    fandDamageType,
 +                                    damage,
 +                                    fandDirectEntity,
 +                                    fandAttacker),
-                             "EntityDamageEvent");
-                     if (fandDamageEvent.cancelled()) {
-                         return false;
+                         "EntityDamageEvent");
+                 if (fandDamageEvent.cancelled()) {
+                     return false;

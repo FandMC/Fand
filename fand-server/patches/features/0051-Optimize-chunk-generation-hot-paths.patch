@@ -5,7 +5,7 @@ Subject: [PATCH] Optimize chunk generation hot paths
 
 
 diff --git a/net/minecraft/server/level/ChunkGenerationTask.java b/net/minecraft/server/level/ChunkGenerationTask.java
-index 01b839b67db8f5787176e78db4dce817afa10207..6c59059545073b1d4f20137011c5be34146e58c1 100644
+index cf7d1280e414025975880079e7d13f199c59a02c..1827ea06d029ecd4e921b9063022ac476d8e85dc 100644
 --- a/net/minecraft/server/level/ChunkGenerationTask.java
 +++ b/net/minecraft/server/level/ChunkGenerationTask.java
 @@ -11,9 +11,12 @@ import net.minecraft.world.level.chunk.ChunkAccess;
@@ -77,15 +77,15 @@ index 01b839b67db8f5787176e78db4dce817afa10207..6c59059545073b1d4f20137011c5be34
      public void markForCancellation() {
          this.markedForCancellation = true;
      }
-@@ -87,7 +116,7 @@ public class ChunkGenerationTask {
-         } else {
-             ChunkStatus highestGeneratedStatus = this.cache.get(this.pos.x(), this.pos.z()).getPersistedStatus();
-             if (highestGeneratedStatus != null && !highestGeneratedStatus.isBefore(this.targetStatus)) {
--                ChunkDependencies dependencies = ChunkPyramid.LOADING_PYRAMID.getStepTo(this.targetStatus).accumulatedDependencies();
-+                ChunkDependencies dependencies = this.loadingDependencies();
-                 int range = dependencies.getRadius();
+@@ -88,7 +117,7 @@ public class ChunkGenerationTask {
  
-                 for (int x = this.pos.x() - range; x <= this.pos.x() + range; x++) {
+         ChunkStatus highestGeneratedStatus = this.cache.get(this.pos.x(), this.pos.z()).getPersistedStatus();
+         if (highestGeneratedStatus != null && !highestGeneratedStatus.isBefore(this.targetStatus)) {
+-            ChunkDependencies dependencies = ChunkPyramid.LOADING_PYRAMID.getStepTo(this.targetStatus).accumulatedDependencies();
++            ChunkDependencies dependencies = this.loadingDependencies();
+             int range = dependencies.getRadius();
+ 
+             for (int x = this.pos.x() - range; x <= this.pos.x() + range; x++) {
 @@ -108,6 +137,12 @@ public class ChunkGenerationTask {
          }
      }
@@ -114,18 +114,18 @@ index 01b839b67db8f5787176e78db4dce817afa10207..6c59059545073b1d4f20137011c5be34
      }
  
      private boolean scheduleChunkInLayer(final ChunkStatus status, final boolean needsGeneration, final GenerationChunkHolder chunkHolder) {
-@@ -140,7 +179,8 @@ public class ChunkGenerationTask {
-         if (generate && !needsGeneration) {
+@@ -141,7 +180,8 @@ public class ChunkGenerationTask {
              throw new IllegalStateException("Can't load chunk, but didn't expect to need to generate");
-         } else {
--            CompletableFuture<ChunkResult<ChunkAccess>> future = chunkHolder.applyStep(pyramid.getStepTo(status), this.chunkMap, this.cache);
-+            ChunkStep step = this.getStepForLayer(status, generate, pyramid);
-+            CompletableFuture<ChunkResult<ChunkAccess>> future = chunkHolder.applyStep(step, this.chunkMap, this.cache);
-             ChunkResult<ChunkAccess> now = future.getNow(null);
-             if (now == null) {
-                 this.scheduledLayer.add(future);
-@@ -154,6 +194,12 @@ public class ChunkGenerationTask {
          }
+ 
+-        CompletableFuture<ChunkResult<ChunkAccess>> future = chunkHolder.applyStep(pyramid.getStepTo(status), this.chunkMap, this.cache);
++        ChunkStep step = this.getStepForLayer(status, generate, pyramid);
++        CompletableFuture<ChunkResult<ChunkAccess>> future = chunkHolder.applyStep(step, this.chunkMap, this.cache);
+         ChunkResult<ChunkAccess> now = future.getNow(null);
+         if (now == null) {
+             this.scheduledLayer.add(future);
+@@ -156,6 +196,12 @@ public class ChunkGenerationTask {
+         return false;
      }
  
 +    private ChunkStep getStepForLayer(final ChunkStatus status, final boolean generate, final ChunkPyramid fallbackPyramid) {
@@ -137,7 +137,7 @@ index 01b839b67db8f5787176e78db4dce817afa10207..6c59059545073b1d4f20137011c5be34
      private @Nullable CompletableFuture<?> waitForScheduledLayer() {
          while (!this.scheduledLayer.isEmpty()) {
              CompletableFuture<ChunkResult<ChunkAccess>> lastFuture = this.scheduledLayer.getLast();
-@@ -170,4 +216,45 @@ public class ChunkGenerationTask {
+@@ -172,4 +218,45 @@ public class ChunkGenerationTask {
  
          return null;
      }
@@ -184,7 +184,7 @@ index 01b839b67db8f5787176e78db4dce817afa10207..6c59059545073b1d4f20137011c5be34
 +    }
  }
 diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
-index 549f3dccc722d8e19af934e3d3a35b766379061d..0bd0f4782ff1a459f2b0b1e95b72c6d9472d6ce6 100644
+index a369e8457958e08e61d1ab7267cccb72499e0fd5..fc17b4530faf2d044ca740606ec797f82f60f322 100644
 --- a/net/minecraft/server/level/ChunkMap.java
 +++ b/net/minecraft/server/level/ChunkMap.java
 @@ -74,6 +74,7 @@ import net.minecraft.util.profiling.Profiler;
@@ -331,7 +331,7 @@ index 3666b1efc77ab9b2e1dd9c26c67474ba6f48412e..8f5ff925d39d4337a24c74b4f6d4eb27
      public void close() {
          this.executor.close();
 diff --git a/net/minecraft/server/level/ChunkTaskPriorityQueue.java b/net/minecraft/server/level/ChunkTaskPriorityQueue.java
-index 6b436c812c92798b590766206115276c68b37d14..df8958c1a3aa60dd4da63e510d531d51e85c8105 100644
+index 7d4c3df37abad310001fae002380f1dbbb2857c2..df8958c1a3aa60dd4da63e510d531d51e85c8105 100644
 --- a/net/minecraft/server/level/ChunkTaskPriorityQueue.java
 +++ b/net/minecraft/server/level/ChunkTaskPriorityQueue.java
 @@ -2,7 +2,9 @@ package net.minecraft.server.level;
@@ -344,7 +344,7 @@ index 6b436c812c92798b590766206115276c68b37d14..df8958c1a3aa60dd4da63e510d531d51
  import java.util.stream.IntStream;
  import net.minecraft.world.level.ChunkPos;
  import org.jspecify.annotations.Nullable;
-@@ -61,19 +63,50 @@ public class ChunkTaskPriorityQueue {
+@@ -61,20 +63,51 @@ public class ChunkTaskPriorityQueue {
      }
  
      public ChunkTaskPriorityQueue.@Nullable TasksForChunk pop() {
@@ -357,12 +357,8 @@ index 6b436c812c92798b590766206115276c68b37d14..df8958c1a3aa60dd4da63e510d531d51
 +
 +    public ChunkTaskPriorityQueue.@Nullable TasksForChunk popAvoiding(final @Nullable LongPredicate unavailableChunkPosition) {
          if (!this.hasWork()) {
-             return null;
-         } else {
--            int index = this.topPriorityQueueIndex;
--            Long2ObjectLinkedOpenHashMap<List<Runnable>> queue = this.queuesPerPriority.get(index);
--            long chunkPos = queue.firstLongKey();
--            List<Runnable> tasks = queue.removeFirst();
++            return null;
++        } else {
 +            for (int index = this.topPriorityQueueIndex; index < PRIORITY_LEVEL_COUNT; index++) {
 +                Long2ObjectLinkedOpenHashMap<List<Runnable>> queue = this.queuesPerPriority.get(index);
 +                long chunkPos = this.firstAvailableChunk(queue, unavailableChunkPosition);
@@ -372,13 +368,15 @@ index 6b436c812c92798b590766206115276c68b37d14..df8958c1a3aa60dd4da63e510d531d51
 +                    return new ChunkTaskPriorityQueue.TasksForChunk(chunkPos, tasks);
 +                }
 +            }
- 
--            while (this.hasWork() && this.queuesPerPriority.get(this.topPriorityQueueIndex).isEmpty()) {
--                this.topPriorityQueueIndex++;
-+            return null;
-+        }
-+    }
 +
+             return null;
+         }
++    }
+ 
+-        int index = this.topPriorityQueueIndex;
+-        Long2ObjectLinkedOpenHashMap<List<Runnable>> queue = this.queuesPerPriority.get(index);
+-        long chunkPos = queue.firstLongKey();
+-        List<Runnable> tasks = queue.removeFirst();
 +    private long firstAvailableChunk(final Long2ObjectLinkedOpenHashMap<List<Runnable>> queue, final @Nullable LongPredicate unavailableChunkPosition) {
 +        if (queue.isEmpty()) {
 +            return Long.MAX_VALUE;
@@ -389,19 +387,21 @@ index 6b436c812c92798b590766206115276c68b37d14..df8958c1a3aa60dd4da63e510d531d51
 +                if (!unavailableChunkPosition.test(chunkPos)) {
 +                    return chunkPos;
 +                }
-             }
++            }
  
--            return new ChunkTaskPriorityQueue.TasksForChunk(chunkPos, tasks);
 +            return Long.MAX_VALUE;
 +        }
 +    }
 +
 +    private void refreshTopPriorityQueueIndex() {
-+        while (this.hasWork() && this.queuesPerPriority.get(this.topPriorityQueueIndex).isEmpty()) {
-+            this.topPriorityQueueIndex++;
+         while (this.hasWork() && this.queuesPerPriority.get(this.topPriorityQueueIndex).isEmpty()) {
+             this.topPriorityQueueIndex++;
          }
+-
+-        return new ChunkTaskPriorityQueue.TasksForChunk(chunkPos, tasks);
      }
  
+     public boolean hasWork() {
 diff --git a/net/minecraft/server/level/ParallelChunkTaskDispatcher.java b/net/minecraft/server/level/ParallelChunkTaskDispatcher.java
 new file mode 100644
 index 0000000000000000000000000000000000000000..9f086e741bd44c1012e8bc0556d5811fee72e125
@@ -477,7 +477,7 @@ index 0000000000000000000000000000000000000000..9f086e741bd44c1012e8bc0556d5811f
 +    }
 +}
 diff --git a/net/minecraft/server/level/WorldGenRegion.java b/net/minecraft/server/level/WorldGenRegion.java
-index df9d1b51d333a7497648b0d74236c66bff372205..f44849d12a87acfb6446a2d7575e8990b4493ec3 100644
+index 83e40a05bd99ad0fd17f7b4cbbd1e4cde7818800..5d9c7803f5aad8f28542677afdba12af1acd938b 100644
 --- a/net/minecraft/server/level/WorldGenRegion.java
 +++ b/net/minecraft/server/level/WorldGenRegion.java
 @@ -41,6 +41,7 @@ import net.minecraft.world.level.block.state.BlockState;
@@ -506,7 +506,7 @@ index df9d1b51d333a7497648b0d74236c66bff372205..f44849d12a87acfb6446a2d7575e8990
      private @Nullable Supplier<String> currentlyGenerating;
      private final AtomicLong subTickCount = new AtomicLong();
      private static final Identifier WORLDGEN_REGION_RANDOM = Identifier.withDefaultNamespace("worldgen_region_random");
-@@ -80,12 +85,16 @@ public class WorldGenRegion implements WorldGenLevel {
+@@ -83,16 +88,19 @@ public class WorldGenRegion implements WorldGenLevel {
          this.generatingStep = generatingStep;
          this.cache = cache;
          this.center = center;
@@ -518,13 +518,20 @@ index df9d1b51d333a7497648b0d74236c66bff372205..f44849d12a87acfb6446a2d7575e8990
 +        this.random = level.getChunkSource().randomState().getOrCreateRandomFactory(WORLDGEN_REGION_RANDOM).at(this.centerPos.getWorldPosition());
          this.dimensionType = level.dimensionType();
          this.biomeManager = new BiomeManager(this, BiomeManager.obfuscateSeed(this.seed));
+-        ChunkPos centerPos = center.getPos();
+-        this.centerChunkX = centerPos.x();
+-        this.centerChunkZ = centerPos.z();
+-        this.writeRadius = generatingStep.blockStateWriteRadius();
 +        this.directDependencies = generatingStep.directDependencies();
 +        this.directDependencyCount = this.directDependencies.size();
 +        this.blockStateWriteRadius = generatingStep.blockStateWriteRadius();
++        this.centerChunkX = this.centerPos.x();
++        this.centerChunkZ = this.centerPos.z();
++        this.writeRadius = this.blockStateWriteRadius;
      }
  
      public boolean isOldChunkAround(final ChunkPos pos, final int range) {
-@@ -93,7 +102,7 @@ public class WorldGenRegion implements WorldGenLevel {
+@@ -100,7 +108,7 @@ public class WorldGenRegion implements WorldGenLevel {
      }
  
      public ChunkPos getCenter() {
@@ -533,7 +540,7 @@ index df9d1b51d333a7497648b0d74236c66bff372205..f44849d12a87acfb6446a2d7575e8990
      }
  
      @Override
-@@ -108,10 +117,10 @@ public class WorldGenRegion implements WorldGenLevel {
+@@ -115,10 +123,10 @@ public class WorldGenRegion implements WorldGenLevel {
  
      @Override
      public @Nullable ChunkAccess getChunk(final int chunkX, final int chunkZ, final ChunkStatus targetStatus, final boolean loadOrGenerate) {
@@ -547,7 +554,7 @@ index df9d1b51d333a7497648b0d74236c66bff372205..f44849d12a87acfb6446a2d7575e8990
          GenerationChunkHolder chunkHolder;
          if (maxAllowedStatus != null) {
              chunkHolder = this.cache.get(chunkX, chunkZ);
-@@ -134,16 +143,16 @@ public class WorldGenRegion implements WorldGenLevel {
+@@ -141,16 +149,16 @@ public class WorldGenRegion implements WorldGenLevel {
          category.setDetail("Requested status", targetStatus::getName);
          category.setDetail("Actual status", () -> chunkHolder == null ? "[out of cache bounds]" : chunkHolder.getPersistedStatus().getName());
          category.setDetail("Maximum allowed status", () -> maxAllowedStatus == null ? "null" : maxAllowedStatus.getName());
@@ -568,58 +575,50 @@ index df9d1b51d333a7497648b0d74236c66bff372205..f44849d12a87acfb6446a2d7575e8990
      }
  
      @Override
-@@ -153,7 +162,7 @@ public class WorldGenRegion implements WorldGenLevel {
+@@ -270,9 +278,13 @@ public class WorldGenRegion implements WorldGenLevel {
  
      @Override
-     public FluidState getFluidState(final BlockPos pos) {
--        return this.getChunk(pos).getFluidState(pos);
-+        return this.getChunk(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ())).getFluidState(pos);
-     }
- 
-     @Override
-@@ -225,10 +234,14 @@ public class WorldGenRegion implements WorldGenLevel {
      public boolean ensureCanWrite(final BlockPos pos) {
-         int chunkX = SectionPos.blockToSectionCoord(pos.getX());
-         int chunkZ = SectionPos.blockToSectionCoord(pos.getZ());
--        ChunkPos centerPos = this.getCenter();
+-        if (!this.isWithinWriteZone(pos)) {
+-            int chunkX = SectionPos.blockToSectionCoord(pos.getX());
+-            int chunkZ = SectionPos.blockToSectionCoord(pos.getZ());
++        int chunkX = SectionPos.blockToSectionCoord(pos.getX());
++        int chunkZ = SectionPos.blockToSectionCoord(pos.getZ());
 +        return this.ensureCanWrite(chunkX, chunkZ, pos);
 +    }
 +
 +    private boolean ensureCanWrite(final int chunkX, final int chunkZ, final BlockPos pos) {
-+        ChunkPos centerPos = this.centerPos;
-         int distanceX = Math.abs(centerPos.x() - chunkX);
-         int distanceZ = Math.abs(centerPos.z() - chunkZ);
--        if (distanceX <= this.generatingStep.blockStateWriteRadius() && distanceZ <= this.generatingStep.blockStateWriteRadius()) {
-+        if (distanceX <= this.blockStateWriteRadius && distanceZ <= this.blockStateWriteRadius) {
-             if (this.center.isUpgrading()) {
-                 LevelHeightAccessor levelHeightAccessor = this.center.getHeightAccessorForGeneration();
-                 if (levelHeightAccessor.isOutsideBuildHeight(pos.getY())) {
-@@ -255,10 +268,12 @@ public class WorldGenRegion implements WorldGenLevel {
++        if (!this.isWithinWriteZone(chunkX, chunkZ)) {
+             Util.logAndPauseIfInIde(
+                 "Detected setBlock in a far chunk ["
+                     + chunkX
+@@ -295,11 +307,13 @@ public class WorldGenRegion implements WorldGenLevel {
  
      @Override
-     public boolean setBlock(final BlockPos pos, final BlockState blockState, @Block.UpdateFlags final int updateFlags, final int updateLimit) {
+     public boolean setBlock(final BlockPos pos, final BlockState blockState, final @Block.UpdateFlags int updateFlags, final int updateLimit) {
 -        if (!this.ensureCanWrite(pos)) {
 +        int chunkX = SectionPos.blockToSectionCoord(pos.getX());
 +        int chunkZ = SectionPos.blockToSectionCoord(pos.getZ());
 +        if (!this.ensureCanWrite(chunkX, chunkZ, pos)) {
              return false;
-         } else {
--            ChunkAccess chunk = this.getChunk(pos);
-+            ChunkAccess chunk = this.getChunk(chunkX, chunkZ);
-             BlockState oldState = chunk.setBlockState(pos, blockState, updateFlags);
-             if (oldState != null) {
-                 this.level.updatePOIOnBlockStateChange(pos, oldState, blockState);
-@@ -296,7 +311,7 @@ public class WorldGenRegion implements WorldGenLevel {
+         }
+ 
+-        ChunkAccess chunk = this.getChunk(pos);
++        ChunkAccess chunk = this.getChunk(chunkX, chunkZ);
+         BlockState oldState = chunk.setBlockState(pos, blockState, updateFlags);
+         if (oldState != null) {
+             this.level.updatePOIOnBlockStateChange(pos, oldState, blockState);
+@@ -336,7 +350,7 @@ public class WorldGenRegion implements WorldGenLevel {
      }
  
-     private void markPosForPostprocessing(final BlockPos blockPos) {
--        this.getChunk(blockPos).markPosForPostprocessing(blockPos);
-+        this.getChunk(SectionPos.blockToSectionCoord(blockPos.getX()), SectionPos.blockToSectionCoord(blockPos.getZ())).markPosForPostprocessing(blockPos);
+     private void markPosForPostProcessing(final BlockPos blockPos) {
+-        this.getChunk(blockPos).markPosForPostProcessing(blockPos);
++        this.getChunk(SectionPos.blockToSectionCoord(blockPos.getX()), SectionPos.blockToSectionCoord(blockPos.getZ())).markPosForPostProcessing(blockPos);
      }
  
      @Override
 diff --git a/net/minecraft/world/level/chunk/storage/IOWorker.java b/net/minecraft/world/level/chunk/storage/IOWorker.java
-index cc5d366f7b485f98901572b1aaf57d8b650d521f..a1c7939bc6d4d5b1698405285d719171529683eb 100644
+index 8324ad114ddd94b9a99ac1b53332e34a39fe079a..094f950e22852f635a3ce5676fd5a57a847f455b 100644
 --- a/net/minecraft/world/level/chunk/storage/IOWorker.java
 +++ b/net/minecraft/world/level/chunk/storage/IOWorker.java
 @@ -87,6 +87,12 @@ public class IOWorker implements AutoCloseable, ChunkScanAccess {
@@ -635,17 +634,6 @@ index cc5d366f7b485f98901572b1aaf57d8b650d521f..a1c7939bc6d4d5b1698405285d719171
          return CompletableFuture.supplyAsync(
              () -> {
                  ChunkPos from = ChunkPos.minFromRegion(regionX, regionZ);
-@@ -101,8 +107,8 @@ public class IOWorker implements AutoCloseable, ChunkScanAccess {
- 
-                             try {
-                                 this.scanChunk(pos, collectFields).join();
--                            } catch (Exception var7) {
--                                LOGGER.warn("Failed to scan chunk {}", pos, var7);
-+                            } catch (Exception exception) {
-+                                LOGGER.warn("Failed to scan chunk {}", pos, exception);
-                                 return;
-                             }
- 
 @@ -118,6 +124,54 @@ public class IOWorker implements AutoCloseable, ChunkScanAccess {
          );
      }
@@ -699,10 +687,10 @@ index cc5d366f7b485f98901572b1aaf57d8b650d521f..a1c7939bc6d4d5b1698405285d719171
 +    }
 +
      private boolean isOldChunk(final CompoundTag tag) {
-         return tag.getIntOr("DataVersion", 0) < 4295 || tag.getCompound("blending_data").isPresent();
+         return tag.getIntOr("DataVersion", 0) < 4882 || tag.getCompound("blending_data").isPresent();
      }
 diff --git a/net/minecraft/world/level/chunk/storage/RegionFileStorage.java b/net/minecraft/world/level/chunk/storage/RegionFileStorage.java
-index 56793559e200b651cfe10ebf97be821922158af6..75d6b9160e787c371077ad0c56cd5abc4c72b27e 100644
+index 7a771f7382f40043c9b6bb4e7a33fc464f16854c..733dc003e867f6d4da542da71826467a34022948 100644
 --- a/net/minecraft/world/level/chunk/storage/RegionFileStorage.java
 +++ b/net/minecraft/world/level/chunk/storage/RegionFileStorage.java
 @@ -4,6 +4,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
@@ -726,16 +714,15 @@ index 56793559e200b651cfe10ebf97be821922158af6..75d6b9160e787c371077ad0c56cd5abc
          RegionFile region = this.regionCache.getAndMoveToFirst(key);
          if (region != null) {
              return region;
-@@ -40,14 +45,26 @@ public final class RegionFileStorage implements AutoCloseable {
-             }
- 
-             FileUtil.createDirectoriesSafe(this.folder);
--            Path file = this.folder.resolve("r." + pos.getRegionX() + "." + pos.getRegionZ() + ".mca");
-+            Path file = this.getRegionFilePath(regionX, regionZ);
-             RegionFile newRegion = new RegionFile(this.info, file, this.folder, this.sync);
-             this.regionCache.putAndMoveToFirst(key, newRegion);
-             return newRegion;
+@@ -41,13 +46,25 @@ public final class RegionFileStorage implements AutoCloseable {
          }
+ 
+         FileUtil.createDirectoriesSafe(this.folder);
+-        Path file = this.folder.resolve("r." + pos.getRegionX() + "." + pos.getRegionZ() + ".mca");
++        Path file = this.getRegionFilePath(regionX, regionZ);
+         RegionFile newRegion = new RegionFile(this.info, file, this.folder, this.sync);
+         this.regionCache.putAndMoveToFirst(key, newRegion);
+         return newRegion;
      }
  
 +    boolean doesRegionFileExist(final int regionX, final int regionZ) {
@@ -753,8 +740,8 @@ index 56793559e200b651cfe10ebf97be821922158af6..75d6b9160e787c371077ad0c56cd5abc
 +
          RegionFile region = this.getRegionFile(pos);
  
-         CompoundTag var4;
-@@ -63,6 +80,14 @@ public final class RegionFileStorage implements AutoCloseable {
+         try (DataInputStream regionChunkInputStream = region.getChunkDataInputStream(pos)) {
+@@ -56,6 +73,14 @@ public final class RegionFileStorage implements AutoCloseable {
      }
  
      public void scanChunk(final ChunkPos pos, final StreamTagVisitor scanner) throws IOException {

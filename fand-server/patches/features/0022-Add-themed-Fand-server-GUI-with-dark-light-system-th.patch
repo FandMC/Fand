@@ -5,10 +5,10 @@ Subject: [PATCH] Add themed Fand server GUI with dark/light/system themes
 
 
 diff --git a/net/minecraft/server/Main.java b/net/minecraft/server/Main.java
-index 637b34f411ce5ca1ca9f022b2816e4b2e4006419..8f41c60a4bc4e04aee2873a039d3b9559a6c8202 100644
+index a220de69de1614848df32451ef7831c37e8e8aae..3a6120b61fef0277c74c8de257c0870b09de5a8a 100644
 --- a/net/minecraft/server/Main.java
 +++ b/net/minecraft/server/Main.java
-@@ -209,7 +209,7 @@ public class Main {
+@@ -223,7 +223,7 @@ public class Main {
                      server.setDemo(options.has(demo));
                      server.setId(options.valueOf(serverId));
                      boolean gui = !options.has(nogui) && !options.valuesOf(nonOptions).contains("nogui");
@@ -18,7 +18,7 @@ index 637b34f411ce5ca1ca9f022b2816e4b2e4006419..8f41c60a4bc4e04aee2873a039d3b955
                      }
  
 diff --git a/net/minecraft/server/gui/MinecraftServerGui.java b/net/minecraft/server/gui/MinecraftServerGui.java
-index 1ceb8e1ac9ba0d17fb01e38cf44ed75ceb977782..06d5bab3b7ac18e92319d24730663d20ae7ccfdb 100644
+index a2578abbb6d61e37638c47626fd4cc7674aff258..f82f733def0e815b601c77373578274b45c527ea 100644
 --- a/net/minecraft/server/gui/MinecraftServerGui.java
 +++ b/net/minecraft/server/gui/MinecraftServerGui.java
 @@ -3,6 +3,7 @@ package net.minecraft.server.gui;
@@ -29,15 +29,7 @@ index 1ceb8e1ac9ba0d17fb01e38cf44ed75ceb977782..06d5bab3b7ac18e92319d24730663d20
  import java.awt.BorderLayout;
  import java.awt.Dimension;
  import java.awt.Font;
-@@ -23,6 +24,7 @@ import javax.swing.JTextArea;
- import javax.swing.JTextField;
- import javax.swing.SwingUtilities;
- import javax.swing.UIManager;
-+import javax.swing.WindowConstants;
- import javax.swing.border.EtchedBorder;
- import javax.swing.border.TitledBorder;
- import javax.swing.text.BadLocationException;
-@@ -47,9 +49,10 @@ public class MinecraftServerGui extends JComponent {
+@@ -48,7 +49,8 @@ public class MinecraftServerGui extends JComponent {
          } catch (Exception var3) {
          }
  
@@ -45,12 +37,9 @@ index 1ceb8e1ac9ba0d17fb01e38cf44ed75ceb977782..06d5bab3b7ac18e92319d24730663d20
 +        final JFrame frame = new JFrame(TITLE);
 +        FandGuiSupport.applyWindowIcon(frame);
          final MinecraftServerGui gui = new MinecraftServerGui(server);
--        frame.setDefaultCloseOperation(2);
-+        frame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+         frame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
          frame.add(gui);
-         frame.pack();
-         frame.setLocationRelativeTo(null);
-@@ -58,13 +61,16 @@ public class MinecraftServerGui extends JComponent {
+@@ -59,13 +61,16 @@ public class MinecraftServerGui extends JComponent {
              @Override
              public void windowClosing(final WindowEvent event) {
                  if (!gui.isClosing.getAndSet(true)) {
@@ -68,7 +57,7 @@ index 1ceb8e1ac9ba0d17fb01e38cf44ed75ceb977782..06d5bab3b7ac18e92319d24730663d20
          gui.start();
          return gui;
      }
-@@ -77,6 +83,11 @@ public class MinecraftServerGui extends JComponent {
+@@ -78,6 +83,11 @@ public class MinecraftServerGui extends JComponent {
          try {
              this.add(this.buildChatPanel(), "Center");
              this.add(this.buildInfoPanel(), "West");
@@ -77,8 +66,8 @@ index 1ceb8e1ac9ba0d17fb01e38cf44ed75ceb977782..06d5bab3b7ac18e92319d24730663d20
 +            this.add(themeBar.component(), "North");
 +            this.finalizers.add(themeBar.cleanup());
 +            // Fand end - themed server GUI
-         } catch (Exception var3) {
-             LOGGER.error("Couldn't build server GUI", (Throwable)var3);
+         } catch (Exception e) {
+             LOGGER.error("Couldn't build server GUI", e);
          }
 diff --git a/net/minecraft/server/gui/StatsComponent.java b/net/minecraft/server/gui/StatsComponent.java
 index 60c7378400ee9bdd90a74187b141fb466a67eb31..ac702ce90ab5e697c504ace3e802d76cbbf0142a 100644

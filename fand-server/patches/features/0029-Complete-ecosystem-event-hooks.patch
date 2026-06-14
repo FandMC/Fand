@@ -8,7 +8,7 @@ Add vanilla hook points for the remaining high-value ecosystem events, including
 Keep patched Minecraft code thin by routing event construction, cancellation semantics, mutable payload application, and listener failure handling through Fand bridge helpers.
 
 diff --git a/net/minecraft/core/cauldron/CauldronInteractions.java b/net/minecraft/core/cauldron/CauldronInteractions.java
-index e0397dfeb3ce8bffcb1ef11be71e84eb84724dcc..a273d146575d1f36909a9643647a70b79f9e06f9 100644
+index 35012d2370a8ee143396370cc8f94ca2f25060b6..609e9e4d8215aafe3c18ee15de37f3734baf4698 100644
 --- a/net/minecraft/core/cauldron/CauldronInteractions.java
 +++ b/net/minecraft/core/cauldron/CauldronInteractions.java
 @@ -50,11 +50,21 @@ public class CauldronInteractions {
@@ -54,52 +54,52 @@ index e0397dfeb3ce8bffcb1ef11be71e84eb84724dcc..a273d146575d1f36909a9643647a70b7
                  level.playSound(null, pos, SoundEvents.BOTTLE_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
                  level.gameEvent(null, GameEvent.FLUID_PICKUP, pos);
              }
-@@ -99,10 +116,20 @@ public class CauldronInteractions {
-                 PotionContents potion = itemInHand.get(DataComponents.POTION_CONTENTS);
-                 if (potion != null && potion.is(Potions.WATER)) {
-                     if (!level.isClientSide()) {
-+                        BlockState newState = state.cycle(LayeredCauldronBlock.LEVEL);
-+                        if (!io.fand.server.event.BlockEvents.fireCauldronLevelChange(
-+                            level,
-+                            pos,
-+                            state,
-+                            newState,
-+                            player,
-+                            io.fand.api.event.block.CauldronLevelChangeEvent.Cause.BOTTLE_EMPTY)) {
-+                            return InteractionResult.SUCCESS;
-+                        }
-                         player.setItemInHand(hand, ItemUtils.createFilledResult(itemInHand, player, new ItemStack(Items.GLASS_BOTTLE)));
-                         player.awardStat(Stats.USE_CAULDRON);
-                         player.awardStat(Stats.ITEM_USED.get(itemInHand.getItem()));
--                        level.setBlockAndUpdate(pos, state.cycle(LayeredCauldronBlock.LEVEL));
-+                        level.setBlockAndUpdate(pos, newState);
-                         level.playSound(null, pos, SoundEvents.BOTTLE_EMPTY, SoundSource.BLOCKS, 1.0F, 1.0F);
-                         level.gameEvent(null, GameEvent.FLUID_PLACE, pos);
-                     }
-@@ -191,11 +218,21 @@ public class CauldronInteractions {
-             return InteractionResult.TRY_WITH_EMPTY_HAND;
-         } else {
-             if (!level.isClientSide()) {
-+                BlockState newState = Blocks.CAULDRON.defaultBlockState();
-+                if (!io.fand.server.event.BlockEvents.fireCauldronLevelChange(
-+                    level,
-+                    pos,
-+                    state,
-+                    newState,
-+                    player,
-+                    io.fand.api.event.block.CauldronLevelChangeEvent.Cause.BUCKET_FILL)) {
-+                    return InteractionResult.SUCCESS;
-+                }
-                 Item itemUsed = itemInHand.getItem();
-                 player.setItemInHand(hand, ItemUtils.createFilledResult(itemInHand, player, newItem));
-                 player.awardStat(Stats.USE_CAULDRON);
-                 player.awardStat(Stats.ITEM_USED.get(itemUsed));
--                level.setBlockAndUpdate(pos, Blocks.CAULDRON.defaultBlockState());
-+                level.setBlockAndUpdate(pos, newState);
-                 level.playSound(null, pos, soundEvent, SoundSource.BLOCKS, 1.0F, 1.0F);
-                 level.gameEvent(null, GameEvent.FLUID_PICKUP, pos);
-             }
-@@ -214,6 +251,15 @@ public class CauldronInteractions {
+@@ -100,10 +117,20 @@ public class CauldronInteractions {
+             PotionContents potion = itemInHand.get(DataComponents.POTION_CONTENTS);
+             if (potion != null && potion.is(Potions.WATER)) {
+                 if (!level.isClientSide()) {
++                    BlockState newState = state.cycle(LayeredCauldronBlock.LEVEL);
++                    if (!io.fand.server.event.BlockEvents.fireCauldronLevelChange(
++                        level,
++                        pos,
++                        state,
++                        newState,
++                        player,
++                        io.fand.api.event.block.CauldronLevelChangeEvent.Cause.BOTTLE_EMPTY)) {
++                        return InteractionResult.SUCCESS;
++                    }
+                     player.setItemInHand(hand, ItemUtils.createFilledResult(itemInHand, player, new ItemStack(Items.GLASS_BOTTLE)));
+                     player.awardStat(Stats.USE_CAULDRON);
+                     player.awardStat(Stats.ITEM_USED.get(itemInHand.getItem()));
+-                    level.setBlockAndUpdate(pos, state.cycle(LayeredCauldronBlock.LEVEL));
++                    level.setBlockAndUpdate(pos, newState);
+                     level.playSound(null, pos, SoundEvents.BOTTLE_EMPTY, SoundSource.BLOCKS, 1.0F, 1.0F);
+                     level.gameEvent(null, GameEvent.FLUID_PLACE, pos);
+                 }
+@@ -162,11 +189,21 @@ public class CauldronInteractions {
+         }
+ 
+         if (!level.isClientSide()) {
++            BlockState newState = Blocks.CAULDRON.defaultBlockState();
++            if (!io.fand.server.event.BlockEvents.fireCauldronLevelChange(
++                level,
++                pos,
++                state,
++                newState,
++                player,
++                io.fand.api.event.block.CauldronLevelChangeEvent.Cause.BUCKET_FILL)) {
++                return InteractionResult.SUCCESS;
++            }
+             Item itemUsed = itemInHand.getItem();
+             player.setItemInHand(hand, ItemUtils.createFilledResult(itemInHand, player, newItem));
+             player.awardStat(Stats.USE_CAULDRON);
+             player.awardStat(Stats.ITEM_USED.get(itemUsed));
+-            level.setBlockAndUpdate(pos, Blocks.CAULDRON.defaultBlockState());
++            level.setBlockAndUpdate(pos, newState);
+             level.playSound(null, pos, soundEvent, SoundSource.BLOCKS, 1.0F, 1.0F);
+             level.gameEvent(null, GameEvent.FLUID_PICKUP, pos);
+         }
+@@ -184,6 +221,15 @@ public class CauldronInteractions {
          final SoundEvent soundEvent
      ) {
          if (!level.isClientSide()) {
@@ -115,82 +115,82 @@ index e0397dfeb3ce8bffcb1ef11be71e84eb84724dcc..a273d146575d1f36909a9643647a70b7
              Item itemUsed = itemInHand.getItem();
              player.setItemInHand(hand, ItemUtils.createFilledResult(itemInHand, player, new ItemStack(Items.BUCKET)));
              player.awardStat(Stats.FILL_CAULDRON);
-@@ -266,10 +312,17 @@ public class CauldronInteractions {
-             return InteractionResult.TRY_WITH_EMPTY_HAND;
-         } else {
-             if (!level.isClientSide()) {
-+                if (!LayeredCauldronBlock.lowerFillLevel(
-+                    state,
-+                    level,
-+                    pos,
-+                    player,
-+                    io.fand.api.event.block.CauldronLevelChangeEvent.Cause.CLEAN_ITEM)) {
-+                    return InteractionResult.SUCCESS;
-+                }
-                 ItemStack cleanedShulkerBox = itemInHand.transmuteCopy(Blocks.SHULKER_BOX, 1);
-                 player.setItemInHand(hand, ItemUtils.createFilledResult(itemInHand, player, cleanedShulkerBox, false));
-                 player.awardStat(Stats.CLEAN_SHULKER_BOX);
--                LayeredCauldronBlock.lowerFillLevel(state, level, pos);
-             }
+@@ -237,10 +283,17 @@ public class CauldronInteractions {
+         }
  
-             return InteractionResult.SUCCESS;
-@@ -284,11 +337,18 @@ public class CauldronInteractions {
-             return InteractionResult.TRY_WITH_EMPTY_HAND;
-         } else {
-             if (!level.isClientSide()) {
-+                if (!LayeredCauldronBlock.lowerFillLevel(
-+                    state,
-+                    level,
-+                    pos,
-+                    player,
-+                    io.fand.api.event.block.CauldronLevelChangeEvent.Cause.CLEAN_ITEM)) {
-+                    return InteractionResult.SUCCESS;
-+                }
-                 ItemStack cleanedBanner = itemInHand.copyWithCount(1);
-                 cleanedBanner.set(DataComponents.BANNER_PATTERNS, patterns.removeLast());
-                 player.setItemInHand(hand, ItemUtils.createFilledResult(itemInHand, player, cleanedBanner, false));
-                 player.awardStat(Stats.CLEAN_BANNER);
--                LayeredCauldronBlock.lowerFillLevel(state, level, pos);
-             }
+         if (!level.isClientSide()) {
++            if (!LayeredCauldronBlock.lowerFillLevel(
++                state,
++                level,
++                pos,
++                player,
++                io.fand.api.event.block.CauldronLevelChangeEvent.Cause.CLEAN_ITEM)) {
++                return InteractionResult.SUCCESS;
++            }
+             ItemStack cleanedShulkerBox = itemInHand.transmuteCopy(Blocks.SHULKER_BOX, 1);
+             player.setItemInHand(hand, ItemUtils.createFilledResult(itemInHand, player, cleanedShulkerBox, false));
+             player.awardStat(Stats.CLEAN_SHULKER_BOX);
+-            LayeredCauldronBlock.lowerFillLevel(state, level, pos);
+         }
  
-             return InteractionResult.SUCCESS;
-@@ -302,9 +362,16 @@ public class CauldronInteractions {
-             return InteractionResult.TRY_WITH_EMPTY_HAND;
-         } else {
-             if (!level.isClientSide()) {
-+                if (!LayeredCauldronBlock.lowerFillLevel(
-+                    state,
-+                    level,
-+                    pos,
-+                    player,
-+                    io.fand.api.event.block.CauldronLevelChangeEvent.Cause.CLEAN_ITEM)) {
-+                    return InteractionResult.SUCCESS;
-+                }
-                 itemInHand.remove(DataComponents.DYED_COLOR);
-                 player.awardStat(Stats.CLEAN_ARMOR);
--                LayeredCauldronBlock.lowerFillLevel(state, level, pos);
-             }
+         return InteractionResult.SUCCESS;
+@@ -255,11 +308,18 @@ public class CauldronInteractions {
+         }
  
-             return InteractionResult.SUCCESS;
+         if (!level.isClientSide()) {
++            if (!LayeredCauldronBlock.lowerFillLevel(
++                state,
++                level,
++                pos,
++                player,
++                io.fand.api.event.block.CauldronLevelChangeEvent.Cause.CLEAN_ITEM)) {
++                return InteractionResult.SUCCESS;
++            }
+             ItemStack cleanedBanner = itemInHand.copyWithCount(1);
+             cleanedBanner.set(DataComponents.BANNER_PATTERNS, patterns.removeLast());
+             player.setItemInHand(hand, ItemUtils.createFilledResult(itemInHand, player, cleanedBanner, false));
+             player.awardStat(Stats.CLEAN_BANNER);
+-            LayeredCauldronBlock.lowerFillLevel(state, level, pos);
+         }
+ 
+         return InteractionResult.SUCCESS;
+@@ -273,9 +333,16 @@ public class CauldronInteractions {
+         }
+ 
+         if (!level.isClientSide()) {
++            if (!LayeredCauldronBlock.lowerFillLevel(
++                state,
++                level,
++                pos,
++                player,
++                io.fand.api.event.block.CauldronLevelChangeEvent.Cause.CLEAN_ITEM)) {
++                return InteractionResult.SUCCESS;
++            }
+             itemInHand.remove(DataComponents.DYED_COLOR);
+             player.awardStat(Stats.CLEAN_ARMOR);
+-            LayeredCauldronBlock.lowerFillLevel(state, level, pos);
+         }
+ 
+         return InteractionResult.SUCCESS;
 diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
-index 8eaf29fec7e30679b7cc1eb143be122797bd2121..f9ae61d37fdfa8eee84ff84b00fa0915b7d3364e 100644
+index 1b074bd35bbd1b7bf9d7c01c2102ba6fe1e12f95..ea939bb79459faefdc66ea145795e221b3d06ddc 100644
 --- a/net/minecraft/world/entity/Entity.java
 +++ b/net/minecraft/world/entity/Entity.java
-@@ -2145,7 +2145,12 @@ public abstract class Entity
-         if (itemStack.isEmpty()) {
+@@ -2240,7 +2240,12 @@ public abstract class Entity
              return null;
-         } else {
--            ItemEntity entity = new ItemEntity(level, this.getX() + offset.x, this.getY() + offset.y, this.getZ() + offset.z, itemStack);
-+            Vec3 position = new Vec3(this.getX() + offset.x, this.getY() + offset.y, this.getZ() + offset.z);
-+            ItemStack fandDropItem = io.fand.server.event.EntityEvents.fireDropItem(this, level, position, itemStack);
-+            if (fandDropItem == null || fandDropItem.isEmpty()) {
-+                return null;
-+            }
-+            ItemEntity entity = new ItemEntity(level, position.x, position.y, position.z, fandDropItem);
-             entity.setDefaultPickUpDelay();
-             level.addFreshEntity(entity);
-             return entity;
-@@ -2190,7 +2195,12 @@ public abstract class Entity
+         }
+ 
+-        ItemEntity entity = new ItemEntity(level, this.getX() + offset.x, this.getY() + offset.y, this.getZ() + offset.z, itemStack);
++        Vec3 position = new Vec3(this.getX() + offset.x, this.getY() + offset.y, this.getZ() + offset.z);
++        ItemStack fandDropItem = io.fand.server.event.EntityEvents.fireDropItem(this, level, position, itemStack);
++        if (fandDropItem == null || fandDropItem.isEmpty()) {
++            return null;
++        }
++        ItemEntity entity = new ItemEntity(level, position.x, position.y, position.z, fandDropItem);
+         entity.setDefaultPickUpDelay();
+         level.addFreshEntity(entity);
+         return entity;
+@@ -2284,7 +2289,12 @@ public abstract class Entity
                  boolean anyLeashed = false;
  
                  for (Leashable mob : mobsToLeash) {
@@ -204,7 +204,7 @@ index 8eaf29fec7e30679b7cc1eb143be122797bd2121..f9ae61d37fdfa8eee84ff84b00fa0915
                          mob.setLeashedTo(this, true);
                          anyLeashed = true;
                      }
-@@ -2205,23 +2215,30 @@ public abstract class Entity
+@@ -2299,23 +2309,30 @@ public abstract class Entity
          }
  
          ItemStack heldItem = player.getItemInHand(hand);
@@ -219,34 +219,34 @@ index 8eaf29fec7e30679b7cc1eb143be122797bd2121..f9ae61d37fdfa8eee84ff84b00fa0915
              && target.canShearEquipment(player)
              && !player.isSecondaryUseActive()
 +            && io.fand.server.event.PlayerEvents.fireShearEntity(player, this, hand, heldItem)
-             && this.attemptToShearEquipment(player, hand, heldItem, target)) {
+             && target.attemptToShearEquipment(player, hand, heldItem)) {
              return InteractionResult.SUCCESS;
          } else {
-             if (this.isAlive() && this instanceof Leashable leashablex) {
-                 if (leashablex.getLeashHolder() == player) {
+             if (this.isAlive() && this instanceof Leashable leashable) {
+                 if (leashable.getLeashHolder() == player) {
                      if (!this.level().isClientSide()) {
 -                        if (player.hasInfiniteMaterials()) {
--                            leashablex.removeLeash();
+-                            leashable.removeLeash();
 -                        } else {
 +                        boolean dropLead = !player.hasInfiniteMaterials();
-+                        if (!io.fand.server.event.PlayerEvents.fireUnleashEntity(player, this, leashablex.getLeashHolder(), dropLead)) {
++                        if (!io.fand.server.event.PlayerEvents.fireUnleashEntity(player, this, leashable.getLeashHolder(), dropLead)) {
 +                            return InteractionResult.FAIL;
 +                        }
 +                        if (dropLead) {
-                             leashablex.dropLeash();
+                             leashable.dropLeash();
 +                        } else {
-+                            leashablex.removeLeash();
++                            leashable.removeLeash();
                          }
  
                          this.gameEvent(GameEvent.ENTITY_INTERACT, player);
-@@ -2239,9 +2256,19 @@ public abstract class Entity
+@@ -2333,9 +2350,19 @@ public abstract class Entity
  
-                     if (leashablex.canHaveALeashAttachedTo(player)) {
-                         if (leashablex.isLeashed()) {
-+                            if (!io.fand.server.event.PlayerEvents.fireUnleashEntity(player, this, leashablex.getLeashHolder(), true)) {
+                     if (leashable.canHaveALeashAttachedTo(player)) {
+                         if (leashable.isLeashed()) {
++                            if (!io.fand.server.event.PlayerEvents.fireUnleashEntity(player, this, leashable.getLeashHolder(), true)) {
 +                                return InteractionResult.FAIL;
 +                            }
-                             leashablex.dropLeash();
+                             leashable.dropLeash();
                          }
  
 +                        if (!io.fand.server.event.PlayerEvents.fireLeashEntity(
@@ -256,10 +256,10 @@ index 8eaf29fec7e30679b7cc1eb143be122797bd2121..f9ae61d37fdfa8eee84ff84b00fa0915
 +                            io.fand.api.event.player.PlayerLeashEntityEvent.Cause.PLAYER)) {
 +                            return InteractionResult.FAIL;
 +                        }
-                         leashablex.setLeashedTo(player, true);
+                         leashable.setLeashedTo(player, true);
                          this.playSound(SoundEvents.LEAD_TIED);
                          itemStack.shrink(1);
-@@ -2265,14 +2292,23 @@ public abstract class Entity
+@@ -2359,14 +2386,23 @@ public abstract class Entity
  
      public boolean dropAllLeashConnections(final @Nullable Player player) {
          List<Leashable> leashables = Leashable.leashableLeashedTo(this);
@@ -287,76 +287,76 @@ index 8eaf29fec7e30679b7cc1eb143be122797bd2121..f9ae61d37fdfa8eee84ff84b00fa0915
  
          if (dropped) {
 diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
-index d7bfe178a933ef2b93f1a9f42601be141906d468..84fb32ba8d2650b8c18cd45911a675f14685ec6c 100644
+index 5515566b5f073cc77339d09e8cfa1e4834c6a176..e18f2e09f750531420acde1f3451162c3d64d133 100644
 --- a/net/minecraft/world/entity/LivingEntity.java
 +++ b/net/minecraft/world/entity/LivingEntity.java
-@@ -762,7 +762,19 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
-             this.swing(InteractionHand.MAIN_HAND);
+@@ -787,7 +787,19 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
              return null;
-         } else {
--            ItemEntity entity = this.createItemStackToDrop(itemStack, randomly, thrownFromHand);
-+            ItemStack dropItem = itemStack;
-+            if (!(this instanceof net.minecraft.server.level.ServerPlayer) && this.level() instanceof ServerLevel serverLevel) {
-+                ItemStack fandDropItem = io.fand.server.event.EntityEvents.fireDropItem(
-+                    this,
-+                    serverLevel,
-+                    new net.minecraft.world.phys.Vec3(this.getX(), this.getEyeY() - 0.3F, this.getZ()),
-+                    dropItem);
-+                if (fandDropItem == null || fandDropItem.isEmpty()) {
-+                    return null;
-+                }
-+                dropItem = fandDropItem;
+         }
+ 
+-        ItemEntity entity = this.createItemStackToDrop(itemStack, randomly, thrownFromHand);
++        ItemStack dropItem = itemStack;
++        if (!(this instanceof net.minecraft.server.level.ServerPlayer) && this.level() instanceof ServerLevel serverLevel) {
++            ItemStack fandDropItem = io.fand.server.event.EntityEvents.fireDropItem(
++                this,
++                serverLevel,
++                new net.minecraft.world.phys.Vec3(this.getX(), this.getEyeY() - 0.3F, this.getZ()),
++                dropItem);
++            if (fandDropItem == null || fandDropItem.isEmpty()) {
++                return null;
 +            }
-+            ItemEntity entity = this.createItemStackToDrop(dropItem, randomly, thrownFromHand);
-             if (entity != null) {
-                 this.level().addFreshEntity(entity);
-             }
-@@ -1223,36 +1235,11 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
-         } else if (source.is(DamageTypeTags.IS_FIRE) && this.hasEffect(MobEffects.FIRE_RESISTANCE)) {
++            dropItem = fandDropItem;
++        }
++        ItemEntity entity = this.createItemStackToDrop(dropItem, randomly, thrownFromHand);
+         if (entity != null) {
+             this.level().addFreshEntity(entity);
+         }
+@@ -1253,36 +1265,11 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
              return false;
-         } else {
--            var fandBus = io.fand.server.hooks.FandHooks.events();
--            if (fandBus.hasListeners(io.fand.api.event.entity.EntityDamageEvent.class)) {
--                io.fand.api.entity.LivingEntity fandVictim = io.fand.server.hooks.FandHooks.wrapLivingEntity(this);
--                if (fandVictim != null) {
--                    var fandDamageType = source.typeHolder().unwrapKey().map(k -> k.identifier().toString()).orElse("minecraft:generic");
+         }
+ 
+-        var fandBus = io.fand.server.hooks.FandHooks.events();
+-        if (fandBus.hasListeners(io.fand.api.event.entity.EntityDamageEvent.class)) {
+-            io.fand.api.entity.LivingEntity fandVictim = io.fand.server.hooks.FandHooks.wrapLivingEntity(this);
+-            if (fandVictim != null) {
+-                var fandDamageType = source.typeHolder().unwrapKey().map(k -> k.identifier().toString()).orElse("minecraft:generic");
 -                    var fandDirectEntity = java.util.Optional.ofNullable(source.getDirectEntity())
 -                            .filter(entity -> entity instanceof net.minecraft.world.entity.LivingEntity)
 -                            .map(entity -> io.fand.server.hooks.FandHooks.wrapLivingEntity((net.minecraft.world.entity.LivingEntity) entity));
 -                    var fandAttacker = java.util.Optional.ofNullable(source.getEntity())
 -                            .filter(entity -> entity instanceof net.minecraft.world.entity.LivingEntity)
 -                            .map(entity -> io.fand.server.hooks.FandHooks.wrapLivingEntity((net.minecraft.world.entity.LivingEntity) entity));
--                    var fandDamageEvent = io.fand.server.hooks.FandHooks.fireOrLog(
--                            fandBus,
+-                var fandDamageEvent = io.fand.server.hooks.FandHooks.fireOrLog(
+-                        fandBus,
 -                            new io.fand.api.event.entity.EntityDamageEvent(
 -                                    fandVictim,
 -                                    fandDamageType,
 -                                    damage,
 -                                    fandDirectEntity,
 -                                    fandAttacker),
--                            "EntityDamageEvent");
--                    if (fandDamageEvent.cancelled()) {
--                        return false;
--                    }
--                    double fandAdjusted = fandDamageEvent.amount();
--                    if (fandAdjusted < 0.0) {
--                        fandAdjusted = 0.0;
--                    }
--                    damage = (float) fandAdjusted;
+-                        "EntityDamageEvent");
+-                if (fandDamageEvent.cancelled()) {
+-                    return false;
 -                }
-+            Float fandDamage = io.fand.server.event.EntityEvents.fireDamage(this, source, damage);
-+            if (fandDamage == null) {
-+                return false;
-             }
-+            damage = fandDamage;
-             if (this.isSleeping()) {
-                 this.stopSleeping();
-             }
+-                double fandAdjusted = fandDamageEvent.amount();
+-                if (fandAdjusted < 0.0) {
+-                    fandAdjusted = 0.0;
+-                }
+-                damage = (float) fandAdjusted;
+-            }
++        Float fandDamage = io.fand.server.event.EntityEvents.fireDamage(this, source, damage);
++        if (fandDamage == null) {
++            return false;
+         }
++        damage = fandDamage;
+ 
+         if (this.isSleeping()) {
+             this.stopSleeping();
 diff --git a/net/minecraft/world/entity/Mob.java b/net/minecraft/world/entity/Mob.java
-index 48f5336a4460c089ef352b185108c51c927f8e05..7de3cbc8a6dd416834ee124df9d621d99b340bb8 100644
+index a00661c0f838d80979c9665beffa3386f18a0215..dbcaf7393ad7853fbb65ad9d426b2757236c61d4 100644
 --- a/net/minecraft/world/entity/Mob.java
 +++ b/net/minecraft/world/entity/Mob.java
-@@ -527,6 +527,11 @@ public abstract class Mob extends LivingEntity implements Targeting, EquipmentUs
+@@ -532,6 +532,11 @@ public abstract class Mob extends LivingEntity implements Targeting, EquipmentUs
  
      protected void pickUpItem(final ServerLevel level, final ItemEntity entity) {
          ItemStack itemStack = entity.getItem();
@@ -369,7 +369,7 @@ index 48f5336a4460c089ef352b185108c51c927f8e05..7de3cbc8a6dd416834ee124df9d621d9
          if (!equippedWithStack.isEmpty()) {
              this.onItemPickup(entity);
 diff --git a/net/minecraft/world/entity/ai/behavior/HarvestFarmland.java b/net/minecraft/world/entity/ai/behavior/HarvestFarmland.java
-index 3f2f2d096bfcf9b54f9570dc53678469c5f5d031..327f3c179f389bd512d14c420f5e05c45aaaf8c3 100644
+index ab6aac9f452aa624cf8f4e5f6c625a685467421b..3f783bb1da724a3e05f79e88280d5d8bb1a0bd67 100644
 --- a/net/minecraft/world/entity/ai/behavior/HarvestFarmland.java
 +++ b/net/minecraft/world/entity/ai/behavior/HarvestFarmland.java
 @@ -17,6 +17,7 @@ import net.minecraft.world.entity.npc.villager.VillagerProfession;
@@ -380,10 +380,10 @@ index 3f2f2d096bfcf9b54f9570dc53678469c5f5d031..327f3c179f389bd512d14c420f5e05c4
  import net.minecraft.world.level.block.CropBlock;
  import net.minecraft.world.level.block.FarmlandBlock;
  import net.minecraft.world.level.block.state.BlockState;
-@@ -108,6 +109,15 @@ public class HarvestFarmland extends Behavior<Villager> {
+@@ -110,6 +111,15 @@ public class HarvestFarmland extends Behavior<Villager> {
                  Block block = blockState.getBlock();
                  Block blockBelow = level.getBlockState(this.aboveFarmlandPos.below()).getBlock();
-                 if (block instanceof CropBlock && ((CropBlock)block).isMaxAge(blockState)) {
+                 if (block instanceof CropBlock cropBlock && cropBlock.isMaxAge(blockState)) {
 +                    if (!io.fand.server.event.EntityEvents.fireChangeBlock(
 +                        body,
 +                        level,
@@ -396,7 +396,7 @@ index 3f2f2d096bfcf9b54f9570dc53678469c5f5d031..327f3c179f389bd512d14c420f5e05c4
                      level.destroyBlock(this.aboveFarmlandPos, true, body);
                  }
  
-@@ -119,6 +129,15 @@ public class HarvestFarmland extends Behavior<Villager> {
+@@ -121,6 +131,15 @@ public class HarvestFarmland extends Behavior<Villager> {
                          boolean ok = false;
                          if (!itemStack.isEmpty() && itemStack.is(ItemTags.VILLAGER_PLANTABLE_SEEDS) && itemStack.getItem() instanceof BlockItem blockItem) {
                              BlockState place = blockItem.getBlock().defaultBlockState();
@@ -413,7 +413,7 @@ index 3f2f2d096bfcf9b54f9570dc53678469c5f5d031..327f3c179f389bd512d14c420f5e05c4
                              level.gameEvent(GameEvent.BLOCK_PLACE, this.aboveFarmlandPos, GameEvent.Context.of(body, place));
                              ok = true;
 diff --git a/net/minecraft/world/entity/ai/goal/EatBlockGoal.java b/net/minecraft/world/entity/ai/goal/EatBlockGoal.java
-index b7cd7470f03b4807cf9767e98025018153bc7f83..555c52bf9e82892ba77be13996aee1a8e1ff3f41 100644
+index 5f2ad341ad9a066c341fb3a2c5df1451c7587ffb..fdbda0524098f41e40a66bd69ab1394c65a64d39 100644
 --- a/net/minecraft/world/entity/ai/goal/EatBlockGoal.java
 +++ b/net/minecraft/world/entity/ai/goal/EatBlockGoal.java
 @@ -62,16 +62,36 @@ public class EatBlockGoal extends Goal {
@@ -456,10 +456,10 @@ index b7cd7470f03b4807cf9767e98025018153bc7f83..555c52bf9e82892ba77be13996aee1a8
                          this.level.setBlock(below, Blocks.DIRT.defaultBlockState(), Block.UPDATE_CLIENTS);
                      }
 diff --git a/net/minecraft/world/entity/animal/bee/Bee.java b/net/minecraft/world/entity/animal/bee/Bee.java
-index 9a2e61a3c58d99a850be1e1986f0ea445f467434..e0a0d68ae85d3bad6118e7c68be9d346cd4daba4 100644
+index be9c80fe3dc697ed680f20a7233cfbb915ea3b71..6e95f0edec0955876c43f8ed51e2c8001eda3b72 100644
 --- a/net/minecraft/world/entity/animal/bee/Bee.java
 +++ b/net/minecraft/world/entity/animal/bee/Bee.java
-@@ -1008,6 +1008,16 @@ public class Bee extends Animal implements FlyingAnimal, NeutralMob {
+@@ -978,6 +978,16 @@ public class Bee extends Animal implements NeutralMob {
                          }
  
                          if (growState != null) {
@@ -477,10 +477,10 @@ index 9a2e61a3c58d99a850be1e1986f0ea445f467434..e0a0d68ae85d3bad6118e7c68be9d346
                              Bee.this.level().setBlockAndUpdate(belowPos, growState);
                              Bee.this.incrementNumCropsGrownSincePollination();
 diff --git a/net/minecraft/world/entity/animal/cow/MushroomCow.java b/net/minecraft/world/entity/animal/cow/MushroomCow.java
-index 4f1f18029d0c5f6d5911928c69da883acfb038c5..95732757d9405d591788cd0e4a64343fa243d70d 100644
+index 78c0aecdae81c9eb47e25219b03ea8e808036637..7b63d797ea5499e05651add329c251d7b234ff7a 100644
 --- a/net/minecraft/world/entity/animal/cow/MushroomCow.java
 +++ b/net/minecraft/world/entity/animal/cow/MushroomCow.java
-@@ -116,6 +116,9 @@ public class MushroomCow extends AbstractCow implements Shearable {
+@@ -124,6 +124,9 @@ public class MushroomCow extends AbstractCow implements Shearable {
              return InteractionResult.SUCCESS;
          } else if (itemStack.is(Items.SHEARS) && this.readyForShearing()) {
              if (this.level() instanceof ServerLevel level) {
@@ -491,10 +491,10 @@ index 4f1f18029d0c5f6d5911928c69da883acfb038c5..95732757d9405d591788cd0e4a64343f
                  this.gameEvent(GameEvent.SHEAR, player);
                  itemStack.hurtAndBreak(1, player, hand.asEquipmentSlot());
 diff --git a/net/minecraft/world/entity/animal/dolphin/Dolphin.java b/net/minecraft/world/entity/animal/dolphin/Dolphin.java
-index dbceb90d05b3535f683a8c00f584ad06eb819e68..9bf09630151063a9922d6b6adb9e304fdcf014d2 100644
+index 50291aa1a33d11c14a0fc90253fbeffbf4cd33f9..a0c4ebbd10c7ff7d24a3e6a1c09a0a4739ee5b1d 100644
 --- a/net/minecraft/world/entity/animal/dolphin/Dolphin.java
 +++ b/net/minecraft/world/entity/animal/dolphin/Dolphin.java
-@@ -217,6 +217,11 @@ public class Dolphin extends AgeableWaterCreature {
+@@ -221,6 +221,11 @@ public class Dolphin extends AgeableWaterCreature {
      protected void pickUpItem(final ServerLevel level, final ItemEntity entity) {
          if (this.getItemBySlot(EquipmentSlot.MAINHAND).isEmpty()) {
              ItemStack itemStack = entity.getItem();
@@ -507,10 +507,10 @@ index dbceb90d05b3535f683a8c00f584ad06eb819e68..9bf09630151063a9922d6b6adb9e304f
                  this.onItemPickup(entity);
                  this.setItemSlot(EquipmentSlot.MAINHAND, itemStack);
 diff --git a/net/minecraft/world/entity/animal/fox/Fox.java b/net/minecraft/world/entity/animal/fox/Fox.java
-index 50adde72c67cd03b03dc8acdf9ef263783d7f731..2bdce9823b3442eabe71f173eac65c1f94eb7d5f 100644
+index 69a72f0180b7893b445e23315ab29a120a6f1604..0b33e3ee6bb5b6caa3fea8c49348d474232da113 100644
 --- a/net/minecraft/world/entity/animal/fox/Fox.java
 +++ b/net/minecraft/world/entity/animal/fox/Fox.java
-@@ -535,6 +535,11 @@ public class Fox extends Animal {
+@@ -541,6 +541,11 @@ public class Fox extends Animal {
      @Override
      protected void pickUpItem(final ServerLevel level, final ItemEntity entity) {
          ItemStack itemStack = entity.getItem();
@@ -523,7 +523,7 @@ index 50adde72c67cd03b03dc8acdf9ef263783d7f731..2bdce9823b3442eabe71f173eac65c1f
              int count = itemStack.getCount();
              if (count > 1) {
 diff --git a/net/minecraft/world/entity/animal/golem/CopperGolem.java b/net/minecraft/world/entity/animal/golem/CopperGolem.java
-index 3ead0f0dbb446069b217fbe79402f23fe7e53d51..d91b80933d13b88c9cb044ce7888bbc14ce17727 100644
+index 6f6c9c93ca663d72ec445c18e4ac1d653d04791b..b9dde3a0901aa9be88a2ad1faa8610f9aadabab4 100644
 --- a/net/minecraft/world/entity/animal/golem/CopperGolem.java
 +++ b/net/minecraft/world/entity/animal/golem/CopperGolem.java
 @@ -218,6 +218,9 @@ public class CopperGolem extends AbstractGolem implements ContainerUser, Shearab
@@ -537,7 +537,7 @@ index 3ead0f0dbb446069b217fbe79402f23fe7e53d51..d91b80933d13b88c9cb044ce7888bbc1
                  this.gameEvent(GameEvent.SHEAR, player);
                  itemStack.hurtAndBreak(1, player, hand);
 diff --git a/net/minecraft/world/entity/animal/golem/SnowGolem.java b/net/minecraft/world/entity/animal/golem/SnowGolem.java
-index c30c2bafb6626cd4fa6305e8763e2e081a0643eb..593f40a5214ed44be1d16a4f4e3a7f2e72524355 100644
+index 03ef859aed83c2248f797fd2ee1dc3e3e3999548..3fa0380728b4cf52b9b697724f27775d5257e59a 100644
 --- a/net/minecraft/world/entity/animal/golem/SnowGolem.java
 +++ b/net/minecraft/world/entity/animal/golem/SnowGolem.java
 @@ -107,6 +107,15 @@ public class SnowGolem extends AbstractGolem implements RangedAttackMob, Shearab
@@ -567,10 +567,10 @@ index c30c2bafb6626cd4fa6305e8763e2e081a0643eb..593f40a5214ed44be1d16a4f4e3a7f2e
                  this.gameEvent(GameEvent.SHEAR, player);
                  itemStack.hurtAndBreak(1, player, hand.asEquipmentSlot());
 diff --git a/net/minecraft/world/entity/animal/panda/Panda.java b/net/minecraft/world/entity/animal/panda/Panda.java
-index c01ad473916e3e4ddbb66fb7da8819a7d8c1763c..50bfebb5178b1b1afaf5f058cdc52431843d5bd9 100644
+index 08dfa0fe564c5d619b4edecd068705ec41e385d8..f3f4cf3c004ee5aeb30fc6311913f76e1fcf67ec 100644
 --- a/net/minecraft/world/entity/animal/panda/Panda.java
 +++ b/net/minecraft/world/entity/animal/panda/Panda.java
-@@ -529,8 +529,12 @@ public class Panda extends Animal {
+@@ -530,8 +530,12 @@ public class Panda extends Animal {
      @Override
      protected void pickUpItem(final ServerLevel level, final ItemEntity entity) {
          if (this.getItemBySlot(EquipmentSlot.MAINHAND).isEmpty() && canPickUpAndEat(entity)) {
@@ -585,10 +585,10 @@ index c01ad473916e3e4ddbb66fb7da8819a7d8c1763c..50bfebb5178b1b1afaf5f058cdc52431
              this.setGuaranteedDrop(EquipmentSlot.MAINHAND);
              this.take(entity, itemStack.getCount());
 diff --git a/net/minecraft/world/entity/animal/rabbit/Rabbit.java b/net/minecraft/world/entity/animal/rabbit/Rabbit.java
-index 471ec1a2714b7ba634fc4df4fa91722037f8a01a..71e04d9822630a1faa713aaa84d5910583d48795 100644
+index e5365ed218db1103893eceb8d0f46f0850c408c0..66212581dd4ce487b1c70765e7b2a222e9f05d79 100644
 --- a/net/minecraft/world/entity/animal/rabbit/Rabbit.java
 +++ b/net/minecraft/world/entity/animal/rabbit/Rabbit.java
-@@ -637,10 +637,31 @@ public class Rabbit extends Animal {
+@@ -636,10 +636,31 @@ public class Rabbit extends Animal {
                  if (this.canRaid && block instanceof CarrotBlock) {
                      int carrotAge = blockState.getValue(CarrotBlock.AGE);
                      if (carrotAge == 0) {
@@ -622,10 +622,10 @@ index 471ec1a2714b7ba634fc4df4fa91722037f8a01a..71e04d9822630a1faa713aaa84d59105
                          level.levelEvent(LevelEvent.PARTICLES_DESTROY_BLOCK, cropsPos, Block.getId(blockState));
                      }
 diff --git a/net/minecraft/world/entity/animal/sheep/Sheep.java b/net/minecraft/world/entity/animal/sheep/Sheep.java
-index 12b8e53b2200befd515be10a2098ae6ff23dc0cf..3f5e4ed15d036828756268e64f5e9bc19cdf535f 100644
+index a70b98df7d2ffc3e6e73d727d127532b1501db34..d0af6068afe2d0ccb4ae8fd8c9461ff14e80a817 100644
 --- a/net/minecraft/world/entity/animal/sheep/Sheep.java
 +++ b/net/minecraft/world/entity/animal/sheep/Sheep.java
-@@ -140,6 +140,9 @@ public class Sheep extends Animal implements Shearable {
+@@ -148,6 +148,9 @@ public class Sheep extends Animal implements Shearable {
          ItemStack itemStack = player.getItemInHand(hand);
          if (itemStack.is(Items.SHEARS)) {
              if (this.level() instanceof ServerLevel level && this.readyForShearing()) {
@@ -636,10 +636,10 @@ index 12b8e53b2200befd515be10a2098ae6ff23dc0cf..3f5e4ed15d036828756268e64f5e9bc1
                  this.gameEvent(GameEvent.SHEAR, player);
                  itemStack.hurtAndBreak(1, player, hand.asEquipmentSlot());
 diff --git a/net/minecraft/world/entity/animal/turtle/Turtle.java b/net/minecraft/world/entity/animal/turtle/Turtle.java
-index ddd78bf6e09f4cc53f997938278116724d7515c2..c138a2ee531a9f1f11818c91615b90174f7b4d00 100644
+index 5e9811b2c7aecd0ff07ed95308099dd785196424..e4a2dee3046a334e474b5646b954f4e3fa0daae9 100644
 --- a/net/minecraft/world/entity/animal/turtle/Turtle.java
 +++ b/net/minecraft/world/entity/animal/turtle/Turtle.java
-@@ -454,6 +454,16 @@ public class Turtle extends Animal {
+@@ -459,6 +459,16 @@ public class Turtle extends Animal {
                      level.playSound(null, turtlePos, SoundEvents.TURTLE_LAY_EGG, SoundSource.BLOCKS, 0.3F, 0.9F + level.getRandom().nextFloat() * 0.2F);
                      BlockPos eggPos = this.blockPos.above();
                      BlockState eggState = Blocks.TURTLE_EGG.defaultBlockState().setValue(TurtleEggBlock.EGGS, this.turtle.random.nextInt(4) + 1);
@@ -657,10 +657,10 @@ index ddd78bf6e09f4cc53f997938278116724d7515c2..c138a2ee531a9f1f11818c91615b9017
                      level.gameEvent(GameEvent.BLOCK_PLACE, eggPos, GameEvent.Context.of(this.turtle, eggState));
                      this.turtle.setHasEgg(false);
 diff --git a/net/minecraft/world/entity/boss/wither/WitherBoss.java b/net/minecraft/world/entity/boss/wither/WitherBoss.java
-index 6438bab02e9eedc00fd3a39712f394d92641df67..81305f4a6f8eef8d59cbfe87edad729dbdc1f485 100644
+index 88fc94215b0e61d46502049fd4572eb5f699f42c..e23da0a1e3a7c26c4268f330bb26b92bf8db9346 100644
 --- a/net/minecraft/world/entity/boss/wither/WitherBoss.java
 +++ b/net/minecraft/world/entity/boss/wither/WitherBoss.java
-@@ -52,6 +52,7 @@ import net.minecraft.world.entity.projectile.hurtingprojectile.windcharge.WindCh
+@@ -51,6 +51,7 @@ import net.minecraft.world.entity.projectile.hurtingprojectile.windcharge.WindCh
  import net.minecraft.world.item.Items;
  import net.minecraft.world.level.Level;
  import net.minecraft.world.level.block.LevelEvent;
@@ -668,7 +668,7 @@ index 6438bab02e9eedc00fd3a39712f394d92641df67..81305f4a6f8eef8d59cbfe87edad729d
  import net.minecraft.world.level.block.state.BlockState;
  import net.minecraft.world.level.gamerules.GameRules;
  import net.minecraft.world.level.storage.ValueInput;
-@@ -336,6 +337,15 @@ public class WitherBoss extends Monster implements RangedAttackMob {
+@@ -335,6 +336,15 @@ public class WitherBoss extends Monster implements RangedAttackMob {
                      )) {
                          BlockState state = level.getBlockState(blockPos);
                          if (canDestroy(state)) {
@@ -685,7 +685,7 @@ index 6438bab02e9eedc00fd3a39712f394d92641df67..81305f4a6f8eef8d59cbfe87edad729d
                          }
                      }
 diff --git a/net/minecraft/world/entity/monster/EnderMan.java b/net/minecraft/world/entity/monster/EnderMan.java
-index 499ff47c748022a8392132a962e7ee518a7b1804..e9ad9919b16ef0cd292cfa603b33d0ba6f238e2d 100644
+index 09dccf9c1165f53c03890653c083a985052b6fcd..cd77e10efdd82e5a8a5051b77a3264d4305d9cff 100644
 --- a/net/minecraft/world/entity/monster/EnderMan.java
 +++ b/net/minecraft/world/entity/monster/EnderMan.java
 @@ -458,6 +458,16 @@ public class EnderMan extends Monster implements NeutralMob {
@@ -723,10 +723,10 @@ index 499ff47c748022a8392132a962e7ee518a7b1804..e9ad9919b16ef0cd292cfa603b33d0ba
                  level.gameEvent(GameEvent.BLOCK_DESTROY, pos, GameEvent.Context.of(this.enderman, blockState));
                  this.enderman.setCarriedBlock(blockState.getBlock().defaultBlockState());
 diff --git a/net/minecraft/world/entity/monster/Ravager.java b/net/minecraft/world/entity/monster/Ravager.java
-index 3a014cc93047b35fa4aa152a4e32ebdaf39602f9..2c4beeeb72a1be027a86a654475e0e0f0e2b1bd7 100644
+index 8d33c58a0dcca2159f32ce32a5559e5879cb6ca1..14786d9f8fc96ff052f2ac15313999da6a6075b4 100644
 --- a/net/minecraft/world/entity/monster/Ravager.java
 +++ b/net/minecraft/world/entity/monster/Ravager.java
-@@ -33,6 +33,7 @@ import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
+@@ -34,6 +34,7 @@ import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
  import net.minecraft.world.level.Level;
  import net.minecraft.world.level.LevelReader;
  import net.minecraft.world.level.block.Block;
@@ -734,7 +734,7 @@ index 3a014cc93047b35fa4aa152a4e32ebdaf39602f9..2c4beeeb72a1be027a86a654475e0e0f
  import net.minecraft.world.level.block.LeavesBlock;
  import net.minecraft.world.level.block.state.BlockState;
  import net.minecraft.world.level.gameevent.GameEvent;
-@@ -153,6 +154,15 @@ public class Ravager extends Raider {
+@@ -154,6 +155,15 @@ public class Ravager extends Raider {
                      BlockState state = serverLevel.getBlockState(pos);
                      Block block = state.getBlock();
                      if (block instanceof LeavesBlock) {
@@ -751,7 +751,7 @@ index 3a014cc93047b35fa4aa152a4e32ebdaf39602f9..2c4beeeb72a1be027a86a654475e0e0f
                      }
                  }
 diff --git a/net/minecraft/world/entity/monster/Silverfish.java b/net/minecraft/world/entity/monster/Silverfish.java
-index 309d972c6536ce0628fcc76e6ac4143577a76bf1..de0d54d7b1bc88c1479a9941a6b2f0efd89034a2 100644
+index 0136494833f0bbc1ea98a6cff7b70168fbbdf80e..7564acc0a0614feb864cdbe508116b0514e2fb08 100644
 --- a/net/minecraft/world/entity/monster/Silverfish.java
 +++ b/net/minecraft/world/entity/monster/Silverfish.java
 @@ -26,6 +26,7 @@ import net.minecraft.world.level.Level;
@@ -762,7 +762,7 @@ index 309d972c6536ce0628fcc76e6ac4143577a76bf1..de0d54d7b1bc88c1479a9941a6b2f0ef
  import net.minecraft.world.level.block.InfestedBlock;
  import net.minecraft.world.level.block.state.BlockState;
  import net.minecraft.world.level.gamerules.GameRules;
-@@ -168,7 +169,18 @@ public class Silverfish extends Monster {
+@@ -172,7 +173,18 @@ public class Silverfish extends Monster {
                  BlockPos pos = BlockPos.containing(this.mob.getX(), this.mob.getY() + 0.5, this.mob.getZ()).relative(this.selectedDirection);
                  BlockState blockState = level.getBlockState(pos);
                  if (InfestedBlock.isCompatibleHostBlock(blockState)) {
@@ -782,9 +782,9 @@ index 309d972c6536ce0628fcc76e6ac4143577a76bf1..de0d54d7b1bc88c1479a9941a6b2f0ef
                      this.mob.spawnAnim();
                      this.mob.discard();
                  }
-@@ -211,9 +223,28 @@ public class Silverfish extends Monster {
-                             Block block = blockState.getBlock();
-                             if (block instanceof InfestedBlock) {
+@@ -214,9 +226,28 @@ public class Silverfish extends Monster {
+                             BlockState blockState = level.getBlockState(testPos);
+                             if (blockState.getBlock() instanceof InfestedBlock infestedBlock) {
                                  if (getServerLevel(level).getGameRules().get(GameRules.MOB_GRIEFING)) {
 +                                    if (!io.fand.server.event.EntityEvents.fireChangeBlock(
 +                                        this.silverfish,
@@ -797,8 +797,8 @@ index 309d972c6536ce0628fcc76e6ac4143577a76bf1..de0d54d7b1bc88c1479a9941a6b2f0ef
 +                                    }
                                      level.destroyBlock(testPos, true, this.silverfish);
                                  } else {
--                                    level.setBlock(testPos, ((InfestedBlock)block).hostStateByInfested(level.getBlockState(testPos)), Block.UPDATE_ALL);
-+                                    BlockState hostState = ((InfestedBlock)block).hostStateByInfested(level.getBlockState(testPos));
+-                                    level.setBlock(testPos, infestedBlock.hostStateByInfested(level.getBlockState(testPos)), Block.UPDATE_ALL);
++                                    BlockState hostState = infestedBlock.hostStateByInfested(level.getBlockState(testPos));
 +                                    if (!io.fand.server.event.EntityEvents.fireChangeBlock(
 +                                        this.silverfish,
 +                                        getServerLevel(level),
@@ -813,10 +813,10 @@ index 309d972c6536ce0628fcc76e6ac4143577a76bf1..de0d54d7b1bc88c1479a9941a6b2f0ef
  
                                  if (random.nextBoolean()) {
 diff --git a/net/minecraft/world/entity/monster/piglin/PiglinAi.java b/net/minecraft/world/entity/monster/piglin/PiglinAi.java
-index ff3a8c695de5df95ce98b46688ab7441bf743126..ec5f0e0a96b689d5b345aec87fdfbddac1f71335 100644
+index 42de093b7047ff8f15ee0d92bf92c88751715ce0..83373692b8101492c444724afef4df12676f5f84 100644
 --- a/net/minecraft/world/entity/monster/piglin/PiglinAi.java
 +++ b/net/minecraft/world/entity/monster/piglin/PiglinAi.java
-@@ -336,6 +336,10 @@ public class PiglinAi {
+@@ -334,6 +334,10 @@ public class PiglinAi {
      }
  
      protected static void pickUpItem(final ServerLevel level, final Piglin body, final ItemEntity itemEntity) {
@@ -828,7 +828,7 @@ index ff3a8c695de5df95ce98b46688ab7441bf743126..ec5f0e0a96b689d5b345aec87fdfbdda
          ItemStack taken;
          if (itemEntity.getItem().is(Items.GOLD_NUGGET)) {
 diff --git a/net/minecraft/world/entity/monster/skeleton/Bogged.java b/net/minecraft/world/entity/monster/skeleton/Bogged.java
-index 51fa956d9a0b560d7e03e72daa52bd008a2d202f..8ff92d2a8f3e3b4698f8ad5409f11d419a3d43f0 100644
+index febf327809e0d9b6e92789e2a2bb45e3e4790ddd..b7495a9ff393d73dfe8d6dbbb69d73ca3c99912c 100644
 --- a/net/minecraft/world/entity/monster/skeleton/Bogged.java
 +++ b/net/minecraft/world/entity/monster/skeleton/Bogged.java
 @@ -72,6 +72,9 @@ public class Bogged extends AbstractSkeleton implements Shearable {
@@ -858,7 +858,7 @@ index 651a73c2914224c694fc989b50f5770984b7d151..f6737f271d3df32533a2b1afef52f193
              boolean hasSpace = inventory.canAddItem(itemStack);
              if (!hasSpace) {
 diff --git a/net/minecraft/world/entity/projectile/FishingHook.java b/net/minecraft/world/entity/projectile/FishingHook.java
-index 71372a7f81f43f1eb2422f855eabcfc9ce48d7fe..d2dd234e9670424b998b1b06c86272c84018de30 100644
+index 6cef750d6a28f01049ffd54365fe65b3a90acfca..476e3afd96c402402363da1a265da76221da7cbc 100644
 --- a/net/minecraft/world/entity/projectile/FishingHook.java
 +++ b/net/minecraft/world/entity/projectile/FishingHook.java
 @@ -3,6 +3,7 @@ package net.minecraft.world.entity.projectile;
@@ -866,10 +866,10 @@ index 71372a7f81f43f1eb2422f855eabcfc9ce48d7fe..d2dd234e9670424b998b1b06c86272c8
  import java.util.Collections;
  import java.util.List;
 +import java.util.Optional;
- import net.minecraft.advancements.CriteriaTriggers;
+ import net.minecraft.advancements.triggers.CriteriaTriggers;
  import net.minecraft.core.BlockPos;
  import net.minecraft.core.particles.ParticleTypes;
-@@ -352,6 +353,14 @@ public class FishingHook extends Projectile {
+@@ -353,6 +354,14 @@ public class FishingHook extends Projectile {
                      0.2F
                  );
                  this.nibble = Mth.nextInt(this.random, 20, 40);
@@ -884,7 +884,7 @@ index 71372a7f81f43f1eb2422f855eabcfc9ce48d7fe..d2dd234e9670424b998b1b06c86272c8
                  this.getEntityData().set(DATA_BITING, true);
              }
          } else if (this.timeUntilLured > 0) {
-@@ -449,6 +458,15 @@ public class FishingHook extends Projectile {
+@@ -450,6 +459,15 @@ public class FishingHook extends Projectile {
          if (!this.level().isClientSide() && owner != null && !this.shouldStopFishing(owner)) {
              int dmg = 0;
              if (this.hookedIn != null) {
@@ -900,7 +900,7 @@ index 71372a7f81f43f1eb2422f855eabcfc9ce48d7fe..d2dd234e9670424b998b1b06c86272c8
                  this.pullEntity(this.hookedIn);
                  CriteriaTriggers.FISHING_ROD_HOOKED.trigger((ServerPlayer)owner, rod, this, Collections.emptyList());
                  this.level().broadcastEntityEvent(this, EntityEvent.FISHING_ROD_REEL_IN);
-@@ -462,6 +480,15 @@ public class FishingHook extends Projectile {
+@@ -463,6 +481,15 @@ public class FishingHook extends Projectile {
                      .create(LootContextParamSets.FISHING);
                  LootTable lootTable = this.level().getServer().reloadableRegistries().getLootTable(BuiltInLootTables.FISHING);
                  List<ItemStack> items = lootTable.getRandomItems(params);
@@ -916,7 +916,7 @@ index 71372a7f81f43f1eb2422f855eabcfc9ce48d7fe..d2dd234e9670424b998b1b06c86272c8
                  CriteriaTriggers.FISHING_ROD_HOOKED.trigger((ServerPlayer)owner, rod, this, items);
  
                  for (ItemStack itemStack : items) {
-@@ -483,7 +510,23 @@ public class FishingHook extends Projectile {
+@@ -484,7 +511,23 @@ public class FishingHook extends Projectile {
              }
  
              if (this.onGround()) {
@@ -941,10 +941,10 @@ index 71372a7f81f43f1eb2422f855eabcfc9ce48d7fe..d2dd234e9670424b998b1b06c86272c8
  
              this.discard();
 diff --git a/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownLingeringPotion.java b/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownLingeringPotion.java
-index 30d6cf54513fc8c0a67eac96f0d5e24fffd14559..ebc43cccd1c47cc6d8eb3f9cdf564d1f233419f7 100644
+index 0026fb2e321fe53aab2e9b960e2db514181fd680..990aa9258995289beef0bd46152c6f0e2cf226e5 100644
 --- a/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownLingeringPotion.java
 +++ b/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownLingeringPotion.java
-@@ -30,6 +30,9 @@ public class ThrownLingeringPotion extends AbstractThrownPotion {
+@@ -31,6 +31,9 @@ public class ThrownLingeringPotion extends AbstractThrownPotion {
  
      @Override
      public void onHitAsPotion(final ServerLevel level, final ItemStack potionItem, final HitResult hitResult) {
@@ -955,7 +955,7 @@ index 30d6cf54513fc8c0a67eac96f0d5e24fffd14559..ebc43cccd1c47cc6d8eb3f9cdf564d1f
          if (this.getOwner() instanceof LivingEntity owner) {
              cloud.setOwner(owner);
 diff --git a/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownSplashPotion.java b/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownSplashPotion.java
-index b01fc7ae3e886a6cd7704089a1d51519e08fb9b8..c59b676c9e1460694573d4a4bd063e518a6f0944 100644
+index 534cc8d0779fd83d7084cfb32dea3857a2520d30..79816ccf3ab3baedf5c6e3f40eb8913ad4a7b40c 100644
 --- a/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownSplashPotion.java
 +++ b/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownSplashPotion.java
 @@ -1,6 +1,8 @@
@@ -967,7 +967,7 @@ index b01fc7ae3e886a6cd7704089a1d51519e08fb9b8..c59b676c9e1460694573d4a4bd063e51
  import net.minecraft.core.Holder;
  import net.minecraft.core.component.DataComponents;
  import net.minecraft.server.level.ServerLevel;
-@@ -47,26 +49,43 @@ public class ThrownSplashPotion extends AbstractThrownPotion {
+@@ -48,26 +50,43 @@ public class ThrownSplashPotion extends AbstractThrownPotion {
          float margin = ProjectileUtil.computeMargin(this);
          if (!entities.isEmpty()) {
              Entity effectSource = this.getEffectSource();
@@ -999,8 +999,8 @@ index b01fc7ae3e886a6cd7704089a1d51519e08fb9b8..c59b676c9e1460694573d4a4bd063e51
  
 -                        for (MobEffectInstance effectInstance : mobEffects) {
 -                            Holder<MobEffect> effect = effectInstance.getEffect();
--                            if (effect.value().isInstantenous()) {
--                                effect.value().applyInstantenousEffect(level, this, this.getOwner(), entity, effectInstance.getAmplifier(), scale);
+-                            if (effect.value().isInstantaneous()) {
+-                                effect.value().applyInstantaneousEffect(level, this, this.getOwner(), entity, effectInstance.getAmplifier(), scale);
 -                            } else {
 -                                int duration = effectInstance.mapDuration(d -> (int)(scale * d * durationScale + 0.5));
 -                                MobEffectInstance newEffect = new MobEffectInstance(
@@ -1012,8 +1012,8 @@ index b01fc7ae3e886a6cd7704089a1d51519e08fb9b8..c59b676c9e1460694573d4a4bd063e51
 -                            }
 +                for (MobEffectInstance effectInstance : mobEffects) {
 +                    Holder<MobEffect> effect = effectInstance.getEffect();
-+                    if (effect.value().isInstantenous()) {
-+                        effect.value().applyInstantenousEffect(level, this, this.getOwner(), entity, effectInstance.getAmplifier(), scale);
++                    if (effect.value().isInstantaneous()) {
++                        effect.value().applyInstantaneousEffect(level, this, this.getOwner(), entity, effectInstance.getAmplifier(), scale);
 +                    } else {
 +                        int duration = effectInstance.mapDuration(d -> (int)(scale * d * durationScale + 0.5));
 +                        MobEffectInstance newEffect = new MobEffectInstance(
@@ -1025,10 +1025,10 @@ index b01fc7ae3e886a6cd7704089a1d51519e08fb9b8..c59b676c9e1460694573d4a4bd063e51
                      }
                  }
 diff --git a/net/minecraft/world/entity/raid/Raider.java b/net/minecraft/world/entity/raid/Raider.java
-index ffb9f4b5a3e85b683c6354184832912d00e2d398..bb84159ccc7ce1225019f8720874aa4989907cf5 100644
+index 69f2012fc983985eb692cb4c15f32b67b5199c92..6d0d3926a2afc16202ef6f44734ee3db3c9f8348 100644
 --- a/net/minecraft/world/entity/raid/Raider.java
 +++ b/net/minecraft/world/entity/raid/Raider.java
-@@ -220,6 +220,11 @@ public abstract class Raider extends PatrollingMonster {
+@@ -221,6 +221,11 @@ public abstract class Raider extends PatrollingMonster {
                  this.spawnAtLocation(level, current);
              }
  
@@ -1041,7 +1041,7 @@ index ffb9f4b5a3e85b683c6354184832912d00e2d398..bb84159ccc7ce1225019f8720874aa49
              this.setItemSlot(slot, itemStack);
              this.take(entity, itemStack.getCount());
 diff --git a/net/minecraft/world/item/BoneMealItem.java b/net/minecraft/world/item/BoneMealItem.java
-index b2294c1230efe59906fa07e84e1c39f6a0e52947..a3ee3c7f2ae837226bf290551b9f5078b71667df 100644
+index e90d87953cc5b2fa496d5bde998016f5b9b693e7..0ed8ffabced752db6b2d0f21f5a2adf70d04adec 100644
 --- a/net/minecraft/world/item/BoneMealItem.java
 +++ b/net/minecraft/world/item/BoneMealItem.java
 @@ -6,11 +6,13 @@ import net.minecraft.core.Holder;
@@ -1086,9 +1086,9 @@ index b2294c1230efe59906fa07e84e1c39f6a0e52947..a3ee3c7f2ae837226bf290551b9f5078
 +    public static boolean growCrop(final ItemStack itemStack, final Level level, final BlockPos pos, final @Nullable Player player) {
          BlockState state = level.getBlockState(pos);
          if (state.getBlock() instanceof BonemealableBlock block && block.isValidBonemealTarget(level, pos, state)) {
-             if (level instanceof ServerLevel) {
+             if (level instanceof ServerLevel serverLevel) {
 +                if (!io.fand.server.event.BlockEvents.fireFertilize(
-+                    (ServerLevel)level,
++                    serverLevel,
 +                    player instanceof ServerPlayer serverPlayer ? serverPlayer : null,
 +                    pos,
 +                    itemStack,
@@ -1096,7 +1096,7 @@ index b2294c1230efe59906fa07e84e1c39f6a0e52947..a3ee3c7f2ae837226bf290551b9f5078
 +                    return false;
 +                }
                  if (block.isBonemealSuccess(level, level.getRandom(), pos, state)) {
-                     block.performBonemeal((ServerLevel)level, level.getRandom(), pos, state);
+                     block.performBonemeal(serverLevel, level.getRandom(), pos, state);
                  }
 @@ -81,10 +95,28 @@ public class BoneMealItem extends Item {
      }
@@ -1113,7 +1113,7 @@ index b2294c1230efe59906fa07e84e1c39f6a0e52947..a3ee3c7f2ae837226bf290551b9f5078
 +        final @Nullable Player player
 +    ) {
          if (level.getBlockState(pos).is(Blocks.WATER) && level.getFluidState(pos).isFull()) {
-             if (!(level instanceof ServerLevel)) {
+             if (!(level instanceof ServerLevel serverLevel)) {
                  return true;
              } else {
 +                if (!io.fand.server.event.BlockEvents.fireFertilize(
@@ -1126,43 +1126,42 @@ index b2294c1230efe59906fa07e84e1c39f6a0e52947..a3ee3c7f2ae837226bf290551b9f5078
 +                }
                  RandomSource random = level.getRandom();
  
-                 label80:
+                 label81:
 diff --git a/net/minecraft/world/item/EnderEyeItem.java b/net/minecraft/world/item/EnderEyeItem.java
-index b8a091a417c0433cf85f4a556e1899e17be359fc..7709815ee354825af9c3db7a933185406a2ac879 100644
+index 76063c520ddf5e66da35d5e1c80f7d05ff9d335f..6d2086a7f32ad70532454fcb547de8feb189a34d 100644
 --- a/net/minecraft/world/item/EnderEyeItem.java
 +++ b/net/minecraft/world/item/EnderEyeItem.java
-@@ -1,6 +1,8 @@
+@@ -1,5 +1,7 @@
  package net.minecraft.world.item;
  
- import net.minecraft.advancements.CriteriaTriggers;
 +import java.util.ArrayList;
 +import java.util.List;
+ import net.minecraft.advancements.triggers.CriteriaTriggers;
  import net.minecraft.core.BlockPos;
  import net.minecraft.server.level.ServerLevel;
- import net.minecraft.server.level.ServerPlayer;
-@@ -52,6 +54,22 @@ public class EnderEyeItem extends Item {
-             BlockPattern.BlockPatternMatch match = EndPortalFrameBlock.getOrCreatePortalShape().find(level, pos);
-             if (match != null) {
-                 BlockPos blockPos = match.getFrontTopLeft().offset(-3, 0, -3);
-+                List<BlockPos> portalBlocks = new ArrayList<>();
+@@ -55,6 +57,22 @@ public class EnderEyeItem extends Item {
+         BlockPattern.BlockPatternMatch match = EndPortalFrameBlock.getOrCreatePortalShape().find(level, pos);
+         if (match != null) {
+             BlockPos blockPos = match.getFrontTopLeft().offset(-3, 0, -3);
++            List<BlockPos> portalBlocks = new ArrayList<>();
 +
-+                for (int x = 0; x < 3; x++) {
-+                    for (int z = 0; z < 3; z++) {
-+                        portalBlocks.add(blockPos.offset(x, 0, z));
-+                    }
++            for (int x = 0; x < 3; x++) {
++                for (int z = 0; z < 3; z++) {
++                    portalBlocks.add(blockPos.offset(x, 0, z));
 +                }
++            }
 +
-+                if (level instanceof ServerLevel serverLevel
-+                    && !io.fand.server.event.BlockEvents.firePortalCreate(
-+                        serverLevel,
-+                        portalBlocks,
-+                        io.fand.api.event.block.PortalCreateEvent.Type.END,
-+                        io.fand.api.event.block.PortalCreateEvent.Cause.END_EYE)) {
-+                    return InteractionResult.SUCCESS;
-+                }
++            if (level instanceof ServerLevel serverLevel
++                && !io.fand.server.event.BlockEvents.firePortalCreate(
++                    serverLevel,
++                    portalBlocks,
++                    io.fand.api.event.block.PortalCreateEvent.Type.END,
++                    io.fand.api.event.block.PortalCreateEvent.Cause.END_EYE)) {
++                return InteractionResult.SUCCESS;
++            }
  
-                 for (int x = 0; x < 3; x++) {
-                     for (int z = 0; z < 3; z++) {
+             for (int x = 0; x < 3; x++) {
+                 for (int z = 0; z < 3; z++) {
 diff --git a/net/minecraft/world/item/FishingRodItem.java b/net/minecraft/world/item/FishingRodItem.java
 index 3e8c36f7807c5f2beb8fbb949402a72833c023f7..4b5417a683083f8cad11ed1c4d8bc8b3e00e50eb 100644
 --- a/net/minecraft/world/item/FishingRodItem.java
@@ -1187,23 +1186,23 @@ index 3e8c36f7807c5f2beb8fbb949402a72833c023f7..4b5417a683083f8cad11ed1c4d8bc8b3
  
              player.awardStat(Stats.ITEM_USED.get(this));
 diff --git a/net/minecraft/world/item/LeadItem.java b/net/minecraft/world/item/LeadItem.java
-index 863cab9e42b794524f2b13a8d70921c47778b376..80062fbed71ddc6d514be8db5749f3bd5d7f350e 100644
+index 8bfab0fcc3e77d8cafa71bff924dda53f254dc9c..754f6333240e2b794e486f8c035a0ddeb699afe1 100644
 --- a/net/minecraft/world/item/LeadItem.java
 +++ b/net/minecraft/world/item/LeadItem.java
-@@ -44,7 +44,12 @@ public class LeadItem extends Item {
-             boolean anyLeashed = false;
+@@ -45,7 +45,12 @@ public class LeadItem extends Item {
+         boolean anyLeashed = false;
  
-             for (Leashable leashable : entitiesToLeash) {
--                if (leashable.canHaveALeashAttachedTo(activeKnot)) {
-+                if (leashable.canHaveALeashAttachedTo(activeKnot)
-+                    && io.fand.server.event.PlayerEvents.fireLeashEntity(
-+                        player,
-+                        (net.minecraft.world.entity.Entity)leashable,
-+                        activeKnot,
-+                        io.fand.api.event.player.PlayerLeashEntityEvent.Cause.FENCE)) {
-                     leashable.setLeashedTo(activeKnot, true);
-                     anyLeashed = true;
-                 }
+         for (Leashable leashable : entitiesToLeash) {
+-            if (leashable.canHaveALeashAttachedTo(activeKnot)) {
++            if (leashable.canHaveALeashAttachedTo(activeKnot)
++                && io.fand.server.event.PlayerEvents.fireLeashEntity(
++                    player,
++                    (net.minecraft.world.entity.Entity)leashable,
++                    activeKnot,
++                    io.fand.api.event.player.PlayerLeashEntityEvent.Cause.FENCE)) {
+                 leashable.setLeashedTo(activeKnot, true);
+                 anyLeashed = true;
+             }
 diff --git a/net/minecraft/world/level/block/LayeredCauldronBlock.java b/net/minecraft/world/level/block/LayeredCauldronBlock.java
 index 0d58c1bdeb1a95300751cffd689873c413189f0c..f32aee9ab019cf398b04984c0bcf95fcbd1da18d 100644
 --- a/net/minecraft/world/level/block/LayeredCauldronBlock.java
@@ -1388,10 +1387,10 @@ index aa050a9483378ef3fc7628b96269ed6405652b05..016d82d5fc2419caa3fc11158ed83712
 +    }
  }
 diff --git a/net/minecraft/world/level/block/entity/BrewingStandBlockEntity.java b/net/minecraft/world/level/block/entity/BrewingStandBlockEntity.java
-index 29dc789b863f4339b362c690ae55bbb77c51ee57..80c9fde6076217f8e32db37a10bf1d2ab169f6d7 100644
+index c325327197a729d874713b6de4224a5d0269a0c0..8f4f6a6a0359f2309b282c641ea7695fd0b2f981 100644
 --- a/net/minecraft/world/level/block/entity/BrewingStandBlockEntity.java
 +++ b/net/minecraft/world/level/block/entity/BrewingStandBlockEntity.java
-@@ -105,9 +105,12 @@ public class BrewingStandBlockEntity extends BaseContainerBlockEntity implements
+@@ -100,9 +100,12 @@ public class BrewingStandBlockEntity extends BaseContainerBlockEntity implements
      public static void serverTick(final Level level, final BlockPos pos, final BlockState selfState, final BrewingStandBlockEntity entity) {
          ItemStack fuel = entity.items.get(4);
          if (entity.fuel <= 0 && fuel.is(ItemTags.BREWING_FUEL)) {
@@ -1408,7 +1407,7 @@ index 29dc789b863f4339b362c690ae55bbb77c51ee57..80c9fde6076217f8e32db37a10bf1d2a
  
          boolean brewable = isBrewable(level.potionBrewing(), entity.items);
 diff --git a/net/minecraft/world/level/block/entity/HopperBlockEntity.java b/net/minecraft/world/level/block/entity/HopperBlockEntity.java
-index 5fb273ab47ca67dd3e7d6d2ab67061d2b95b8d16..710cae0039f70b479cf988c353cfad250e130365 100644
+index 6ee1ebda8f54a371570e5028497fd226f299d00a..0013d07a85f02f5654fb333485f12af2b2d8fba0 100644
 --- a/net/minecraft/world/level/block/entity/HopperBlockEntity.java
 +++ b/net/minecraft/world/level/block/entity/HopperBlockEntity.java
 @@ -267,6 +267,11 @@ public class HopperBlockEntity extends RandomizableContainerBlockEntity implemen
@@ -1436,10 +1435,10 @@ index 5fb273ab47ca67dd3e7d6d2ab67061d2b95b8d16..710cae0039f70b479cf988c353cfad25
              if (!fandMove.allowed()) {
                  return itemStack;
 diff --git a/net/minecraft/world/level/material/FlowingFluid.java b/net/minecraft/world/level/material/FlowingFluid.java
-index 9958c1533759ad3bd4d31d2e892a8ecbc2f021f3..a22e3f892c6ad9f5956c3e82c0527372e6336586 100644
+index 80eae34bd857b3643ba1de4c9605c6bd4509bbdc..f7b83ebdfa5def889b1191d2254a4dfe6664db0e 100644
 --- a/net/minecraft/world/level/material/FlowingFluid.java
 +++ b/net/minecraft/world/level/material/FlowingFluid.java
-@@ -260,8 +260,17 @@ public abstract class FlowingFluid extends Fluid {
+@@ -261,8 +261,17 @@ public abstract class FlowingFluid extends Fluid {
      protected abstract boolean canConvertToSource(ServerLevel level);
  
      protected void spreadTo(final LevelAccessor level, final BlockPos pos, final BlockState state, final Direction direction, final FluidState target) {
@@ -1459,7 +1458,7 @@ index 9958c1533759ad3bd4d31d2e892a8ecbc2f021f3..a22e3f892c6ad9f5956c3e82c0527372
          }
          if (state.getBlock() instanceof LiquidBlockContainer container) {
 diff --git a/net/minecraft/world/level/portal/PortalForcer.java b/net/minecraft/world/level/portal/PortalForcer.java
-index 175a34daea97b7d261f91c6fd187c126007af7f1..1247b47f564c1b8703c1c9fa57c38e3f27a06f09 100644
+index 0b09ac3adf4378550c973515ecb97169d6a61036..cd001a9d1733d8d429b8132210fd3031c455cada 100644
 --- a/net/minecraft/world/level/portal/PortalForcer.java
 +++ b/net/minecraft/world/level/portal/PortalForcer.java
 @@ -1,6 +1,8 @@
@@ -1496,7 +1495,7 @@ index 175a34daea97b7d261f91c6fd187c126007af7f1..1247b47f564c1b8703c1c9fa57c38e3f
              for (int height = -1; height < 4; height++) {
                  if (width == -1 || width == 2 || height == -1 || height == 3) {
 diff --git a/net/minecraft/world/level/portal/PortalShape.java b/net/minecraft/world/level/portal/PortalShape.java
-index e7634a5695b82a222183d2d1c1dcf26f91850839..6aaa8ba16c190a37a3df1a409e1c172fecbff069 100644
+index fd131195215c0d4622c8087a2448519ab65426e7..a714c2acb5c33eff70ea917ebccbf551daea17c7 100644
 --- a/net/minecraft/world/level/portal/PortalShape.java
 +++ b/net/minecraft/world/level/portal/PortalShape.java
 @@ -1,5 +1,7 @@

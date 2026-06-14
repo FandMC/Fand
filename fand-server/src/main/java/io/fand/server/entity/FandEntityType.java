@@ -4,6 +4,7 @@ import io.fand.api.entity.EntityType;
 import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.key.Key;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.entity.EntityTypes;
 
 public final class FandEntityType implements EntityType {
 
@@ -35,12 +36,12 @@ public final class FandEntityType implements EntityType {
 
     @Override
     public boolean spawnable() {
-        return handle != net.minecraft.world.entity.EntityType.PLAYER;
+        return handle != EntityTypes.PLAYER;
     }
 
     @Override
     public boolean player() {
-        return handle == net.minecraft.world.entity.EntityType.PLAYER;
+        return handle == EntityTypes.PLAYER;
     }
 
     @Override

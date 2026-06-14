@@ -5,7 +5,7 @@ Subject: [PATCH] Expose Fand entity API bridge accessors
 
 
 diff --git a/net/minecraft/world/entity/Display.java b/net/minecraft/world/entity/Display.java
-index 6dffc5f58e8b8019325c3b29b9a79855fa0da975..1fdc5f5ed37504ae6d6f3b07b43325d457b04946 100644
+index fc8fe29351b4ebb34e970bb1784b6e91e94a89ef..61240eb387b17be9b0f52dea1b663b23efd1ede5 100644
 --- a/net/minecraft/world/entity/Display.java
 +++ b/net/minecraft/world/entity/Display.java
 @@ -271,6 +271,94 @@ public abstract class Display extends Entity {
@@ -189,10 +189,10 @@ index 6dffc5f58e8b8019325c3b29b9a79855fa0da975..1fdc5f5ed37504ae6d6f3b07b43325d4
              return this.entityData.get(DATA_TEXT_ID);
          }
 diff --git a/net/minecraft/world/entity/ExperienceOrb.java b/net/minecraft/world/entity/ExperienceOrb.java
-index 1dfb1ab5569e71771f76894dfed84dd812c64b4a..c014d756b8e123834d9b7b8c8193a2ab44fad01d 100644
+index 558a584be29f5263bfa26ec75892895c8521b2d5..5341e7b9adcf7f86b865848a62ab45a22c347a1f 100644
 --- a/net/minecraft/world/entity/ExperienceOrb.java
 +++ b/net/minecraft/world/entity/ExperienceOrb.java
-@@ -316,6 +316,26 @@ public class ExperienceOrb extends Entity {
+@@ -321,6 +321,26 @@ public class ExperienceOrb extends Entity {
          return this.entityData.get(DATA_VALUE);
      }
  
@@ -220,10 +220,10 @@ index 1dfb1ab5569e71771f76894dfed84dd812c64b4a..c014d756b8e123834d9b7b8c8193a2ab
          this.entityData.set(DATA_VALUE, value);
      }
 diff --git a/net/minecraft/world/entity/decoration/ArmorStand.java b/net/minecraft/world/entity/decoration/ArmorStand.java
-index aef3fe608cd920db6e05b96480482b6dac005d8b..bce020a86064215f310273f3f4dce12143cd9b9a 100644
+index 5759f3b797ecdd83fa739e6fc730a9a167680a37..008d80a14eff168a344536e0ed1cfa43b0b12e27 100644
 --- a/net/minecraft/world/entity/decoration/ArmorStand.java
 +++ b/net/minecraft/world/entity/decoration/ArmorStand.java
-@@ -458,6 +458,14 @@ public class ArmorStand extends LivingEntity {
+@@ -485,6 +485,14 @@ public class ArmorStand extends LivingEntity {
          return this.isMarker();
      }
  
@@ -239,10 +239,10 @@ index aef3fe608cd920db6e05b96480482b6dac005d8b..bce020a86064215f310273f3f4dce121
          this.entityData.set(DATA_CLIENT_FLAGS, this.setBit(this.entityData.get(DATA_CLIENT_FLAGS), CLIENT_FLAG_SMALL, value));
      }
 diff --git a/net/minecraft/world/level/BaseSpawner.java b/net/minecraft/world/level/BaseSpawner.java
-index b7c4ffd8f32c3610337d941a5a1a116c8efe659e..0dd34142a788ff3c4de6b7f31c4c5bde07e05246 100644
+index 3750593675e266221a7d1310aa117407613a8a5a..00b914698e5247bc8d5dc4fbca79821b114dd2b9 100644
 --- a/net/minecraft/world/level/BaseSpawner.java
 +++ b/net/minecraft/world/level/BaseSpawner.java
-@@ -224,6 +224,34 @@ public abstract class BaseSpawner {
+@@ -230,6 +230,34 @@ public abstract class BaseSpawner {
          output.store("SpawnPotentials", SpawnData.LIST_CODEC, this.spawnPotentials);
      }
  

@@ -5,10 +5,10 @@ Subject: [PATCH] Fix Fand command suggestion ranges
 
 
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 2ba6a8cc3f6caef06a0320d46071376cff51226a..9d8f17cbb335920e2c97a2ceb901105d1175f0c1 100644
+index 978d6cc988af33890e036aa96bcefb8f8fe0dfa9..e7abb34e9aed0c968943c3f10911bc49adbc4d84 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -592,10 +592,12 @@ public class ServerGamePacketListenerImpl
+@@ -596,10 +596,12 @@ public class ServerGamePacketListenerImpl
          PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
          var fandSuggestions = io.fand.server.command.CommandBridge.suggestions(this.player.createCommandSourceStack(), packet.getCommand());
          if (fandSuggestions.isPresent()) {

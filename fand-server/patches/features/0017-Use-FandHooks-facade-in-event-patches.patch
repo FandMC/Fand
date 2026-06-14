@@ -5,10 +5,10 @@ Subject: [PATCH] Use FandHooks facade in event patches
 
 
 diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
-index 7d3c8d625db233d1fc8d730f4eb1a1c81c99cd8a..a79b2dcb8dabe0923f2b0e6bd978fe75378901b7 100644
+index 5882eb7371ad1118bec16392cc1a302bb85b0f2d..1534bb535de9c7f2ae59bb843e357abf0fe99bf5 100644
 --- a/net/minecraft/server/level/ServerPlayer.java
 +++ b/net/minecraft/server/level/ServerPlayer.java
-@@ -895,7 +895,8 @@ public class ServerPlayer extends Player {
+@@ -886,7 +886,8 @@ public class ServerPlayer extends Player {
          this.gameEvent(GameEvent.ENTITY_DIE);
          boolean showDeathMessage = this.level().getGameRules().get(GameRules.SHOW_DEATH_MESSAGES);
          Component deathMessage = showDeathMessage ? this.getCombatTracker().getDeathMessage() : null;
@@ -18,7 +18,7 @@ index 7d3c8d625db233d1fc8d730f4eb1a1c81c99cd8a..a79b2dcb8dabe0923f2b0e6bd978fe75
              var fandPlayer = io.fand.server.hooks.FandHooks.findPlayer(this.getUUID());
              if (fandPlayer != null) {
                  net.kyori.adventure.text.Component fandDeathMessage = null;
-@@ -907,6 +908,7 @@ public class ServerPlayer extends Player {
+@@ -898,6 +899,7 @@ public class ServerPlayer extends Player {
                      }
                  }
                  var fandDeathEvent = io.fand.server.hooks.FandHooks.fireOrLog(
@@ -27,10 +27,10 @@ index 7d3c8d625db233d1fc8d730f4eb1a1c81c99cd8a..a79b2dcb8dabe0923f2b0e6bd978fe75
                          "PlayerDeathEvent");
                  if (fandDeathEvent.deathMessage() == null) {
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 9d8f17cbb335920e2c97a2ceb901105d1175f0c1..b4e433569c81c1ffa80718d491c876724467ffea 100644
+index e7abb34e9aed0c968943c3f10911bc49adbc4d84..c668e107239286b1b70285d7306d74e0d15026e1 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -1162,7 +1162,8 @@ public class ServerGamePacketListenerImpl
+@@ -1169,7 +1169,8 @@ public class ServerGamePacketListenerImpl
                                      || (!fail || !level.noCollision(this.player, oldAABB))
                                          && !this.isEntityCollidingWithAnythingNew(level, this.player, oldAABB, targetX, targetY, targetZ)) {
                                      boolean fandMoveCancelled = false;
@@ -40,7 +40,7 @@ index 9d8f17cbb335920e2c97a2ceb901105d1175f0c1..b4e433569c81c1ffa80718d491c87672
                                              && (startX != targetX || startY != targetY || startZ != targetZ
                                                      || this.player.getYRot() != targetYRot || this.player.getXRot() != targetXRot)) {
                                          var fandPlayer = io.fand.server.hooks.FandHooks.findPlayer(this.player.getUUID());
-@@ -1172,6 +1173,7 @@ public class ServerGamePacketListenerImpl
+@@ -1179,6 +1180,7 @@ public class ServerGamePacketListenerImpl
                                                  var fandFrom = new io.fand.api.world.Location(fandWorld, startX, startY, startZ, this.player.getYRot(), this.player.getXRot());
                                                  var fandTo = new io.fand.api.world.Location(fandWorld, targetX, targetY, targetZ, targetYRot, targetXRot);
                                                  var fandMoveEvent = io.fand.server.hooks.FandHooks.fireOrLog(
@@ -48,7 +48,7 @@ index 9d8f17cbb335920e2c97a2ceb901105d1175f0c1..b4e433569c81c1ffa80718d491c87672
                                                          new io.fand.api.event.player.PlayerMoveEvent(fandPlayer, fandFrom, fandTo),
                                                          "PlayerMoveEvent");
                                                  fandMoveCancelled = fandMoveEvent.cancelled();
-@@ -1392,7 +1394,8 @@ public class ServerGamePacketListenerImpl
+@@ -1401,7 +1403,8 @@ public class ServerGamePacketListenerImpl
                              if (this.server.isUnderSpawnProtection(level, pos, this.player)) {
                                  this.player.sendSpawnProtectionMessage(pos);
                              } else if (this.awaitingPositionFromClient == null && level.mayInteract(this.player, pos)) {
@@ -58,7 +58,7 @@ index 9d8f17cbb335920e2c97a2ceb901105d1175f0c1..b4e433569c81c1ffa80718d491c87672
                                      var fandPlayer = io.fand.server.hooks.FandHooks.findPlayer(this.player.getUUID());
                                      if (fandPlayer != null) {
                                          var fandWorld = io.fand.server.hooks.FandHooks.wrapWorld(level);
-@@ -1402,6 +1405,7 @@ public class ServerGamePacketListenerImpl
+@@ -1411,6 +1414,7 @@ public class ServerGamePacketListenerImpl
                                                  ? io.fand.api.event.player.PlayerInteractEvent.Hand.OFF_HAND
                                                  : io.fand.api.event.player.PlayerInteractEvent.Hand.MAIN_HAND;
                                          var fandInteractEvent = io.fand.server.hooks.FandHooks.fireOrLog(
@@ -66,7 +66,7 @@ index 9d8f17cbb335920e2c97a2ceb901105d1175f0c1..b4e433569c81c1ffa80718d491c87672
                                                  new io.fand.api.event.player.PlayerInteractEvent(
                                                          fandPlayer,
                                                          io.fand.api.event.player.PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK,
-@@ -1476,13 +1480,15 @@ public class ServerGamePacketListenerImpl
+@@ -1485,13 +1489,15 @@ public class ServerGamePacketListenerImpl
                      this.player.absSnapRotationTo(targetYRot, targetXRot);
                  }
  
@@ -84,30 +84,30 @@ index 9d8f17cbb335920e2c97a2ceb901105d1175f0c1..b4e433569c81c1ffa80718d491c87672
                                          fandPlayer,
                                          io.fand.api.event.player.PlayerInteractEvent.Action.RIGHT_CLICK_AIR,
 diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
-index 9940945fc4af7d4c4326a6862c23052bf7b93edf..bdb292a1f0255a3c60c9b19ab6d05e8d0d81f678 100644
+index 630fb60fe36af6047fdc5a4e30c95c91eb76b4d0..8b187f802ff1c69e4dcc8b12f47ab9344e6206c7 100644
 --- a/net/minecraft/world/entity/LivingEntity.java
 +++ b/net/minecraft/world/entity/LivingEntity.java
-@@ -1157,19 +1157,13 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
-         } else if (source.is(DamageTypeTags.IS_FIRE) && this.hasEffect(MobEffects.FIRE_RESISTANCE)) {
+@@ -1187,19 +1187,13 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
              return false;
-         } else {
--            if (io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.entity.EntityDamageEvent.class)) {
--                io.fand.api.entity.LivingEntity fandVictim = null;
--                if (this instanceof net.minecraft.server.level.ServerPlayer fandServerPlayer) {
--                    fandVictim = io.fand.server.hooks.FandHooks.findPlayer(fandServerPlayer.getUUID());
--                } else {
--                    var fandEntityRegistry = io.fand.server.hooks.FandHooks.entities().orElse(null);
--                    if (fandEntityRegistry != null) {
--                        fandVictim = fandEntityRegistry.wrap(this);
--                    }
+         }
+ 
+-        if (io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.entity.EntityDamageEvent.class)) {
+-            io.fand.api.entity.LivingEntity fandVictim = null;
+-            if (this instanceof net.minecraft.server.level.ServerPlayer fandServerPlayer) {
+-                fandVictim = io.fand.server.hooks.FandHooks.findPlayer(fandServerPlayer.getUUID());
+-            } else {
+-                var fandEntityRegistry = io.fand.server.hooks.FandHooks.entities().orElse(null);
+-                if (fandEntityRegistry != null) {
+-                    fandVictim = fandEntityRegistry.wrap(this);
 -                }
-+            var fandBus = io.fand.server.hooks.FandHooks.events();
-+            if (fandBus.hasListeners(io.fand.api.event.entity.EntityDamageEvent.class)) {
-+                io.fand.api.entity.LivingEntity fandVictim = io.fand.server.hooks.FandHooks.wrapLivingEntity(this);
-                 if (fandVictim != null) {
-                     var fandDamageType = source.typeHolder().unwrapKey().map(k -> k.identifier().toString()).orElse("minecraft:generic");
-                     var fandDamageEvent = io.fand.server.hooks.FandHooks.fireOrLog(
-+                            fandBus,
-                             new io.fand.api.event.entity.EntityDamageEvent(fandVictim, fandDamageType, damage),
-                             "EntityDamageEvent");
-                     if (fandDamageEvent.cancelled()) {
+-            }
++        var fandBus = io.fand.server.hooks.FandHooks.events();
++        if (fandBus.hasListeners(io.fand.api.event.entity.EntityDamageEvent.class)) {
++            io.fand.api.entity.LivingEntity fandVictim = io.fand.server.hooks.FandHooks.wrapLivingEntity(this);
+             if (fandVictim != null) {
+                 var fandDamageType = source.typeHolder().unwrapKey().map(k -> k.identifier().toString()).orElse("minecraft:generic");
+                 var fandDamageEvent = io.fand.server.hooks.FandHooks.fireOrLog(
++                        fandBus,
+                         new io.fand.api.event.entity.EntityDamageEvent(fandVictim, fandDamageType, damage),
+                         "EntityDamageEvent");
+                 if (fandDamageEvent.cancelled()) {

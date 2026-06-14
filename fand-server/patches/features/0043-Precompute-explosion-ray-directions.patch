@@ -5,7 +5,7 @@ Subject: [PATCH] Precompute explosion ray directions
 
 
 diff --git a/net/minecraft/world/level/ServerExplosion.java b/net/minecraft/world/level/ServerExplosion.java
-index 70310b5c1aef7e9d28bc35e94bed28cc5c2a8a12..b8c8b1ce7e068aa01c70369096c5b9f6bed583c4 100644
+index 7f9dbf69b5f75aea7ff2d573e5a13259853e0b56..0185818adcf689dfb03be6bdeb7d73aa532b2054 100644
 --- a/net/minecraft/world/level/ServerExplosion.java
 +++ b/net/minecraft/world/level/ServerExplosion.java
 @@ -40,6 +40,7 @@ public class ServerExplosion implements Explosion {
@@ -57,7 +57,7 @@ index 70310b5c1aef7e9d28bc35e94bed28cc5c2a8a12..b8c8b1ce7e068aa01c70369096c5b9f6
          for (int xx = 0; xx < 16; xx++) {
              for (int yy = 0; yy < 16; yy++) {
                  for (int zz = 0; zz < 16; zz++) {
-@@ -130,41 +165,12 @@ public class ServerExplosion implements Explosion {
+@@ -130,42 +165,12 @@ public class ServerExplosion implements Explosion {
                          double yd = yy / 15.0F * 2.0F - 1.0F;
                          double zd = zz / 15.0F * 2.0F - 1.0F;
                          double d = Math.sqrt(xd * xd + yd * yd + zd * zd);
@@ -69,7 +69,7 @@ index 70310b5c1aef7e9d28bc35e94bed28cc5c2a8a12..b8c8b1ce7e068aa01c70369096c5b9f6
 -                        double yp = this.center.y;
 -                        double zp = this.center.z;
 -
--                        for (float stepSize = 0.3F; remainingPower > 0.0F; remainingPower -= 0.22500001F) {
+-                        while (remainingPower > 0.0F) {
 -                            pos.set(xp, yp, zp);
 -                            BlockState block = this.level.getBlockState(pos);
 -                            FluidState fluid = this.level.getFluidState(pos);
@@ -89,6 +89,7 @@ index 70310b5c1aef7e9d28bc35e94bed28cc5c2a8a12..b8c8b1ce7e068aa01c70369096c5b9f6
 -                            xp += xd * 0.3F;
 -                            yp += yd * 0.3F;
 -                            zp += zd * 0.3F;
+-                            remainingPower -= 0.22500001F;
 -                        }
 +                        rays.add(new RayDirection(xd / d, yd / d, zd / d));
                      }
@@ -101,7 +102,7 @@ index 70310b5c1aef7e9d28bc35e94bed28cc5c2a8a12..b8c8b1ce7e068aa01c70369096c5b9f6
      }
  
      private void hurtEntities() {
-@@ -271,6 +277,9 @@ public class ServerExplosion implements Explosion {
+@@ -272,6 +277,9 @@ public class ServerExplosion implements Explosion {
          return this.hitPlayers;
      }
  

@@ -5,20 +5,20 @@ Subject: [PATCH] Fire Fand inventory open/click/close events
 
 
 diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
-index a5fb9188b3da4a562955b473decfc190753ba117..6486ce6a8d7dd3b357ef7277f9301c3515667171 100644
+index 8a4d6f02386c1222e0b636ac2d6c0a62fb8ea13e..c8543b29e18529e68f678eba8c39702dc8e8c71d 100644
 --- a/net/minecraft/server/level/ServerPlayer.java
 +++ b/net/minecraft/server/level/ServerPlayer.java
-@@ -1378,6 +1378,9 @@ public class ServerPlayer extends Player {
+@@ -1372,6 +1372,9 @@ public class ServerPlayer extends Player {
  
-                 return OptionalInt.empty();
-             } else {
+             return OptionalInt.empty();
+         } else {
 +                if (!io.fand.server.inventory.InventoryEvents.fireOpen(this, menu.getType())) {
 +                    return OptionalInt.empty();
 +                }
-                 this.connection.send(new ClientboundOpenScreenPacket(menu.containerId, menu.getType(), provider.getDisplayName()));
-                 this.initMenu(menu);
-                 this.containerMenu = menu;
-@@ -1448,6 +1451,9 @@ public class ServerPlayer extends Player {
+             this.connection.send(new ClientboundOpenScreenPacket(menu.containerId, menu.getType(), provider.getDisplayName()));
+             this.initMenu(menu);
+             this.containerMenu = menu;
+@@ -1441,6 +1444,9 @@ public class ServerPlayer extends Player {
  
      @Override
      public void doCloseContainer() {
@@ -29,10 +29,10 @@ index a5fb9188b3da4a562955b473decfc190753ba117..6486ce6a8d7dd3b357ef7277f9301c35
          this.inventoryMenu.transferState(this.containerMenu);
          this.containerMenu = this.inventoryMenu;
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 04032aa11038dd738fe9c682132385c9774cfc61..4d68a9bd0cf3abb62e3cfecc9e5469795e82a776 100644
+index 78ab7c600f9569ee39d8d904459981d08ce7fb16..b5a5e9feaafe2b9e43563317e17a1db615485137 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -2054,6 +2054,13 @@ public class ServerGamePacketListenerImpl
+@@ -2072,6 +2072,13 @@ public class ServerGamePacketListenerImpl
                      );
                  } else {
                      boolean fullResyncNeeded = packet.stateId() != this.player.containerMenu.getStateId();

@@ -29,12 +29,14 @@ final class VanillaRegistrySources {
     private final MinecraftSourceSet sources;
     private final Map<String, String> blockIds;
     private final Map<String, String> itemIds;
+    private final Map<String, String> resourceKeys;
     private final Map<String, String> blockKeys;
 
     VanillaRegistrySources(MinecraftSourceSet sources) throws IOException {
         this.sources = sources;
         this.blockIds = resourceKeys("net/minecraft/references/BlockIds.java", "Block");
         this.itemIds = resourceKeys("net/minecraft/references/ItemIds.java", "Item");
+        this.resourceKeys = allResourceKeys();
         this.blockKeys = KeyNames.entriesByName(blockKeys());
     }
 
@@ -46,6 +48,7 @@ final class VanillaRegistrySources {
             }
             KeyExtractors.firstStringRegisterId(field.initializer())
                     .or(() -> KeyExtractors.firstReferencedKey(field.initializer(), blockIds))
+                    .or(() -> KeyExtractors.firstReferencedKey(field.initializer(), resourceKeys))
                     .map(KeyNames::vanillaKey)
                     .ifPresent(key -> entries.add(field.name(), key));
         }
@@ -62,6 +65,7 @@ final class VanillaRegistrySources {
             var key = KeyExtractors.firstStringRegisterId(field.initializer())
                     .map(KeyNames::vanillaKey)
                     .or(() -> KeyExtractors.firstReferencedKey(field.initializer(), itemIds))
+                    .or(() -> KeyExtractors.firstReferencedKey(field.initializer(), resourceKeys))
                     .or(() -> KeyExtractors.referencedBlockName(field.initializer()).map(blockKeys::get))
                     .orElse(KeyNames.vanillaKey(KeyNames.enumNameToPath(field.name())));
             entries.add(field.name(), key);
@@ -74,7 +78,7 @@ final class VanillaRegistrySources {
     }
 
     List<KeyEntry> entityKeys() throws IOException {
-        return registryKeyFields("net/minecraft/world/entity/EntityType.java", "EntityType<");
+        return registryEntries("net/minecraft/world/entity/EntityTypes.java", "EntityType<");
     }
 
     List<KeyEntry> blockTagKeys() throws IOException {
@@ -90,7 +94,7 @@ final class VanillaRegistrySources {
     }
 
     List<KeyEntry> blockEntityKeys() throws IOException {
-        return registryKeyFields("net/minecraft/world/level/block/entity/BlockEntityType.java", "BlockEntityType<");
+        return registryEntries("net/minecraft/world/level/block/entity/BlockEntityTypes.java", "BlockEntityType<");
     }
 
     List<KeyEntry> fluidKeys() throws IOException {
@@ -220,7 +224,7 @@ final class VanillaRegistrySources {
     }
 
     List<KeyEntry> structureProcessorTypeKeys() throws IOException {
-        return registryCallKeys("net/minecraft/world/level/levelgen/structure/templatesystem/StructureProcessorType.java");
+        return registryCallKeys("net/minecraft/world/level/levelgen/structure/templatesystem/StructureProcessorTypes.java");
     }
 
     List<KeyEntry> materialConditionTypeKeys() throws IOException {
@@ -431,6 +435,7 @@ final class VanillaRegistrySources {
             }
             KeyExtractors.firstStringRegisterId(field.initializer())
                     .or(() -> KeyExtractors.firstRegistryKeyId(field.initializer()))
+                    .or(() -> KeyExtractors.firstReferencedKey(field.initializer(), resourceKeys))
                     .map(KeyNames::vanillaKey)
                     .ifPresent(key -> entries.add(field.name(), key));
         }
@@ -458,6 +463,7 @@ final class VanillaRegistrySources {
             }
             KeyExtractors.firstRegistryKeyId(field.initializer())
                     .or(() -> KeyExtractors.firstSoundSetKey(field.initializer()))
+                    .or(() -> KeyExtractors.firstReferencedKey(field.initializer(), resourceKeys))
                     .map(KeyNames::vanillaKey)
                     .ifPresent(key -> entries.add(field.name(), key));
         }
@@ -515,6 +521,25 @@ final class VanillaRegistrySources {
             KeyExtractors.firstCreateKey(field.initializer())
                     .map(KeyNames::vanillaKey)
                     .ifPresent(key -> keys.put(field.name(), key));
+        }
+        return keys;
+    }
+
+    private Map<String, String> allResourceKeys() throws IOException {
+        var keys = new LinkedHashMap<String, String>();
+        for (var file : sources.files("net/minecraft", "Ids.java")) {
+            var className = file.getFileName().toString().replace(".java", "");
+            for (var field : sources.staticFields(sources.relativePath(file))) {
+                if (!field.type().contains("ResourceKey<")) {
+                    continue;
+                }
+                KeyExtractors.firstCreateKey(field.initializer())
+                        .map(KeyNames::vanillaKey)
+                        .ifPresent(key -> {
+                            keys.putIfAbsent(field.name(), key);
+                            keys.put(className + "." + field.name(), key);
+                        });
+            }
         }
         return keys;
     }

@@ -5,10 +5,10 @@ Subject: [PATCH] Refactor patches to use FandHooks facade
 
 
 diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
-index 6486ce6a8d7dd3b357ef7277f9301c3515667171..7d3c8d625db233d1fc8d730f4eb1a1c81c99cd8a 100644
+index c8543b29e18529e68f678eba8c39702dc8e8c71d..5882eb7371ad1118bec16392cc1a302bb85b0f2d 100644
 --- a/net/minecraft/server/level/ServerPlayer.java
 +++ b/net/minecraft/server/level/ServerPlayer.java
-@@ -895,8 +895,8 @@ public class ServerPlayer extends Player {
+@@ -886,8 +886,8 @@ public class ServerPlayer extends Player {
          this.gameEvent(GameEvent.ENTITY_DIE);
          boolean showDeathMessage = this.level().getGameRules().get(GameRules.SHOW_DEATH_MESSAGES);
          Component deathMessage = showDeathMessage ? this.getCombatTracker().getDeathMessage() : null;
@@ -19,7 +19,7 @@ index 6486ce6a8d7dd3b357ef7277f9301c3515667171..7d3c8d625db233d1fc8d730f4eb1a1c8
              if (fandPlayer != null) {
                  net.kyori.adventure.text.Component fandDeathMessage = null;
                  if (deathMessage != null) {
-@@ -906,12 +906,9 @@ public class ServerPlayer extends Player {
+@@ -897,12 +897,9 @@ public class ServerPlayer extends Player {
                          LOGGER.warn("Skipping PlayerDeathEvent after fromVanilla failure", fandFailure);
                      }
                  }
@@ -36,40 +36,40 @@ index 6486ce6a8d7dd3b357ef7277f9301c3515667171..7d3c8d625db233d1fc8d730f4eb1a1c8
                      showDeathMessage = false;
                      deathMessage = null;
 diff --git a/net/minecraft/server/level/ServerPlayerGameMode.java b/net/minecraft/server/level/ServerPlayerGameMode.java
-index 4f38ac40b1e702a3e77be1fbc6f3055a95c0cc74..7c3aea0895aa1ebbe9487bcd5903fb0551a19446 100644
+index 06e5792bc33ba9a1d2acc1144793999a351ff748..023bac1bc0e5f17ccd702fb9e7d4d1ee89de924e 100644
 --- a/net/minecraft/server/level/ServerPlayerGameMode.java
 +++ b/net/minecraft/server/level/ServerPlayerGameMode.java
-@@ -272,19 +272,16 @@ public class ServerPlayerGameMode {
-             } else if (this.player.blockActionRestricted(this.level, pos, this.gameModeForPlayer)) {
-                 return false;
-             } else {
--                if (io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.block.BlockBreakEvent.class)) {
--                    var fandPlayer = io.fand.server.Main.runtime().playerRegistry().find(this.player.getUUID()).orElse(null);
-+                if (io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.block.BlockBreakEvent.class)) {
-+                    var fandPlayer = io.fand.server.hooks.FandHooks.findPlayer(this.player.getUUID());
-                     if (fandPlayer != null) {
--                        var fandWorld = io.fand.server.Main.runtime().worldRegistry().map(r -> r.wrap(this.level)).orElse(null);
-+                        var fandWorld = io.fand.server.hooks.FandHooks.wrapWorld(this.level);
-                         if (fandWorld != null) {
-                             var fandBlock = new io.fand.server.block.FandBlock(fandWorld, pos.getX(), pos.getY(), pos.getZ());
-                             var fandBlockType = io.fand.server.block.FandBlockType.of(block);
--                            var fandBreakEvent = new io.fand.api.event.block.BlockBreakEvent(fandPlayer, fandBlock, fandBlockType);
--                            try {
--                                io.fand.server.Main.runtime().events().fire(fandBreakEvent);
--                            } catch (RuntimeException fandFailure) {
--                                LOGGER.warn("BlockBreakEvent listener failed", fandFailure);
--                            }
-+                            var fandBreakEvent = io.fand.server.hooks.FandHooks.fireOrLog(
-+                                    new io.fand.api.event.block.BlockBreakEvent(fandPlayer, fandBlock, fandBlockType),
-+                                    "BlockBreakEvent");
-                             if (fandBreakEvent.cancelled()) {
-                                 this.level.sendBlockUpdated(pos, state, state, Block.UPDATE_ALL);
-                                 return false;
+@@ -276,19 +276,16 @@ public class ServerPlayerGameMode {
+             return false;
+         }
+ 
+-        if (io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.block.BlockBreakEvent.class)) {
+-            var fandPlayer = io.fand.server.Main.runtime().playerRegistry().find(this.player.getUUID()).orElse(null);
++        if (io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.block.BlockBreakEvent.class)) {
++            var fandPlayer = io.fand.server.hooks.FandHooks.findPlayer(this.player.getUUID());
+             if (fandPlayer != null) {
+-                var fandWorld = io.fand.server.Main.runtime().worldRegistry().map(r -> r.wrap(this.level)).orElse(null);
++                var fandWorld = io.fand.server.hooks.FandHooks.wrapWorld(this.level);
+                 if (fandWorld != null) {
+                     var fandBlock = new io.fand.server.block.FandBlock(fandWorld, pos.getX(), pos.getY(), pos.getZ());
+                     var fandBlockType = io.fand.server.block.FandBlockType.of(block);
+-                    var fandBreakEvent = new io.fand.api.event.block.BlockBreakEvent(fandPlayer, fandBlock, fandBlockType);
+-                    try {
+-                        io.fand.server.Main.runtime().events().fire(fandBreakEvent);
+-                    } catch (RuntimeException fandFailure) {
+-                        LOGGER.warn("BlockBreakEvent listener failed", fandFailure);
+-                    }
++                    var fandBreakEvent = io.fand.server.hooks.FandHooks.fireOrLog(
++                            new io.fand.api.event.block.BlockBreakEvent(fandPlayer, fandBlock, fandBlockType),
++                            "BlockBreakEvent");
+                     if (fandBreakEvent.cancelled()) {
+                         this.level.sendBlockUpdated(pos, state, state, Block.UPDATE_ALL);
+                         return false;
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 4d68a9bd0cf3abb62e3cfecc9e5469795e82a776..2ba6a8cc3f6caef06a0320d46071376cff51226a 100644
+index b5a5e9feaafe2b9e43563317e17a1db615485137..978d6cc988af33890e036aa96bcefb8f8fe0dfa9 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -1160,21 +1160,18 @@ public class ServerGamePacketListenerImpl
+@@ -1167,21 +1167,18 @@ public class ServerGamePacketListenerImpl
                                      || (!fail || !level.noCollision(this.player, oldAABB))
                                          && !this.isEntityCollidingWithAnythingNew(level, this.player, oldAABB, targetX, targetY, targetZ)) {
                                      boolean fandMoveCancelled = false;
@@ -97,7 +97,7 @@ index 4d68a9bd0cf3abb62e3cfecc9e5469795e82a776..2ba6a8cc3f6caef06a0320d46071376c
                                                  fandMoveCancelled = fandMoveEvent.cancelled();
                                              }
                                          }
-@@ -1393,25 +1390,22 @@ public class ServerGamePacketListenerImpl
+@@ -1402,25 +1399,22 @@ public class ServerGamePacketListenerImpl
                              if (this.server.isUnderSpawnProtection(level, pos, this.player)) {
                                  this.player.sendSpawnProtectionMessage(pos);
                              } else if (this.awaitingPositionFromClient == null && level.mayInteract(this.player, pos)) {
@@ -133,7 +133,7 @@ index 4d68a9bd0cf3abb62e3cfecc9e5469795e82a776..2ba6a8cc3f6caef06a0320d46071376c
                                          if (fandInteractEvent.cancelled()) {
                                              this.send(new ClientboundBlockUpdatePacket(level, pos));
                                              this.send(new ClientboundBlockUpdatePacket(level, pos.relative(direction)));
-@@ -1480,22 +1474,19 @@ public class ServerGamePacketListenerImpl
+@@ -1489,22 +1483,19 @@ public class ServerGamePacketListenerImpl
                      this.player.absSnapRotationTo(targetYRot, targetXRot);
                  }
  
@@ -165,7 +165,7 @@ index 4d68a9bd0cf3abb62e3cfecc9e5469795e82a776..2ba6a8cc3f6caef06a0320d46071376c
                          if (fandInteractEvent.cancelled()) {
                              return;
                          }
-@@ -1589,7 +1580,7 @@ public class ServerGamePacketListenerImpl
+@@ -1598,7 +1589,7 @@ public class ServerGamePacketListenerImpl
                  CompletableFuture<FilteredText> filteredFuture = this.filterTextPacket(signedMessage.signedContent());
                  Component decorated = this.server.getChatDecorator().decorate(this.player, signedMessage.decoratedContent());
                  this.chatMessageChain.append(filteredFuture, filtered -> {
@@ -174,7 +174,7 @@ index 4d68a9bd0cf3abb62e3cfecc9e5469795e82a776..2ba6a8cc3f6caef06a0320d46071376c
                      Component fandDecorated = decorated;
                      if (fandPlayer != null) {
                          net.kyori.adventure.text.Component fandMessage;
-@@ -1600,12 +1591,9 @@ public class ServerGamePacketListenerImpl
+@@ -1609,12 +1600,9 @@ public class ServerGamePacketListenerImpl
                              fandMessage = null;
                          }
                          if (fandMessage != null) {
@@ -191,7 +191,7 @@ index 4d68a9bd0cf3abb62e3cfecc9e5469795e82a776..2ba6a8cc3f6caef06a0320d46071376c
                                  return;
                              }
 diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
-index 8cc4e0e82df5fd229fa2c310b921f7996d7da0b9..10f39f76e83482f07d4bf129f34f28f6c51df2a9 100644
+index e56dea685395c8b630f0fd486acacd5c842ad5fa..e4b037ec6fd8c080c7abe1d724a6f6ee7c48af27 100644
 --- a/net/minecraft/server/players/PlayerList.java
 +++ b/net/minecraft/server/players/PlayerList.java
 @@ -209,13 +209,10 @@ public abstract class PlayerList {
@@ -212,7 +212,7 @@ index 8cc4e0e82df5fd229fa2c310b921f7996d7da0b9..10f39f76e83482f07d4bf129f34f28f6
          var fandFinalJoinMessage = fandJoinEvent.message();
          if (fandFinalJoinMessage != null) {
              this.broadcastSystemMessage(io.fand.server.command.AdventureBridge.toVanillaOrFallback(fandFinalJoinMessage, fandJoinFallback, this.server.registryAccess()), false);
-@@ -324,14 +321,11 @@ public abstract class PlayerList {
+@@ -320,14 +317,11 @@ public abstract class PlayerList {
  
      public void remove(final ServerPlayer player) {
          ServerLevel level = player.level();
@@ -241,47 +241,47 @@ index 8cc4e0e82df5fd229fa2c310b921f7996d7da0b9..10f39f76e83482f07d4bf129f34f28f6
          player.setHealth(player.getHealth());
          ServerPlayer.RespawnConfig respawnConfig = player.getRespawnConfig();
 diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
-index 2e1374a72f8582c1668ed9b2c629704d2a9afd4c..9940945fc4af7d4c4326a6862c23052bf7b93edf 100644
+index ee5db7960eb489119104edd907c9f02ab1f7dbaa..630fb60fe36af6047fdc5a4e30c95c91eb76b4d0 100644
 --- a/net/minecraft/world/entity/LivingEntity.java
 +++ b/net/minecraft/world/entity/LivingEntity.java
-@@ -1157,24 +1157,21 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
-         } else if (source.is(DamageTypeTags.IS_FIRE) && this.hasEffect(MobEffects.FIRE_RESISTANCE)) {
+@@ -1187,24 +1187,21 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
              return false;
-         } else {
--            if (io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.entity.EntityDamageEvent.class)) {
-+            if (io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.entity.EntityDamageEvent.class)) {
-                 io.fand.api.entity.LivingEntity fandVictim = null;
-                 if (this instanceof net.minecraft.server.level.ServerPlayer fandServerPlayer) {
--                    fandVictim = io.fand.server.Main.runtime().playerRegistry().find(fandServerPlayer.getUUID()).orElse(null);
-+                    fandVictim = io.fand.server.hooks.FandHooks.findPlayer(fandServerPlayer.getUUID());
-                 } else {
--                    var fandWorldRegistry = io.fand.server.Main.runtime().worldRegistry().orElse(null);
--                    if (fandWorldRegistry != null) {
--                        fandVictim = new io.fand.server.entity.FandLivingEntity(this, fandWorldRegistry);
-+                    var fandEntityRegistry = io.fand.server.hooks.FandHooks.entities().orElse(null);
-+                    if (fandEntityRegistry != null) {
-+                        fandVictim = fandEntityRegistry.wrap(this);
-                     }
+         }
+ 
+-        if (io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.entity.EntityDamageEvent.class)) {
++        if (io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.entity.EntityDamageEvent.class)) {
+             io.fand.api.entity.LivingEntity fandVictim = null;
+             if (this instanceof net.minecraft.server.level.ServerPlayer fandServerPlayer) {
+-                fandVictim = io.fand.server.Main.runtime().playerRegistry().find(fandServerPlayer.getUUID()).orElse(null);
++                fandVictim = io.fand.server.hooks.FandHooks.findPlayer(fandServerPlayer.getUUID());
+             } else {
+-                var fandWorldRegistry = io.fand.server.Main.runtime().worldRegistry().orElse(null);
+-                if (fandWorldRegistry != null) {
+-                    fandVictim = new io.fand.server.entity.FandLivingEntity(this, fandWorldRegistry);
++                var fandEntityRegistry = io.fand.server.hooks.FandHooks.entities().orElse(null);
++                if (fandEntityRegistry != null) {
++                    fandVictim = fandEntityRegistry.wrap(this);
                  }
-                 if (fandVictim != null) {
-                     var fandDamageType = source.typeHolder().unwrapKey().map(k -> k.identifier().toString()).orElse("minecraft:generic");
--                    var fandDamageEvent = new io.fand.api.event.entity.EntityDamageEvent(fandVictim, fandDamageType, damage);
--                    try {
--                        io.fand.server.Main.runtime().events().fire(fandDamageEvent);
--                    } catch (RuntimeException fandFailure) {
--                        org.slf4j.LoggerFactory.getLogger(LivingEntity.class).warn("EntityDamageEvent listener failed", fandFailure);
--                    }
-+                    var fandDamageEvent = io.fand.server.hooks.FandHooks.fireOrLog(
-+                            new io.fand.api.event.entity.EntityDamageEvent(fandVictim, fandDamageType, damage),
-+                            "EntityDamageEvent");
-                     if (fandDamageEvent.cancelled()) {
-                         return false;
-                     }
+             }
+             if (fandVictim != null) {
+                 var fandDamageType = source.typeHolder().unwrapKey().map(k -> k.identifier().toString()).orElse("minecraft:generic");
+-                var fandDamageEvent = new io.fand.api.event.entity.EntityDamageEvent(fandVictim, fandDamageType, damage);
+-                try {
+-                    io.fand.server.Main.runtime().events().fire(fandDamageEvent);
+-                } catch (RuntimeException fandFailure) {
+-                    org.slf4j.LoggerFactory.getLogger(LivingEntity.class).warn("EntityDamageEvent listener failed", fandFailure);
+-                }
++                var fandDamageEvent = io.fand.server.hooks.FandHooks.fireOrLog(
++                        new io.fand.api.event.entity.EntityDamageEvent(fandVictim, fandDamageType, damage),
++                        "EntityDamageEvent");
+                 if (fandDamageEvent.cancelled()) {
+                     return false;
+                 }
 diff --git a/net/minecraft/world/inventory/AbstractContainerMenu.java b/net/minecraft/world/inventory/AbstractContainerMenu.java
-index 39e98038d74c1544b4a6133853b30a0876dec83f..21b5231361c2c3860e1ee6aeeff1947b54522b81 100644
+index 13842d985493ec08e3d88e36a8a42e313aa94a1b..a8f6664bf8f7e94126929f221cd5c66efa94883d 100644
 --- a/net/minecraft/world/inventory/AbstractContainerMenu.java
 +++ b/net/minecraft/world/inventory/AbstractContainerMenu.java
-@@ -374,6 +374,19 @@ public abstract class AbstractContainerMenu {
+@@ -373,6 +373,19 @@ public abstract class AbstractContainerMenu {
                          return;
                      }
  
@@ -302,34 +302,36 @@ index 39e98038d74c1544b4a6133853b30a0876dec83f..21b5231361c2c3860e1ee6aeeff1947b
  
                      for (Slot slot : this.quickcraftSlots) {
 diff --git a/net/minecraft/world/item/BlockItem.java b/net/minecraft/world/item/BlockItem.java
-index 1b4dcc56709e4708cc2f4aefb2092fb4cddb719e..d671086d0b09c217e19cd5853b34df40d327a29e 100644
+index 1fa8ae8f2fe86302a7fbf2859a1e07f3accb0f3e..7f3ae828350b5eb13a44abf5336b89560c231868 100644
 --- a/net/minecraft/world/item/BlockItem.java
 +++ b/net/minecraft/world/item/BlockItem.java
-@@ -68,21 +68,18 @@ public class BlockItem extends Item {
-                     }
-                     if (fandLevel instanceof net.minecraft.server.level.ServerLevel fandServerLevel
-                             && fandContextPlayer instanceof ServerPlayer fandServerPlayer
--                            && io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.block.BlockPlaceEvent.class)) {
--                        var fandPlayer = io.fand.server.Main.runtime().playerRegistry().find(fandServerPlayer.getUUID()).orElse(null);
-+                            && io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.block.BlockPlaceEvent.class)) {
-+                        var fandPlayer = io.fand.server.hooks.FandHooks.findPlayer(fandServerPlayer.getUUID());
-                         if (fandPlayer != null) {
--                            var fandWorld = io.fand.server.Main.runtime().worldRegistry().map(r -> r.wrap(fandServerLevel)).orElse(null);
-+                            var fandWorld = io.fand.server.hooks.FandHooks.wrapWorld(fandServerLevel);
-                             if (fandWorld != null) {
-                                 BlockState fandPlacedState = fandLevel.getBlockState(fandPos);
-                                 var fandBlock = new io.fand.server.block.FandBlock(fandWorld, fandPos.getX(), fandPos.getY(), fandPos.getZ());
-                                 var fandPlacedType = io.fand.server.block.FandBlockType.of(fandPlacedState.getBlock());
-                                 var fandReplacedType = io.fand.server.block.FandBlockType.of(fandReplacedState.getBlock());
--                                var fandPlaceEvent = new io.fand.api.event.block.BlockPlaceEvent(fandPlayer, fandBlock, fandPlacedType, fandReplacedType);
--                                try {
--                                    io.fand.server.Main.runtime().events().fire(fandPlaceEvent);
--                                } catch (RuntimeException fandFailure) {
--                                    org.slf4j.LoggerFactory.getLogger(BlockItem.class).warn("BlockPlaceEvent listener failed", fandFailure);
--                                }
-+                                var fandPlaceEvent = io.fand.server.hooks.FandHooks.fireOrLog(
-+                                        new io.fand.api.event.block.BlockPlaceEvent(fandPlayer, fandBlock, fandPlacedType, fandReplacedType),
-+                                        "BlockPlaceEvent");
-                                 if (fandPlaceEvent.cancelled()) {
-                                     fandLevel.setBlock(fandPos, fandReplacedState, Block.UPDATE_ALL);
-                                     fandServerPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket(fandLevel, fandPos));
+@@ -74,21 +74,18 @@ public class BlockItem extends Item {
+ 
+         if (level instanceof net.minecraft.server.level.ServerLevel serverLevel
+             && player instanceof ServerPlayer serverPlayer
+-            && io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.block.BlockPlaceEvent.class)) {
+-            var fandPlayer = io.fand.server.Main.runtime().playerRegistry().find(serverPlayer.getUUID()).orElse(null);
++            && io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.block.BlockPlaceEvent.class)) {
++            var fandPlayer = io.fand.server.hooks.FandHooks.findPlayer(serverPlayer.getUUID());
+             if (fandPlayer != null) {
+-                var fandWorld = io.fand.server.Main.runtime().worldRegistry().map(r -> r.wrap(serverLevel)).orElse(null);
++                var fandWorld = io.fand.server.hooks.FandHooks.wrapWorld(serverLevel);
+                 if (fandWorld != null) {
+-                    BlockState placedNow = level.getBlockState(pos);
++                    BlockState placedEventState = level.getBlockState(pos);
+                     var fandBlock = new io.fand.server.block.FandBlock(fandWorld, pos.getX(), pos.getY(), pos.getZ());
+-                    var fandPlacedType = io.fand.server.block.FandBlockType.of(placedNow.getBlock());
++                    var fandPlacedType = io.fand.server.block.FandBlockType.of(placedEventState.getBlock());
+                     var fandReplacedType = io.fand.server.block.FandBlockType.of(replacedState.getBlock());
+-                    var fandPlaceEvent = new io.fand.api.event.block.BlockPlaceEvent(fandPlayer, fandBlock, fandPlacedType, fandReplacedType);
+-                    try {
+-                        io.fand.server.Main.runtime().events().fire(fandPlaceEvent);
+-                    } catch (RuntimeException fandFailure) {
+-                        org.slf4j.LoggerFactory.getLogger(BlockItem.class).warn("BlockPlaceEvent listener failed", fandFailure);
+-                    }
++                    var fandPlaceEvent = io.fand.server.hooks.FandHooks.fireOrLog(
++                            new io.fand.api.event.block.BlockPlaceEvent(fandPlayer, fandBlock, fandPlacedType, fandReplacedType),
++                            "BlockPlaceEvent");
+                     if (fandPlaceEvent.cancelled()) {
+                         level.setBlock(pos, replacedState, Block.UPDATE_ALL);
+                         serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket(level, pos));

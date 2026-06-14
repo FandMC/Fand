@@ -5,10 +5,10 @@ Subject: [PATCH] Expose lectern page setter
 
 
 diff --git a/net/minecraft/world/level/block/entity/LecternBlockEntity.java b/net/minecraft/world/level/block/entity/LecternBlockEntity.java
-index fcdbd6030daf9bf76e03b68ed5202d992401a76e..0cec18f25e1a4fb92031bc30e464c9cc3d424f1a 100644
+index 5fdf9e9cdda726471eca9006056f6ce359a1298c..d052286c16930f2985db54fe81d185ffe9768d91 100644
 --- a/net/minecraft/world/level/block/entity/LecternBlockEntity.java
 +++ b/net/minecraft/world/level/block/entity/LecternBlockEntity.java
-@@ -178,6 +178,10 @@ public class LecternBlockEntity extends BlockEntity implements Clearable, MenuPr
+@@ -169,6 +169,10 @@ public class LecternBlockEntity extends BlockEntity implements Clearable, MenuPr
          return this.page;
      }
  

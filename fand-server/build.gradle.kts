@@ -23,7 +23,7 @@ description = "Fand Server core implementation"
 dependencies {
     api(project(":fand-api"))
 
-    mache("io.papermc:mache:26.1.2+build.1")
+    mache("io.papermc:mache:26.2-rc-2+build.2")
     paperclip("io.papermc:paperclip:3.0.4")
 
     compileOnly("ch.qos.logback:logback-classic:1.5.6")

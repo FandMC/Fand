@@ -5,7 +5,7 @@ Subject: [PATCH] Restore cancelled block placement side effects
 
 
 diff --git a/net/minecraft/world/item/BlockItem.java b/net/minecraft/world/item/BlockItem.java
-index bb4921c7621a5eac4e9543ef3cdfc5610c2f8955..15667cfd4b962b482cdc2ea8b583ddf7efa94e86 100644
+index 9e4a891f469a166cc2d9eb4722de3a0557028f9a..26d2a18056a4827dfe804fe8d35c4617db73b065 100644
 --- a/net/minecraft/world/item/BlockItem.java
 +++ b/net/minecraft/world/item/BlockItem.java
 @@ -27,6 +27,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
@@ -16,47 +16,43 @@ index bb4921c7621a5eac4e9543ef3cdfc5610c2f8955..15667cfd4b962b482cdc2ea8b583ddf7
  import net.minecraft.world.level.storage.TagValueOutput;
  import net.minecraft.world.phys.shapes.CollisionContext;
  import org.jspecify.annotations.Nullable;
-@@ -58,26 +59,28 @@ public class BlockItem extends Item {
-             if (updatedPlaceContext == null) {
-                 return InteractionResult.FAIL;
-             } else {
-+                BlockPos fandPos = updatedPlaceContext.getClickedPos();
-+                Level fandLevel = updatedPlaceContext.getLevel();
-+                Player fandContextPlayer = updatedPlaceContext.getPlayer();
-+                boolean fandTrackPlacement = fandLevel instanceof net.minecraft.server.level.ServerLevel
-+                        && fandContextPlayer instanceof ServerPlayer
-+                        && io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.block.BlockPlaceEvent.class);
-+                Map<BlockPos, BlockState> fandBeforeStates = fandTrackPlacement ? snapshotPlacementStates(fandLevel, fandPos) : Map.of();
-+                Map<BlockPos, io.fand.api.component.DataComponentMap> fandBeforeComponents = fandTrackPlacement
-+                        && fandLevel instanceof net.minecraft.server.level.ServerLevel fandServerLevel
-+                        ? snapshotPlacementComponents(fandServerLevel, fandBeforeStates.keySet())
-+                        : Map.of();
-                 BlockState placementState = this.getPlacementState(updatedPlaceContext);
-                 if (placementState == null) {
-+                    restorePlacementIfTracked(fandLevel, fandBeforeStates, fandBeforeComponents, fandContextPlayer);
-                     return InteractionResult.FAIL;
-                 } else {
--                    BlockPos fandPos = updatedPlaceContext.getClickedPos();
--                    Level fandLevel = updatedPlaceContext.getLevel();
--                    Player fandContextPlayer = updatedPlaceContext.getPlayer();
-                     BlockState fandReplacedState = fandLevel.getBlockState(fandPos);
-                     io.fand.api.component.DataComponentMap fandReplacedComponents = fandLevel instanceof net.minecraft.server.level.ServerLevel fandServerLevel
-                             ? io.fand.server.component.BlockComponentStorage.snapshot(fandServerLevel, fandPos)
-                             : io.fand.api.component.DataComponentMap.EMPTY;
--                    boolean fandTrackPlacement = fandLevel instanceof net.minecraft.server.level.ServerLevel
--                            && fandContextPlayer instanceof ServerPlayer
--                            && io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.block.BlockPlaceEvent.class);
--                    Map<BlockPos, BlockState> fandBeforeStates = fandTrackPlacement ? snapshotPlacementStates(fandLevel, fandPos) : Map.of();
--                    Map<BlockPos, io.fand.api.component.DataComponentMap> fandBeforeComponents = fandTrackPlacement
--                            && fandLevel instanceof net.minecraft.server.level.ServerLevel fandServerLevel
--                            ? snapshotPlacementComponents(fandServerLevel, fandBeforeStates.keySet())
--                            : Map.of();
-                     if (!this.placeBlock(updatedPlaceContext, placementState)) {
-+                        restorePlacementIfTracked(fandLevel, fandBeforeStates, fandBeforeComponents, fandContextPlayer);
-                         return InteractionResult.FAIL;
-                     }
-                     BlockPos pos = fandPos;
-@@ -280,7 +283,8 @@ public class BlockItem extends Item {
+@@ -62,15 +63,9 @@ public class BlockItem extends Item {
+             return InteractionResult.FAIL;
+         }
+ 
+-        BlockState placementState = this.getPlacementState(updatedPlaceContext);
+-        if (placementState == null) {
+-            return InteractionResult.FAIL;
+-        }
+-
+         BlockPos pos = updatedPlaceContext.getClickedPos();
+         Level level = updatedPlaceContext.getLevel();
+         Player player = updatedPlaceContext.getPlayer();
+-        BlockState replacedState = level.getBlockState(pos);
+         boolean trackPlacement = level instanceof net.minecraft.server.level.ServerLevel
+             && player instanceof ServerPlayer
+             && io.fand.server.hooks.FandHooks.hasListeners(io.fand.api.event.block.BlockPlaceEvent.class);
+@@ -79,10 +74,19 @@ public class BlockItem extends Item {
+             && level instanceof net.minecraft.server.level.ServerLevel serverLevel
+             ? snapshotPlacementComponents(serverLevel, beforeStates.keySet())
+             : Map.of();
++
++        BlockState placementState = this.getPlacementState(updatedPlaceContext);
++        if (placementState == null) {
++            restorePlacementIfTracked(level, beforeStates, beforeComponents, player);
++            return InteractionResult.FAIL;
++        }
++
++        BlockState replacedState = level.getBlockState(pos);
+         io.fand.api.component.DataComponentMap replacedComponents = level instanceof net.minecraft.server.level.ServerLevel serverLevel
+             ? io.fand.server.component.BlockComponentStorage.snapshot(serverLevel, pos)
+             : io.fand.api.component.DataComponentMap.EMPTY;
+         if (!this.placeBlock(updatedPlaceContext, placementState)) {
++            restorePlacementIfTracked(level, beforeStates, beforeComponents, player);
+             return InteractionResult.FAIL;
+         }
+ 
+@@ -266,7 +270,8 @@ public class BlockItem extends Item {
              final Map<BlockPos, io.fand.api.component.DataComponentMap> beforeComponents,
              final ServerPlayer player
      ) {
@@ -66,7 +62,7 @@ index bb4921c7621a5eac4e9543ef3cdfc5610c2f8955..15667cfd4b962b482cdc2ea8b583ddf7
              BlockPos pos = entry.getKey();
              level.setBlock(pos, entry.getValue(), Block.UPDATE_ALL);
              io.fand.api.component.DataComponentMap components = beforeComponents.getOrDefault(pos, io.fand.api.component.DataComponentMap.EMPTY);
-@@ -293,6 +297,42 @@ public class BlockItem extends Item {
+@@ -279,6 +284,42 @@ public class BlockItem extends Item {
          }
      }
  

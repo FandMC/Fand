@@ -5,7 +5,7 @@ Subject: [PATCH] Parallelize Fand chunk tracking diffs
 
 
 diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
-index ac08b0343d22885cceea56092d6e7e9e8410da3c..44d5a2c7900cc6774f535d38c5948902194d0362 100644
+index 9e94701afafca0336473c34e74f7f0991d7e894a..f2cf0e2d3cbda1f1f2a9ee6061f158a7ce483243 100644
 --- a/net/minecraft/server/level/ChunkMap.java
 +++ b/net/minecraft/server/level/ChunkMap.java
 @@ -31,12 +31,14 @@ import java.util.Objects;
@@ -50,7 +50,7 @@ index ac08b0343d22885cceea56092d6e7e9e8410da3c..44d5a2c7900cc6774f535d38c5948902
          this.poiManager.tick(haveTime);
          profiler.popPush("chunk_unload");
          if (!this.level.noSave()) {
-@@ -1111,16 +1117,104 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+@@ -1113,16 +1119,104 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
      private void applyChunkTrackingView(final ServerPlayer player, final ChunkTrackingView next) {
          if (player.level() == this.level) {
              ChunkTrackingView previous = player.getChunkTrackingView();

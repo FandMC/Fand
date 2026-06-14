@@ -5,7 +5,7 @@ Subject: [PATCH] Optimize regionized worldgen scheduling
 
 
 diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
-index d67541134e990d076ce2205d80b8b1289bd334ec..36624b3bb387998d5c3826f7587c1a77d8e2be71 100644
+index d685f40f555881dc0af31bed8c9f07ef97e8e0b7..4d8d7d1a1c21da35b39b6b28189a7efea3f11e5c 100644
 --- a/net/minecraft/server/level/ChunkMap.java
 +++ b/net/minecraft/server/level/ChunkMap.java
 @@ -147,6 +147,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
@@ -457,10 +457,10 @@ index 0000000000000000000000000000000000000000..75f7e4f7cfb5e741885ac0cd3a0bae29
 +    }
 +}
 diff --git a/net/minecraft/world/level/chunk/ChunkGenerator.java b/net/minecraft/world/level/chunk/ChunkGenerator.java
-index df4937f2d234a2b99d4d0658fbca4aa463f57d1b..c6382c15caa7e3b36d60e5270b08f3a33e6b98ec 100644
+index a6b320c3d435c06ff1806e957fc79befe35497c0..cd9c7c881ac5e1e4a648152e772f252677d55e4e 100644
 --- a/net/minecraft/world/level/chunk/ChunkGenerator.java
 +++ b/net/minecraft/world/level/chunk/ChunkGenerator.java
-@@ -482,11 +482,11 @@ public abstract class ChunkGenerator {
+@@ -484,11 +484,11 @@ public abstract class ChunkGenerator {
              ChunkPos sourceChunkPos = centerChunk.getPos();
              SectionPos sectionPos = SectionPos.bottomOf(centerChunk);
              RandomState randomState = state.randomState();
@@ -476,7 +476,7 @@ index df4937f2d234a2b99d4d0658fbca4aa463f57d1b..c6382c15caa7e3b36d60e5270b08f3a3
  
                          for (StructureSet.StructureSelectionEntry structure : structures) {
                              StructureStart existingStart = structureManager.getStartForStructure(sectionPos, structure.structure().value(), centerChunk);
-@@ -496,9 +496,10 @@ public abstract class ChunkGenerator {
+@@ -498,9 +498,10 @@ public abstract class ChunkGenerator {
                          }
  
                          if (featurePlacement.isStructureChunk(state, sourceChunkPos.x(), sourceChunkPos.z())) {
@@ -489,7 +489,7 @@ index df4937f2d234a2b99d4d0658fbca4aa463f57d1b..c6382c15caa7e3b36d60e5270b08f3a3
                                      structureManager,
                                      registryAccess,
                                      randomState,
-@@ -510,15 +511,10 @@ public abstract class ChunkGenerator {
+@@ -512,15 +513,10 @@ public abstract class ChunkGenerator {
                                      level
                                  );
                              } else {
@@ -508,7 +508,7 @@ index df4937f2d234a2b99d4d0658fbca4aa463f57d1b..c6382c15caa7e3b36d60e5270b08f3a3
                                  while (!options.isEmpty()) {
                                      int choice = random.nextInt(total);
 diff --git a/net/minecraft/world/level/chunk/ChunkGeneratorStructureState.java b/net/minecraft/world/level/chunk/ChunkGeneratorStructureState.java
-index 21995b893634bf315d9181991ce60a19d8967387..9f1004cf0e2de46f990ac9c6c4955dbc50ab9140 100644
+index 853d8c871b580a2aa67298f41e7558e2892aa9e7..6464ed63709dd4bcb146d3957677e87ee3dfdd6d 100644
 --- a/net/minecraft/world/level/chunk/ChunkGeneratorStructureState.java
 +++ b/net/minecraft/world/level/chunk/ChunkGeneratorStructureState.java
 @@ -27,6 +27,7 @@ import net.minecraft.world.level.levelgen.RandomState;

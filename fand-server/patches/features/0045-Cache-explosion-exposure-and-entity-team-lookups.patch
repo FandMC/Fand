@@ -14,10 +14,10 @@ from every collision pair in dense entity stacks.
 Both paths are gated by fand.yml performance switches.
 
 diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
-index dded8f092dcb4df0902395e11d78763009711325..6525ad5eb915e41f12998c40007070f91b6e3ade 100644
+index 93d1b0f0e686ed1bf40171929cb3003d6ddd97f0..ec387987121c563cc0487015fdb3d071658f32f9 100644
 --- a/net/minecraft/server/level/ServerLevel.java
 +++ b/net/minecraft/server/level/ServerLevel.java
-@@ -220,6 +220,11 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+@@ -221,6 +221,11 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
      private final StructureCheck structureCheck;
      private final boolean tickTime;
      private final LevelDebugSynchronizers debugSynchronizers = new LevelDebugSynchronizers(this);
@@ -29,19 +29,19 @@ index dded8f092dcb4df0902395e11d78763009711325..6525ad5eb915e41f12998c40007070f9
  
      public ServerLevel(
          final MinecraftServer server,
-@@ -341,6 +346,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
-     public void tick(final BooleanSupplier haveTime) {
+@@ -354,6 +359,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
          ProfilerFiller profiler = Profiler.get();
          this.handlingTick = true;
+         this.environmentAttributes().invalidateTickCache();
 +        this.fandExplosionDensityCache.clear();
          TickRateManager tickRateManager = this.tickRateManager();
          boolean runs = tickRateManager.runsNormally();
          if (runs) {
 diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
-index 63526d42c7f20d6c30b53e4bb5d7b49c04a015b1..34b3a0d79677895b6fefbf635376fb2f1017d2fc 100644
+index 5d5e9821834b6f5881b1c69ce40b9792e4aeefa9..9bf959e8a932b52bb1b3c9f49d6fce452fcc52a5 100644
 --- a/net/minecraft/world/entity/Entity.java
 +++ b/net/minecraft/world/entity/Entity.java
-@@ -2101,6 +2101,7 @@ public abstract class Entity
+@@ -2193,6 +2193,7 @@ public abstract class Entity
              input.read("UUID", UUIDUtil.CODEC).ifPresent(id -> {
                  this.uuid = id;
                  this.stringUUID = this.uuid.toString();
@@ -49,7 +49,7 @@ index 63526d42c7f20d6c30b53e4bb5d7b49c04a015b1..34b3a0d79677895b6fefbf635376fb2f
              });
              if (!Double.isFinite(this.getX()) || !Double.isFinite(this.getY()) || !Double.isFinite(this.getZ())) {
                  throw new IllegalStateException("Entity has invalid position");
-@@ -2786,9 +2787,23 @@ public abstract class Entity
+@@ -2860,9 +2861,23 @@ public abstract class Entity
      }
  
      public @Nullable PlayerTeam getTeam() {
@@ -74,7 +74,7 @@ index 63526d42c7f20d6c30b53e4bb5d7b49c04a015b1..34b3a0d79677895b6fefbf635376fb2f
      public final boolean isAlliedTo(final @Nullable Entity other) {
          return other != null && (this == other || this.considersEntityAsAlly(other) || other.considersEntityAsAlly(this));
      }
-@@ -3277,6 +3292,7 @@ public abstract class Entity
+@@ -3355,6 +3370,7 @@ public abstract class Entity
      public void setUUID(final UUID uuid) {
          this.uuid = uuid;
          this.stringUUID = this.uuid.toString();
@@ -83,7 +83,7 @@ index 63526d42c7f20d6c30b53e4bb5d7b49c04a015b1..34b3a0d79677895b6fefbf635376fb2f
  
      @Override
 diff --git a/net/minecraft/world/level/ServerExplosion.java b/net/minecraft/world/level/ServerExplosion.java
-index b8c8b1ce7e068aa01c70369096c5b9f6bed583c4..915733d0529a38e0b844bedcb0608c5c6930a1fb 100644
+index 0185818adcf689dfb03be6bdeb7d73aa532b2054..addcff811697785b81df0738773caa5ff79fa6de 100644
 --- a/net/minecraft/world/level/ServerExplosion.java
 +++ b/net/minecraft/world/level/ServerExplosion.java
 @@ -109,6 +109,13 @@ public class ServerExplosion implements Explosion {
@@ -110,7 +110,7 @@ index b8c8b1ce7e068aa01c70369096c5b9f6bed583c4..915733d0529a38e0b844bedcb0608c5c
                              entity.hurtServer(this.level, this.damageSource, this.damageCalculator.getEntityDamageAmount(this, entity, exposure));
                          }
 diff --git a/net/minecraft/world/scores/Scoreboard.java b/net/minecraft/world/scores/Scoreboard.java
-index ce9563148885c8c1994e21d0f2a9b983acade800..79dfb2b8bc53a2301fdda55110f56af504b4e7ce 100644
+index fe7c562a4944f9c96dc1476d36f136769bbe212f..b167e20095d347b6623ce28250874cca8d08740e 100644
 --- a/net/minecraft/world/scores/Scoreboard.java
 +++ b/net/minecraft/world/scores/Scoreboard.java
 @@ -36,6 +36,14 @@ public class Scoreboard {
@@ -128,7 +128,7 @@ index ce9563148885c8c1994e21d0f2a9b983acade800..79dfb2b8bc53a2301fdda55110f56af5
  
      public @Nullable Objective getObjective(final @Nullable String name) {
          return this.objectivesByName.get(name);
-@@ -270,6 +278,7 @@ public class Scoreboard {
+@@ -266,6 +274,7 @@ public class Scoreboard {
              this.teamsByPlayer.remove(player);
          }
  
@@ -136,7 +136,7 @@ index ce9563148885c8c1994e21d0f2a9b983acade800..79dfb2b8bc53a2301fdda55110f56af5
          this.onTeamRemoved(team);
      }
  
-@@ -279,6 +288,7 @@ public class Scoreboard {
+@@ -275,6 +284,7 @@ public class Scoreboard {
          }
  
          this.teamsByPlayer.put(player, team);
@@ -144,11 +144,18 @@ index ce9563148885c8c1994e21d0f2a9b983acade800..79dfb2b8bc53a2301fdda55110f56af5
          return team.getPlayers().add(player);
      }
  
-@@ -298,6 +308,7 @@ public class Scoreboard {
-         } else {
-             this.teamsByPlayer.remove(player);
-             team.getPlayers().remove(player);
+@@ -291,10 +301,11 @@ public class Scoreboard {
+     public void removePlayerFromTeam(final String player, final PlayerTeam team) {
+         if (this.getPlayersTeam(player) != team) {
+             throw new IllegalStateException("Player is either on another team or not on any team. Cannot remove from team '" + team.getName() + "'.");
++        } else {
++            this.teamsByPlayer.remove(player);
++            team.getPlayers().remove(player);
 +            this.fandTeamMembershipVersion++;
          }
+-
+-        this.teamsByPlayer.remove(player);
+-        team.getPlayers().remove(player);
      }
  
+     public Collection<String> getTeamNames() {

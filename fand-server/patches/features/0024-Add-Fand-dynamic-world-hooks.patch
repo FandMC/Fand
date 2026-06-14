@@ -5,10 +5,10 @@ Subject: [PATCH] Add Fand dynamic world hooks
 
 
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index 556f87c3abe5d0d738a1743ab0feb6b87514e4e5..a826cfce5f127d347aaa8f0b1262d119b661713f 100644
+index 32d9c10bd7801947474661ff3863eabeca30e43a..f95dc2e80ca86cae21cca21d0d094ead67db3823 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
-@@ -1242,6 +1242,68 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+@@ -1232,6 +1232,68 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
          return this.levels.values();
      }
  

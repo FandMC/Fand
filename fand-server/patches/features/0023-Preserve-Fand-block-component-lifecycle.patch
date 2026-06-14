@@ -5,41 +5,41 @@ Subject: [PATCH] Preserve Fand block component lifecycle
 
 
 diff --git a/net/minecraft/world/item/BlockItem.java b/net/minecraft/world/item/BlockItem.java
-index d671086d0b09c217e19cd5853b34df40d327a29e..31e62e9f986f8b9b2d87ebe94978c7a9e3be8d89 100644
+index 7f3ae828350b5eb13a44abf5336b89560c231868..5f8b834f6bae90f7a3fa2178cb3e71241f2ed330 100644
 --- a/net/minecraft/world/item/BlockItem.java
 +++ b/net/minecraft/world/item/BlockItem.java
-@@ -63,6 +63,9 @@ public class BlockItem extends Item {
-                     Level fandLevel = updatedPlaceContext.getLevel();
-                     Player fandContextPlayer = updatedPlaceContext.getPlayer();
-                     BlockState fandReplacedState = fandLevel.getBlockState(fandPos);
-+                    io.fand.api.component.DataComponentMap fandReplacedComponents = fandLevel instanceof net.minecraft.server.level.ServerLevel fandServerLevel
-+                            ? io.fand.server.component.BlockComponentStorage.snapshot(fandServerLevel, fandPos)
-+                            : io.fand.api.component.DataComponentMap.EMPTY;
-                     if (!this.placeBlock(updatedPlaceContext, placementState)) {
+@@ -68,6 +68,9 @@ public class BlockItem extends Item {
+         Level level = updatedPlaceContext.getLevel();
+         Player player = updatedPlaceContext.getPlayer();
+         BlockState replacedState = level.getBlockState(pos);
++        io.fand.api.component.DataComponentMap replacedComponents = level instanceof net.minecraft.server.level.ServerLevel serverLevel
++            ? io.fand.server.component.BlockComponentStorage.snapshot(serverLevel, pos)
++            : io.fand.api.component.DataComponentMap.EMPTY;
+         if (!this.placeBlock(updatedPlaceContext, placementState)) {
+             return InteractionResult.FAIL;
+         }
+@@ -88,6 +91,9 @@ public class BlockItem extends Item {
+                             "BlockPlaceEvent");
+                     if (fandPlaceEvent.cancelled()) {
+                         level.setBlock(pos, replacedState, Block.UPDATE_ALL);
++                        if (!replacedComponents.isEmpty()) {
++                            io.fand.server.component.BlockComponentStorage.put(serverLevel, pos, replacedComponents);
++                        }
+                         serverPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket(level, pos));
                          return InteractionResult.FAIL;
                      }
-@@ -82,6 +85,9 @@ public class BlockItem extends Item {
-                                         "BlockPlaceEvent");
-                                 if (fandPlaceEvent.cancelled()) {
-                                     fandLevel.setBlock(fandPos, fandReplacedState, Block.UPDATE_ALL);
-+                                    if (!fandReplacedComponents.isEmpty()) {
-+                                        io.fand.server.component.BlockComponentStorage.put(fandServerLevel, fandPos, fandReplacedComponents);
-+                                    }
-                                     fandServerPlayer.connection.send(new net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket(fandLevel, fandPos));
-                                     return InteractionResult.FAIL;
-                                 }
 diff --git a/net/minecraft/world/level/Level.java b/net/minecraft/world/level/Level.java
-index 2ddac8636aa302b6daffca8c6a4a0eb82423331b..a0ee0af1191ed0447ca143fecd9163272ceeaa42 100644
+index b89e98b3ecb529b6f2ebd9c6b27a0ee349c61ccf..6886aaef58a66f7e9404c4a7e896c7711784dbb1 100644
 --- a/net/minecraft/world/level/Level.java
 +++ b/net/minecraft/world/level/Level.java
-@@ -230,6 +230,10 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
-             } else {
-                 BlockState newState = this.getBlockState(pos);
-                 if (newState == blockState) {
-+                    if (!this.isClientSide() && this instanceof net.minecraft.server.level.ServerLevel fandServerLevel) {
-+                        io.fand.server.component.BlockComponentStorage.clearIfBlockChanged(fandServerLevel, pos, oldState, newState);
-+                    }
+@@ -239,6 +239,10 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+ 
+         BlockState newState = this.getBlockState(pos);
+         if (newState == blockState) {
++            if (!this.isClientSide() && this instanceof net.minecraft.server.level.ServerLevel serverLevel) {
++                io.fand.server.component.BlockComponentStorage.clearIfBlockChanged(serverLevel, pos, oldState, newState);
++            }
 +
-                     if (oldState != newState) {
-                         this.setBlocksDirty(pos, oldState, newState);
-                     }
+             if (oldState != newState) {
+                 this.setBlocksDirty(pos, oldState, newState);
+             }

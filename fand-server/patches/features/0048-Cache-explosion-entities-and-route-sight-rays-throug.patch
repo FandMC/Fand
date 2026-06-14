@@ -13,10 +13,10 @@ already cached by the preceding ray pass, blocks cannot change until
 the explosion finishes, so results are identical to vanilla.
 
 diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
-index adbfbcfb6c29aa75c5b599f2c30a503bd156feea..c2cf5f9c174a3c03a7efd3969bda895e6a536c78 100644
+index 307a4399cff17f3d14781df4a3675d5701cb5a86..03948ac899bacf61ae4ba2754b55a21a8f35489c 100644
 --- a/net/minecraft/server/level/ServerLevel.java
 +++ b/net/minecraft/server/level/ServerLevel.java
-@@ -232,6 +232,13 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+@@ -233,6 +233,13 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
          return this.fandExplosionBlockCache;
      }
  
@@ -31,7 +31,7 @@ index adbfbcfb6c29aa75c5b599f2c30a503bd156feea..c2cf5f9c174a3c03a7efd3969bda895e
       * Claims one slot of this tick's TNT detonation budget. Returns false when
       * the budget is exhausted; callers keep the TNT primed and retry next tick.
 diff --git a/net/minecraft/world/level/ServerExplosion.java b/net/minecraft/world/level/ServerExplosion.java
-index 4e958c0da8df2fad50a26062ef694bdf16c81f10..8a92ba24d1d01ee61f9e7d5aef4b46869e43812f 100644
+index 259c259cb4151f675142b0f578135f2c3f020b90..9ef71ed46a95cd58e07bd8146b179864b32a4fd8 100644
 --- a/net/minecraft/world/level/ServerExplosion.java
 +++ b/net/minecraft/world/level/ServerExplosion.java
 @@ -32,8 +32,10 @@ import net.minecraft.world.level.gameevent.GameEvent;

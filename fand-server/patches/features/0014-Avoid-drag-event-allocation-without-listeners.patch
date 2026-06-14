@@ -5,10 +5,10 @@ Subject: [PATCH] Avoid drag event allocation without listeners
 
 
 diff --git a/net/minecraft/world/inventory/AbstractContainerMenu.java b/net/minecraft/world/inventory/AbstractContainerMenu.java
-index 21b5231361c2c3860e1ee6aeeff1947b54522b81..8490d721b964219e83c8b348931e3169bb840a8a 100644
+index a8f6664bf8f7e94126929f221cd5c66efa94883d..dbd3617e9b67ca08854e53f9e2ddd85dfc2233c8 100644
 --- a/net/minecraft/world/inventory/AbstractContainerMenu.java
 +++ b/net/minecraft/world/inventory/AbstractContainerMenu.java
-@@ -374,7 +374,8 @@ public abstract class AbstractContainerMenu {
+@@ -373,7 +373,8 @@ public abstract class AbstractContainerMenu {
                          return;
                      }
  

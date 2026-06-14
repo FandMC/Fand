@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 14 Jun 2026 23:26:43 +0800
+Subject: [PATCH] Adapt Fand hooks to 26.2 API
+
+
+diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
+index 4b270beb6b20eeeee696587412b1a25bff2cdf6d..3d245d295d063f1fbf36b4ea6361d733763807db 100644
+--- a/net/minecraft/server/level/ServerPlayer.java
++++ b/net/minecraft/server/level/ServerPlayer.java
+@@ -17,6 +17,7 @@ import java.util.Collection;
+ import java.util.HashSet;
+ import java.util.List;
+ import java.util.Map;
++import java.util.Objects;
+ import java.util.Optional;
+ import java.util.OptionalInt;
+ import java.util.Set;
+diff --git a/net/minecraft/world/entity/monster/zombie/Zombie.java b/net/minecraft/world/entity/monster/zombie/Zombie.java
+index 6d7a406a2a8dd86f6212eab40ad02f0c022fb657..6f1982978082577718b31051af81d4671265e75e 100644
+--- a/net/minecraft/world/entity/monster/zombie/Zombie.java
++++ b/net/minecraft/world/entity/monster/zombie/Zombie.java
+@@ -300,7 +300,7 @@ public class Zombie extends Monster {
+             int y = Mth.floor(this.getY());
+             int z = Mth.floor(this.getZ());
+             EntityType<? extends Zombie> type = io.fand.server.hooks.FandHooks.oldZombieReinforcementEnabled()
+-                ? EntityType.ZOMBIE
++                ? EntityTypes.ZOMBIE
+                 : this.getType();
+             Zombie reinforcement = type.create(level, EntitySpawnReason.REINFORCEMENT);
+             if (reinforcement == null) {

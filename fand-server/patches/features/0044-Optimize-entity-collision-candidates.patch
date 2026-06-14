@@ -5,10 +5,10 @@ Subject: [PATCH] Optimize entity collision candidates
 
 
 diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
-index 2ae1ca112f8da797623aade20952e63744389a7e..63526d42c7f20d6c30b53e4bb5d7b49c04a015b1 100644
+index 1ef47a9f3995fdb4d33c10462cb91e1650984f16..5d5e9821834b6f5881b1c69ce40b9792e4aeefa9 100644
 --- a/net/minecraft/world/entity/Entity.java
 +++ b/net/minecraft/world/entity/Entity.java
-@@ -1097,9 +1097,13 @@ public abstract class Entity
+@@ -1160,9 +1160,13 @@ public abstract class Entity
      }
  
      private Vec3 collide(final Vec3 movement) {
@@ -24,7 +24,7 @@ index 2ae1ca112f8da797623aade20952e63744389a7e..63526d42c7f20d6c30b53e4bb5d7b49c
          boolean yCollision = movement.y != movementStep.y;
          boolean zCollision = movement.z != movementStep.z;
 diff --git a/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java b/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java
-index 700cc60f7b5ef704e69f2a19b8246432764b3fe6..b50ae364b7a312197ae55d6f483b487ee60b3b18 100644
+index f9b652ee0e0c6ef701192b5d596535bd688bfe48..bf4d7a225a3b0c553ab24000fac2ffcdf87af9da 100644
 --- a/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java
 +++ b/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java
 @@ -21,7 +21,6 @@ import net.minecraft.world.InteractionHand;
@@ -45,7 +45,7 @@ index 700cc60f7b5ef704e69f2a19b8246432764b3fe6..b50ae364b7a312197ae55d6f483b487e
              boolean addNewPassengers = !this.level().isClientSide() && !(this.getControllingPassenger() instanceof Player);
  
 diff --git a/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java b/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java
-index f131e4d63ea59bac6953849f85fcc289fc25f91f..9c57604f53e27720bac73aa22e0f9f8b8e80cc20 100644
+index f3aeaaed350ad7e2bfbacb438276d82afaf625a4..f6a456cc75d4eff3a1b0db8a2a69deed7494e9c3 100644
 --- a/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java
 +++ b/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java
 @@ -13,6 +13,7 @@ import net.minecraft.server.level.ServerPlayer;
@@ -56,7 +56,7 @@ index f131e4d63ea59bac6953849f85fcc289fc25f91f..9c57604f53e27720bac73aa22e0f9f8b
  import net.minecraft.world.entity.MoverType;
  import net.minecraft.world.entity.animal.golem.IronGolem;
  import net.minecraft.world.entity.player.Player;
-@@ -536,7 +537,7 @@ public class NewMinecartBehavior extends MinecartBehavior {
+@@ -538,7 +539,7 @@ public class NewMinecartBehavior extends MinecartBehavior {
      public boolean pushEntities(final AABB hitbox) {
          boolean pushed = false;
          if (this.minecart.isRideable()) {
@@ -65,21 +65,21 @@ index f131e4d63ea59bac6953849f85fcc289fc25f91f..9c57604f53e27720bac73aa22e0f9f8b
              if (!entities.isEmpty()) {
                  for (Entity entity : entities) {
                      if (entity instanceof Player
-@@ -550,8 +551,10 @@ public class NewMinecartBehavior extends MinecartBehavior {
+@@ -552,8 +553,10 @@ public class NewMinecartBehavior extends MinecartBehavior {
                  }
              }
          } else {
--            for (Entity entityx : this.level().getEntities(this.minecart, hitbox)) {
--                if (!this.minecart.hasPassenger(entityx) && entityx.isPushable() && entityx instanceof AbstractMinecart) {
-+            for (AbstractMinecart entityx : this.level().getEntities(
+-            for (Entity entity : this.level().getEntities(this.minecart, hitbox)) {
+-                if (!this.minecart.hasPassenger(entity) && entity.isPushable() && entity instanceof AbstractMinecart) {
++            for (AbstractMinecart entity : this.level().getEntities(
 +                EntityTypeTest.forClass(AbstractMinecart.class), hitbox, entity -> entity != this.minecart && EntitySelector.NO_SPECTATORS.test(entity)
 +            )) {
-+                if (!this.minecart.hasPassenger(entityx) && entityx.isPushable()) {
-                     entityx.push(this.minecart);
++                if (!this.minecart.hasPassenger(entity) && entity.isPushable()) {
+                     entity.push(this.minecart);
                      pushed = true;
                  }
 diff --git a/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java b/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java
-index f150b4c73870546cd639199d150416a263c87ae5..f942293b6a9426b3ba5c0236d699426f07bacc8a 100644
+index 77c7c2dc1cbbeeee6e6ca2038fbc6f43eb2fd26a..8c031d55c4b7eecdaeb39e2406c918f38544d18f 100644
 --- a/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java
 +++ b/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java
 @@ -15,6 +15,7 @@ import net.minecraft.world.entity.InterpolationHandler;
@@ -94,17 +94,17 @@ index f150b4c73870546cd639199d150416a263c87ae5..f942293b6a9426b3ba5c0236d699426f
                  }
              }
          } else {
--            for (Entity entityx : this.level().getEntities(this.minecart, hitbox)) {
--                if (!this.minecart.hasPassenger(entityx) && entityx.isPushable() && entityx instanceof AbstractMinecart) {
-+            for (AbstractMinecart entityx : this.level().getEntities(
+-            for (Entity entity : this.level().getEntities(this.minecart, hitbox)) {
+-                if (!this.minecart.hasPassenger(entity) && entity.isPushable() && entity instanceof AbstractMinecart) {
++            for (AbstractMinecart entity : this.level().getEntities(
 +                EntityTypeTest.forClass(AbstractMinecart.class), hitbox, entity -> entity != this.minecart && EntitySelector.NO_SPECTATORS.test(entity)
 +            )) {
-+                if (!this.minecart.hasPassenger(entityx) && entityx.isPushable()) {
-                     entityx.push(this.minecart);
++                if (!this.minecart.hasPassenger(entity) && entity.isPushable()) {
+                     entity.push(this.minecart);
                  }
              }
 diff --git a/net/minecraft/world/level/Level.java b/net/minecraft/world/level/Level.java
-index 305aa7fc9d2a61c751fc83de7fc32b1d4cde137c..54aaae67c176d5f1ad3e000a4f6bea69f0d6d2d5 100644
+index 5655bb80ad16ccd2cc91ee80d52beb13f55e61d3..931648b71cee0082647b4b28562835e3818d80b0 100644
 --- a/net/minecraft/world/level/Level.java
 +++ b/net/minecraft/world/level/Level.java
 @@ -1,5 +1,7 @@
@@ -128,7 +128,7 @@ index 305aa7fc9d2a61c751fc83de7fc32b1d4cde137c..54aaae67c176d5f1ad3e000a4f6bea69
  import org.jspecify.annotations.Nullable;
  
  public abstract class Level implements LevelAccessor, AutoCloseable {
-@@ -860,8 +866,135 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+@@ -867,8 +873,135 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
          return hasEntities.isTrue();
      }
  
@@ -266,7 +266,7 @@ index 305aa7fc9d2a61c751fc83de7fc32b1d4cde137c..54aaae67c176d5f1ad3e000a4f6bea69
  
      public abstract @Nullable Entity getEntity(int id);
 diff --git a/net/minecraft/world/level/entity/EntitySection.java b/net/minecraft/world/level/entity/EntitySection.java
-index eddcb38b1dcdca18480649369c41f9e84f57e8ec..1fe2fa4a43721a7e0076c828f0e45eb712aa6a51 100644
+index 9c2711e4c209682ac280b08c2f1bf0e1f44d5c94..1328a710b5ee20c1d1ccfa0500ef4aa6bcf6f298 100644
 --- a/net/minecraft/world/level/entity/EntitySection.java
 +++ b/net/minecraft/world/level/entity/EntitySection.java
 @@ -6,24 +6,37 @@ import java.util.stream.Stream;
@@ -344,7 +344,7 @@ index eddcb38b1dcdca18480649369c41f9e84f57e8ec..1fe2fa4a43721a7e0076c828f0e45eb7
 +    }
  }
 diff --git a/net/minecraft/world/level/entity/EntitySectionStorage.java b/net/minecraft/world/level/entity/EntitySectionStorage.java
-index 1800f2086925a4d6e235fbde093a0f7b8ad91f4e..4d4b8da878ecc238c9501b8802cf17a729deefec 100644
+index c102fdafd2afd7cedcfa7ce71b0954c4a233598c..acaedb417c89e4145992f336cff91a9453f13d1a 100644
 --- a/net/minecraft/world/level/entity/EntitySectionStorage.java
 +++ b/net/minecraft/world/level/entity/EntitySectionStorage.java
 @@ -121,6 +121,10 @@ public class EntitySectionStorage<T extends EntityAccess> {

@@ -5,10 +5,10 @@ Subject: [PATCH] Fire Fand player interact/move/death/damage events
 
 
 diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
-index a2df6fe6da976cdfb6ac18fb88f6fb6aacf88b00..a5fb9188b3da4a562955b473decfc190753ba117 100644
+index 7c70afcfee9450f62372b0c3a27bef13804cc15c..8a4d6f02386c1222e0b636ac2d6c0a62fb8ea13e 100644
 --- a/net/minecraft/server/level/ServerPlayer.java
 +++ b/net/minecraft/server/level/ServerPlayer.java
-@@ -894,15 +894,41 @@ public class ServerPlayer extends Player {
+@@ -885,15 +885,41 @@ public class ServerPlayer extends Player {
      public void die(final DamageSource source) {
          this.gameEvent(GameEvent.ENTITY_DIE);
          boolean showDeathMessage = this.level().getGameRules().get(GameRules.SHOW_DEATH_MESSAGES);
@@ -54,7 +54,7 @@ index a2df6fe6da976cdfb6ac18fb88f6fb6aacf88b00..a5fb9188b3da4a562955b473decfc190
                              Component explanation = Component.translatable(
                                  "death.attack.message_too_long", Component.literal(truncatedDeathMessage).withStyle(ChatFormatting.YELLOW)
                              );
-@@ -914,11 +940,11 @@ public class ServerPlayer extends Player {
+@@ -905,11 +931,11 @@ public class ServerPlayer extends Player {
                  );
              Team team = this.getTeam();
              if (team == null || team.getDeathMessageVisibility() == Team.Visibility.ALWAYS) {
@@ -70,10 +70,10 @@ index a2df6fe6da976cdfb6ac18fb88f6fb6aacf88b00..a5fb9188b3da4a562955b473decfc190
          } else {
              this.connection.send(new ClientboundPlayerCombatKillPacket(this.getId(), CommonComponents.EMPTY));
 diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index 79be2e3e7a0d91e8338b8663083c8245f0d97078..04032aa11038dd738fe9c682132385c9774cfc61 100644
+index 8d53467519f0c1a85bb358ad02f113ac058072d9..78ab7c600f9569ee39d8d904459981d08ce7fb16 100644
 --- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -1159,6 +1159,30 @@ public class ServerGamePacketListenerImpl
+@@ -1166,6 +1166,30 @@ public class ServerGamePacketListenerImpl
                                      || this.player.isSleeping()
                                      || (!fail || !level.noCollision(this.player, oldAABB))
                                          && !this.isEntityCollidingWithAnythingNew(level, this.player, oldAABB, targetX, targetY, targetZ)) {
@@ -104,7 +104,7 @@ index 79be2e3e7a0d91e8338b8663083c8245f0d97078..04032aa11038dd738fe9c682132385c9
                                      this.player.absSnapTo(targetX, targetY, targetZ, targetYRot, targetXRot);
                                      boolean isAutoSpinAttack = this.player.isAutoSpinAttack();
                                      this.clientIsFloating = oyDist >= -0.03125
-@@ -1192,6 +1216,7 @@ public class ServerGamePacketListenerImpl
+@@ -1199,6 +1223,7 @@ public class ServerGamePacketListenerImpl
                                      this.lastGoodX = this.player.getX();
                                      this.lastGoodY = this.player.getY();
                                      this.lastGoodZ = this.player.getZ();
@@ -112,7 +112,7 @@ index 79be2e3e7a0d91e8338b8663083c8245f0d97078..04032aa11038dd738fe9c682132385c9
                                  } else {
                                      this.teleport(startX, startY, startZ, targetYRot, targetXRot);
                                      this.player
-@@ -1368,6 +1393,32 @@ public class ServerGamePacketListenerImpl
+@@ -1377,6 +1402,32 @@ public class ServerGamePacketListenerImpl
                              if (this.server.isUnderSpawnProtection(level, pos, this.player)) {
                                  this.player.sendSpawnProtectionMessage(pos);
                              } else if (this.awaitingPositionFromClient == null && level.mayInteract(this.player, pos)) {
@@ -145,7 +145,7 @@ index 79be2e3e7a0d91e8338b8663083c8245f0d97078..04032aa11038dd738fe9c682132385c9
                                  InteractionResult interactionResult = this.player.gameMode.useItemOn(this.player, level, itemStack, hand, blockHit);
                                  if (interactionResult.consumesAction()) {
                                      CriteriaTriggers.ANY_BLOCK_USE.trigger(this.player, blockHit.getBlockPos(), itemStack);
-@@ -1429,6 +1480,28 @@ public class ServerGamePacketListenerImpl
+@@ -1438,6 +1489,28 @@ public class ServerGamePacketListenerImpl
                      this.player.absSnapRotationTo(targetYRot, targetXRot);
                  }
  
@@ -175,41 +175,42 @@ index 79be2e3e7a0d91e8338b8663083c8245f0d97078..04032aa11038dd738fe9c682132385c9
                      && success.swingSource() == InteractionResult.SwingSource.SERVER) {
                      this.player.swing(hand, true);
 diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
-index 0c10a086b7edb97718825553db1da3f14a6f87f6..2e1374a72f8582c1668ed9b2c629704d2a9afd4c 100644
+index fcdd1af00d0cfd662d4070d9254887ef4edb7f5b..ee5db7960eb489119104edd907c9f02ab1f7dbaa 100644
 --- a/net/minecraft/world/entity/LivingEntity.java
 +++ b/net/minecraft/world/entity/LivingEntity.java
-@@ -1157,6 +1157,34 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
-         } else if (source.is(DamageTypeTags.IS_FIRE) && this.hasEffect(MobEffects.FIRE_RESISTANCE)) {
+@@ -1187,6 +1187,35 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
              return false;
-         } else {
-+            if (io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.entity.EntityDamageEvent.class)) {
-+                io.fand.api.entity.LivingEntity fandVictim = null;
-+                if (this instanceof net.minecraft.server.level.ServerPlayer fandServerPlayer) {
-+                    fandVictim = io.fand.server.Main.runtime().playerRegistry().find(fandServerPlayer.getUUID()).orElse(null);
-+                } else {
-+                    var fandWorldRegistry = io.fand.server.Main.runtime().worldRegistry().orElse(null);
-+                    if (fandWorldRegistry != null) {
-+                        fandVictim = new io.fand.server.entity.FandLivingEntity(this, fandWorldRegistry);
-+                    }
-+                }
-+                if (fandVictim != null) {
-+                    var fandDamageType = source.typeHolder().unwrapKey().map(k -> k.identifier().toString()).orElse("minecraft:generic");
-+                    var fandDamageEvent = new io.fand.api.event.entity.EntityDamageEvent(fandVictim, fandDamageType, damage);
-+                    try {
-+                        io.fand.server.Main.runtime().events().fire(fandDamageEvent);
-+                    } catch (RuntimeException fandFailure) {
-+                        org.slf4j.LoggerFactory.getLogger(LivingEntity.class).warn("EntityDamageEvent listener failed", fandFailure);
-+                    }
-+                    if (fandDamageEvent.cancelled()) {
-+                        return false;
-+                    }
-+                    double fandAdjusted = fandDamageEvent.amount();
-+                    if (fandAdjusted < 0.0) {
-+                        fandAdjusted = 0.0;
-+                    }
-+                    damage = (float) fandAdjusted;
+         }
+ 
++        if (io.fand.server.Main.runtime().events().hasListeners(io.fand.api.event.entity.EntityDamageEvent.class)) {
++            io.fand.api.entity.LivingEntity fandVictim = null;
++            if (this instanceof net.minecraft.server.level.ServerPlayer fandServerPlayer) {
++                fandVictim = io.fand.server.Main.runtime().playerRegistry().find(fandServerPlayer.getUUID()).orElse(null);
++            } else {
++                var fandWorldRegistry = io.fand.server.Main.runtime().worldRegistry().orElse(null);
++                if (fandWorldRegistry != null) {
++                    fandVictim = new io.fand.server.entity.FandLivingEntity(this, fandWorldRegistry);
 +                }
 +            }
-             if (this.isSleeping()) {
-                 this.stopSleeping();
-             }
++            if (fandVictim != null) {
++                var fandDamageType = source.typeHolder().unwrapKey().map(k -> k.identifier().toString()).orElse("minecraft:generic");
++                var fandDamageEvent = new io.fand.api.event.entity.EntityDamageEvent(fandVictim, fandDamageType, damage);
++                try {
++                    io.fand.server.Main.runtime().events().fire(fandDamageEvent);
++                } catch (RuntimeException fandFailure) {
++                    org.slf4j.LoggerFactory.getLogger(LivingEntity.class).warn("EntityDamageEvent listener failed", fandFailure);
++                }
++                if (fandDamageEvent.cancelled()) {
++                    return false;
++                }
++                double fandAdjusted = fandDamageEvent.amount();
++                if (fandAdjusted < 0.0) {
++                    fandAdjusted = 0.0;
++                }
++                damage = (float) fandAdjusted;
++            }
++        }
++
+         if (this.isSleeping()) {
+             this.stopSleeping();
+         }
