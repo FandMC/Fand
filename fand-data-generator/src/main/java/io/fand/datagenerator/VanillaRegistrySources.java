@@ -29,6 +29,8 @@ final class VanillaRegistrySources {
     private final MinecraftSourceSet sources;
     private final Map<String, String> blockIds;
     private final Map<String, String> itemIds;
+    private final Map<String, String> blockItemBlockTags;
+    private final Map<String, String> blockItemItemTags;
     private final Map<String, String> resourceKeys;
     private final Map<String, String> blockKeys;
 
@@ -40,6 +42,8 @@ final class VanillaRegistrySources {
         this.itemIds = mergedKeys(
                 resourceKeys("net/minecraft/references/ItemIds.java", "Item"),
                 blockItemKeys(false));
+        this.blockItemBlockTags = blockItemTagKeys(true);
+        this.blockItemItemTags = blockItemTagKeys(false);
         this.resourceKeys = allResourceKeys();
         this.blockKeys = KeyNames.entriesByName(blockKeys());
     }
@@ -86,11 +90,11 @@ final class VanillaRegistrySources {
     }
 
     List<KeyEntry> blockTagKeys() throws IOException {
-        return tagKeys("net/minecraft/tags/BlockTags.java", "TagKey<Block>");
+        return tagKeys("net/minecraft/tags/BlockTags.java", "TagKey<Block>", blockItemBlockTags);
     }
 
     List<KeyEntry> itemTagKeys() throws IOException {
-        return tagKeys("net/minecraft/tags/ItemTags.java", "TagKey<Item>");
+        return tagKeys("net/minecraft/tags/ItemTags.java", "TagKey<Item>", blockItemItemTags);
     }
 
     List<KeyEntry> entityTypeTagKeys() throws IOException {
@@ -447,12 +451,17 @@ final class VanillaRegistrySources {
     }
 
     private List<KeyEntry> tagKeys(String relativePath, String typeNeedle) throws IOException {
+        return tagKeys(relativePath, typeNeedle, Map.of());
+    }
+
+    private List<KeyEntry> tagKeys(String relativePath, String typeNeedle, Map<String, String> sharedTags) throws IOException {
         var entries = new EntryCollector();
         for (var field : staticFields(relativePath)) {
             if (!field.type().contains(typeNeedle)) {
                 continue;
             }
             KeyExtractors.firstRegistryKeyId(field.initializer())
+                    .or(() -> KeyExtractors.firstReferencedKey(field.initializer(), sharedTags))
                     .map(KeyNames::vanillaKey)
                     .ifPresent(key -> entries.add(field.name(), key));
         }
@@ -539,6 +548,23 @@ final class VanillaRegistrySources {
                     ? KeyExtractors.firstBlockItemBlockId(field.initializer())
                     : KeyExtractors.firstBlockItemItemId(field.initializer());
             key.map(KeyNames::vanillaKey).ifPresent(value -> keys.put(field.name(), value));
+        }
+        return keys;
+    }
+
+    private Map<String, String> blockItemTagKeys(boolean blockSide) throws IOException {
+        var keys = new LinkedHashMap<String, String>();
+        for (var field : staticFields("net/minecraft/tags/BlockItemTags.java")) {
+            if (!field.type().equals("BlockItemTagId")) {
+                continue;
+            }
+            var key = blockSide
+                    ? KeyExtractors.firstBlockItemTagBlockId(field.initializer())
+                    : KeyExtractors.firstBlockItemTagItemId(field.initializer());
+            key.map(KeyNames::vanillaKey).ifPresent(value -> {
+                keys.put(field.name(), value);
+                keys.put("BlockItemTags." + field.name(), value);
+            });
         }
         return keys;
     }
