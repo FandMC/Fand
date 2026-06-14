@@ -1,6 +1,10 @@
 package io.fand.api.item;
 
 import io.fand.api.item.component.ItemComponents;
+import io.fand.api.tag.Tag;
+import io.fand.api.tag.Tags;
+import java.util.Collection;
+import java.util.Objects;
 import net.kyori.adventure.key.Key;
 
 /**
@@ -13,6 +17,23 @@ public interface ItemType {
 
     /** Registry key, e.g. {@code minecraft:diamond}. */
     Key key();
+
+    /** Whether this item type is a member of {@code tag}. */
+    default boolean is(Tag<ItemType> tag) {
+        return Objects.requireNonNull(tag, "tag").contains(this);
+    }
+
+    /** Convenience overload for generated vanilla item tag keys. */
+    default boolean is(ItemTagKey tag) {
+        return Tags.item(tag).map(candidate -> candidate.contains(this)).orElse(false);
+    }
+
+    /** Snapshot of tags currently containing this item type. */
+    default Collection<? extends Tag<ItemType>> tags() {
+        return Tags.items().stream()
+                .filter(tag -> tag.contains(this))
+                .toList();
+    }
 
     /** Maximum stack size for this type (1, 16 or 64 for vanilla items). */
     int maxStackSize();

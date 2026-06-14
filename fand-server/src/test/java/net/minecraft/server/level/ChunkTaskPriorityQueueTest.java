@@ -3,9 +3,18 @@ package net.minecraft.server.level;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import net.minecraft.SharedConstants;
+import net.minecraft.server.Bootstrap;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 final class ChunkTaskPriorityQueueTest {
+
+    @BeforeAll
+    static void bootstrap() {
+        SharedConstants.tryDetectVersion();
+        Bootstrap.bootStrap();
+    }
 
     @Test
     void popSkipsExcludedChunkPositions() {
@@ -29,6 +38,25 @@ final class ChunkTaskPriorityQueueTest {
 
         assertThat(first).isNotNull();
         assertThat(first.chunkPos()).isEqualTo(firstChunk);
+    }
+
+    @Test
+    void popChunkAtPriorityRemovesOnlyRequestedPriority() {
+        var queue = new ChunkTaskPriorityQueue("test");
+        long chunk = net.minecraft.world.level.ChunkPos.pack(0, 0);
+
+        queue.submit(() -> {}, chunk, 2);
+        queue.submit(() -> {}, chunk, 1);
+
+        var priorityTwo = queue.popChunkAtPriority(chunk, 2);
+        assertThat(priorityTwo).isNotNull();
+        assertThat(priorityTwo.tasks()).hasSize(1);
+
+        var priorityOne = queue.popChunkAtPriority(chunk, 1);
+        assertThat(priorityOne).isNotNull();
+        assertThat(priorityOne.tasks()).hasSize(1);
+
+        assertThat(queue.popChunkAtPriority(chunk, 1)).isNull();
     }
 
     @Test
@@ -59,5 +87,35 @@ final class ChunkTaskPriorityQueueTest {
         assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(center, net.minecraft.world.level.ChunkPos.pack(4, 4))).isTrue();
         assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(center, net.minecraft.world.level.ChunkPos.pack(5, 0))).isFalse();
         assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(center, net.minecraft.world.level.ChunkPos.pack(0, 5))).isFalse();
+    }
+
+    @Test
+    void writeEnvelopeTrackerKeepsSharedCoverageUntilEveryOwnerCompletes() {
+        var tracker = new ParallelChunkTaskDispatcher.WriteEnvelopeTracker();
+        long firstActive = net.minecraft.world.level.ChunkPos.pack(0, 0);
+        long secondActive = net.minecraft.world.level.ChunkPos.pack(5, 0);
+        long sharedCandidate = net.minecraft.world.level.ChunkPos.pack(3, 0);
+        long firstOnlyCandidate = net.minecraft.world.level.ChunkPos.pack(-4, 0);
+        long secondOnlyCandidate = net.minecraft.world.level.ChunkPos.pack(9, 0);
+
+        assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(firstActive, secondActive)).isFalse();
+
+        tracker.add(firstActive);
+        tracker.add(secondActive);
+
+        assertThat(tracker.contains(sharedCandidate)).isTrue();
+        assertThat(tracker.contains(firstOnlyCandidate)).isTrue();
+        assertThat(tracker.contains(secondOnlyCandidate)).isTrue();
+
+        tracker.remove(firstActive);
+
+        assertThat(tracker.contains(sharedCandidate)).isTrue();
+        assertThat(tracker.contains(firstOnlyCandidate)).isFalse();
+        assertThat(tracker.contains(secondOnlyCandidate)).isTrue();
+
+        tracker.remove(secondActive);
+
+        assertThat(tracker.contains(sharedCandidate)).isFalse();
+        assertThat(tracker.contains(secondOnlyCandidate)).isFalse();
     }
 }

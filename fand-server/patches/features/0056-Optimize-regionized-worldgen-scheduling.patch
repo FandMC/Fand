@@ -1,0 +1,623 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 14 Jun 2026 13:03:00 +0800
+Subject: [PATCH] Optimize regionized worldgen scheduling
+
+
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index d67541134e990d076ce2205d80b8b1289bd334ec..36624b3bb387998d5c3826f7587c1a77d8e2be71 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -147,6 +147,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     private boolean modified;
+     private final ChunkTaskDispatcher worldgenTaskDispatcher;
+     private final ChunkTaskDispatcher lightTaskDispatcher;
++    private final @Nullable RegionizedChunkTaskScheduler dedicatedWorldgenScheduler;
+     private final @Nullable ExecutorService dedicatedLightExecutor;
+     private final ChunkStatusUpdateListener chunkStatusListener;
+     private final ChunkMap.DistanceManager distanceManager;
+@@ -215,13 +216,16 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         }
+         this.dedicatedLightExecutor = dedicatedLightExecutor;
+         ConsecutiveExecutor light = new ConsecutiveExecutor(lightExecutor, "light");
++        RegionizedChunkTaskScheduler dedicatedWorldgenScheduler = null;
+         if (worldgenParallelism > 1) {
++            dedicatedWorldgenScheduler = new RegionizedChunkTaskScheduler(worldgenParallelism, this.storageName);
+             TaskScheduler<Runnable> worldgen = TaskScheduler.wrapExecutor("fand-worldgen", executor);
+-            this.worldgenTaskDispatcher = new ParallelChunkTaskDispatcher(worldgen, executor, worldgenParallelism);
++            this.worldgenTaskDispatcher = new ParallelChunkTaskDispatcher(worldgen, executor, worldgenParallelism, dedicatedWorldgenScheduler);
+         } else {
+             ConsecutiveExecutor worldgen = new ConsecutiveExecutor(executor, "worldgen");
+             this.worldgenTaskDispatcher = new ChunkTaskDispatcher(worldgen, executor);
+         }
++        this.dedicatedWorldgenScheduler = dedicatedWorldgenScheduler;
+         this.lightTaskDispatcher = new ChunkTaskDispatcher(light, lightDispatcherExecutor);
+         this.lightEngine = new ThreadedLevelLightEngine(chunkGetter, this, this.level.dimensionType().hasSkyLight(), light, this.lightTaskDispatcher);
+         this.distanceManager = new ChunkMap.DistanceManager(ticketStorage, executor, mainThreadExecutor);
+@@ -436,6 +440,9 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         try {
+             this.worldgenTaskDispatcher.close();
+             this.lightTaskDispatcher.close();
++            if (this.dedicatedWorldgenScheduler != null) {
++                this.dedicatedWorldgenScheduler.close();
++            }
+             if (this.dedicatedLightExecutor != null) {
+                 this.dedicatedLightExecutor.shutdownNow();
+             }
+diff --git a/net/minecraft/server/level/ChunkTaskDispatcher.java b/net/minecraft/server/level/ChunkTaskDispatcher.java
+index 8f5ff925d39d4337a24c74b4f6d4eb27c7f1024e..3541075abebcb8c5a8e54b9fa5428d499e8a2fec 100644
+--- a/net/minecraft/server/level/ChunkTaskDispatcher.java
++++ b/net/minecraft/server/level/ChunkTaskDispatcher.java
+@@ -44,7 +44,9 @@ public class ChunkTaskDispatcher implements ChunkHolder.LevelChangeListener, Aut
+                 LOGGER.debug("RES {} {} -> {}", pos, oldTicketLevel, newLevel);
+             }
+ 
+-            this.queue.resortChunkTasks(oldTicketLevel, pos, newLevel);
++            if (this.queue.resortChunkTasks(oldTicketLevel, pos, newLevel)) {
++                this.onTaskPriorityChanged(pos.pack(), oldTicketLevel, newLevel);
++            }
+             setQueueLevel.accept(newLevel);
+         }));
+     }
+@@ -52,6 +54,9 @@ public class ChunkTaskDispatcher implements ChunkHolder.LevelChangeListener, Aut
+     public void release(final long pos, final Runnable whenReleased, final boolean clearQueue) {
+         this.dispatcher.schedule(new StrictQueue.RunnableWithPriority(1, () -> {
+             this.queue.release(pos, clearQueue);
++            if (!this.queue.hasTasks(pos)) {
++                this.onTaskQueueEmpty(pos);
++            }
+             this.onRelease(pos);
+             if (this.sleeping) {
+                 this.sleeping = false;
+@@ -70,6 +75,7 @@ public class ChunkTaskDispatcher implements ChunkHolder.LevelChangeListener, Aut
+             }
+ 
+             this.queue.submit(task, pos, ticketLevel);
++            this.onTaskQueued(pos, ticketLevel);
+             if (this.sleeping) {
+                 this.sleeping = false;
+                 this.pollTask();
+@@ -164,6 +170,23 @@ public class ChunkTaskDispatcher implements ChunkHolder.LevelChangeListener, Aut
+         return this.queue.popAvoiding(unavailableChunkPosition);
+     }
+ 
++    protected ChunkTaskPriorityQueue.@Nullable TasksForChunk popQueuedChunk(final long chunkPos) {
++        return this.queue.popChunk(chunkPos);
++    }
++
++    protected ChunkTaskPriorityQueue.@Nullable TasksForChunk popQueuedChunk(final long chunkPos, final int priority) {
++        return this.queue.popChunkAtPriority(chunkPos, priority);
++    }
++
++    protected void onTaskQueued(final long chunkPos, final int priority) {
++    }
++
++    protected void onTaskPriorityChanged(final long chunkPos, final int oldPriority, final int newPriority) {
++    }
++
++    protected void onTaskQueueEmpty(final long chunkPos) {
++    }
++
+     @Override
+     public void close() {
+         this.executor.close();
+diff --git a/net/minecraft/server/level/ChunkTaskPriorityQueue.java b/net/minecraft/server/level/ChunkTaskPriorityQueue.java
+index df8958c1a3aa60dd4da63e510d531d51e85c8105..232d3d6a73bed904504e5426c119272554263b41 100644
+--- a/net/minecraft/server/level/ChunkTaskPriorityQueue.java
++++ b/net/minecraft/server/level/ChunkTaskPriorityQueue.java
+@@ -21,7 +21,7 @@ public class ChunkTaskPriorityQueue {
+         this.name = name;
+     }
+ 
+-    protected void resortChunkTasks(final int oldPriority, final ChunkPos pos, final int newPriority) {
++    protected boolean resortChunkTasks(final int oldPriority, final ChunkPos pos, final int newPriority) {
+         if (oldPriority < PRIORITY_LEVEL_COUNT) {
+             Long2ObjectLinkedOpenHashMap<List<Runnable>> oldQueue = this.queuesPerPriority.get(oldPriority);
+             List<Runnable> oldTasks = oldQueue.remove(pos.pack());
+@@ -34,8 +34,10 @@ public class ChunkTaskPriorityQueue {
+             if (oldTasks != null && !oldTasks.isEmpty()) {
+                 this.queuesPerPriority.get(newPriority).computeIfAbsent(pos.pack(), k -> Lists.newArrayList()).addAll(oldTasks);
+                 this.topPriorityQueueIndex = Math.min(this.topPriorityQueueIndex, newPriority);
++                return true;
+             }
+         }
++        return false;
+     }
+ 
+     protected void submit(final Runnable task, final long chunkPos, final int level) {
+@@ -88,6 +90,40 @@ public class ChunkTaskPriorityQueue {
+         }
+     }
+ 
++    public ChunkTaskPriorityQueue.@Nullable TasksForChunk popChunk(final long chunkPos) {
++        if (!this.hasWork()) {
++            return null;
++        }
++        for (int index = this.topPriorityQueueIndex; index < PRIORITY_LEVEL_COUNT; index++) {
++            Long2ObjectLinkedOpenHashMap<List<Runnable>> queue = this.queuesPerPriority.get(index);
++            List<Runnable> tasks = queue.remove(chunkPos);
++            if (tasks != null) {
++                this.refreshTopPriorityQueueIndex();
++                return new ChunkTaskPriorityQueue.TasksForChunk(chunkPos, tasks);
++            }
++        }
++        return null;
++    }
++
++    public ChunkTaskPriorityQueue.@Nullable TasksForChunk popChunkAtPriority(final long chunkPos, final int priority) {
++        List<Runnable> tasks = this.queuesPerPriority.get(priority).remove(chunkPos);
++        if (tasks == null) {
++            return null;
++        }
++        this.refreshTopPriorityQueueIndex();
++        return new ChunkTaskPriorityQueue.TasksForChunk(chunkPos, tasks);
++    }
++
++    protected boolean hasTasks(final long chunkPos) {
++        for (Long2ObjectLinkedOpenHashMap<List<Runnable>> queue : this.queuesPerPriority) {
++            List<Runnable> tasks = queue.get(chunkPos);
++            if (tasks != null && !tasks.isEmpty()) {
++                return true;
++            }
++        }
++        return false;
++    }
++
+     private long firstAvailableChunk(final Long2ObjectLinkedOpenHashMap<List<Runnable>> queue, final @Nullable LongPredicate unavailableChunkPosition) {
+         if (queue.isEmpty()) {
+             return Long.MAX_VALUE;
+diff --git a/net/minecraft/server/level/ParallelChunkTaskDispatcher.java b/net/minecraft/server/level/ParallelChunkTaskDispatcher.java
+index 596b4690059c4977b21a038e2c3a0e4f7db5b4f5..7bccc808c5df613d159597d46c0fa68fe2208c42 100644
+--- a/net/minecraft/server/level/ParallelChunkTaskDispatcher.java
++++ b/net/minecraft/server/level/ParallelChunkTaskDispatcher.java
+@@ -1,12 +1,17 @@
+ package net.minecraft.server.level;
+ 
+ import com.google.common.annotations.VisibleForTesting;
++import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
++import it.unimi.dsi.fastutil.ints.IntSet;
+ import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
++import it.unimi.dsi.fastutil.longs.LongLinkedOpenHashSet;
+ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+ import it.unimi.dsi.fastutil.longs.LongSet;
+ import java.util.List;
++import java.util.concurrent.CompletableFuture;
+ import java.util.concurrent.Executor;
+ import java.util.function.LongConsumer;
++import java.util.function.LongPredicate;
+ import net.minecraft.util.thread.TaskScheduler;
+ import net.minecraft.world.level.ChunkPos;
+ import org.jspecify.annotations.Nullable;
+@@ -17,25 +22,67 @@ public class ParallelChunkTaskDispatcher extends ChunkTaskDispatcher {
+     private static final int MAX_BLOCK_WRITE_ENVELOPE_RADIUS = 2;
+     private static final int MAX_OVERLAPPING_WRITE_ENVELOPE_DISTANCE = MAX_BLOCK_WRITE_ENVELOPE_RADIUS * 2;
+     private final LongSet chunkPositionsInExecution = new LongOpenHashSet();
++    private final IntSet lanesInExecution = new IntOpenHashSet();
+     private final WriteEnvelopeTracker activeWriteEnvelopes = new WriteEnvelopeTracker();
++    private final @Nullable RegionizedChunkTaskScheduler regionizedTaskScheduler;
++    private final @Nullable LanePendingView pendingChunksByLane;
+     private final int maxChunksInExecution;
+ 
+     public ParallelChunkTaskDispatcher(final TaskScheduler<Runnable> executor, final Executor dispatcherExecutor, final int maxChunksInExecution) {
++        this(executor, dispatcherExecutor, maxChunksInExecution, null);
++    }
++
++    public ParallelChunkTaskDispatcher(
++        final TaskScheduler<Runnable> executor,
++        final Executor dispatcherExecutor,
++        final int maxChunksInExecution,
++        final @Nullable RegionizedChunkTaskScheduler regionizedTaskScheduler
++    ) {
+         super(executor, dispatcherExecutor);
+         this.maxChunksInExecution = maxChunksInExecution;
++        this.regionizedTaskScheduler = regionizedTaskScheduler;
++        this.pendingChunksByLane = regionizedTaskScheduler == null ? null : new LanePendingView(regionizedTaskScheduler);
+     }
+ 
+     @Override
+     protected ChunkTaskPriorityQueue.@Nullable TasksForChunk popTasks() {
+-        return this.chunkPositionsInExecution.size() < this.maxChunksInExecution
+-            ? this.popTasksAvoiding(this::overlapsActiveWriteEnvelope)
+-            : null;
++        if (this.chunkPositionsInExecution.size() >= this.maxChunksInExecution) {
++            return null;
++        }
++        if (this.pendingChunksByLane != null) {
++            return this.popTasksFromAvailableLane();
++        }
++        return this.popTasksAvoiding(this::isUnavailableForExecution);
++    }
++
++    private ChunkTaskPriorityQueue.@Nullable TasksForChunk popTasksFromAvailableLane() {
++        while (this.pendingChunksByLane != null) {
++            PendingChunk pendingChunk = this.pendingChunksByLane.firstAvailable(this.lanesInExecution, this::overlapsActiveWriteEnvelope);
++            if (pendingChunk == null) {
++                return null;
++            }
++
++            ChunkTaskPriorityQueue.TasksForChunk tasksForChunk = this.popQueuedChunk(pendingChunk.chunkPos(), pendingChunk.priority());
++            this.pendingChunksByLane.remove(pendingChunk.chunkPos());
++            if (tasksForChunk != null) {
++                return tasksForChunk;
++            }
++        }
++        return null;
++    }
++
++    private boolean isUnavailableForExecution(final long candidateChunkPos) {
++        return this.overlapsActiveWriteEnvelope(candidateChunkPos) || this.hasActiveLane(candidateChunkPos);
+     }
+ 
+     private boolean overlapsActiveWriteEnvelope(final long candidateChunkPos) {
+         return this.activeWriteEnvelopes.contains(candidateChunkPos);
+     }
+ 
++    private boolean hasActiveLane(final long candidateChunkPos) {
++        return this.regionizedTaskScheduler != null && this.lanesInExecution.contains(this.regionizedTaskScheduler.laneIndex(candidateChunkPos));
++    }
++
+     static boolean hasOverlappingWriteEnvelope(final long firstChunkPos, final long secondChunkPos) {
+         int distanceX = Math.abs(ChunkPos.getX(firstChunkPos) - ChunkPos.getX(secondChunkPos));
+         int distanceZ = Math.abs(ChunkPos.getZ(firstChunkPos) - ChunkPos.getZ(secondChunkPos));
+@@ -47,26 +94,61 @@ public class ParallelChunkTaskDispatcher extends ChunkTaskDispatcher {
+         if (!this.chunkPositionsInExecution.add(tasksForChunk.chunkPos())) {
+             throw new IllegalStateException("Chunk task already running for " + ChunkPos.unpack(tasksForChunk.chunkPos()));
+         }
++        if (this.regionizedTaskScheduler != null && !this.lanesInExecution.add(this.regionizedTaskScheduler.laneIndex(tasksForChunk.chunkPos()))) {
++            this.chunkPositionsInExecution.remove(tasksForChunk.chunkPos());
++            throw new IllegalStateException("Chunk task lane already running for " + ChunkPos.unpack(tasksForChunk.chunkPos()));
++        }
+         this.activeWriteEnvelopes.add(tasksForChunk.chunkPos());
+         List<Runnable> tasks = tasksForChunk.tasks();
+         if (tasks.isEmpty()) {
+             this.onTaskBatchComplete(tasksForChunk);
+             this.pollTask();
+         } else {
+-            this.pollAfter(this.scheduleTasksSequentially(tasks), tasksForChunk);
++            this.pollAfter(this.scheduleTasksSequentially(tasksForChunk), tasksForChunk);
+         }
+         if (this.chunkPositionsInExecution.size() < this.maxChunksInExecution) {
+             this.pollTask();
+         }
+     }
+ 
++    private CompletableFuture<?> scheduleTasksSequentially(final ChunkTaskPriorityQueue.TasksForChunk tasksForChunk) {
++        if (this.regionizedTaskScheduler != null) {
++            return this.regionizedTaskScheduler.schedule(tasksForChunk.chunkPos(), tasksForChunk.tasks());
++        }
++        return this.scheduleTasksSequentially(tasksForChunk.tasks());
++    }
++
+     @Override
+     protected void onTaskBatchComplete(final ChunkTaskPriorityQueue.TasksForChunk tasksForChunk) {
+         if (this.chunkPositionsInExecution.remove(tasksForChunk.chunkPos())) {
++            if (this.regionizedTaskScheduler != null) {
++                this.lanesInExecution.remove(this.regionizedTaskScheduler.laneIndex(tasksForChunk.chunkPos()));
++            }
+             this.activeWriteEnvelopes.remove(tasksForChunk.chunkPos());
+         }
+     }
+ 
++    @Override
++    protected void onTaskQueued(final long chunkPos, final int priority) {
++        if (this.pendingChunksByLane != null) {
++            this.pendingChunksByLane.add(chunkPos, priority);
++        }
++    }
++
++    @Override
++    protected void onTaskPriorityChanged(final long chunkPos, final int oldPriority, final int newPriority) {
++        if (this.pendingChunksByLane != null) {
++            this.pendingChunksByLane.move(chunkPos, oldPriority, newPriority);
++        }
++    }
++
++    @Override
++    protected void onTaskQueueEmpty(final long chunkPos) {
++        if (this.pendingChunksByLane != null) {
++            this.pendingChunksByLane.remove(chunkPos);
++        }
++    }
++
+     @VisibleForTesting
+     static final class WriteEnvelopeTracker {
+         private final Long2IntOpenHashMap coveredChunkCounts = new Long2IntOpenHashMap();
+@@ -103,4 +185,59 @@ public class ParallelChunkTaskDispatcher extends ChunkTaskDispatcher {
+             }
+         }
+     }
++
++    private static final class LanePendingView {
++        private final RegionizedChunkTaskScheduler scheduler;
++        private final LongLinkedOpenHashSet[][] chunksByLaneAndPriority;
++
++        private LanePendingView(final RegionizedChunkTaskScheduler scheduler) {
++            this.scheduler = scheduler;
++            this.chunksByLaneAndPriority = new LongLinkedOpenHashSet[scheduler.laneCount()][ChunkTaskPriorityQueue.PRIORITY_LEVEL_COUNT];
++            for (int lane = 0; lane < this.chunksByLaneAndPriority.length; lane++) {
++                for (int priority = 0; priority < ChunkTaskPriorityQueue.PRIORITY_LEVEL_COUNT; priority++) {
++                    this.chunksByLaneAndPriority[lane][priority] = new LongLinkedOpenHashSet();
++                }
++            }
++        }
++
++        private void add(final long chunkPos, final int priority) {
++            this.chunksByLaneAndPriority[this.scheduler.laneIndex(chunkPos)][priority].add(chunkPos);
++        }
++
++        private void move(final long chunkPos, final int oldPriority, final int newPriority) {
++            this.remove(chunkPos, oldPriority);
++            this.add(chunkPos, newPriority);
++        }
++
++        private void remove(final long chunkPos) {
++            int lane = this.scheduler.laneIndex(chunkPos);
++            for (int priority = 0; priority < ChunkTaskPriorityQueue.PRIORITY_LEVEL_COUNT; priority++) {
++                this.chunksByLaneAndPriority[lane][priority].remove(chunkPos);
++            }
++        }
++
++        private void remove(final long chunkPos, final int priority) {
++            this.chunksByLaneAndPriority[this.scheduler.laneIndex(chunkPos)][priority].remove(chunkPos);
++        }
++
++        private @Nullable PendingChunk firstAvailable(final IntSet lanesInExecution, final LongPredicate unavailableChunkPosition) {
++            for (int priority = 0; priority < ChunkTaskPriorityQueue.PRIORITY_LEVEL_COUNT; priority++) {
++                for (int lane = 0; lane < this.chunksByLaneAndPriority.length; lane++) {
++                    if (lanesInExecution.contains(lane)) {
++                        continue;
++                    }
++                    LongLinkedOpenHashSet chunks = this.chunksByLaneAndPriority[lane][priority];
++                    for (long chunkPos : chunks) {
++                        if (!unavailableChunkPosition.test(chunkPos)) {
++                            return new PendingChunk(chunkPos, priority);
++                        }
++                    }
++                }
++            }
++            return null;
++        }
++    }
++
++    private record PendingChunk(long chunkPos, int priority) {
++    }
+ }
+diff --git a/net/minecraft/server/level/RegionizedChunkTaskScheduler.java b/net/minecraft/server/level/RegionizedChunkTaskScheduler.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..75f7e4f7cfb5e741885ac0cd3a0bae29eab5efeb
+--- /dev/null
++++ b/net/minecraft/server/level/RegionizedChunkTaskScheduler.java
+@@ -0,0 +1,68 @@
++package net.minecraft.server.level;
++
++import java.util.List;
++import java.util.Objects;
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.ExecutorService;
++import java.util.concurrent.Executors;
++import net.minecraft.world.level.ChunkPos;
++
++final class RegionizedChunkTaskScheduler implements AutoCloseable {
++    static final int REGION_SIZE_CHUNKS = 8;
++
++    private final ExecutorService[] lanes;
++
++    RegionizedChunkTaskScheduler(final int laneCount, final String storageName) {
++        if (laneCount <= 0) {
++            throw new IllegalArgumentException("laneCount must be positive");
++        }
++        Objects.requireNonNull(storageName, "storageName");
++        this.lanes = new ExecutorService[laneCount];
++        for (int lane = 0; lane < laneCount; lane++) {
++            int laneId = lane + 1;
++            this.lanes[lane] = Executors.newSingleThreadExecutor(task -> {
++                Thread thread = new Thread(task, "Fand Worldgen - " + storageName + "-lane-" + laneId);
++                thread.setDaemon(true);
++                thread.setPriority(Math.max(Thread.MIN_PRIORITY, Thread.NORM_PRIORITY - 1));
++                return thread;
++            });
++        }
++    }
++
++    CompletableFuture<?> schedule(final long chunkPos, final List<Runnable> tasks) {
++        Objects.requireNonNull(tasks, "tasks");
++        return CompletableFuture.runAsync(() -> {
++            for (Runnable task : tasks) {
++                task.run();
++            }
++        }, this.lane(chunkPos));
++    }
++
++    private ExecutorService lane(final long chunkPos) {
++        return this.lanes[this.laneIndex(chunkPos)];
++    }
++
++    int laneIndex(final long chunkPos) {
++        return laneIndex(chunkPos, this.lanes.length);
++    }
++
++    int laneCount() {
++        return this.lanes.length;
++    }
++
++    static int laneIndex(final long chunkPos, final int laneCount) {
++        if (laneCount <= 0) {
++            throw new IllegalArgumentException("laneCount must be positive");
++        }
++        int regionX = Math.floorDiv(ChunkPos.getX(chunkPos), REGION_SIZE_CHUNKS);
++        int regionZ = Math.floorDiv(ChunkPos.getZ(chunkPos), REGION_SIZE_CHUNKS);
++        return Math.floorMod(31 * regionX + regionZ, laneCount);
++    }
++
++    @Override
++    public void close() {
++        for (ExecutorService lane : this.lanes) {
++            lane.shutdownNow();
++        }
++    }
++}
+diff --git a/net/minecraft/world/level/chunk/ChunkGenerator.java b/net/minecraft/world/level/chunk/ChunkGenerator.java
+index df4937f2d234a2b99d4d0658fbca4aa463f57d1b..c6382c15caa7e3b36d60e5270b08f3a33e6b98ec 100644
+--- a/net/minecraft/world/level/chunk/ChunkGenerator.java
++++ b/net/minecraft/world/level/chunk/ChunkGenerator.java
+@@ -482,11 +482,11 @@ public abstract class ChunkGenerator {
+             ChunkPos sourceChunkPos = centerChunk.getPos();
+             SectionPos sectionPos = SectionPos.bottomOf(centerChunk);
+             RandomState randomState = state.randomState();
+-            state.possibleStructureSets()
++            state.structureGenerationSteps()
+                 .forEach(
+-                    set -> {
+-                        StructurePlacement featurePlacement = set.value().placement();
+-                        List<StructureSet.StructureSelectionEntry> structures = set.value().structures();
++                    generationStep -> {
++                        StructurePlacement featurePlacement = generationStep.placement();
++                        List<StructureSet.StructureSelectionEntry> structures = generationStep.structures();
+ 
+                         for (StructureSet.StructureSelectionEntry structure : structures) {
+                             StructureStart existingStart = structureManager.getStartForStructure(sectionPos, structure.structure().value(), centerChunk);
+@@ -496,9 +496,10 @@ public abstract class ChunkGenerator {
+                         }
+ 
+                         if (featurePlacement.isStructureChunk(state, sourceChunkPos.x(), sourceChunkPos.z())) {
+-                            if (structures.size() == 1) {
++                            StructureSet.StructureSelectionEntry singleStructure = generationStep.singleStructure();
++                            if (singleStructure != null) {
+                                 this.tryGenerateStructure(
+-                                    structures.get(0),
++                                    singleStructure,
+                                     structureManager,
+                                     registryAccess,
+                                     randomState,
+@@ -510,15 +511,10 @@ public abstract class ChunkGenerator {
+                                     level
+                                 );
+                             } else {
+-                                ArrayList<StructureSet.StructureSelectionEntry> options = new ArrayList<>(structures.size());
+-                                options.addAll(structures);
++                                ArrayList<StructureSet.StructureSelectionEntry> options = new ArrayList<>(structures);
+                                 WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(0L));
+                                 random.setLargeFeatureSeed(state.getLevelSeed(), sourceChunkPos.x(), sourceChunkPos.z());
+-                                int total = 0;
+-
+-                                for (StructureSet.StructureSelectionEntry option : options) {
+-                                    total += option.weight();
+-                                }
++                                int total = generationStep.totalWeight();
+ 
+                                 while (!options.isEmpty()) {
+                                     int choice = random.nextInt(total);
+diff --git a/net/minecraft/world/level/chunk/ChunkGeneratorStructureState.java b/net/minecraft/world/level/chunk/ChunkGeneratorStructureState.java
+index 21995b893634bf315d9181991ce60a19d8967387..9f1004cf0e2de46f990ac9c6c4955dbc50ab9140 100644
+--- a/net/minecraft/world/level/chunk/ChunkGeneratorStructureState.java
++++ b/net/minecraft/world/level/chunk/ChunkGeneratorStructureState.java
+@@ -27,6 +27,7 @@ import net.minecraft.world.level.levelgen.RandomState;
+ import net.minecraft.world.level.levelgen.structure.Structure;
+ import net.minecraft.world.level.levelgen.structure.StructureSet;
+ import net.minecraft.world.level.levelgen.structure.placement.ConcentricRingsStructurePlacement;
++import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStructurePlacement;
+ import net.minecraft.world.level.levelgen.structure.placement.StructurePlacement;
+ import org.jspecify.annotations.Nullable;
+ import org.slf4j.Logger;
+@@ -41,6 +42,7 @@ public class ChunkGeneratorStructureState {
+     private final Map<ConcentricRingsStructurePlacement, CompletableFuture<List<ChunkPos>>> ringPositions = new Object2ObjectArrayMap<>();
+     private boolean hasGeneratedPositions;
+     private final List<Holder<StructureSet>> possibleStructureSets;
++    private final List<ChunkGeneratorStructureState.StructureSetGenerationStep> structureGenerationSteps;
+ 
+     public static ChunkGeneratorStructureState createForFlat(
+         final RandomState randomState, final long levelSeed, final BiomeSource biomeSource, final Stream<Holder<StructureSet>> structureOverrides
+@@ -78,12 +80,19 @@ public class ChunkGeneratorStructureState {
+         this.biomeSource = biomeSource;
+         this.concentricRingsSeed = concentricRingsSeed;
+         this.possibleStructureSets = possibleStructureSets;
++        this.structureGenerationSteps = possibleStructureSets.stream()
++            .map(ChunkGeneratorStructureState.StructureSetGenerationStep::create)
++            .toList();
+     }
+ 
+     public List<Holder<StructureSet>> possibleStructureSets() {
+         return this.possibleStructureSets;
+     }
+ 
++    public List<ChunkGeneratorStructureState.StructureSetGenerationStep> structureGenerationSteps() {
++        return this.structureGenerationSteps;
++    }
++
+     private void generatePositions() {
+         Set<Holder<Biome>> possibleBiomes = this.biomeSource.possibleBiomes();
+         this.possibleStructureSets().forEach(setHolder -> {
+@@ -190,6 +199,9 @@ public class ChunkGeneratorStructureState {
+ 
+     public boolean hasStructureChunkInRange(final Holder<StructureSet> structureSet, final int sourceX, final int sourceZ, final int range) {
+         StructurePlacement placement = structureSet.value().placement();
++        if (placement instanceof RandomSpreadStructurePlacement randomSpreadPlacement) {
++            return this.hasRandomSpreadStructureChunkInRange(randomSpreadPlacement, sourceX, sourceZ, range);
++        }
+ 
+         for (int testX = sourceX - range; testX <= sourceX + range; testX++) {
+             for (int testZ = sourceZ - range; testZ <= sourceZ + range; testZ++) {
+@@ -202,7 +214,63 @@ public class ChunkGeneratorStructureState {
+         return false;
+     }
+ 
++    private boolean hasRandomSpreadStructureChunkInRange(
++        final RandomSpreadStructurePlacement placement, final int sourceX, final int sourceZ, final int range
++    ) {
++        int minX = sourceX - range;
++        int maxX = sourceX + range;
++        int minZ = sourceZ - range;
++        int maxZ = sourceZ + range;
++        int spacing = placement.spacing();
++        int minGridX = Math.floorDiv(minX, spacing);
++        int maxGridX = Math.floorDiv(maxX, spacing);
++        int minGridZ = Math.floorDiv(minZ, spacing);
++        int maxGridZ = Math.floorDiv(maxZ, spacing);
++
++        for (int gridX = minGridX; gridX <= maxGridX; gridX++) {
++            for (int gridZ = minGridZ; gridZ <= maxGridZ; gridZ++) {
++                ChunkPos candidate = placement.getPotentialStructureChunk(this.levelSeed, gridX * spacing, gridZ * spacing);
++                if (candidate.x() >= minX
++                    && candidate.x() <= maxX
++                    && candidate.z() >= minZ
++                    && candidate.z() <= maxZ
++                    && placement.applyAdditionalChunkRestrictions(candidate.x(), candidate.z(), this.levelSeed)
++                    && placement.applyInteractionsWithOtherStructures(this, candidate.x(), candidate.z())) {
++                    return true;
++                }
++            }
++        }
++
++        return false;
++    }
++
+     public long getLevelSeed() {
+         return this.levelSeed;
+     }
++
++    public record StructureSetGenerationStep(
++        StructurePlacement placement,
++        List<StructureSet.StructureSelectionEntry> structures,
++        StructureSet.StructureSelectionEntry singleStructure,
++        int totalWeight
++    ) {
++        private static ChunkGeneratorStructureState.StructureSetGenerationStep create(final Holder<StructureSet> holder) {
++            StructureSet set = holder.value();
++            List<StructureSet.StructureSelectionEntry> structures = List.copyOf(set.structures());
++            return new ChunkGeneratorStructureState.StructureSetGenerationStep(
++                set.placement(),
++                structures,
++                structures.size() == 1 ? structures.get(0) : null,
++                totalWeight(structures)
++            );
++        }
++
++        private static int totalWeight(final List<StructureSet.StructureSelectionEntry> structures) {
++            int total = 0;
++            for (StructureSet.StructureSelectionEntry structure : structures) {
++                total += structure.weight();
++            }
++            return total;
++        }
++    }
+ }

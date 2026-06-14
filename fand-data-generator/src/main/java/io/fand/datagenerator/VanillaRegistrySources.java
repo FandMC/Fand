@@ -77,6 +77,18 @@ final class VanillaRegistrySources {
         return registryKeyFields("net/minecraft/world/entity/EntityType.java", "EntityType<");
     }
 
+    List<KeyEntry> blockTagKeys() throws IOException {
+        return tagKeys("net/minecraft/tags/BlockTags.java", "TagKey<Block>");
+    }
+
+    List<KeyEntry> itemTagKeys() throws IOException {
+        return tagKeys("net/minecraft/tags/ItemTags.java", "TagKey<Item>");
+    }
+
+    List<KeyEntry> entityTypeTagKeys() throws IOException {
+        return tagKeys("net/minecraft/tags/EntityTypeTags.java", "TagKey<EntityType<");
+    }
+
     List<KeyEntry> blockEntityKeys() throws IOException {
         return registryKeyFields("net/minecraft/world/level/block/entity/BlockEntityType.java", "BlockEntityType<");
     }
@@ -419,6 +431,19 @@ final class VanillaRegistrySources {
             }
             KeyExtractors.firstStringRegisterId(field.initializer())
                     .or(() -> KeyExtractors.firstRegistryKeyId(field.initializer()))
+                    .map(KeyNames::vanillaKey)
+                    .ifPresent(key -> entries.add(field.name(), key));
+        }
+        return entries.sorted();
+    }
+
+    private List<KeyEntry> tagKeys(String relativePath, String typeNeedle) throws IOException {
+        var entries = new EntryCollector();
+        for (var field : staticFields(relativePath)) {
+            if (!field.type().contains(typeNeedle)) {
+                continue;
+            }
+            KeyExtractors.firstRegistryKeyId(field.initializer())
                     .map(KeyNames::vanillaKey)
                     .ifPresent(key -> entries.add(field.name(), key));
         }

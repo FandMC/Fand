@@ -1,0 +1,101 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 14 Jun 2026 10:44:46 +0800
+Subject: [PATCH] Optimize parallel chunk task envelope tracking
+
+
+diff --git a/net/minecraft/server/level/ParallelChunkTaskDispatcher.java b/net/minecraft/server/level/ParallelChunkTaskDispatcher.java
+index 9f086e741bd44c1012e8bc0556d5811fee72e125..596b4690059c4977b21a038e2c3a0e4f7db5b4f5 100644
+--- a/net/minecraft/server/level/ParallelChunkTaskDispatcher.java
++++ b/net/minecraft/server/level/ParallelChunkTaskDispatcher.java
+@@ -1,9 +1,12 @@
+ package net.minecraft.server.level;
+ 
++import com.google.common.annotations.VisibleForTesting;
++import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
+ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+ import it.unimi.dsi.fastutil.longs.LongSet;
+ import java.util.List;
+ import java.util.concurrent.Executor;
++import java.util.function.LongConsumer;
+ import net.minecraft.util.thread.TaskScheduler;
+ import net.minecraft.world.level.ChunkPos;
+ import org.jspecify.annotations.Nullable;
+@@ -14,6 +17,7 @@ public class ParallelChunkTaskDispatcher extends ChunkTaskDispatcher {
+     private static final int MAX_BLOCK_WRITE_ENVELOPE_RADIUS = 2;
+     private static final int MAX_OVERLAPPING_WRITE_ENVELOPE_DISTANCE = MAX_BLOCK_WRITE_ENVELOPE_RADIUS * 2;
+     private final LongSet chunkPositionsInExecution = new LongOpenHashSet();
++    private final WriteEnvelopeTracker activeWriteEnvelopes = new WriteEnvelopeTracker();
+     private final int maxChunksInExecution;
+ 
+     public ParallelChunkTaskDispatcher(final TaskScheduler<Runnable> executor, final Executor dispatcherExecutor, final int maxChunksInExecution) {
+@@ -29,13 +33,7 @@ public class ParallelChunkTaskDispatcher extends ChunkTaskDispatcher {
+     }
+ 
+     private boolean overlapsActiveWriteEnvelope(final long candidateChunkPos) {
+-        for (long activeChunkPos : this.chunkPositionsInExecution) {
+-            if (hasOverlappingWriteEnvelope(activeChunkPos, candidateChunkPos)) {
+-                return true;
+-            }
+-        }
+-
+-        return false;
++        return this.activeWriteEnvelopes.contains(candidateChunkPos);
+     }
+ 
+     static boolean hasOverlappingWriteEnvelope(final long firstChunkPos, final long secondChunkPos) {
+@@ -49,6 +47,7 @@ public class ParallelChunkTaskDispatcher extends ChunkTaskDispatcher {
+         if (!this.chunkPositionsInExecution.add(tasksForChunk.chunkPos())) {
+             throw new IllegalStateException("Chunk task already running for " + ChunkPos.unpack(tasksForChunk.chunkPos()));
+         }
++        this.activeWriteEnvelopes.add(tasksForChunk.chunkPos());
+         List<Runnable> tasks = tasksForChunk.tasks();
+         if (tasks.isEmpty()) {
+             this.onTaskBatchComplete(tasksForChunk);
+@@ -63,6 +62,45 @@ public class ParallelChunkTaskDispatcher extends ChunkTaskDispatcher {
+ 
+     @Override
+     protected void onTaskBatchComplete(final ChunkTaskPriorityQueue.TasksForChunk tasksForChunk) {
+-        this.chunkPositionsInExecution.remove(tasksForChunk.chunkPos());
++        if (this.chunkPositionsInExecution.remove(tasksForChunk.chunkPos())) {
++            this.activeWriteEnvelopes.remove(tasksForChunk.chunkPos());
++        }
++    }
++
++    @VisibleForTesting
++    static final class WriteEnvelopeTracker {
++        private final Long2IntOpenHashMap coveredChunkCounts = new Long2IntOpenHashMap();
++
++        boolean contains(final long chunkPos) {
++            return this.coveredChunkCounts.containsKey(chunkPos);
++        }
++
++        void add(final long centerChunkPos) {
++            forEachOverlappingWriteEnvelopeChunk(centerChunkPos, chunkPos -> this.coveredChunkCounts.addTo(chunkPos, 1));
++        }
++
++        void remove(final long centerChunkPos) {
++            forEachOverlappingWriteEnvelopeChunk(centerChunkPos, chunkPos -> {
++                int count = this.coveredChunkCounts.get(chunkPos);
++                if (count <= 0) {
++                    throw new IllegalStateException("Write envelope is not active for " + ChunkPos.unpack(chunkPos));
++                }
++                if (count == 1) {
++                    this.coveredChunkCounts.remove(chunkPos);
++                } else {
++                    this.coveredChunkCounts.put(chunkPos, count - 1);
++                }
++            });
++        }
++
++        private static void forEachOverlappingWriteEnvelopeChunk(final long centerChunkPos, final LongConsumer consumer) {
++            int centerX = ChunkPos.getX(centerChunkPos);
++            int centerZ = ChunkPos.getZ(centerChunkPos);
++            for (int offsetX = -MAX_OVERLAPPING_WRITE_ENVELOPE_DISTANCE; offsetX <= MAX_OVERLAPPING_WRITE_ENVELOPE_DISTANCE; offsetX++) {
++                for (int offsetZ = -MAX_OVERLAPPING_WRITE_ENVELOPE_DISTANCE; offsetZ <= MAX_OVERLAPPING_WRITE_ENVELOPE_DISTANCE; offsetZ++) {
++                    consumer.accept(ChunkPos.pack(centerX + offsetX, centerZ + offsetZ));
++                }
++            }
++        }
+     }
+ }

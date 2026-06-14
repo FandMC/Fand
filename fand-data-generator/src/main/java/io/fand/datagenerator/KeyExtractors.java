@@ -16,7 +16,7 @@ final class KeyExtractors {
     private static final Pattern CREATE_KEY_PATTERN = Pattern.compile(
             "\\bcreateKey\\s*\\(\\s*\"([^\"]+)\"");
     private static final Pattern STRING_KEY_ARGUMENT_PATTERN = Pattern.compile(
-            "\\b(?:(?:register\\w*|createKey|createId|create|registryKey|key)\\s*\\(\\s*"
+            "\\b(?:(?:register\\w*|createKey|createId|create|registryKey|key|bind)\\s*\\(\\s*"
                     + "|(?:Registry|SurfaceRules)\\.register\\s*\\(\\s*[^,]+\\s*,\\s*)\"([^\"]+)\"");
     private static final Pattern CUSTOM_STAT_PATTERN = Pattern.compile(
             "\\bmakeCustomStat\\s*\\(\\s*\"([^\"]+)\"");

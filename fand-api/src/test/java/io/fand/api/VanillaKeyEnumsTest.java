@@ -4,11 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.fand.api.block.BlockEntityKey;
 import io.fand.api.block.BlockKey;
+import io.fand.api.block.BlockTagKey;
 import io.fand.api.entity.AttributeKey;
 import io.fand.api.entity.EntityKey;
+import io.fand.api.entity.EntityTypeTagKey;
 import io.fand.api.entity.VillagerProfessionKey;
 import io.fand.api.inventory.MenuTypeKey;
 import io.fand.api.item.ItemKey;
+import io.fand.api.item.ItemTagKey;
 import io.fand.api.item.component.BannerPatternKey;
 import io.fand.api.item.component.CatVariantKey;
 import io.fand.api.item.component.DecoratedPotPatternKey;
@@ -70,6 +73,9 @@ final class VanillaKeyEnumsTest {
     void generatedKeysUseMinecraftNamespace() {
         assertMinecraftNamespace(ItemKey.values());
         assertMinecraftNamespace(BlockKey.values());
+        assertMinecraftNamespace(BlockTagKey.values());
+        assertMinecraftNamespace(ItemTagKey.values());
+        assertMinecraftNamespace(EntityTypeTagKey.values());
         assertMinecraftNamespace(BlockEntityKey.values());
         assertMinecraftNamespace(FluidKey.values());
         assertMinecraftNamespace(EnchantmentKey.values());
@@ -132,6 +138,9 @@ final class VanillaKeyEnumsTest {
         assertThat(ItemKey.APPLE.key()).isEqualTo(Key.key("minecraft:apple"));
         assertThat(ItemKey.ACACIA_BOAT.key()).isEqualTo(Key.key("minecraft:acacia_boat"));
         assertThat(BlockKey.DIRT.key()).isEqualTo(Key.key("minecraft:dirt"));
+        assertThat(BlockTagKey.LOGS.key()).isEqualTo(Key.key("minecraft:logs"));
+        assertThat(ItemTagKey.LOGS.key()).isEqualTo(Key.key("minecraft:logs"));
+        assertThat(EntityTypeTagKey.UNDEAD.key()).isEqualTo(Key.key("minecraft:undead"));
         assertThat(BlockEntityKey.CHEST.key()).isEqualTo(Key.key("minecraft:chest"));
         assertThat(FluidKey.WATER.key()).isEqualTo(Key.key("minecraft:water"));
         assertThat(EnchantmentKey.SHARPNESS.key()).isEqualTo(Key.key("minecraft:sharpness"));
