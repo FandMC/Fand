@@ -23,8 +23,8 @@ final class FandServerIntegrationTest {
 
         assertThat(damageSource).contains("var wrapped = FandHooks.wrapEntity(entity);");
         assertThat(damageSource).contains("if (wrapped instanceof io.fand.api.entity.LivingEntity living)");
-        assertThat(blockItemSource).contains("restorePlacement(fandServerLevel, fandBeforeStates, fandBeforeComponents, fandServerPlayer)");
-        assertThat(blockItemSource).contains("changedPlacementPositions(level, fandBeforeStates)");
+        assertThat(blockItemSource).contains("restorePlacement(serverLevel, beforeStates, beforeComponents, serverPlayer)");
+        assertThat(blockItemSource).contains("changedPlacementPositions(level, beforeStates)");
     }
 
     private static String read(String path) throws IOException {

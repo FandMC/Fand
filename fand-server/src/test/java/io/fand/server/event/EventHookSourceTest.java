@@ -53,10 +53,10 @@ final class EventHookSourceTest {
     void blockItemPlaceCancellationRestoresNeighbourChangesAndComponents() throws IOException {
         var source = read("src/minecraft/java/net/minecraft/world/item/BlockItem.java");
 
-        assertThat(source).contains("snapshotPlacementStates(fandLevel, fandPos)");
-        assertThat(source).contains("snapshotPlacementComponents(fandServerLevel, fandBeforeStates.keySet())");
-        assertThat(source).contains("changedPlacementPositions(level, fandBeforeStates)");
-        assertThat(source).contains("restorePlacement(fandServerLevel, fandBeforeStates, fandBeforeComponents, fandServerPlayer)");
+        assertThat(source).contains("snapshotPlacementStates(level, pos)");
+        assertThat(source).contains("snapshotPlacementComponents(serverLevel, beforeStates.keySet())");
+        assertThat(source).contains("changedPlacementPositions(level, beforeStates)");
+        assertThat(source).contains("restorePlacement(serverLevel, beforeStates, beforeComponents, serverPlayer)");
         assertThat(source).contains("level.getBlockTicks().clearArea(restoreArea(beforeStates))");
         assertThat(source).contains("level.setBlock(pos, entry.getValue(), Block.UPDATE_ALL)");
     }
@@ -66,9 +66,9 @@ final class EventHookSourceTest {
         var source = read("src/minecraft/java/net/minecraft/world/item/BlockItem.java");
 
         assertThat(source).contains("for (BlockPos pos : BlockPos.betweenClosed(center.offset(-1, -1, -1), center.offset(1, 2, 1)))");
-        assertThat(source).contains("BlockState fandReplacedState = fandLevel.getBlockState(fandPos)");
+        assertThat(source).contains("BlockState replacedState = level.getBlockState(pos)");
         assertThat(source).contains("placedState.getBlock().setPlacedBy(level, pos, placedState, player, itemStack)");
-        assertThat(source).contains("if (!fandAllowed) {");
+        assertThat(source).contains("if (!allowed) {");
         assertThat(source).contains("return InteractionResult.FAIL;");
     }
 
