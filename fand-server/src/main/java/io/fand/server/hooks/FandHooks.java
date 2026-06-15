@@ -103,6 +103,8 @@ public final class FandHooks {
     // vanilla code where even an extra pointer chase is measurable. Defaults
     // mirror FandConfig.Performance so behaviour before attach matches a
     // default config.
+    private static volatile boolean playerSpeedCheck = true;
+    private static volatile boolean playerCommandLogging = true;
     private static volatile boolean explosionDensityCacheEnabled = true;
     private static volatile boolean collisionTeamCacheEnabled = true;
     private static volatile boolean explosionBlockCacheEnabled = true;
@@ -181,10 +183,23 @@ public final class FandHooks {
         worldgenSeaLevelCache = performance.worldgenSeaLevelCache;
     }
 
+    public static void applyPlayerConfig(io.fand.server.config.FandConfig.Players players) {
+        playerSpeedCheck = players.speedCheck;
+        playerCommandLogging = players.logCommands;
+    }
+
     public static void applyChunkConfig(io.fand.server.config.FandConfig.Chunks chunks) {
         chunkWorldgenParallelism = chunks.worldgenParallelism;
         chunkDedicatedLightThread = chunks.dedicatedLightThread;
         chunkLightTaskQueueFastPath = chunks.lightTaskQueueFastPath;
+    }
+
+    public static boolean playerSpeedCheckEnabled() {
+        return playerSpeedCheck;
+    }
+
+    public static boolean playerCommandLoggingEnabled() {
+        return playerCommandLogging;
     }
 
     public static void applyTechnicalConfig(io.fand.server.config.FandConfig.Technical technical) {

@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Mon, 15 Jun 2026 10:51:47 +0800
+Subject: [PATCH] Add player safety config gates
+
+
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 2d3567c084e82b252daac10322859d9dc5d4d7fb..804ba44c7544c83b57d43388e8dbff83cf4d85c5 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -461,7 +461,7 @@ public class ServerGamePacketListenerImpl
+                 double zDist = targetZ - this.vehicleFirstGoodZ;
+                 double expectedDist = vehicle.getDeltaMovement().lengthSqr();
+                 double movedDist = xDist * xDist + yDist * yDist + zDist * zDist;
+-                if (movedDist - expectedDist > 100.0 && !this.isSingleplayerOwner()) {
++                if (io.fand.server.hooks.FandHooks.playerSpeedCheckEnabled() && movedDist - expectedDist > 100.0 && !this.isSingleplayerOwner()) {
+                     LOGGER.warn(
+                         "{} (vehicle of {}) moved too quickly! {},{},{}", vehicle.getPlainTextName(), this.player.getPlainTextName(), xDist, yDist, zDist
+                     );
+@@ -1274,6 +1274,10 @@ public class ServerGamePacketListenerImpl
+     }
+ 
+     private boolean shouldCheckPlayerMovement(final boolean isFallFlying) {
++        if (!io.fand.server.hooks.FandHooks.playerSpeedCheckEnabled()) {
++            return false;
++        }
++
+         if (this.isSingleplayerOwner()) {
+             return false;
+         }
+@@ -1694,6 +1698,9 @@ public class ServerGamePacketListenerImpl
+     }
+ 
+     private void performUnsignedChatCommand(final String command) {
++        if (io.fand.server.hooks.FandHooks.playerCommandLoggingEnabled()) {
++            LOGGER.info("{} issued server command: /{}", this.player.getScoreboardName(), command);
++        }
+         var fandCommand = io.fand.server.command.CommandEvents.firePlayerCommandPreprocess(this.player, command);
+         if (fandCommand.isEmpty()) {
+             return;
+@@ -1731,6 +1738,9 @@ public class ServerGamePacketListenerImpl
+     }
+ 
+     private void performSignedChatCommand(final ServerboundChatCommandSignedPacket packet, final LastSeenMessages lastSeenMessages) {
++        if (io.fand.server.hooks.FandHooks.playerCommandLoggingEnabled()) {
++            LOGGER.info("{} issued server command: /{}", this.player.getScoreboardName(), packet.command());
++        }
+         var fandCommand = io.fand.server.command.CommandEvents.firePlayerCommandPreprocess(this.player, packet.command());
+         if (fandCommand.isEmpty()) {
+             return;

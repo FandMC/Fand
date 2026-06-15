@@ -72,6 +72,16 @@ final class EventHookSourceTest {
         assertThat(source).contains("return InteractionResult.FAIL;");
     }
 
+    @Test
+    void playerSpeedCheckAndCommandLoggingAreConfigGated() throws IOException {
+        var source = read("src/minecraft/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java");
+
+        assertThat(source).contains("FandHooks.playerSpeedCheckEnabled() && movedDist - expectedDist > 100.0");
+        assertThat(source).contains("if (!io.fand.server.hooks.FandHooks.playerSpeedCheckEnabled())");
+        assertThat(source).contains("FandHooks.playerCommandLoggingEnabled()");
+        assertThat(source).contains("issued server command: /{}");
+    }
+
     private static String read(String path) throws IOException {
         return Files.readString(Path.of(path), StandardCharsets.UTF_8).replace("\r\n", "\n");
     }

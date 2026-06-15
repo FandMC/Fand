@@ -26,6 +26,10 @@ final class ConfigReloadResultTest {
                   continueOnEnableFailure: false
                   logSummary: true
 
+                players:
+                  speedCheck: true
+                  logCommands: true
+
                 scheduler:
                   asyncThreads: 0
 
@@ -55,6 +59,10 @@ final class ConfigReloadResultTest {
                   continueOnEnableFailure: true
                   logSummary: false
 
+                players:
+                  speedCheck: false
+                  logCommands: false
+
                 scheduler:
                   asyncThreads: 8
 
@@ -79,6 +87,8 @@ final class ConfigReloadResultTest {
                 "plugins.continueOnLoadFailure",
                 "plugins.continueOnEnableFailure",
                 "plugins.logSummary",
+                "players.speedCheck",
+                "players.logCommands",
                 "scheduler.asyncThreads",
                 "chunks.workerThreads",
                 "chunks.trackingDiffApplyBudget"

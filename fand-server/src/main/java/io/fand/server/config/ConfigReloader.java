@@ -33,6 +33,10 @@ public final class ConfigReloader {
     private static final List<ReloadField<FandConfig.Plugins, ?>> RESTART_PLUGIN_FIELDS = List.of(
             field("plugins.directory", (FandConfig.Plugins config) -> config.directory)
     );
+    private static final List<ReloadField<FandConfig.Players, ?>> HOT_PLAYER_FIELDS = List.of(
+            field("players.speedCheck", (FandConfig.Players config) -> config.speedCheck),
+            field("players.logCommands", (FandConfig.Players config) -> config.logCommands)
+    );
     private static final List<ReloadField<FandConfig.Chunks, ?>> HOT_CHUNK_FIELDS = List.of(
             field("chunks.workerThreads", (FandConfig.Chunks config) -> config.workerThreads),
             field("chunks.trackingDiffApplyBudget", (FandConfig.Chunks config) -> config.trackingDiffApplyBudget)
@@ -154,6 +158,8 @@ public final class ConfigReloader {
         markHot(changes, HOT_IDENTITY_FIELDS, previous.identity, reloaded.identity);
         markHot(changes, HOT_PLUGIN_FIELDS, previous.plugins, reloaded.plugins);
         markRestart(changes, RESTART_PLUGIN_FIELDS, previous.plugins, reloaded.plugins);
+        markHot(changes, HOT_PLAYER_FIELDS, previous.players, reloaded.players);
+        io.fand.server.hooks.FandHooks.applyPlayerConfig(reloaded.players);
         if (changed(previous.scheduler.asyncThreads, reloaded.scheduler.asyncThreads)) {
             scheduler.reconfigureAsyncThreads(reloaded.scheduler.asyncThreads);
             changes.hot("scheduler.asyncThreads");

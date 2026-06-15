@@ -11,6 +11,9 @@ public final class FandConfig {
     @ConfigComment("Plugin runtime settings.")
     public final Plugins plugins = new Plugins();
 
+    @ConfigComment("Player safety and audit settings.")
+    public final Players players = new Players();
+
     @ConfigComment("Async scheduler settings.")
     public final Scheduler scheduler = new Scheduler();
 
@@ -75,6 +78,20 @@ public final class FandConfig {
 
         @ConfigComment("Log a summary after plugin load and enable phases.")
         public boolean logSummary = true;
+    }
+
+    public static final class Players {
+
+        @ConfigComment({
+                "Keep vanilla's player movement speed check enabled.",
+                "When disabled, Fand skips the moved-too-quickly warning and",
+                "rubber-band correction; collision and invalid movement checks",
+                "still run."
+        })
+        public volatile boolean speedCheck = true;
+
+        @ConfigComment("Log player-entered commands to the server console.")
+        public volatile boolean logCommands = true;
     }
 
     public static final class Scheduler {

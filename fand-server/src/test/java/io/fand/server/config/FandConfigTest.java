@@ -24,6 +24,8 @@ final class FandConfigTest {
         assertThat(config.plugins.continueOnLoadFailure).isTrue();
         assertThat(config.plugins.continueOnEnableFailure).isTrue();
         assertThat(config.plugins.logSummary).isTrue();
+        assertThat(config.players.speedCheck).isTrue();
+        assertThat(config.players.logCommands).isTrue();
         assertThat(config.scheduler.asyncThreads).isZero();
         assertThat(config.chunks.workerThreads).isZero();
         assertThat(config.chunks.trackingDiffApplyBudget).isEqualTo(256);
@@ -84,6 +86,9 @@ final class FandConfigTest {
                 .contains("continueOnLoadFailure: true")
                 .contains("continueOnEnableFailure: true")
                 .contains("logSummary: true")
+                .contains("players:")
+                .contains("speedCheck: true")
+                .contains("logCommands: true")
                 .contains("scheduler:")
                 .contains("asyncThreads: 0")
                 .contains("chunks:")
@@ -158,6 +163,10 @@ final class FandConfigTest {
                   continueOnEnableFailure: true
                   logSummary: false
 
+                players:
+                  speedCheck: false
+                  logCommands: false
+
                 scheduler:
                   asyncThreads: 6
 
@@ -231,6 +240,8 @@ final class FandConfigTest {
         assertThat(config.plugins.continueOnLoadFailure).isTrue();
         assertThat(config.plugins.continueOnEnableFailure).isTrue();
         assertThat(config.plugins.logSummary).isFalse();
+        assertThat(config.players.speedCheck).isFalse();
+        assertThat(config.players.logCommands).isFalse();
         assertThat(config.scheduler.asyncThreads).isEqualTo(6);
         assertThat(config.chunks.workerThreads).isEqualTo(3);
         assertThat(config.chunks.trackingDiffApplyBudget).isEqualTo(64);
