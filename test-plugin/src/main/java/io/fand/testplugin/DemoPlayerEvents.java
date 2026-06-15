@@ -8,6 +8,7 @@ import io.fand.api.event.Listener;
 import io.fand.api.event.Subscribe;
 import io.fand.api.event.entity.EntityDamageEvent;
 import io.fand.api.event.player.PlayerAdvancementDoneEvent;
+import io.fand.api.event.player.PlayerAnimationEvent;
 import io.fand.api.event.player.PlayerArmorStandManipulateEvent;
 import io.fand.api.event.player.PlayerBedEnterEvent;
 import io.fand.api.event.player.PlayerBedLeaveEvent;
@@ -26,9 +27,11 @@ import io.fand.api.event.player.PlayerGameModeChangeEvent;
 import io.fand.api.event.player.PlayerInteractEntityEvent;
 import io.fand.api.event.player.PlayerInteractEvent;
 import io.fand.api.event.player.PlayerFishEvent;
+import io.fand.api.event.player.PlayerItemBreakEvent;
 import io.fand.api.event.player.PlayerItemConsumeEvent;
 import io.fand.api.event.player.PlayerItemDamageEvent;
 import io.fand.api.event.player.PlayerItemHeldEvent;
+import io.fand.api.event.player.PlayerItemMendEvent;
 import io.fand.api.event.player.PlayerKickEvent;
 import io.fand.api.event.player.PlayerLeashEntityEvent;
 import io.fand.api.event.player.PlayerLevelChangeEvent;
@@ -39,10 +42,12 @@ import io.fand.api.event.player.PlayerPortalEvent;
 import io.fand.api.event.player.PlayerRecipeDiscoverEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
 import io.fand.api.event.player.PlayerResourcePackStatusEvent;
+import io.fand.api.event.player.PlayerRiptideEvent;
 import io.fand.api.event.player.PlayerShearEntityEvent;
 import io.fand.api.event.player.PlayerStatisticIncrementEvent;
 import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
+import io.fand.api.event.player.PlayerToggleFlightEvent;
 import io.fand.api.event.player.PlayerToggleSneakEvent;
 import io.fand.api.event.player.PlayerToggleSprintEvent;
 import io.fand.api.event.player.PlayerUnleashEntityEvent;
@@ -109,6 +114,20 @@ final class DemoPlayerEvents implements Listener {
     public void onItemDamage(PlayerItemDamageEvent event) {
         if (context.config().getBoolean("features.log-item-events", false)) {
             logger.info("{} item damage {} +{}", event.player().name(), stackName(event.item()), event.damage());
+        }
+    }
+
+    @Subscribe
+    public void onItemBreak(PlayerItemBreakEvent event) {
+        if (context.config().getBoolean("features.log-item-events", false)) {
+            logger.info("{} broke {}", event.player().name(), stackName(event.item()));
+        }
+    }
+
+    @Subscribe
+    public void onItemMend(PlayerItemMendEvent event) {
+        if (context.config().getBoolean("features.log-item-events", false)) {
+            logger.info("{} mended {} repair={}", event.player().name(), stackName(event.item()), event.repairAmount());
         }
     }
 
@@ -199,6 +218,20 @@ final class DemoPlayerEvents implements Listener {
     public void onToggleSprint(PlayerToggleSprintEvent event) {
         if (context.config().getBoolean("features.log-player-state-events", false)) {
             logger.info("{} sprinting={}", event.player().name(), event.sprinting());
+        }
+    }
+
+    @Subscribe
+    public void onToggleFlight(PlayerToggleFlightEvent event) {
+        if (context.config().getBoolean("features.log-player-state-events", false)) {
+            logger.info("{} flying={}", event.player().name(), event.flying());
+        }
+    }
+
+    @Subscribe
+    public void onAnimation(PlayerAnimationEvent event) {
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} animation={}", event.player().name(), event.animation());
         }
     }
 
@@ -424,6 +457,13 @@ final class DemoPlayerEvents implements Listener {
             logger.info("{} emptied bucket at {},{},{} fluid={} result={}",
                     event.player().name(), event.block().x(), event.block().y(), event.block().z(),
                     event.fluid().asString(), stackName(event.resultItem()));
+        }
+    }
+
+    @Subscribe
+    public void onRiptide(PlayerRiptideEvent event) {
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} riptide with {}", event.player().name(), stackName(event.item()));
         }
     }
 

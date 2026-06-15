@@ -18,6 +18,7 @@ import io.fand.server.chunk.ChunkTrackingSnapshot;
 import io.fand.server.FandServer;
 import io.fand.server.Main;
 import io.fand.server.entity.EntityRegistry;
+import io.fand.server.entity.FandEntity;
 import io.fand.server.entity.FandPlayer;
 import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.network.ForwardedPlayerInfo;
@@ -559,6 +560,16 @@ public final class FandHooks {
         var runtime = Main.runtimeOrNull();
         var registry = runtime == null ? null : runtime.entityRegistryOrNull();
         return registry == null ? null : registry.wrap(entity);
+    }
+
+    public static net.minecraft.world.entity.@Nullable Entity unwrapEntity(Entity entity) {
+        if (entity instanceof FandPlayer player) {
+            return player.handle();
+        }
+        if (entity instanceof FandEntity fandEntity) {
+            return fandEntity.handle();
+        }
+        return null;
     }
 
     public static Optional<EntityRegistry> entities() {

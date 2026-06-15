@@ -7,6 +7,7 @@ import io.fand.api.event.Listener;
 import io.fand.api.event.Subscribe;
 import io.fand.api.event.entity.EntityBreedEvent;
 import io.fand.api.event.entity.EntityChangeBlockEvent;
+import io.fand.api.event.entity.AreaEffectCloudApplyEvent;
 import io.fand.api.event.entity.EntityCombustByBlockEvent;
 import io.fand.api.event.entity.EntityCombustByEntityEvent;
 import io.fand.api.event.entity.EntityCombustEvent;
@@ -17,6 +18,7 @@ import io.fand.api.event.entity.EntityDeathEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
 import io.fand.api.event.entity.EntityDropItemEvent;
 import io.fand.api.event.entity.EntityExplodeEvent;
+import io.fand.api.event.entity.EntityKnockbackEvent;
 import io.fand.api.event.entity.EntityMountEvent;
 import io.fand.api.event.entity.EntityPickupItemEvent;
 import io.fand.api.event.entity.EntityPortalEnterEvent;
@@ -262,6 +264,19 @@ final class DemoEntityEvents implements Listener {
     }
 
     @Subscribe
+    public void onEntityKnockback(EntityKnockbackEvent event) {
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            var velocity = event.velocity();
+            logger.info("Entity knockback: {} source={} velocity={},{},{}",
+                    event.entity().type().key().asString(),
+                    event.source().map(entity -> entity.type().key().asString()).orElse("none"),
+                    trim(velocity.x()),
+                    trim(velocity.y()),
+                    trim(velocity.z()));
+        }
+    }
+
+    @Subscribe
     public void onProjectileHit(ProjectileHitEvent event) {
         if (context.config().getBoolean("features.log-entity-detail-events", false)) {
             logger.info("Projectile hit: {} type={} block={} entity={}",
@@ -342,6 +357,15 @@ final class DemoEntityEvents implements Listener {
                     stackName(event.item()),
                     compactLocation(event.location()),
                     event.source().map(entity -> entity.type().key().asString()).orElse("none"));
+        }
+    }
+
+    @Subscribe
+    public void onAreaEffectCloudApply(AreaEffectCloudApplyEvent event) {
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            logger.info("Area effect cloud apply: {} affected={}",
+                    event.cloud().type().key().asString(),
+                    event.affectedEntities().size());
         }
     }
 

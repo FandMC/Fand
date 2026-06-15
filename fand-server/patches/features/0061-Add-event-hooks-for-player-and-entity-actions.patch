@@ -1,0 +1,154 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Mon, 15 Jun 2026 22:06:23 +0800
+Subject: [PATCH] Add event hooks for player and entity actions
+
+
+diff --git a/net/minecraft/server/dedicated/DedicatedServer.java b/net/minecraft/server/dedicated/DedicatedServer.java
+index 7e22ba953f78c74793b9b7f2dc5adb91e4ddc7c1..0500ef9fd787740f7baf5008274bdff6b8abe2c3 100644
+--- a/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -437,7 +437,8 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+     public void handleConsoleInputs() {
+         while (!this.consoleInput.isEmpty()) {
+             ConsoleInput input = this.consoleInput.remove(0);
+-            this.getCommands().performPrefixedCommand(input.source, input.msg);
++            io.fand.server.command.CommandEvents.fireServerCommand(input.source, input.msg)
++                .ifPresent(command -> this.getCommands().performPrefixedCommand(input.source, command));
+         }
+     }
+ 
+@@ -719,7 +720,11 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+     @Override
+     public String runCommand(final String command) {
+         this.rconConsoleSource.prepareForCommand();
+-        this.executeBlocking(() -> this.getCommands().performPrefixedCommand(this.rconConsoleSource.createCommandSourceStack(), command));
++        this.executeBlocking(() -> {
++            var source = this.rconConsoleSource.createCommandSourceStack();
++            io.fand.server.command.CommandEvents.fireServerCommand(source, command)
++                .ifPresent(nextCommand -> this.getCommands().performPrefixedCommand(source, nextCommand));
++        });
+         return this.rconConsoleSource.getCommandResponse();
+     }
+ 
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 804ba44c7544c83b57d43388e8dbff83cf4d85c5..644b1609eeff11fcac4d31f215481a363c6ac790 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -1912,6 +1912,9 @@ public class ServerGamePacketListenerImpl
+     public void handleAnimate(final ServerboundSwingPacket packet) {
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+         this.player.resetLastActionTime();
++        if (!io.fand.server.event.PlayerEvents.fireAnimation(this.player, packet.getHand())) {
++            return;
++        }
+         this.player.swing(packet.getHand());
+     }
+ 
+@@ -2305,7 +2308,12 @@ public class ServerGamePacketListenerImpl
+     @Override
+     public void handlePlayerAbilities(final ServerboundPlayerAbilitiesPacket packet) {
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.level());
+-        this.player.getAbilities().flying = packet.isFlying() && this.player.getAbilities().mayfly;
++        boolean flying = packet.isFlying() && this.player.getAbilities().mayfly;
++        if (this.player.getAbilities().flying != flying && !io.fand.server.event.PlayerEvents.fireToggleFlight(this.player, flying)) {
++            this.player.onUpdateAbilities();
++            return;
++        }
++        this.player.getAbilities().flying = flying;
+     }
+ 
+     @Override
+diff --git a/net/minecraft/world/entity/AreaEffectCloud.java b/net/minecraft/world/entity/AreaEffectCloud.java
+index fe0375ea05bfb1fdd24575b06886ef5ea0e458b9..888d84de4f244536d5cd1cd8f00e1aaff8996b4d 100644
+--- a/net/minecraft/world/entity/AreaEffectCloud.java
++++ b/net/minecraft/world/entity/AreaEffectCloud.java
+@@ -218,14 +218,27 @@ public class AreaEffectCloud extends Entity implements TraceableEntity {
+                         this.potionContents.forEachEffect(allEffects::add, this.potionDurationScale);
+                         List<LivingEntity> entities = this.level().getEntitiesOfClass(LivingEntity.class, this.getBoundingBox());
+                         if (!entities.isEmpty()) {
++                            List<LivingEntity> affectedEntities = new ArrayList<>();
+                             for (LivingEntity entity : entities) {
+                                 if (!this.victims.containsKey(entity) && entity.isAffectedByPotions() && !allEffects.stream().noneMatch(entity::canBeAffected)) {
+                                     double xd = entity.getX() - this.getX();
+                                     double zd = entity.getZ() - this.getZ();
+                                     double dist = xd * xd + zd * zd;
+                                     if (dist <= radius * radius) {
+-                                        this.victims.put(entity, this.tickCount + this.reapplicationDelay);
++                                        affectedEntities.add(entity);
++                                    }
++                                }
++                            }
+ 
++                            if (!affectedEntities.isEmpty()) {
++                                affectedEntities = io.fand.server.event.EntityEvents.fireAreaEffectCloudApply(this, affectedEntities);
++                                if (affectedEntities == null) {
++                                    affectedEntities = List.of();
++                                }
++
++                                for (LivingEntity entity : affectedEntities) {
++                                    if (!this.victims.containsKey(entity) && entity.isAffectedByPotions() && !allEffects.stream().noneMatch(entity::canBeAffected)) {
++                                        this.victims.put(entity, this.tickCount + this.reapplicationDelay);
+                                         for (MobEffectInstance effect : allEffects) {
+                                             if (effect.getEffect().value().isInstantaneous()) {
+                                                 effect.getEffect()
+diff --git a/net/minecraft/world/entity/ExperienceOrb.java b/net/minecraft/world/entity/ExperienceOrb.java
+index 5341e7b9adcf7f86b865848a62ab45a22c347a1f..f00b6a5eb3e1457f31bde5a4c6242707ab2c503f 100644
+--- a/net/minecraft/world/entity/ExperienceOrb.java
++++ b/net/minecraft/world/entity/ExperienceOrb.java
+@@ -303,6 +303,7 @@ public class ExperienceOrb extends Entity {
+             ItemStack itemStack = selected.get().itemStack();
+             int toRepairFromXpAmount = EnchantmentHelper.modifyDurabilityToRepairFromXp(player.level(), itemStack, amount);
+             int repair = Math.min(toRepairFromXpAmount, itemStack.getDamageValue());
++            repair = io.fand.server.event.PlayerEvents.fireItemMend(player, itemStack, repair);
+             itemStack.setDamageValue(itemStack.getDamageValue() - repair);
+             if (repair > 0) {
+                 int remaining = amount - repair * amount / toRepairFromXpAmount;
+diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
+index 785425fbcf4ad13e9b90bb80155d91426ae49bdb..a9815541d0a47d32521a11af160a04ebac962a0f 100644
+--- a/net/minecraft/world/entity/LivingEntity.java
++++ b/net/minecraft/world/entity/LivingEntity.java
+@@ -2030,11 +2030,16 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+             }
+ 
+             Vec3 deltaVector = new Vec3(xd, 0.0, zd).normalize().scale(power);
+-            this.setDeltaMovement(
++            Vec3 knockbackMovement = new Vec3(
+                 deltaMovement.x / 2.0 - deltaVector.x,
+                 this.onGround() ? Math.min(0.4, deltaMovement.y / 2.0 + power) : deltaMovement.y,
+                 deltaMovement.z / 2.0 - deltaVector.z
+             );
++            knockbackMovement = io.fand.server.event.EntityEvents.fireKnockback(this, source, knockbackMovement);
++            if (knockbackMovement == null) {
++                return;
++            }
++            this.setDeltaMovement(knockbackMovement);
+         }
+     }
+ 
+diff --git a/net/minecraft/world/item/ItemStack.java b/net/minecraft/world/item/ItemStack.java
+index 2704342804ee03f7db991b4b0c36139a9f32566a..a8e3c18b8c7a9efe1750d63aac0856d7b4266874 100644
+--- a/net/minecraft/world/item/ItemStack.java
++++ b/net/minecraft/world/item/ItemStack.java
+@@ -477,6 +477,9 @@ public final class ItemStack implements DataComponentHolder, ItemInstance {
+         this.setDamageValue(newDamage);
+         if (this.isBroken()) {
+             Item item = this.getItem();
++            if (player != null) {
++                io.fand.server.event.PlayerEvents.fireItemBreak(player, this);
++            }
+             this.shrink(1);
+             onBreak.accept(item);
+         }
+diff --git a/net/minecraft/world/item/TridentItem.java b/net/minecraft/world/item/TridentItem.java
+index e6e085a3bd50c2015c0e7b869c523f9f312346ed..7ad331babb33576d474977204fed5dbe28fd9da3 100644
+--- a/net/minecraft/world/item/TridentItem.java
++++ b/net/minecraft/world/item/TridentItem.java
+@@ -107,6 +107,7 @@ public class TridentItem extends Item implements ProjectileItem {
+                     zd *= riptideStrength / dist;
+                     player.push(xd, yd, zd);
+                     player.startAutoSpinAttack(20, 8.0F, itemStack);
++                    io.fand.server.event.PlayerEvents.fireRiptide(player, itemStack);
+                     if (player.onGround()) {
+                         float heightDifference = 1.1999999F;
+                         player.move(MoverType.SELF, new Vec3(0.0, 1.1999999F, 0.0));

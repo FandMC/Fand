@@ -554,10 +554,10 @@ public final class BlockEvents {
             boolean extending
     ) {
         var bus = FandHooks.events();
-        Class<? extends io.fand.api.event.Event> eventType = extending
-                ? BlockPistonPushEvent.class
-                : BlockPistonRetractEvent.class;
-        if (!bus.hasListeners(eventType)) {
+        boolean hasListeners = extending
+                ? bus.hasListeners(BlockPistonPushEvent.class) || bus.hasListeners(BlockPistonExtendEvent.class)
+                : bus.hasListeners(BlockPistonRetractEvent.class);
+        if (!hasListeners) {
             return true;
         }
         var world = FandHooks.wrapWorld(level);

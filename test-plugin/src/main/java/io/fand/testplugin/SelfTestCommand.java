@@ -35,6 +35,7 @@ import io.fand.api.event.block.SignChangeEvent;
 import io.fand.api.event.block.SpongeAbsorbEvent;
 import io.fand.api.event.command.CommandExecuteEvent;
 import io.fand.api.event.command.TabCompleteEvent;
+import io.fand.api.event.entity.AreaEffectCloudApplyEvent;
 import io.fand.api.event.entity.EntityBreedEvent;
 import io.fand.api.event.entity.EntityChangeBlockEvent;
 import io.fand.api.event.entity.EntityCombustByBlockEvent;
@@ -48,6 +49,7 @@ import io.fand.api.event.entity.EntityDeathEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
 import io.fand.api.event.entity.EntityDropItemEvent;
 import io.fand.api.event.entity.EntityExplodeEvent;
+import io.fand.api.event.entity.EntityKnockbackEvent;
 import io.fand.api.event.entity.EntityMountEvent;
 import io.fand.api.event.entity.EntityPickupItemEvent;
 import io.fand.api.event.entity.EntityPortalEnterEvent;
@@ -100,6 +102,7 @@ import io.fand.api.event.inventory.PrepareItemCraftEvent;
 import io.fand.api.event.inventory.PrepareSmithingEvent;
 import io.fand.api.event.inventory.PrepareTradeEvent;
 import io.fand.api.event.player.PlayerAdvancementDoneEvent;
+import io.fand.api.event.player.PlayerAnimationEvent;
 import io.fand.api.event.player.AsyncPlayerPreLoginEvent;
 import io.fand.api.event.player.PlayerArmorStandManipulateEvent;
 import io.fand.api.event.player.PlayerBedEnterEvent;
@@ -121,9 +124,11 @@ import io.fand.api.event.player.PlayerGameModeChangeEvent;
 import io.fand.api.event.player.PlayerInteractEntityEvent;
 import io.fand.api.event.player.PlayerInteractEvent;
 import io.fand.api.event.player.PlayerFishEvent;
+import io.fand.api.event.player.PlayerItemBreakEvent;
 import io.fand.api.event.player.PlayerItemConsumeEvent;
 import io.fand.api.event.player.PlayerItemDamageEvent;
 import io.fand.api.event.player.PlayerItemHeldEvent;
+import io.fand.api.event.player.PlayerItemMendEvent;
 import io.fand.api.event.player.PlayerJoinEvent;
 import io.fand.api.event.player.PlayerKickEvent;
 import io.fand.api.event.player.PlayerLeashEntityEvent;
@@ -138,15 +143,18 @@ import io.fand.api.event.player.PlayerQuitEvent;
 import io.fand.api.event.player.PlayerRecipeDiscoverEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
 import io.fand.api.event.player.PlayerResourcePackStatusEvent;
+import io.fand.api.event.player.PlayerRiptideEvent;
 import io.fand.api.event.player.PlayerShearEntityEvent;
 import io.fand.api.event.player.PlayerStatisticIncrementEvent;
 import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
+import io.fand.api.event.player.PlayerToggleFlightEvent;
 import io.fand.api.event.player.PlayerToggleSneakEvent;
 import io.fand.api.event.player.PlayerToggleSprintEvent;
 import io.fand.api.event.player.PlayerUnleashEntityEvent;
 import io.fand.api.event.player.PlayerVelocityEvent;
 import io.fand.api.event.permission.PermissionCheckEvent;
+import io.fand.api.event.server.ServerCommandEvent;
 import io.fand.api.event.server.ServerListPingEvent;
 import io.fand.api.event.vehicle.VehicleCreateEvent;
 import io.fand.api.event.vehicle.VehicleDestroyEvent;
@@ -163,6 +171,8 @@ import io.fand.api.event.world.WeatherChangeEvent;
 import io.fand.api.event.world.WorldLoadEvent;
 import io.fand.api.event.world.WorldSaveEvent;
 import io.fand.api.event.world.WorldUnloadEvent;
+import io.fand.api.lifecycle.PluginDisableEvent;
+import io.fand.api.lifecycle.PluginEnableEvent;
 import io.fand.api.lifecycle.ServerStartedEvent;
 import io.fand.api.plugin.PluginContext;
 import java.util.ArrayList;
@@ -219,7 +229,10 @@ final class SelfTestCommand implements io.fand.api.command.CommandExecutor, io.f
             event("server", AsyncPlayerPreLoginEvent.class),
             event("server", PlayerPreLoginEvent.class),
             event("server", PlayerLoginEvent.class),
+            event("server", ServerCommandEvent.class),
             event("server", ServerListPingEvent.class),
+            event("lifecycle", PluginEnableEvent.class),
+            event("lifecycle", PluginDisableEvent.class),
             event("player", PlayerJoinEvent.class),
             event("command", PlayerQuitEvent.class),
             event("command", PlayerCommandPreprocessEvent.class),
@@ -229,14 +242,18 @@ final class SelfTestCommand implements io.fand.api.command.CommandExecutor, io.f
             event("player", PlayerDropItemEvent.class),
             event("player", PlayerPickupItemEvent.class),
             event("player", PlayerFishEvent.class),
+            event("player", PlayerAnimationEvent.class),
             event("player", PlayerItemConsumeEvent.class),
             event("player", PlayerItemDamageEvent.class),
+            event("player", PlayerItemBreakEvent.class),
+            event("player", PlayerItemMendEvent.class),
             event("player", PlayerFoodLevelChangeEvent.class),
             event("player", PlayerExperienceChangeEvent.class),
             event("player", PlayerMoveEvent.class),
             event("player", PlayerSwapHandItemsEvent.class),
             event("player", PlayerToggleSneakEvent.class),
             event("player", PlayerToggleSprintEvent.class),
+            event("player", PlayerToggleFlightEvent.class),
             event("player", PlayerTeleportEvent.class),
             event("player", PlayerPortalEvent.class),
             event("player", PlayerChangedWorldEvent.class),
@@ -266,6 +283,7 @@ final class SelfTestCommand implements io.fand.api.command.CommandExecutor, io.f
             event("player", PlayerRecipeDiscoverEvent.class),
             event("player", PlayerBucketFillEvent.class),
             event("player", PlayerBucketEmptyEvent.class),
+            event("player", PlayerRiptideEvent.class),
             event("player", EntityDamageEvent.class),
             event("entity", EntityDamageByEntityEvent.class),
             event("entity", EntityDamageByBlockEvent.class),
@@ -289,6 +307,7 @@ final class SelfTestCommand implements io.fand.api.command.CommandExecutor, io.f
             event("entity", EntityCombustByBlockEvent.class),
             event("entity", EntityCombustByEntityEvent.class),
             event("entity", EntityRegainHealthEvent.class),
+            event("entity", EntityKnockbackEvent.class),
             event("entity", ProjectileHitEvent.class),
             event("entity", ProjectileLaunchEvent.class),
             event("entity", EntityShootBowEvent.class),
@@ -297,6 +316,7 @@ final class SelfTestCommand implements io.fand.api.command.CommandExecutor, io.f
             event("entity", EntityPotionEffectEvent.class),
             event("entity", PotionSplashEvent.class),
             event("entity", LingeringPotionSplashEvent.class),
+            event("entity", AreaEffectCloudApplyEvent.class),
             event("entity", EntityMountEvent.class),
             event("entity", EntityDismountEvent.class),
             event("entity", EntityResurrectEvent.class),

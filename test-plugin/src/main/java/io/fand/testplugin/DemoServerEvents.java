@@ -5,7 +5,10 @@ import io.fand.api.event.Subscribe;
 import io.fand.api.event.player.AsyncPlayerPreLoginEvent;
 import io.fand.api.event.player.PlayerLoginEvent;
 import io.fand.api.event.player.PlayerPreLoginEvent;
+import io.fand.api.event.server.ServerCommandEvent;
 import io.fand.api.event.server.ServerListPingEvent;
+import io.fand.api.lifecycle.PluginDisableEvent;
+import io.fand.api.lifecycle.PluginEnableEvent;
 import io.fand.api.plugin.PluginContext;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -43,6 +46,13 @@ final class DemoServerEvents implements Listener {
     }
 
     @Subscribe
+    public void onServerCommand(ServerCommandEvent event) {
+        if (context.config().getBoolean("features.log-server-events", false)) {
+            logger.info("{} issued console command /{}", event.sender().name(), event.commandLine());
+        }
+    }
+
+    @Subscribe
     public void onServerListPing(ServerListPingEvent event) {
         if (context.config().getBoolean("features.decorate-server-list", true)) {
             event.setMotd(Component.text("Fand test server", NamedTextColor.AQUA)
@@ -51,6 +61,20 @@ final class DemoServerEvents implements Listener {
         if (context.config().getBoolean("features.log-server-events", false)) {
             logger.info("Server ping: online={} max={} hidden={}",
                     event.onlinePlayers(), event.maxPlayers(), event.hidePlayers());
+        }
+    }
+
+    @Subscribe
+    public void onPluginEnable(PluginEnableEvent event) {
+        if (context.config().getBoolean("features.log-server-events", false)) {
+            logger.info("Plugin enabled: {}", event.plugin().id());
+        }
+    }
+
+    @Subscribe
+    public void onPluginDisable(PluginDisableEvent event) {
+        if (context.config().getBoolean("features.log-server-events", false)) {
+            logger.info("Plugin disabled: {}", event.plugin().id());
         }
     }
 }

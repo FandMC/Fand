@@ -15,13 +15,16 @@ import io.fand.api.event.player.PlayerEggThrowEvent;
 import io.fand.api.event.player.PlayerExperienceChangeEvent;
 import io.fand.api.event.player.PlayerFoodLevelChangeEvent;
 import io.fand.api.event.player.PlayerGameModeChangeEvent;
+import io.fand.api.event.player.PlayerAnimationEvent;
 import io.fand.api.event.player.PlayerInteractEntityEvent;
 import io.fand.api.event.player.PlayerInteractEvent;
 import io.fand.api.event.player.PlayerLeashEntityEvent;
 import io.fand.api.event.player.PlayerFishEvent;
+import io.fand.api.event.player.PlayerItemBreakEvent;
 import io.fand.api.event.player.PlayerItemConsumeEvent;
 import io.fand.api.event.player.PlayerItemDamageEvent;
 import io.fand.api.event.player.PlayerItemHeldEvent;
+import io.fand.api.event.player.PlayerItemMendEvent;
 import io.fand.api.event.player.PlayerKickEvent;
 import io.fand.api.event.player.PlayerLevelChangeEvent;
 import io.fand.api.event.player.PlayerLocaleChangeEvent;
@@ -30,10 +33,12 @@ import io.fand.api.event.player.PlayerPortalEvent;
 import io.fand.api.event.player.PlayerRecipeDiscoverEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
 import io.fand.api.event.player.PlayerResourcePackStatusEvent;
+import io.fand.api.event.player.PlayerRiptideEvent;
 import io.fand.api.event.player.PlayerShearEntityEvent;
 import io.fand.api.event.player.PlayerStatisticIncrementEvent;
 import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
+import io.fand.api.event.player.PlayerToggleFlightEvent;
 import io.fand.api.event.player.PlayerToggleSneakEvent;
 import io.fand.api.event.player.PlayerToggleSprintEvent;
 import io.fand.api.event.player.PlayerUnleashEntityEvent;
@@ -306,6 +311,102 @@ public final class PlayerEvents {
             return true;
         }
         return !event.cancelled();
+    }
+
+    public static boolean fireToggleFlight(ServerPlayer player, boolean flying) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerToggleFlightEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return true;
+        }
+        var event = new PlayerToggleFlightEvent(fandPlayer, flying);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerToggleFlightEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireAnimation(ServerPlayer player, InteractionHand hand) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerAnimationEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return true;
+        }
+        var event = new PlayerAnimationEvent(
+                fandPlayer,
+                hand == InteractionHand.OFF_HAND
+                        ? PlayerAnimationEvent.Animation.SWING_OFF_HAND
+                        : PlayerAnimationEvent.Animation.SWING_MAIN_HAND);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerAnimationEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static void fireItemBreak(ServerPlayer player, net.minecraft.world.item.ItemStack itemStack) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerItemBreakEvent.class)) {
+            return;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return;
+        }
+        try {
+            bus.fire(new PlayerItemBreakEvent(fandPlayer, FandItemStacks.fromVanilla(itemStack)));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerItemBreakEvent listener failed", failure);
+        }
+    }
+
+    public static int fireItemMend(ServerPlayer player, net.minecraft.world.item.ItemStack itemStack, int repairAmount) {
+        if (repairAmount <= 0) {
+            return repairAmount;
+        }
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerItemMendEvent.class)) {
+            return repairAmount;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return repairAmount;
+        }
+        var event = new PlayerItemMendEvent(fandPlayer, FandItemStacks.fromVanilla(itemStack), repairAmount);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerItemMendEvent listener failed", failure);
+            return repairAmount;
+        }
+        return event.cancelled() ? 0 : Math.max(0, Math.min(event.repairAmount(), repairAmount));
+    }
+
+    public static void fireRiptide(net.minecraft.world.entity.player.Player player, net.minecraft.world.item.ItemStack itemStack) {
+        var bus = FandHooks.events();
+        if (!(player instanceof ServerPlayer serverPlayer) || !bus.hasListeners(PlayerRiptideEvent.class)) {
+            return;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(serverPlayer.getUUID());
+        if (fandPlayer == null) {
+            return;
+        }
+        try {
+            bus.fire(new PlayerRiptideEvent(fandPlayer, FandItemStacks.fromVanilla(itemStack)));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerRiptideEvent listener failed", failure);
+        }
     }
 
     public static boolean fireItemHeld(ServerPlayer player, int previousSlot, int newSlot) {

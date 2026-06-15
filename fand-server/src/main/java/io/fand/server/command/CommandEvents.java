@@ -4,6 +4,7 @@ import io.fand.api.command.CommandSender;
 import io.fand.api.event.command.CommandExecuteEvent;
 import io.fand.api.event.command.TabCompleteEvent;
 import io.fand.api.event.player.PlayerCommandPreprocessEvent;
+import io.fand.api.event.server.ServerCommandEvent;
 import io.fand.server.hooks.FandHooks;
 import java.util.List;
 import java.util.Optional;
@@ -66,6 +67,21 @@ public final class CommandEvents {
             return Optional.of(stripCommandPrefix(command));
         }
         return event.cancelled() ? Optional.empty() : Optional.of(event.command());
+    }
+
+    public static Optional<String> fireServerCommand(CommandSourceStack source, String command) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(ServerCommandEvent.class)) {
+            return Optional.of(stripCommandPrefix(command));
+        }
+        var event = new ServerCommandEvent(sender(source), command);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("ServerCommandEvent listener failed", failure);
+            return Optional.of(stripCommandPrefix(command));
+        }
+        return event.cancelled() ? Optional.empty() : Optional.of(event.commandLine());
     }
 
     public static Optional<List<String>> fireTabComplete(ServerPlayer player, String buffer, List<String> completions) {

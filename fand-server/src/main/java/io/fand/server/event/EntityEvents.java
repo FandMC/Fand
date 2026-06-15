@@ -13,6 +13,8 @@ import io.fand.api.event.entity.EntityDamageByEntityEvent;
 import io.fand.api.event.entity.EntityDamageEvent;
 import io.fand.api.event.entity.DamageModifier;
 import io.fand.api.event.entity.EntityExplodeEvent;
+import io.fand.api.event.entity.AreaEffectCloudApplyEvent;
+import io.fand.api.event.entity.EntityKnockbackEvent;
 import io.fand.api.event.entity.EntityMountEvent;
 import io.fand.api.event.entity.EntityPickupItemEvent;
 import io.fand.api.event.entity.EntityPortalEvent;
@@ -47,6 +49,7 @@ import io.fand.api.event.vehicle.VehicleDestroyEvent;
 import io.fand.api.event.vehicle.VehicleEnterEvent;
 import io.fand.api.event.vehicle.VehicleExitEvent;
 import io.fand.api.event.vehicle.VehicleMoveEvent;
+import io.fand.api.world.Vector3;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
 import io.fand.server.block.FandBlock;
@@ -379,6 +382,68 @@ public final class EntityEvents {
             return amount;
         }
         return event.cancelled() ? 0.0F : (float) event.amount();
+    }
+
+    public static @Nullable Vec3 fireKnockback(
+            net.minecraft.world.entity.LivingEntity entity,
+            DamageSource source,
+            Vec3 velocity
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(EntityKnockbackEvent.class)) {
+            return velocity;
+        }
+        var fandEntity = FandHooks.wrapLivingEntity(entity);
+        if (fandEntity == null) {
+            return velocity;
+        }
+        var event = new EntityKnockbackEvent(
+                fandEntity,
+                source.getEntity() == null ? null : FandHooks.wrapEntity(source.getEntity()),
+                new Vector3(velocity.x, velocity.y, velocity.z));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityKnockbackEvent listener failed", failure);
+            return velocity;
+        }
+        return event.cancelled() ? null : new Vec3(event.velocity().x(), event.velocity().y(), event.velocity().z());
+    }
+
+    public static @Nullable List<net.minecraft.world.entity.LivingEntity> fireAreaEffectCloudApply(
+            net.minecraft.world.entity.AreaEffectCloud cloud,
+            List<net.minecraft.world.entity.LivingEntity> affectedEntities
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(AreaEffectCloudApplyEvent.class)) {
+            return affectedEntities;
+        }
+        var fandCloud = FandHooks.wrapEntity(cloud);
+        if (!(fandCloud instanceof io.fand.api.entity.AreaEffectCloud apiCloud)) {
+            return affectedEntities;
+        }
+        var apiAffected = affectedEntities.stream()
+                .map(FandHooks::wrapLivingEntity)
+                .filter(Objects::nonNull)
+                .toList();
+        var event = new AreaEffectCloudApplyEvent(apiCloud, apiAffected);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("AreaEffectCloudApplyEvent listener failed", failure);
+            return affectedEntities;
+        }
+        if (event.cancelled()) {
+            return null;
+        }
+        var result = new ArrayList<net.minecraft.world.entity.LivingEntity>();
+        for (var entity : event.affectedEntities()) {
+            var vanilla = FandHooks.unwrapEntity(entity);
+            if (vanilla instanceof net.minecraft.world.entity.LivingEntity living && living.level() == cloud.level()) {
+                result.add(living);
+            }
+        }
+        return result;
     }
 
     public static EntityRegainHealthEvent.Cause currentHealCause() {

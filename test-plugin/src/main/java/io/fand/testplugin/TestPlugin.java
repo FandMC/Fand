@@ -4,6 +4,8 @@ import static io.fand.testplugin.DemoSupport.*;
 
 import io.fand.api.Fand;
 import io.fand.api.Server;
+import io.fand.api.advancement.CustomAdvancement;
+import io.fand.api.enchantment.CustomEnchantment;
 import io.fand.api.event.player.PlayerJoinEvent;
 import io.fand.api.event.world.ChunkLoadEvent;
 import io.fand.api.event.world.ChunkUnloadEvent;
@@ -17,9 +19,11 @@ import io.fand.api.plugin.Plugin;
 import io.fand.api.plugin.PluginContext;
 import io.fand.api.world.World;
 import java.time.Duration;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
@@ -60,6 +64,7 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new SelfTestCommand(context));
         context.commands().register(new GuiCommand(context, demoGuiViewers));
         registerDemoRecipes(context);
+        registerCustomRegistries(context);
         context.events().subscribe(ServerStartedEvent.class, event ->
                 context.logger().info("Server started; Fand brand={} version={} minecraft={}",
                         event.server().brand(), event.server().version(), event.server().minecraftVersion()));
@@ -115,5 +120,22 @@ public final class TestPlugin implements Plugin {
     @Override
     public void onDisable(PluginContext context) {
         context.logger().info("test-plugin disabled");
+    }
+
+    private static void registerCustomRegistries(PluginContext context) {
+        var quickening = context.enchantments().register(new CustomEnchantment(
+                Key.key("fand-test-plugin:quickening"),
+                Component.text("Quickening"),
+                3));
+        var firstStep = context.advancements().register(new CustomAdvancement(
+                Key.key("fand-test-plugin:first_step"),
+                Component.text("First Step"),
+                Component.text("Registered by the Fand test plugin"),
+                List.of("done")));
+
+        context.logger().info("Registered custom enchantment {} active={}",
+                quickening.key().asString(), quickening.active());
+        context.logger().info("Registered custom advancement {} active={}",
+                firstStep.key().asString(), firstStep.active());
     }
 }
