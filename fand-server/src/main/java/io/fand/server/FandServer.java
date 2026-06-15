@@ -26,6 +26,7 @@ import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.structure.StructureService;
+import io.fand.api.tag.TagRegistry;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldCreateOptions;
 import io.fand.api.world.WorldTemplate;
@@ -59,6 +60,7 @@ import io.fand.server.recipe.FandRecipeRegistry;
 import io.fand.server.scheduler.TaskScheduler;
 import io.fand.server.scoreboard.FandScoreboardService;
 import io.fand.server.structure.FandStructureService;
+import io.fand.server.tag.FandTagRegistry;
 import io.fand.server.tag.FandTags;
 import io.fand.server.world.WorldRegistry;
 import java.nio.file.Path;
@@ -112,6 +114,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final FandEnchantmentRegistry enchantments;
     private final FandStructureService structures;
     private final FandMapService maps;
+    private final FandTagRegistry tags;
     private final PluginRuntime plugins;
     private final PlayerRegistry players;
     private final FandPlayerAccessService playerAccess;
@@ -157,6 +160,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.enchantments = new FandEnchantmentRegistry(minecraftServer::get);
         this.structures = new FandStructureService(minecraftServer::get);
         this.maps = new FandMapService(minecraftServer::get);
+        this.tags = new FandTagRegistry();
         this.players = new PlayerRegistry(permissions);
         this.playerAccess = new FandPlayerAccessService(minecraftServer::get);
         this.performance = new ServerPerformanceTracker(() -> chunks.metrics().pendingJobs());
@@ -399,6 +403,11 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public MapService maps() {
         return maps;
+    }
+
+    @Override
+    public TagRegistry tags() {
+        return tags;
     }
 
     @Override

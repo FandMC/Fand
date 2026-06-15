@@ -97,10 +97,10 @@ public final class ChunkSendScheduler implements AutoCloseable {
                 appliedJobs.incrementAndGet();
                 enteredChunks.addAndGet(diff.enter().size());
                 leftChunks.addAndGet(diff.leave().size());
+                applied++;
             } else {
                 staleJobs.incrementAndGet();
             }
-            applied++;
         }
         return applied;
     }

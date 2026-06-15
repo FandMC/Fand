@@ -23,8 +23,6 @@ import io.fand.api.world.World;
 import io.fand.server.item.FandCustomItemRegistry;
 import io.fand.server.component.BlockComponentStorage;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -39,7 +37,8 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
 
     private final ConcurrentHashMap<Key, RegisteredCustomBlock> types = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Key, RegisteredItemBinding> itemBindings = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<ChunkKey, Set<BlockPosKey>> activeTickingBlocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Key, ConcurrentHashMap<ChunkKey, Set<BlockPosKey>>> activeTickingBlocksByWorld =
+            new ConcurrentHashMap<>();
     private final EventBus events;
     private final FandCustomItemRegistry customItems;
     private final AtomicReference<LifecycleSubscriptions> lifecycleSubscriptions = new AtomicReference<>();
@@ -196,7 +195,7 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         if (types.isEmpty()) {
             return;
         }
-        var active = new HashSet<BlockPosKey>();
+        var active = ConcurrentHashMap.<BlockPosKey>newKeySet();
         for (var block : customBlocks(world, chunkX, chunkZ)) {
             customId(block).flatMap(this::activeRegistration).ifPresent(registered -> {
                 if (registered.type().ticking()) {
@@ -207,9 +206,11 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         }
         var chunkKey = new ChunkKey(world.key(), chunkX, chunkZ);
         if (active.isEmpty()) {
-            activeTickingBlocks.remove(chunkKey);
+            removeActiveTickingChunk(chunkKey);
         } else {
-            activeTickingBlocks.put(chunkKey, Collections.synchronizedSet(active));
+            activeTickingBlocksByWorld
+                    .computeIfAbsent(world.key(), ignored -> new ConcurrentHashMap<>())
+                    .put(chunkKey, active);
         }
     }
 
@@ -217,7 +218,7 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         if (types.isEmpty()) {
             return;
         }
-        activeTickingBlocks.remove(new ChunkKey(world.key(), chunkX, chunkZ));
+        removeActiveTickingChunk(new ChunkKey(world.key(), chunkX, chunkZ));
         for (var block : customBlocks(world, chunkX, chunkZ)) {
             customId(block).flatMap(this::activeRegistration).ifPresent(registered -> fireUnloaded(registered, block));
         }
@@ -227,13 +228,16 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         if (types.values().stream().noneMatch(registration -> registration.active() && registration.type().ticking())) {
             return;
         }
+        var activeTickingBlocks = activeTickingBlocksByWorld.get(world.key());
+        if (activeTickingBlocks == null) {
+            return;
+        }
         for (var entry : activeTickingBlocks.entrySet()) {
             var chunk = entry.getKey();
-            if (!chunk.world().equals(world.key()) || !world.chunkLoaded(chunk.chunkX(), chunk.chunkZ())) {
+            if (!world.chunkLoaded(chunk.chunkX(), chunk.chunkZ())) {
                 continue;
             }
-            var positions = entry.getValue().toArray(BlockPosKey[]::new);
-            for (var position : positions) {
+            for (var position : entry.getValue()) {
                 var block = world.blockAt(position.x(), position.y(), position.z());
                 var registered = customId(block).flatMap(this::activeRegistration).orElse(null);
                 if (registered == null || !registered.type().ticking()) {
@@ -296,7 +300,7 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         });
         if (types.isEmpty()) {
             closeLifecycleSubscriptions();
-            activeTickingBlocks.clear();
+            activeTickingBlocksByWorld.clear();
         }
     }
 
@@ -309,8 +313,9 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         var position = BlockPosKey.of(block);
         var registered = customId(block).flatMap(this::activeRegistration).orElse(null);
         if (registered != null && registered.type().ticking() && block.world().chunkLoaded(chunkKey.chunkX(), chunkKey.chunkZ())) {
-            activeTickingBlocks
-                    .computeIfAbsent(chunkKey, ignored -> Collections.synchronizedSet(new HashSet<>()))
+            activeTickingBlocksByWorld
+                    .computeIfAbsent(chunkKey.world(), ignored -> new ConcurrentHashMap<>())
+                    .computeIfAbsent(chunkKey, ignored -> ConcurrentHashMap.newKeySet())
                     .add(position);
         } else {
             removeActiveTickingBlock(block);
@@ -318,9 +323,26 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
     }
 
     private void removeActiveTickingBlock(Block block) {
-        var positions = activeTickingBlocks.get(new ChunkKey(block.world().key(), block.x() >> 4, block.z() >> 4));
+        var positions = activeTickingBlocks(block.world().key())
+                .map(chunks -> chunks.get(new ChunkKey(block.world().key(), block.x() >> 4, block.z() >> 4)))
+                .orElse(null);
         if (positions != null) {
             positions.remove(BlockPosKey.of(block));
+        }
+    }
+
+    private Optional<ConcurrentHashMap<ChunkKey, Set<BlockPosKey>>> activeTickingBlocks(Key world) {
+        return Optional.ofNullable(activeTickingBlocksByWorld.get(world));
+    }
+
+    private void removeActiveTickingChunk(ChunkKey chunkKey) {
+        var chunks = activeTickingBlocksByWorld.get(chunkKey.world());
+        if (chunks == null) {
+            return;
+        }
+        chunks.remove(chunkKey);
+        if (chunks.isEmpty()) {
+            activeTickingBlocksByWorld.remove(chunkKey.world(), chunks);
         }
     }
 

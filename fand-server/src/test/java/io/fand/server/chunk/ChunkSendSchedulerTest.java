@@ -85,9 +85,36 @@ final class ChunkSendSchedulerTest {
             scheduler.submitTrackingDiff("minecraft:overworld", snapshot(LongList.of(), LongList.of(1L)));
             awaitCompleted(scheduler, 1);
 
-            assertThat(scheduler.applyCompleted("minecraft:overworld", diff -> false)).isEqualTo(1);
+            assertThat(scheduler.applyCompleted("minecraft:overworld", diff -> false)).isZero();
             assertThat(scheduler.metrics().staleJobs()).isEqualTo(1L);
             assertThat(scheduler.metrics().appliedJobs()).isZero();
+        }
+    }
+
+    @Test
+    void staleDiffsDoNotConsumeApplyBudget() throws Exception {
+        var config = new FandConfig.Chunks();
+        config.workerThreads = 1;
+        config.trackingDiffApplyBudget = 1;
+        try (var scheduler = new ChunkSendScheduler(config)) {
+            scheduler.submitTrackingDiff("minecraft:overworld", snapshot(LongList.of(), LongList.of(1L)));
+            scheduler.submitTrackingDiff("minecraft:overworld", snapshot(LongList.of(), LongList.of(2L)));
+            awaitCompleted(scheduler, 2);
+
+            assertThat(scheduler.applyCompleted("minecraft:overworld", new ChunkSendScheduler.TrackingDiffApplier() {
+                private boolean reject = true;
+
+                @Override
+                public boolean apply(ChunkTrackingDiff diff) {
+                    if (reject) {
+                        reject = false;
+                        return false;
+                    }
+                    return true;
+                }
+            })).isEqualTo(1);
+            assertThat(scheduler.metrics().staleJobs()).isEqualTo(1L);
+            assertThat(scheduler.metrics().appliedJobs()).isEqualTo(1L);
         }
     }
 

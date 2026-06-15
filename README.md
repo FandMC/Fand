@@ -28,12 +28,12 @@ We use **paperweight-core** to manage the workflow.
 piston-meta → paperweight → vanilla-bundler.jar
             → unbundleServer → vanilla-server.jar
             → decompileServer → decompiled/ (via Mache patches)
-            → applyPatches → fand-server/src/minecraft/ (git-applied from fand-server/patches/)
+            → applyPatches → fand-server/src/minecraft/java (git-applied from fand-server/patches/)
 edit sources → rebuildPatches → fand-server/patches/ (updated)
 ```
 
 Paperweight tasks are automatically available in the `:fand-server` subproject.
-The patched Minecraft code lives in `fand-server/src/minecraft/` after setup.
+The patched Minecraft code lives in `fand-server/src/minecraft/java` after setup.
 
 ## Status
 

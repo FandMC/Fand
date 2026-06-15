@@ -3,12 +3,14 @@ package io.fand.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.fand.api.entity.EntityKey;
-import io.fand.server.config.FandConfig;
+import io.fand.api.tag.TagRegistryType;
 import io.fand.server.advancement.FandAdvancementRegistry;
+import io.fand.server.config.FandConfig;
 import io.fand.server.enchantment.FandEnchantmentRegistry;
 import io.fand.server.loot.FandLootTableService;
 import io.fand.server.map.FandMapService;
 import io.fand.server.structure.FandStructureService;
+import io.fand.server.tag.FandTagRegistry;
 import net.kyori.adventure.key.Key;
 import net.minecraft.SharedConstants;
 import net.minecraft.server.Bootstrap;
@@ -52,6 +54,16 @@ final class FandServerRegistryLookupTest {
             assertThat(server.structures().template(Key.key("minecraft:village/plains/houses/plains_small_house_1"))).isEmpty();
             assertThat(server.maps()).isInstanceOf(FandMapService.class);
             assertThat(server.maps().map(0)).isEmpty();
+        }
+    }
+
+    @Test
+    void exposesUnifiedTagRegistry() {
+        try (var server = new FandServer(new FandConfig(), getClass().getClassLoader())) {
+            assertThat(server.tags()).isInstanceOf(FandTagRegistry.class);
+            assertThat(server.tags().tags(TagRegistryType.BLOCK)).isNotNull();
+            assertThat(server.tags().tags(TagRegistryType.ITEM)).isNotNull();
+            assertThat(server.tags().tags(TagRegistryType.ENTITY_TYPE)).isNotNull();
         }
     }
 }

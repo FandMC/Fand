@@ -17,7 +17,7 @@ import java.time.Duration;
  * {@link HttpClient} and a hand-rolled JSON-string scan since we only need three
  * fields ({@code url}, {@code sha1}, manifest entry's {@code url}).
  */
-final class VanillaDownloader {
+class VanillaDownloader {
 
     private static final String VERSION_MANIFEST_URL =
             "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
@@ -28,20 +28,37 @@ final class VanillaDownloader {
             .build();
 
     void download(String version, Path target) throws IOException, InterruptedException {
-        String manifest = getString(VERSION_MANIFEST_URL);
-        String versionUrl = findVersionUrl(manifest, version);
-        if (versionUrl == null) {
-            throw new IOException("Version " + version + " not in piston manifest");
-        }
-        String versionJson = getString(versionUrl);
-        ServerDownload sd = parseServerDownload(versionJson);
+        ServerDownload sd = serverDownload(version);
         if (sd == null) {
             throw new IOException("Version " + version + " has no server download");
         }
         downloadVerified(sd.url, sd.sha1, target);
     }
 
-    private void downloadVerified(String url, String expectedSha1, Path target) throws IOException, InterruptedException {
+    void ensureCached(String version, Path target) throws IOException, InterruptedException {
+        ServerDownload sd = serverDownload(version);
+        if (sd == null) {
+            throw new IOException("Version " + version + " has no server download");
+        }
+        if (Files.exists(target) && sd.sha1.equalsIgnoreCase(FileHashes.sha1(target))) {
+            return;
+        }
+        if (Files.exists(target)) {
+            Files.delete(target);
+        }
+        downloadVerified(sd.url, sd.sha1, target);
+    }
+
+    private ServerDownload serverDownload(String version) throws IOException, InterruptedException {
+        String manifest = getString(VERSION_MANIFEST_URL);
+        String versionUrl = findVersionUrl(manifest, version);
+        if (versionUrl == null) {
+            throw new IOException("Version " + version + " not in piston manifest");
+        }
+        return parseServerDownload(getString(versionUrl));
+    }
+
+    void downloadVerified(String url, String expectedSha1, Path target) throws IOException, InterruptedException {
         Files.createDirectories(target.getParent());
         Path tmp = target.resolveSibling(target.getFileName() + ".part");
         HttpRequest req = HttpRequest.newBuilder(URI.create(url)).GET().build();
@@ -58,7 +75,7 @@ final class VanillaDownloader {
         Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
     }
 
-    private String getString(String url) throws IOException, InterruptedException {
+    String getString(String url) throws IOException, InterruptedException {
         HttpRequest req = HttpRequest.newBuilder(URI.create(url)).GET().build();
         HttpResponse<InputStream> resp = http.send(req, HttpResponse.BodyHandlers.ofInputStream());
         if (resp.statusCode() / 100 != 2) {

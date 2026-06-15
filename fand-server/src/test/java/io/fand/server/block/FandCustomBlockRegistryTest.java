@@ -71,6 +71,28 @@ class FandCustomBlockRegistryTest {
     }
 
     @Test
+    void tickOnlyScansActiveChunksForRequestedWorld() {
+        var overworld = new TestWorld(Key.key("minecraft:overworld"));
+        var nether = new TestWorld(Key.key("minecraft:the_nether"));
+        var overworldBlock = overworld.blockAt(1, 64, 1);
+        var netherBlock = nether.blockAt(1, 64, 1);
+        var events = new ArrayList<String>();
+        var registry = new FandCustomBlockRegistry(new NoopEventBus());
+        registry.register(new CustomBlockType(MACHINE_ID, STONE, DataComponentMap.EMPTY, true), new CustomBlockListener() {
+            @Override
+            public void tick(CustomBlockContext context) {
+                events.add(context.block().world().key().asString());
+            }
+        });
+
+        registry.place(overworldBlock, MACHINE_ID);
+        registry.place(netherBlock, MACHINE_ID);
+        registry.tick(overworld);
+
+        assertThat(events).containsExactly("minecraft:overworld");
+    }
+
+    @Test
     void removeFiresBrokenAndClearsComponents() {
         var world = new TestWorld();
         var block = world.blockAt(1, 64, 1);
@@ -110,10 +132,19 @@ class FandCustomBlockRegistryTest {
     private static final class TestWorld implements World {
 
         private final Map<String, TestBlock> blocks = new java.util.concurrent.ConcurrentHashMap<>();
+        private final Key key;
+
+        private TestWorld() {
+            this(Key.key("minecraft:overworld"));
+        }
+
+        private TestWorld(Key key) {
+            this.key = key;
+        }
 
         @Override
         public Key key() {
-            return Key.key("minecraft:overworld");
+            return key;
         }
 
         @Override
