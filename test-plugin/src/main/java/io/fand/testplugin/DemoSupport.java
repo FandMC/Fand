@@ -69,6 +69,8 @@ final class DemoSupport {
     static final Key DEMO_NAVIGATOR_RECIPE = Key.key("fand-test-plugin:kit_navigator");
     static final Key DEMO_SNACK_RECIPE = Key.key("fand-test-plugin:demo_snack");
     static final Key DEMO_GLASS_RECIPE = Key.key("fand-test-plugin:cut_glass");
+    static final Key MERCY_ENCHANTMENT = Key.key("fand-test-plugin:mercy");
+    static final Key PLUNDER_ENCHANTMENT = Key.key("fand-test-plugin:plunder");
 
     static final List<String> SAMPLE_BLOCKS = List.of(
             "minecraft:stone",
@@ -410,6 +412,38 @@ final class DemoSupport {
                 .withFood(new ItemFood(6, 8.0F, true))
                 .withConsumable(ItemConsumable.DEFAULT)
                 .withCustomData(customData);
+    }
+
+    static ItemStack demoMercyWeapon() {
+        var customData = new JsonObject();
+        customData.addProperty("created_by", "fand-test-plugin");
+        customData.addProperty("demo_role", "fand_mercy_weapon");
+        return ItemTypes.of("minecraft:diamond_sword").one()
+                .withCustomName(Component.text("\u4EC1\u6148\u5251", NamedTextColor.GREEN))
+                .withLore(
+                        Component.text("\u4EC1\u6148: \u653B\u51FB\u5B9E\u4F53\u65F6\u4F24\u5BB3\u53D8\u4E3A 0\u3002", NamedTextColor.GREEN))
+                .withRarity(ItemRarity.RARE)
+                .withEnchantmentGlintOverride(true)
+                .withEnchantment(MERCY_ENCHANTMENT, 1)
+                .withCustomData(customData);
+    }
+
+    static ItemStack demoPlunderWeapon() {
+        var customData = new JsonObject();
+        customData.addProperty("created_by", "fand-test-plugin");
+        customData.addProperty("demo_role", "fand_plunder_weapon");
+        return ItemTypes.of("minecraft:iron_sword").one()
+                .withCustomName(Component.text("\u63A0\u593A\u5251", NamedTextColor.GOLD))
+                .withLore(
+                        Component.text("\u63A0\u593A: \u653B\u51FB\u5B9E\u4F53\u65F6\u6389\u843D\u76EE\u6807\u624B\u6301\u7269\u3002", NamedTextColor.YELLOW))
+                .withRarity(ItemRarity.UNCOMMON)
+                .withEnchantmentGlintOverride(true)
+                .withEnchantment(PLUNDER_ENCHANTMENT, 1)
+                .withCustomData(customData);
+    }
+
+    static boolean hasEnchantment(ItemStack stack, Key enchantment) {
+        return !stack.isEmpty() && stack.enchantments().has(enchantment);
     }
 
     static boolean isKitNavigator(ItemStack stack) {

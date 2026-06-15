@@ -44,6 +44,8 @@ final class KitCommand implements CommandExecutor, CommandCompleter {
         accepted += give(target, demoKitNavigator(ItemTypes.of(ItemKey.COMPASS), target.name()), 1);
         accepted += give(target, demoKitBook(ItemTypes.of(ItemKey.WRITTEN_BOOK), target.name()), 1);
         accepted += give(target, demoKitSnack(ItemTypes.of(ItemKey.GOLDEN_APPLE)), 8);
+        accepted += give(target, demoMercyWeapon(), 1);
+        accepted += give(target, demoPlunderWeapon(), 1);
 
         sendKitPresentation(context, target);
         openDemoInventory(

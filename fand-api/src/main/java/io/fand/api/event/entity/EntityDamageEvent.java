@@ -18,7 +18,9 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>The damage amount is mutable and reflects the post-armor, post-effect
  * value vanilla intends to apply. Setting it to zero is equivalent to
- * cancelling. Negative values are clamped to zero by the runtime.
+ * cancelling. Negative values are clamped to zero by the runtime. Use
+ * {@link #setDamageApplicationCancelled(boolean)} to keep the hit feedback
+ * while preventing health/absorption damage from being applied.
  */
 public class EntityDamageEvent implements Event, Cancellable {
 
@@ -29,6 +31,7 @@ public class EntityDamageEvent implements Event, Cancellable {
     private final EnumMap<DamageModifier, Double> modifiers;
     private double amount;
     private boolean cancelled;
+    private boolean damageApplicationCancelled;
 
     public EntityDamageEvent(LivingEntity entity, String cause, double amount) {
         this(entity, DamageCause.of(cause), amount, null, null);
@@ -127,6 +130,23 @@ public class EntityDamageEvent implements Event, Cancellable {
     public void setModifier(DamageModifier modifier, double amount) {
         modifiers.put(Objects.requireNonNull(modifier, "modifier"), amount);
         this.amount = modifiers.values().stream().mapToDouble(Double::doubleValue).sum();
+    }
+
+    /**
+     * Whether the hit should continue through vanilla feedback but skip the
+     * final health/absorption damage application.
+     */
+    public boolean damageApplicationCancelled() {
+        return damageApplicationCancelled;
+    }
+
+    /**
+     * Cancels only final health/absorption damage application. Unlike
+     * {@link #setCancelled(boolean)}, this keeps hit feedback such as hurt
+     * animation, sound, and knockback in the vanilla damage flow.
+     */
+    public void setDamageApplicationCancelled(boolean damageApplicationCancelled) {
+        this.damageApplicationCancelled = damageApplicationCancelled;
     }
 
     @Override

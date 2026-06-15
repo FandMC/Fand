@@ -14,6 +14,7 @@ import io.fand.api.event.entity.EntityCombustEvent;
 import io.fand.api.event.entity.EntityCreatePortalEvent;
 import io.fand.api.event.entity.EntityDamageByBlockEvent;
 import io.fand.api.event.entity.EntityDamageByEntityEvent;
+import io.fand.api.event.entity.DamageCause;
 import io.fand.api.event.entity.EntityDeathEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
 import io.fand.api.event.entity.EntityDropItemEvent;
@@ -46,6 +47,8 @@ import io.fand.api.event.entity.PlayerItemFrameChangeEvent;
 import io.fand.api.event.entity.PotionSplashEvent;
 import io.fand.api.event.entity.ProjectileHitEvent;
 import io.fand.api.event.entity.ProjectileLaunchEvent;
+import io.fand.api.item.ItemStack;
+import io.fand.api.item.component.ItemEquipmentSlot;
 import io.fand.api.event.vehicle.VehicleCreateEvent;
 import io.fand.api.event.vehicle.VehicleDestroyEvent;
 import io.fand.api.event.vehicle.VehicleEnterEvent;
@@ -241,6 +244,18 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
+        if (isPlayerMeleeAttack(event)
+                && hasEnchantment(((Player) event.damager()).inventory().heldItem(), MERCY_ENCHANTMENT)) {
+            event.setAmount(0.0);
+        }
+        if (isPlayerMeleeAttack(event)
+                && hasEnchantment(((Player) event.damager()).inventory().heldItem(), PLUNDER_ENCHANTMENT)) {
+            var stolen = plunderTargetItem(event.entity());
+            if (stolen != null) {
+                event.entity().setEquipment(stolen.slot(), ItemStack.EMPTY);
+                event.entity().world().dropItem(event.entity().location(), stolen.stack());
+            }
+        }
         if (context.config().getBoolean("features.log-entity-detail-events", false)) {
             logger.info("Entity attacked: {} <- {} cause={} amount={}",
                     event.entity().type().key().asString(),
@@ -261,6 +276,28 @@ final class DemoEntityEvents implements Listener {
                     event.cause(),
                     trim(event.amount()));
         }
+    }
+
+    private static boolean isPlayerMeleeAttack(EntityDamageByEntityEvent event) {
+        return event.damager() instanceof Player && event.damageCause().equals(DamageCause.PLAYER_ATTACK);
+    }
+
+    private static PlunderedItem plunderTargetItem(io.fand.api.entity.Entity entity) {
+        if (!(entity instanceof io.fand.api.entity.LivingEntity target)) {
+            return null;
+        }
+        ItemStack mainhand = target.equipment(ItemEquipmentSlot.MAINHAND);
+        if (!mainhand.isEmpty()) {
+            return new PlunderedItem(ItemEquipmentSlot.MAINHAND, mainhand);
+        }
+        ItemStack offhand = target.equipment(ItemEquipmentSlot.OFFHAND);
+        if (!offhand.isEmpty()) {
+            return new PlunderedItem(ItemEquipmentSlot.OFFHAND, offhand);
+        }
+        return null;
+    }
+
+    private record PlunderedItem(ItemEquipmentSlot slot, ItemStack stack) {
     }
 
     @Subscribe

@@ -127,14 +127,24 @@ public final class TestPlugin implements Plugin {
                 Key.key("fand-test-plugin:quickening"),
                 Component.text("Quickening"),
                 3));
+        var mercy = context.enchantments().register(new CustomEnchantment(
+                MERCY_ENCHANTMENT,
+                Component.text("仁慈"),
+                1));
+        var plunder = context.enchantments().register(new CustomEnchantment(
+                PLUNDER_ENCHANTMENT,
+                Component.text("掠夺"),
+                1));
         var firstStep = context.advancements().register(new CustomAdvancement(
                 Key.key("fand-test-plugin:first_step"),
                 Component.text("First Step"),
                 Component.text("Registered by the Fand test plugin"),
                 List.of("done")));
 
-        context.logger().info("Registered custom enchantment {} active={}",
-                quickening.key().asString(), quickening.active());
+        context.logger().info("Registered custom enchantments: {}={} {}={} {}={}",
+                quickening.key().asString(), quickening.active(),
+                mercy.key().asString(), mercy.active(),
+                plunder.key().asString(), plunder.active());
         context.logger().info("Registered custom advancement {} active={}",
                 firstStep.key().asString(), firstStep.active());
     }
