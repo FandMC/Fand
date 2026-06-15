@@ -1,11 +1,14 @@
 package io.fand.server.plugin;
 
+import io.fand.api.advancement.AdvancementRegistration;
 import io.fand.api.command.CommandRegistration;
 import io.fand.api.customblock.CustomBlockItemBinding;
 import io.fand.api.customblock.CustomBlockRegistration;
 import io.fand.api.customitem.CustomItemRegistration;
+import io.fand.api.enchantment.EnchantmentRegistration;
 import io.fand.api.event.EventSubscription;
 import io.fand.api.gui.GuiView;
+import io.fand.api.messaging.PluginMessageRegistration;
 import io.fand.api.packet.PacketRegistration;
 import io.fand.api.recipe.RecipeRegistration;
 import io.fand.api.scheduler.Task;
@@ -25,6 +28,9 @@ final class PluginResourceTracker {
     private final Set<TrackedRecipeRegistration> recipeRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedScoreboardRegistration> scoreboardRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPacketRegistration> packetRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedPluginMessageRegistration> pluginMessageRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedAdvancementRegistration> advancementRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedEnchantmentRegistration> enchantmentRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCustomItemRegistration> customItemRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCustomBlockRegistration> customBlockRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCustomBlockItemBinding> customBlockItemBindings = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -108,6 +114,22 @@ final class PluginResourceTracker {
         return tracked;
     }
 
+    TrackedPluginMessageRegistration track(PluginMessageRegistration delegate) {
+        var tracked = new TrackedPluginMessageRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                pluginMessageRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.closeFromTracker();
+        }
+        return tracked;
+    }
+
     TrackedScoreboardRegistration track(ScoreboardRegistration delegate) {
         var tracked = new TrackedScoreboardRegistration(this, delegate);
         var dispose = false;
@@ -120,6 +142,38 @@ final class PluginResourceTracker {
         }
         if (dispose) {
             tracked.unregisterFromTracker();
+        }
+        return tracked;
+    }
+
+    TrackedAdvancementRegistration track(AdvancementRegistration delegate) {
+        var tracked = new TrackedAdvancementRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                advancementRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.closeFromTracker();
+        }
+        return tracked;
+    }
+
+    TrackedEnchantmentRegistration track(EnchantmentRegistration delegate) {
+        var tracked = new TrackedEnchantmentRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                enchantmentRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.closeFromTracker();
         }
         return tracked;
     }
@@ -224,6 +278,24 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedPluginMessageRegistration registration) {
+        synchronized (lock) {
+            pluginMessageRegistrations.remove(registration);
+        }
+    }
+
+    void release(TrackedAdvancementRegistration registration) {
+        synchronized (lock) {
+            advancementRegistrations.remove(registration);
+        }
+    }
+
+    void release(TrackedEnchantmentRegistration registration) {
+        synchronized (lock) {
+            enchantmentRegistrations.remove(registration);
+        }
+    }
+
     void release(TrackedCustomItemRegistration registration) {
         synchronized (lock) {
             customItemRegistrations.remove(registration);
@@ -273,6 +345,9 @@ final class PluginResourceTracker {
         List<TrackedRecipeRegistration> recipeRegistrationsToClose;
         List<TrackedScoreboardRegistration> scoreboardRegistrationsToClose;
         List<TrackedPacketRegistration> packetRegistrationsToClose;
+        List<TrackedPluginMessageRegistration> pluginMessageRegistrationsToClose;
+        List<TrackedAdvancementRegistration> advancementRegistrationsToClose;
+        List<TrackedEnchantmentRegistration> enchantmentRegistrationsToClose;
         List<TrackedCustomItemRegistration> customItemRegistrationsToClose;
         List<TrackedCustomBlockRegistration> customBlockRegistrationsToClose;
         List<TrackedCustomBlockItemBinding> customBlockItemBindingsToClose;
@@ -288,6 +363,9 @@ final class PluginResourceTracker {
             recipeRegistrationsToClose = new ArrayList<>(recipeRegistrations);
             scoreboardRegistrationsToClose = new ArrayList<>(scoreboardRegistrations);
             packetRegistrationsToClose = new ArrayList<>(packetRegistrations);
+            pluginMessageRegistrationsToClose = new ArrayList<>(pluginMessageRegistrations);
+            advancementRegistrationsToClose = new ArrayList<>(advancementRegistrations);
+            enchantmentRegistrationsToClose = new ArrayList<>(enchantmentRegistrations);
             customItemRegistrationsToClose = new ArrayList<>(customItemRegistrations);
             customBlockRegistrationsToClose = new ArrayList<>(customBlockRegistrations);
             customBlockItemBindingsToClose = new ArrayList<>(customBlockItemBindings);
@@ -298,6 +376,9 @@ final class PluginResourceTracker {
             recipeRegistrations.clear();
             scoreboardRegistrations.clear();
             packetRegistrations.clear();
+            pluginMessageRegistrations.clear();
+            advancementRegistrations.clear();
+            enchantmentRegistrations.clear();
             customItemRegistrations.clear();
             customBlockRegistrations.clear();
             customBlockItemBindings.clear();
@@ -318,6 +399,15 @@ final class PluginResourceTracker {
         }
         for (var registration : packetRegistrationsToClose) {
             registration.unregisterFromTracker();
+        }
+        for (var registration : pluginMessageRegistrationsToClose) {
+            registration.closeFromTracker();
+        }
+        for (var registration : advancementRegistrationsToClose) {
+            registration.closeFromTracker();
+        }
+        for (var registration : enchantmentRegistrationsToClose) {
+            registration.closeFromTracker();
         }
         for (var registration : customItemRegistrationsToClose) {
             registration.unregisterFromTracker();
@@ -517,6 +607,119 @@ final class PluginResourceTracker {
             if (!released) {
                 released = true;
                 delegate.unregister();
+            }
+        }
+    }
+
+    static final class TrackedPluginMessageRegistration implements PluginMessageRegistration {
+
+        private final PluginResourceTracker owner;
+        private final PluginMessageRegistration delegate;
+        private volatile boolean released;
+
+        TrackedPluginMessageRegistration(PluginResourceTracker owner, PluginMessageRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void close() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.close();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void closeFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.close();
+            }
+        }
+    }
+
+    static final class TrackedAdvancementRegistration implements AdvancementRegistration {
+
+        private final PluginResourceTracker owner;
+        private final AdvancementRegistration delegate;
+        private volatile boolean released;
+
+        TrackedAdvancementRegistration(PluginResourceTracker owner, AdvancementRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public net.kyori.adventure.key.Key key() {
+            return delegate.key();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void close() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.close();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void closeFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.close();
+            }
+        }
+    }
+
+    static final class TrackedEnchantmentRegistration implements EnchantmentRegistration {
+
+        private final PluginResourceTracker owner;
+        private final EnchantmentRegistration delegate;
+        private volatile boolean released;
+
+        TrackedEnchantmentRegistration(PluginResourceTracker owner, EnchantmentRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public net.kyori.adventure.key.Key key() {
+            return delegate.key();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void close() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.close();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void closeFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.close();
             }
         }
     }

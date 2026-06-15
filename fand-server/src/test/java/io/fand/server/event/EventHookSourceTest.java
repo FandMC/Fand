@@ -20,6 +20,31 @@ final class EventHookSourceTest {
     }
 
     @Test
+    void damageEventUsesRuntimeBreakdownAndFinalDamagePath() throws IOException {
+        var hooks = read("src/main/java/io/fand/server/event/EntityEvents.java");
+        var living = read("src/minecraft/java/net/minecraft/world/entity/LivingEntity.java");
+
+        assertThat(hooks).contains("public record DamageBreakdown");
+        assertThat(hooks).contains("damage.modifiers()");
+        assertThat(living).contains("this.fand$calculateDamageBreakdown(level, source, damage)");
+        assertThat(living).contains("io.fand.server.event.EntityEvents.fireDamage(this, source, fandAppliedBreakdown)");
+        assertThat(living).contains("this.fand$applyFinalDamage(level, source, fandHealthDamage, fandAppliedBreakdown)");
+    }
+
+    @Test
+    void offlinePlayerDataCanBeMutatedAndSaved() throws IOException {
+        var offline = read("src/main/java/io/fand/server/player/FandOfflinePlayer.java");
+        var playerList = read("src/minecraft/java/net/minecraft/server/players/PlayerList.java");
+        var storage = read("src/minecraft/java/net/minecraft/world/level/storage/PlayerDataStorage.java");
+
+        assertThat(offline).contains("public CompletableFuture<Boolean> save()");
+        assertThat(offline).contains("handle.setItem(slot, FandItemStacks.toVanilla(stack))");
+        assertThat(offline).contains("writeInventory(data, inventory, server)");
+        assertThat(playerList).contains("public boolean savePlayerData");
+        assertThat(storage).contains("public boolean save(");
+    }
+
+    @Test
     void projectileEventsPreserveShooterPayload() throws IOException {
         var source = read("src/main/java/io/fand/server/event/EntityEvents.java");
 
@@ -80,6 +105,25 @@ final class EventHookSourceTest {
         assertThat(source).contains("if (!io.fand.server.hooks.FandHooks.playerSpeedCheckEnabled())");
         assertThat(source).contains("FandHooks.playerCommandLoggingEnabled()");
         assertThat(source).contains("issued server command: /{}");
+    }
+
+    @Test
+    void customLootAdvancementAndEnchantmentRuntimeHooksStayWired() throws IOException {
+        var lootTable = read("src/minecraft/java/net/minecraft/world/level/storage/loot/LootTable.java");
+        var reloadableRegistries = read("src/minecraft/java/net/minecraft/server/ReloadableServerRegistries.java");
+        var advancementManager = read("src/minecraft/java/net/minecraft/server/ServerAdvancementManager.java");
+        var mappedRegistry = read("src/minecraft/java/net/minecraft/core/MappedRegistry.java");
+        var runtime = read("src/main/java/io/fand/server/FandServer.java");
+        var enchantments = read("src/main/java/io/fand/server/enchantment/FandEnchantmentRegistry.java");
+
+        assertThat(lootTable).contains("FandHooks.generateLootReplacement(this.fand$key, params)");
+        assertThat(reloadableRegistries).contains(".fand$key(id)");
+        assertThat(advancementManager).contains("fand$addCustomAdvancement");
+        assertThat(advancementManager).contains("fand$removeCustomAdvancement");
+        assertThat(mappedRegistry).contains("fand$registerRuntime");
+        assertThat(runtime).contains("advancements.applyLoadedAdvancements()");
+        assertThat(runtime).contains("enchantments.applyLoadedEnchantments()");
+        assertThat(enchantments).contains("mapped.fand$registerRuntime");
     }
 
     private static String read(String path) throws IOException {

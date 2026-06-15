@@ -1,0 +1,775 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Mon, 15 Jun 2026 19:50:36 +0800
+Subject: [PATCH] Wire custom API hooks into vanilla runtime
+
+
+diff --git a/net/minecraft/core/MappedRegistry.java b/net/minecraft/core/MappedRegistry.java
+index 4a881a234d827a78da9569cbb9dde7eab0cddd7d..d469a2dcce62351dfe6a119bcea67f09b2d01e39 100644
+--- a/net/minecraft/core/MappedRegistry.java
++++ b/net/minecraft/core/MappedRegistry.java
+@@ -120,6 +120,55 @@ public class MappedRegistry<T> implements WritableRegistry<T> {
+         return holder;
+     }
+ 
++    public Holder.Reference<T> fand$registerRuntime(final ResourceKey<T> key, final T value, final RegistrationInfo registrationInfo) {
++        if (!this.frozen) {
++            Holder.Reference<T> existing = this.byKey.get(key);
++            if (existing != null) {
++                return this.fand$replaceRuntime(key, value, registrationInfo, existing);
++            }
++            return this.register(key, value, registrationInfo);
++        }
++
++        this.frozen = false;
++        try {
++            Holder.Reference<T> existing = this.byKey.get(key);
++            if (existing != null) {
++                return this.fand$replaceRuntime(key, value, registrationInfo, existing);
++            }
++            Holder.Reference<T> holder = this.register(key, value, registrationInfo);
++            holder.bindValue(value);
++            holder.bindTags(List.of());
++            holder.bindComponents(net.minecraft.core.component.DataComponentMap.EMPTY);
++            this.componentLookup = new DataComponentLookup<>(this.byId);
++            return holder;
++        } finally {
++            this.frozen = true;
++        }
++    }
++
++    private Holder.Reference<T> fand$replaceRuntime(
++        final ResourceKey<T> key,
++        final T value,
++        final RegistrationInfo registrationInfo,
++        final Holder.Reference<T> holder
++    ) {
++        T previous = holder.value();
++        int id = this.toId.removeInt(previous);
++        if (id < 0) {
++            id = this.byId.indexOf(holder);
++        }
++
++        this.byValue.remove(previous);
++        this.byValue.put(value, holder);
++        this.toId.put(value, id);
++        this.registrationInfos.put(key, registrationInfo);
++        this.registryLifecycle = this.registryLifecycle.add(registrationInfo.lifecycle());
++        holder.bindValue(value);
++        holder.bindComponents(net.minecraft.core.component.DataComponentMap.EMPTY);
++        this.componentLookup = new DataComponentLookup<>(this.byId);
++        return holder;
++    }
++
+     @Override
+     public @Nullable Identifier getKey(final T thing) {
+         Holder.Reference<T> holder = this.byValue.get(thing);
+diff --git a/net/minecraft/server/ReloadableServerRegistries.java b/net/minecraft/server/ReloadableServerRegistries.java
+index 773a52068d87a143af8fa8fd656599800a507888..befbbf4e4035f09967d70f1279661e9859deae00 100644
+--- a/net/minecraft/server/ReloadableServerRegistries.java
++++ b/net/minecraft/server/ReloadableServerRegistries.java
+@@ -117,7 +117,11 @@ public class ReloadableServerRegistries {
+         }
+ 
+         public LootTable getLootTable(final ResourceKey<LootTable> id) {
+-            return this.registries.lookup(Registries.LOOT_TABLE).flatMap(r -> r.get(id)).map(net.minecraft.core.Holder::value).orElse(LootTable.EMPTY);
++            return this.registries.lookup(Registries.LOOT_TABLE)
++                .flatMap(r -> r.get(id))
++                .map(net.minecraft.core.Holder::value)
++                .map(table -> table.fand$key(id))
++                .orElse(LootTable.EMPTY);
+         }
+     }
+ 
+diff --git a/net/minecraft/server/ServerAdvancementManager.java b/net/minecraft/server/ServerAdvancementManager.java
+index 5cf94eae4abdeb8d80281778d8b13e60224d34af..3e1389c6a6b5008b232da88be2069d5c779be4e5 100644
+--- a/net/minecraft/server/ServerAdvancementManager.java
++++ b/net/minecraft/server/ServerAdvancementManager.java
+@@ -1,9 +1,9 @@
+ package net.minecraft.server;
+ 
+ import com.google.common.collect.ImmutableMap;
+-import com.google.common.collect.ImmutableMap.Builder;
+ import com.mojang.logging.LogUtils;
+ import java.util.Collection;
++import java.util.LinkedHashMap;
+ import java.util.Map;
+ import net.minecraft.advancements.Advancement;
+ import net.minecraft.advancements.AdvancementHolder;
+@@ -23,6 +23,7 @@ import org.slf4j.Logger;
+ public class ServerAdvancementManager extends SimpleJsonResourceReloadListener<Advancement> {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private Map<Identifier, AdvancementHolder> advancements = Map.of();
++    private final Map<Identifier, AdvancementHolder> fand$customAdvancements = new LinkedHashMap<>();
+     private AdvancementTree tree = new AdvancementTree();
+     private final HolderLookup.Provider registries;
+ 
+@@ -33,12 +34,40 @@ public class ServerAdvancementManager extends SimpleJsonResourceReloadListener<A
+ 
+     @Override
+     protected void apply(final Map<Identifier, Advancement> preparations, final ResourceManager manager, final ProfilerFiller profiler) {
+-        Builder<Identifier, AdvancementHolder> builder = ImmutableMap.builder();
++        Map<Identifier, AdvancementHolder> merged = new LinkedHashMap<>();
+         preparations.forEach((id, advancement) -> {
+             this.validate(id, advancement);
+-            builder.put(id, new AdvancementHolder(id, advancement));
++            merged.put(id, new AdvancementHolder(id, advancement));
+         });
+-        this.advancements = builder.buildOrThrow();
++        this.fand$customAdvancements.values().forEach(holder -> merged.put(holder.id(), holder));
++        this.fand$rebuild(ImmutableMap.copyOf(merged));
++    }
++
++    public void fand$addCustomAdvancement(final AdvancementHolder holder) {
++        this.validate(holder.id(), holder.value());
++        this.fand$customAdvancements.put(holder.id(), holder);
++        this.fand$rebuildWithCustomAdvancements();
++    }
++
++    public void fand$removeCustomAdvancement(final Identifier id) {
++        if (this.fand$customAdvancements.remove(id) != null) {
++            this.fand$rebuildWithCustomAdvancements();
++        }
++    }
++
++    private void fand$rebuildWithCustomAdvancements() {
++        Map<Identifier, AdvancementHolder> merged = new LinkedHashMap<>();
++        this.advancements.forEach((id, holder) -> {
++            if (!this.fand$customAdvancements.containsKey(id)) {
++                merged.put(id, holder);
++            }
++        });
++        this.fand$customAdvancements.values().forEach(holder -> merged.put(holder.id(), holder));
++        this.fand$rebuild(ImmutableMap.copyOf(merged));
++    }
++
++    private void fand$rebuild(final Map<Identifier, AdvancementHolder> advancements) {
++        this.advancements = advancements;
+         AdvancementTree tree = new AdvancementTree();
+         tree.addAll(this.advancements.values());
+ 
+diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
+index 8ee74fa39806c3090fb801b556a4a9fb451ffd32..fe8c3bd66f698a20c740f9129c76e88c36265725 100644
+--- a/net/minecraft/server/players/PlayerList.java
++++ b/net/minecraft/server/players/PlayerList.java
+@@ -302,6 +302,17 @@ public abstract class PlayerList {
+         }
+     }
+ 
++    public boolean savePlayerData(
++            final NameAndId nameAndId,
++            final java.util.function.Consumer<net.minecraft.world.level.storage.TagValueOutput> writer
++    ) {
++        UUID lastSingleplayerOwnerUUID = this.server.getWorldData().getSinglePlayerUUID();
++        NameAndId saveTarget = this.server.isSingleplayerOwner(nameAndId) && lastSingleplayerOwnerUUID != null
++            ? new NameAndId(lastSingleplayerOwnerUUID, "<singleplayer owner>")
++            : nameAndId;
++        return this.playerIo.save(saveTarget, this.server, writer);
++    }
++
+     protected void save(final ServerPlayer player) {
+         this.playerIo.save(player);
+         ServerStatsCounter stats = this.stats.get(player.getUUID());
+diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
+index f6a93b3b253d26443da6e55ac41c2dc782e4ffbe..785425fbcf4ad13e9b90bb80155d91426ae49bdb 100644
+--- a/net/minecraft/world/entity/LivingEntity.java
++++ b/net/minecraft/world/entity/LivingEntity.java
+@@ -1266,35 +1266,59 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+             return false;
+         }
+ 
+-        Float fandDamage = io.fand.server.event.EntityEvents.fireDamage(this, source, damage);
+-        if (fandDamage == null) {
+-            return false;
++        if (damage < 0.0F) {
++            damage = 0.0F;
++        }
++
++        io.fand.server.event.EntityEvents.DamageBreakdown fandDamageBreakdown = null;
++        io.fand.server.event.EntityEvents.DamageBreakdown fandAppliedBreakdown = null;
++        float fandHealthDamage = damage;
++        if (io.fand.server.event.EntityEvents.hasDamageListeners()) {
++            fandDamageBreakdown = this.fand$calculateDamageBreakdown(level, source, damage);
++            damage = fandDamageBreakdown.damageBeforeArmor();
++            if (this.invulnerableTime > 10.0F && !source.is(DamageTypeTags.BYPASSES_COOLDOWN)) {
++                if (damage <= this.lastHurt) {
++                    return false;
++                }
++                fandAppliedBreakdown = this.fand$calculatePostArmorBreakdown(level, source, damage - this.lastHurt);
++            } else {
++                fandAppliedBreakdown = fandDamageBreakdown;
++            }
++            Float fandDamage = io.fand.server.event.EntityEvents.fireDamage(this, source, fandAppliedBreakdown);
++            if (fandDamage == null) {
++                return false;
++            }
++            fandHealthDamage = fandDamage;
+         }
+-        damage = fandDamage;
+ 
+         if (this.isSleeping()) {
+             this.stopSleeping();
+         }
+ 
+         this.noActionTime = 0;
+-        if (damage < 0.0F) {
+-            damage = 0.0F;
+-        }
+ 
+         float originalDamage = damage;
+         ItemStack itemInUse = this.getUseItem();
+-        float damageBlocked = this.applyItemBlocking(level, source, damage);
+-        damage -= damageBlocked;
+-        boolean blocked = damageBlocked > 0.0F;
+-        if (source.is(DamageTypeTags.IS_FREEZING) && this.is(EntityTypeTags.FREEZE_HURTS_EXTRA_TYPES)) {
+-            damage *= 5.0F;
++        float damageBlocked;
++        if (fandDamageBreakdown == null) {
++            damageBlocked = this.applyItemBlocking(level, source, damage);
++            damage -= damageBlocked;
++        } else {
++            damageBlocked = this.fand$applyItemBlocking(level, source, fandDamageBreakdown.baseDamage(), fandDamageBreakdown.blockedDamage());
+         }
++        boolean blocked = damageBlocked > 0.0F;
++        if (fandDamageBreakdown == null) {
++            if (source.is(DamageTypeTags.IS_FREEZING) && this.is(EntityTypeTags.FREEZE_HURTS_EXTRA_TYPES)) {
++                damage *= 5.0F;
++            }
+ 
+-        if (source.is(DamageTypeTags.DAMAGES_HELMET) && !this.getItemBySlot(EquipmentSlot.HEAD).isEmpty()) {
+-            this.hurtHelmet(source, damage);
+-            damage *= 0.75F;
++            if (source.is(DamageTypeTags.DAMAGES_HELMET) && !this.getItemBySlot(EquipmentSlot.HEAD).isEmpty()) {
++                this.hurtHelmet(source, damage);
++                damage *= 0.75F;
++            }
++        } else if (source.is(DamageTypeTags.DAMAGES_HELMET) && !this.getItemBySlot(EquipmentSlot.HEAD).isEmpty()) {
++            this.hurtHelmet(source, fandDamageBreakdown.damageBeforeHelmet());
+         }
+-
+         if (Float.isNaN(damage) || Float.isInfinite(damage)) {
+             damage = Float.MAX_VALUE;
+         }
+@@ -1305,13 +1329,21 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+                 return false;
+             }
+ 
+-            this.actuallyHurt(level, source, damage - this.lastHurt);
++            if (fandDamageBreakdown == null) {
++                this.actuallyHurt(level, source, damage - this.lastHurt);
++            } else {
++                this.fand$applyFinalDamage(level, source, fandHealthDamage, fandAppliedBreakdown);
++            }
+             this.lastHurt = damage;
+             tookFullDamage = false;
+         } else {
+             this.lastHurt = damage;
+             this.invulnerableTime = 20;
+-            this.actuallyHurt(level, source, damage);
++            if (fandDamageBreakdown == null) {
++                this.actuallyHurt(level, source, damage);
++            } else {
++                this.fand$applyFinalDamage(level, source, fandHealthDamage, fandAppliedBreakdown);
++            }
+             this.hurtDuration = 10;
+             this.hurtTime = this.hurtDuration;
+         }
+@@ -1373,6 +1405,262 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+         return success;
+     }
+ 
++    private io.fand.server.event.EntityEvents.DamageBreakdown fand$calculateDamageBreakdown(
++            final ServerLevel level,
++            final DamageSource source,
++            float damage
++    ) {
++        float baseDamage = damage;
++        java.util.EnumMap<io.fand.api.event.entity.DamageModifier, Double> modifiers =
++            new java.util.EnumMap<>(io.fand.api.event.entity.DamageModifier.class);
++        modifiers.put(io.fand.api.event.entity.DamageModifier.BASE, (double) baseDamage);
++
++        float damageBlocked = this.fand$resolveBlockedDamage(source, damage);
++        if (damageBlocked > 0.0F) {
++            modifiers.put(io.fand.api.event.entity.DamageModifier.BLOCKING, (double) -damageBlocked);
++        }
++        damage -= damageBlocked;
++        if (source.is(DamageTypeTags.IS_FREEZING) && this.is(EntityTypeTags.FREEZE_HURTS_EXTRA_TYPES)) {
++            float previousDamage = damage;
++            damage *= 5.0F;
++            modifiers.put(io.fand.api.event.entity.DamageModifier.FREEZING, (double) (damage - previousDamage));
++        }
++
++        float damageBeforeHelmet = damage;
++        if (source.is(DamageTypeTags.DAMAGES_HELMET) && !this.getItemBySlot(EquipmentSlot.HEAD).isEmpty()) {
++            float previousDamage = damage;
++            damage *= 0.75F;
++            modifiers.put(io.fand.api.event.entity.DamageModifier.HARD_HAT, (double) (damage - previousDamage));
++        }
++
++        if (Float.isNaN(damage) || Float.isInfinite(damage)) {
++            damage = Float.MAX_VALUE;
++        }
++
++        float damageBeforeArmor = damage;
++        if (!source.is(DamageTypeTags.BYPASSES_ARMOR)) {
++            float afterArmor = CombatRules.getDamageAfterAbsorb(
++                this, damage, source, this.getArmorValue(), (float)this.getAttributeValue(Attributes.ARMOR_TOUGHNESS)
++            );
++            modifiers.put(io.fand.api.event.entity.DamageModifier.ARMOR, (double) (afterArmor - damage));
++            damage = afterArmor;
++        }
++
++        float damageBeforeResistance = damage;
++        float resistedDamage = 0.0F;
++        if (!source.is(DamageTypeTags.BYPASSES_EFFECTS)
++                && this.hasEffect(MobEffects.RESISTANCE)
++                && !source.is(DamageTypeTags.BYPASSES_RESISTANCE)) {
++            int absorbValue = (this.getEffect(MobEffects.RESISTANCE).getAmplifier() + 1) * 5;
++            int absorb = 25 - absorbValue;
++            float resisted = Math.max(damage * absorb / 25.0F, 0.0F);
++            resistedDamage = damage - resisted;
++            modifiers.put(io.fand.api.event.entity.DamageModifier.RESISTANCE, (double) -resistedDamage);
++            damage = resisted;
++        }
++
++        if (damage > 0.0F && !source.is(DamageTypeTags.BYPASSES_ENCHANTMENTS)) {
++            float enchantmentArmor = EnchantmentHelper.getDamageProtection(level, this, source);
++            if (enchantmentArmor > 0.0F) {
++                float afterEnchantments = CombatRules.getDamageAfterMagicAbsorb(damage, enchantmentArmor);
++                modifiers.put(io.fand.api.event.entity.DamageModifier.ENCHANTMENTS, (double) (afterEnchantments - damage));
++                damage = afterEnchantments;
++            }
++        }
++
++        float customDamage = this.fand$applyCustomDamageReduction(source, damage);
++        if (customDamage != damage) {
++            modifiers.put(io.fand.api.event.entity.DamageModifier.CUSTOM, (double) (customDamage - damage));
++            damage = customDamage;
++        }
++
++        float originalDamage = damage;
++        damage = Math.max(damage - this.getAbsorptionAmount(), 0.0F);
++        float absorbedDamage = originalDamage - damage;
++        if (absorbedDamage > 0.0F) {
++            modifiers.put(io.fand.api.event.entity.DamageModifier.ABSORPTION, (double) -absorbedDamage);
++        }
++
++        return new io.fand.server.event.EntityEvents.DamageBreakdown(
++            baseDamage,
++            damageBlocked,
++            damageBeforeHelmet,
++            damageBeforeArmor,
++            damageBeforeResistance,
++            resistedDamage,
++            absorbedDamage,
++            damage,
++            modifiers);
++    }
++
++    private io.fand.server.event.EntityEvents.DamageBreakdown fand$calculatePostArmorBreakdown(
++            final ServerLevel level,
++            final DamageSource source,
++            float damage
++    ) {
++        java.util.EnumMap<io.fand.api.event.entity.DamageModifier, Double> modifiers =
++            new java.util.EnumMap<>(io.fand.api.event.entity.DamageModifier.class);
++        modifiers.put(io.fand.api.event.entity.DamageModifier.BASE, (double) damage);
++
++        float damageBeforeArmor = damage;
++        if (!source.is(DamageTypeTags.BYPASSES_ARMOR)) {
++            float afterArmor = CombatRules.getDamageAfterAbsorb(
++                this, damage, source, this.getArmorValue(), (float)this.getAttributeValue(Attributes.ARMOR_TOUGHNESS)
++            );
++            modifiers.put(io.fand.api.event.entity.DamageModifier.ARMOR, (double) (afterArmor - damage));
++            damage = afterArmor;
++        }
++
++        float damageBeforeResistance = damage;
++        float resistedDamage = 0.0F;
++        if (!source.is(DamageTypeTags.BYPASSES_EFFECTS)
++                && this.hasEffect(MobEffects.RESISTANCE)
++                && !source.is(DamageTypeTags.BYPASSES_RESISTANCE)) {
++            int absorbValue = (this.getEffect(MobEffects.RESISTANCE).getAmplifier() + 1) * 5;
++            int absorb = 25 - absorbValue;
++            float resisted = Math.max(damage * absorb / 25.0F, 0.0F);
++            resistedDamage = damage - resisted;
++            modifiers.put(io.fand.api.event.entity.DamageModifier.RESISTANCE, (double) -resistedDamage);
++            damage = resisted;
++        }
++
++        if (damage > 0.0F && !source.is(DamageTypeTags.BYPASSES_ENCHANTMENTS)) {
++            float enchantmentArmor = EnchantmentHelper.getDamageProtection(level, this, source);
++            if (enchantmentArmor > 0.0F) {
++                float afterEnchantments = CombatRules.getDamageAfterMagicAbsorb(damage, enchantmentArmor);
++                modifiers.put(io.fand.api.event.entity.DamageModifier.ENCHANTMENTS, (double) (afterEnchantments - damage));
++                damage = afterEnchantments;
++            }
++        }
++
++        float customDamage = this.fand$applyCustomDamageReduction(source, damage);
++        if (customDamage != damage) {
++            modifiers.put(io.fand.api.event.entity.DamageModifier.CUSTOM, (double) (customDamage - damage));
++            damage = customDamage;
++        }
++
++        float originalDamage = damage;
++        damage = Math.max(damage - this.getAbsorptionAmount(), 0.0F);
++        float absorbedDamage = originalDamage - damage;
++        if (absorbedDamage > 0.0F) {
++            modifiers.put(io.fand.api.event.entity.DamageModifier.ABSORPTION, (double) -absorbedDamage);
++        }
++
++        return new io.fand.server.event.EntityEvents.DamageBreakdown(
++            damageBeforeArmor,
++            0.0F,
++            damageBeforeArmor,
++            damageBeforeArmor,
++            damageBeforeResistance,
++            resistedDamage,
++            absorbedDamage,
++            damage,
++            modifiers);
++    }
++
++    private float fand$resolveBlockedDamage(final DamageSource source, final float damage) {
++        if (damage <= 0.0F) {
++            return 0.0F;
++        }
++
++        ItemStack blockingWith = this.getItemBlockingWith();
++        if (blockingWith == null) {
++            return 0.0F;
++        }
++
++        BlocksAttacks blocksAttacks = blockingWith.get(DataComponents.BLOCKS_ATTACKS);
++        if (blocksAttacks == null || blocksAttacks.bypassedBy().map(t -> t.contains(source.typeHolder())).orElse(false)) {
++            return 0.0F;
++        }
++
++        if (source.getDirectEntity() instanceof AbstractArrow abstractArrow && abstractArrow.getPierceLevel() > 0) {
++            return 0.0F;
++        }
++
++        Vec3 sourcePosition = source.getSourcePosition();
++        double angle;
++        if (sourcePosition != null) {
++            Vec3 viewVector = this.calculateViewVector(0.0F, this.getYHeadRot());
++            Vec3 vectorTo = sourcePosition.subtract(this.position());
++            vectorTo = new Vec3(vectorTo.x, 0.0, vectorTo.z).normalize();
++            angle = Math.acos(vectorTo.dot(viewVector));
++        } else {
++            angle = (float) Math.PI;
++        }
++
++        return blocksAttacks.resolveBlockedDamage(source, damage, angle);
++    }
++
++    private float fand$applyItemBlocking(
++            final ServerLevel level,
++            final DamageSource source,
++            final float damage,
++            final float damageBlocked
++    ) {
++        if (damageBlocked <= 0.0F) {
++            return 0.0F;
++        }
++
++        ItemStack blockingWith = this.getItemBlockingWith();
++        BlocksAttacks blocksAttacks = blockingWith == null ? null : blockingWith.get(DataComponents.BLOCKS_ATTACKS);
++        if (blocksAttacks == null) {
++            return 0.0F;
++        }
++
++        blocksAttacks.hurtBlockingItem(this.level(), blockingWith, this, this.getUsedItemHand(), damageBlocked);
++        if (!source.is(DamageTypeTags.IS_PROJECTILE) && source.getDirectEntity() instanceof LivingEntity livingEntity) {
++            this.blockUsingItem(level, livingEntity, source, damage);
++        }
++
++        return damageBlocked;
++    }
++
++    protected float fand$applyCustomDamageReduction(final DamageSource source, final float damage) {
++        return damage;
++    }
++
++    protected void fand$applyFinalDamage(
++            final ServerLevel level,
++            final DamageSource source,
++            float damage,
++            final io.fand.server.event.EntityEvents.DamageBreakdown breakdown
++    ) {
++        if (this.isInvulnerableTo(level, source)) {
++            return;
++        }
++
++        if (!source.is(DamageTypeTags.BYPASSES_ARMOR)) {
++            this.hurtArmor(source, breakdown.damageBeforeArmor());
++        }
++        this.fand$awardResistanceStats(source, breakdown.resistedDamage());
++        float absorbedDamage = Math.min(this.getAbsorptionAmount(), Math.max(breakdown.absorbedDamage(), 0.0F));
++        if (absorbedDamage > 0.0F) {
++            this.setAbsorptionAmount(this.getAbsorptionAmount() - absorbedDamage);
++            if (absorbedDamage < 3.4028235E37F && source.getEntity() instanceof ServerPlayer serverPlayer) {
++                serverPlayer.awardStat(Stats.DAMAGE_DEALT_ABSORBED, Math.round(absorbedDamage * 10.0F));
++            }
++        }
++
++        if (damage != 0.0F) {
++            this.getCombatTracker().recordDamage(source, damage);
++            this.setHealth(this.getHealth() - damage);
++            this.setAbsorptionAmount(this.getAbsorptionAmount() - damage);
++            this.gameEvent(GameEvent.ENTITY_DAMAGE);
++        }
++    }
++
++    private void fand$awardResistanceStats(final DamageSource source, final float resistedDamage) {
++        if (resistedDamage <= 0.0F || resistedDamage >= 3.4028235E37F) {
++            return;
++        }
++
++        if (this instanceof ServerPlayer serverPlayer) {
++            serverPlayer.awardStat(Stats.DAMAGE_RESISTED, Math.round(resistedDamage * 10.0F));
++        } else if (source.getEntity() instanceof ServerPlayer) {
++            ((ServerPlayer)source.getEntity()).awardStat(Stats.DAMAGE_DEALT_RESISTED, Math.round(resistedDamage * 10.0F));
++        }
++    }
++
+     public void dealDefaultKnockback(final DamageSource source, final float damage, final boolean blocked) {
+         double xd = 0.0;
+         double zd = 0.0;
+diff --git a/net/minecraft/world/entity/monster/Witch.java b/net/minecraft/world/entity/monster/Witch.java
+index 03b3f7b31997d8813a6a96ac4c4c3e43f6af1ffe..8cb9fdbb33c44bb87ae4fc1d2bd7b3a23c47f251 100644
+--- a/net/minecraft/world/entity/monster/Witch.java
++++ b/net/minecraft/world/entity/monster/Witch.java
+@@ -219,6 +219,20 @@ public class Witch extends Raider implements RangedAttackMob {
+         return damage;
+     }
+ 
++    @Override
++    protected float fand$applyCustomDamageReduction(final DamageSource damageSource, final float damage) {
++        float adjusted = damage;
++        if (damageSource.getEntity() == this) {
++            adjusted = 0.0F;
++        }
++
++        if (damageSource.is(DamageTypeTags.WITCH_RESISTANT_TO)) {
++            adjusted *= 0.15F;
++        }
++
++        return adjusted;
++    }
++
+     @Override
+     public void performRangedAttack(final LivingEntity target, final float power) {
+         if (!this.isDrinkingPotion()) {
+diff --git a/net/minecraft/world/entity/player/Player.java b/net/minecraft/world/entity/player/Player.java
+index 288fb5bbf8ef9e93aff26fdca64820972e9382d7..07e3ffa0a77e897d96da8a41d2b8aae3be7fd04c 100644
+--- a/net/minecraft/world/entity/player/Player.java
++++ b/net/minecraft/world/entity/player/Player.java
+@@ -767,6 +767,26 @@ public abstract class Player extends Avatar implements ContainerUser {
+         }
+     }
+ 
++    @Override
++    protected void fand$applyFinalDamage(
++            final ServerLevel level,
++            final DamageSource source,
++            float damage,
++            final io.fand.server.event.EntityEvents.DamageBreakdown breakdown
++    ) {
++        super.fand$applyFinalDamage(level, source, damage, breakdown);
++        float absorbedDamage = breakdown.absorbedDamage();
++        if (absorbedDamage > 0.0F && absorbedDamage < 3.4028235E37F) {
++            this.awardStat(Stats.DAMAGE_ABSORBED, Math.round(absorbedDamage * 10.0F));
++        }
++        if (damage != 0.0F) {
++            this.causeFoodExhaustion(source.getFoodExhaustion());
++            if (damage < 3.4028235E37F) {
++                this.awardStat(Stats.DAMAGE_TAKEN, Math.round(damage * 10.0F));
++            }
++        }
++    }
++
+     public boolean isTextFilteringEnabled() {
+         return false;
+     }
+diff --git a/net/minecraft/world/level/storage/PlayerDataStorage.java b/net/minecraft/world/level/storage/PlayerDataStorage.java
+index aa3160786b502ede052ec62e82785f129d3b6691..5e9aea983d7b41a1f66265ad4e16ad2eacffe99d 100644
+--- a/net/minecraft/world/level/storage/PlayerDataStorage.java
++++ b/net/minecraft/world/level/storage/PlayerDataStorage.java
+@@ -12,6 +12,7 @@ import net.minecraft.nbt.CompoundTag;
+ import net.minecraft.nbt.NbtAccounter;
+ import net.minecraft.nbt.NbtIo;
+ import net.minecraft.nbt.NbtUtils;
++import net.minecraft.server.MinecraftServer;
+ import net.minecraft.server.players.NameAndId;
+ import net.minecraft.util.ProblemReporter;
+ import net.minecraft.util.Util;
+@@ -32,20 +33,45 @@ public class PlayerDataStorage {
+ 
+     public void save(final Player player) {
+         try (ProblemReporter.ScopedCollector reporter = new ProblemReporter.ScopedCollector(player.problemPath(), LOGGER)) {
+-            TagValueOutput output = TagValueOutput.createWithContext(reporter, player.registryAccess());
+-            player.saveWithoutId(output);
+-            Path playerDirPath = this.playerDir.toPath();
+-            Path tmpFile = Files.createTempFile(playerDirPath, player.getStringUUID() + "-", ".dat");
+-            CompoundTag dataToStore = output.buildResult();
+-            NbtIo.writeCompressed(dataToStore, tmpFile);
+-            Path realFile = playerDirPath.resolve(player.getStringUUID() + ".dat");
+-            Path oldFile = playerDirPath.resolve(player.getStringUUID() + ".dat_old");
+-            Util.safeReplaceFile(realFile, tmpFile, oldFile);
++            this.save(player.getStringUUID(), reporter, player.registryAccess(), output -> player.saveWithoutId(output));
+         } catch (Exception ignored) {
+             LOGGER.warn("Failed to save player data for {}", player.getPlainTextName());
+         }
+     }
+ 
++    public boolean save(
++            final NameAndId nameAndId,
++            final MinecraftServer server,
++            final java.util.function.Consumer<TagValueOutput> writer
++    ) {
++        try (ProblemReporter.ScopedCollector reporter = new ProblemReporter.ScopedCollector(
++                new ProblemReporter.RootFieldPathElement(nameAndId.name()),
++                LOGGER)) {
++            this.save(nameAndId.id().toString(), reporter, server.registryAccess(), writer);
++            return true;
++        } catch (Exception ignored) {
++            LOGGER.warn("Failed to save player data for {}", nameAndId.name());
++            return false;
++        }
++    }
++
++    private void save(
++            final String uuid,
++            final ProblemReporter.ScopedCollector reporter,
++            final net.minecraft.core.HolderLookup.Provider registries,
++            final java.util.function.Consumer<TagValueOutput> writer
++    ) throws Exception {
++        TagValueOutput output = TagValueOutput.createWithContext(reporter, registries);
++        writer.accept(output);
++        Path playerDirPath = this.playerDir.toPath();
++        Path tmpFile = Files.createTempFile(playerDirPath, uuid + "-", ".dat");
++        CompoundTag dataToStore = output.buildResult();
++        NbtIo.writeCompressed(dataToStore, tmpFile);
++        Path realFile = playerDirPath.resolve(uuid + ".dat");
++        Path oldFile = playerDirPath.resolve(uuid + ".dat_old");
++        Util.safeReplaceFile(realFile, tmpFile, oldFile);
++    }
++
+     private void backup(final NameAndId nameAndId, final String suffix) {
+         Path playerDirPath = this.playerDir.toPath();
+         String idString = nameAndId.id().toString();
+diff --git a/net/minecraft/world/level/storage/TagValueOutput.java b/net/minecraft/world/level/storage/TagValueOutput.java
+index c7dc0bc2f727c2c9e977bde8035c6ad1e54a479a..2afff40e7ff13f59e213c1d042816f40c24a8bcd 100644
+--- a/net/minecraft/world/level/storage/TagValueOutput.java
++++ b/net/minecraft/world/level/storage/TagValueOutput.java
+@@ -153,6 +153,10 @@ public class TagValueOutput implements ValueOutput {
+         return this.output;
+     }
+ 
++    public void putRaw(final String name, final Tag tag) {
++        this.output.put(name, tag.copy());
++    }
++
+     public record EncodeToFieldFailedProblem(String name, Object value, Error<?> error) implements ProblemReporter.Problem {
+         @Override
+         public String description() {
+diff --git a/net/minecraft/world/level/storage/loot/LootContext.java b/net/minecraft/world/level/storage/loot/LootContext.java
+index 642a4071ce6c5e0f10aba3ab3c3cddb001c156ac..dc6034b4fd37c9fd5009653ee39fbb10ffc2d499 100644
+--- a/net/minecraft/world/level/storage/loot/LootContext.java
++++ b/net/minecraft/world/level/storage/loot/LootContext.java
+@@ -76,6 +76,10 @@ public class LootContext {
+         return this.params.getLevel();
+     }
+ 
++    LootParams params() {
++        return this.params;
++    }
++
+     public static LootContext.VisitedEntry<LootTable> createVisitedEntry(final LootTable table) {
+         return new LootContext.VisitedEntry<>(LootDataType.TABLE, table);
+     }
+diff --git a/net/minecraft/world/level/storage/loot/LootTable.java b/net/minecraft/world/level/storage/loot/LootTable.java
+index 9460793f0c688090d05fa8e55de20a1e4cc5008e..1c8b560d3a662f5bdd4f5d5698cb14e789c1a00c 100644
+--- a/net/minecraft/world/level/storage/loot/LootTable.java
++++ b/net/minecraft/world/level/storage/loot/LootTable.java
+@@ -52,6 +52,7 @@ public class LootTable implements Validatable {
+     private final List<LootPool> pools;
+     private final List<LootItemFunction> functions;
+     private final BiFunction<ItemStack, LootContext, ItemStack> compositeFunction;
++    private @org.jspecify.annotations.Nullable ResourceKey<LootTable> fand$key;
+ 
+     private LootTable(
+         final ContextKeySet paramSet, final Optional<Identifier> randomSequence, final List<LootPool> pools, final List<LootItemFunction> functions
+@@ -101,6 +102,11 @@ public class LootTable implements Validatable {
+     }
+ 
+     public void getRandomItems(final LootParams params, final long optionalLootTableSeed, final Consumer<ItemStack> output) {
++        ObjectArrayList<ItemStack> fandReplacement = io.fand.server.hooks.FandHooks.generateLootReplacement(this.fand$key, params);
++        if (fandReplacement != null) {
++            fandReplacement.forEach(createStackSplitter(params.getLevel(), output));
++            return;
++        }
+         this.getRandomItemsRaw(
+             new LootContext.Builder(params).withOptionalRandomSeed(optionalLootTableSeed).create(this.randomSequence),
+             createStackSplitter(params.getLevel(), output)
+@@ -108,6 +114,11 @@ public class LootTable implements Validatable {
+     }
+ 
+     public void getRandomItems(final LootParams params, final Consumer<ItemStack> output) {
++        ObjectArrayList<ItemStack> fandReplacement = io.fand.server.hooks.FandHooks.generateLootReplacement(this.fand$key, params);
++        if (fandReplacement != null) {
++            fandReplacement.forEach(createStackSplitter(params.getLevel(), output));
++            return;
++        }
+         this.getRandomItemsRaw(params, createStackSplitter(params.getLevel(), output));
+     }
+ 
+@@ -116,18 +127,34 @@ public class LootTable implements Validatable {
+     }
+ 
+     public ObjectArrayList<ItemStack> getRandomItems(final LootParams params, final RandomSource randomSource) {
++        ObjectArrayList<ItemStack> fandReplacement = io.fand.server.hooks.FandHooks.generateLootReplacement(this.fand$key, params);
++        if (fandReplacement != null) {
++            return fandReplacement;
++        }
+         return this.getRandomItems(new LootContext.Builder(params).withOptionalRandomSource(randomSource).create(this.randomSequence));
+     }
+ 
+     public ObjectArrayList<ItemStack> getRandomItems(final LootParams params, final long optionalLootTableSeed) {
++        ObjectArrayList<ItemStack> fandReplacement = io.fand.server.hooks.FandHooks.generateLootReplacement(this.fand$key, params);
++        if (fandReplacement != null) {
++            return fandReplacement;
++        }
+         return this.getRandomItems(new LootContext.Builder(params).withOptionalRandomSeed(optionalLootTableSeed).create(this.randomSequence));
+     }
+ 
+     public ObjectArrayList<ItemStack> getRandomItems(final LootParams params) {
++        ObjectArrayList<ItemStack> fandReplacement = io.fand.server.hooks.FandHooks.generateLootReplacement(this.fand$key, params);
++        if (fandReplacement != null) {
++            return fandReplacement;
++        }
+         return this.getRandomItems(new LootContext.Builder(params).create(this.randomSequence));
+     }
+ 
+     private ObjectArrayList<ItemStack> getRandomItems(final LootContext context) {
++        ObjectArrayList<ItemStack> fandReplacement = io.fand.server.hooks.FandHooks.generateLootReplacement(this.fand$key, context.params());
++        if (fandReplacement != null) {
++            return fandReplacement;
++        }
+         ObjectArrayList<ItemStack> result = new ObjectArrayList<>();
+         this.getRandomItems(context, result::add);
+         return result;
+@@ -137,6 +164,11 @@ public class LootTable implements Validatable {
+         return this.paramSet;
+     }
+ 
++    public LootTable fand$key(final ResourceKey<LootTable> key) {
++        this.fand$key = key;
++        return this;
++    }
++
+     @Override
+     public void validate(final ValidationContext context) {
+         Validatable.validate(context, "pools", this.pools);

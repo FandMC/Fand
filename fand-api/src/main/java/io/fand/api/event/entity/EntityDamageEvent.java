@@ -53,13 +53,24 @@ public class EntityDamageEvent implements Event, Cancellable {
             double amount,
             @Nullable LivingEntity directEntity,
             @Nullable LivingEntity attacker) {
+        this(entity, cause, amount, Map.of(DamageModifier.BASE, amount), directEntity, attacker);
+    }
+
+    public EntityDamageEvent(
+            LivingEntity entity,
+            DamageCause cause,
+            double amount,
+            Map<DamageModifier, Double> modifiers,
+            @Nullable LivingEntity directEntity,
+            @Nullable LivingEntity attacker) {
         this.entity = Objects.requireNonNull(entity, "entity");
         this.cause = Objects.requireNonNull(cause, "cause");
         this.directEntity = directEntity;
         this.attacker = attacker;
         this.amount = amount;
         this.modifiers = new EnumMap<>(DamageModifier.class);
-        this.modifiers.put(DamageModifier.BASE, amount);
+        this.modifiers.putAll(Objects.requireNonNull(modifiers, "modifiers"));
+        this.modifiers.putIfAbsent(DamageModifier.BASE, amount);
     }
 
     public LivingEntity entity() {

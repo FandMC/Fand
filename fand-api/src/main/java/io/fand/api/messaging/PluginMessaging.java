@@ -2,6 +2,7 @@ package io.fand.api.messaging;
 
 import io.fand.api.entity.Player;
 import java.util.Collection;
+import java.util.Collections;
 import net.kyori.adventure.key.Key;
 
 /**
@@ -24,6 +25,11 @@ public interface PluginMessaging {
     }
 
     static PluginMessaging empty() {
-        return () -> java.util.List.of();
+        return new PluginMessaging() {
+            @Override
+            public Collection<PluginMessageChannel> channels() {
+                return Collections.emptyList();
+            }
+        };
     }
 }

@@ -31,6 +31,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.Optional;
 import java.util.UUID;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.network.PacketListener;
 import net.minecraft.network.protocol.Packet;
@@ -38,8 +39,11 @@ import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.network.ServerPlayerConnection;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.loot.LootParams;
+import net.minecraft.world.level.storage.loot.LootTable;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -580,6 +584,25 @@ public final class FandHooks {
     public static io.fand.server.block.FandCustomBlockRegistry customBlocks() {
         var runtime = activeRuntime();
         return runtime == null ? NOOP_CUSTOM_BLOCKS : runtime.customBlockRegistry();
+    }
+
+    public static @Nullable ObjectArrayList<net.minecraft.world.item.ItemStack> generateLootReplacement(
+            @Nullable ResourceKey<LootTable> key,
+            LootParams params
+    ) {
+        if (key == null) {
+            return null;
+        }
+        var runtime = activeRuntime();
+        if (runtime == null || !(runtime.lootTables() instanceof io.fand.server.loot.FandLootTableService lootTables)) {
+            return null;
+        }
+        try {
+            return lootTables.generateVanilla(key, params);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Fand loot replacement failed for {}", key.identifier(), failure);
+            return null;
+        }
     }
 
     public static ForwardedPlayerInfo parseBungeeLegacyForwarding(String hostName, String playerName) {

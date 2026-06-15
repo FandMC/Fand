@@ -2,11 +2,17 @@ package io.fand.server.plugin;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
+import io.fand.api.advancement.AdvancementRegistry;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
+import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.gui.GuiService;
+import io.fand.api.lifecycle.PluginDisableEvent;
+import io.fand.api.lifecycle.PluginEnableEvent;
+import io.fand.api.map.MapService;
+import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.Plugin;
@@ -15,10 +21,12 @@ import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
+import io.fand.api.structure.StructureService;
 import io.fand.server.recipe.FandRecipeRegistry;
 import io.fand.server.block.FandCustomBlockRegistry;
 import io.fand.server.gui.FandGuiService;
 import io.fand.server.item.FandCustomItemRegistry;
+import io.fand.server.messaging.FandPluginMessaging;
 import io.fand.server.network.packet.PacketRegistryImpl;
 import io.fand.server.scoreboard.FandScoreboardService;
 import java.io.IOException;
@@ -57,8 +65,13 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final EventBus eventBus;
     private final PermissionService permissions;
     private final RecipeRegistry recipeRegistry;
+    private final AdvancementRegistry advancementRegistry;
+    private final EnchantmentRegistry enchantmentRegistry;
+    private final StructureService structureService;
+    private final MapService mapService;
     private final ScoreboardService scoreboardService;
     private final PacketRegistry packetRegistry;
+    private final PluginMessaging pluginMessaging;
     private final CustomItemRegistry customItemRegistry;
     private final CustomBlockRegistry customBlockRegistry;
     private final GuiService guiService;
@@ -111,6 +124,11 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new FandRecipeRegistry(),
                 unavailableScoreboardService(),
                 new PacketRegistryImpl(),
+                null,
+                AdvancementRegistry.empty(),
+                EnchantmentRegistry.empty(),
+                StructureService.empty(),
+                MapService.empty(),
                 customServices.items(),
                 customServices.blocks(),
                 new FandGuiService(eventBus),
@@ -171,6 +189,11 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 recipeRegistry,
                 unavailableScoreboardService(),
                 new PacketRegistryImpl(),
+                null,
+                AdvancementRegistry.empty(),
+                EnchantmentRegistry.empty(),
+                StructureService.empty(),
+                MapService.empty(),
                 customServices.items(),
                 customServices.blocks(),
                 new FandGuiService(eventBus),
@@ -190,6 +213,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             RecipeRegistry recipeRegistry,
             ScoreboardService scoreboardService,
             PacketRegistry packetRegistry,
+            AdvancementRegistry advancementRegistry,
+            EnchantmentRegistry enchantmentRegistry,
+            StructureService structureService,
+            MapService mapService,
             CustomItemRegistry customItemRegistry,
             CustomBlockRegistry customBlockRegistry,
             GuiService guiService,
@@ -206,6 +233,55 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 recipeRegistry,
                 scoreboardService,
                 packetRegistry,
+                defaultPluginMessaging(packetRegistry),
+                advancementRegistry,
+                enchantmentRegistry,
+                structureService,
+                mapService,
+                customItemRegistry,
+                customBlockRegistry,
+                guiService,
+                options
+        );
+    }
+
+    public PluginRuntime(
+            Path pluginsDirectory,
+            Path dataDirectoryRoot,
+            ClassLoader parentClassLoader,
+            CommandRegistry commandRegistry,
+            EventBus eventBus,
+            PermissionService permissions,
+            Scheduler scheduler,
+            RecipeRegistry recipeRegistry,
+            ScoreboardService scoreboardService,
+            PacketRegistry packetRegistry,
+            PluginMessaging pluginMessaging,
+            AdvancementRegistry advancementRegistry,
+            EnchantmentRegistry enchantmentRegistry,
+            StructureService structureService,
+            MapService mapService,
+            CustomItemRegistry customItemRegistry,
+            CustomBlockRegistry customBlockRegistry,
+            GuiService guiService,
+            Options options
+    ) {
+        this(
+                pluginsDirectory,
+                dataDirectoryRoot,
+                parentClassLoader,
+                commandRegistry,
+                eventBus,
+                permissions,
+                scheduler,
+                recipeRegistry,
+                scoreboardService,
+                packetRegistry,
+                pluginMessaging,
+                advancementRegistry,
+                enchantmentRegistry,
+                structureService,
+                mapService,
                 customItemRegistry,
                 customBlockRegistry,
                 guiService,
@@ -225,6 +301,11 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             RecipeRegistry recipeRegistry,
             ScoreboardService scoreboardService,
             PacketRegistry packetRegistry,
+            PluginMessaging pluginMessaging,
+            AdvancementRegistry advancementRegistry,
+            EnchantmentRegistry enchantmentRegistry,
+            StructureService structureService,
+            MapService mapService,
             CustomItemRegistry customItemRegistry,
             CustomBlockRegistry customBlockRegistry,
             GuiService guiService,
@@ -238,8 +319,13 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.eventBus = eventBus;
         this.permissions = permissions;
         this.recipeRegistry = recipeRegistry;
+        this.advancementRegistry = advancementRegistry;
+        this.enchantmentRegistry = enchantmentRegistry;
+        this.structureService = structureService;
+        this.mapService = mapService;
         this.scoreboardService = scoreboardService;
         this.packetRegistry = packetRegistry;
+        this.pluginMessaging = pluginMessaging == null ? defaultPluginMessaging(packetRegistry) : pluginMessaging;
         this.customItemRegistry = customItemRegistry;
         this.customBlockRegistry = customBlockRegistry;
         this.guiService = guiService;
@@ -286,8 +372,13 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                         permissions,
                         new PluginCommandRegistry(commandRegistry, resources, artifact.descriptor.id()),
                         new PluginRecipeRegistry(recipeRegistry, resources, artifact.descriptor.id()),
+                        new PluginAdvancementRegistry(advancementRegistry, resources, artifact.descriptor.id()),
+                        new PluginEnchantmentRegistry(enchantmentRegistry, resources, artifact.descriptor.id()),
+                        structureService,
+                        mapService,
                         new PluginScoreboardService(scoreboardService, resources, artifact.descriptor.id()),
                         new PluginPacketRegistry(packetRegistry, resources),
+                        new PluginPluginMessaging(pluginMessaging, resources),
                         new PluginCustomItemRegistry(customItemRegistry, resources, artifact.descriptor.id()),
                         new PluginCustomBlockRegistry(customBlockRegistry, resources, artifact.descriptor.id()),
                         new PluginGuiService(guiService, resources),
@@ -362,6 +453,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 try {
                     loadedPlugin.plugin.onEnable(loadedPlugin.context);
                     loadedPlugin.enabled = true;
+                    firePluginEnableEvent(loadedPlugin.descriptor);
                     enabledThisRun.push(loadedPlugin);
                 } catch (Throwable failure) {
                     discardLoadedPlugin(loadedPlugin);
@@ -685,16 +777,42 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         });
     }
 
+    private static PluginMessaging defaultPluginMessaging(PacketRegistry packetRegistry) {
+        return packetRegistry instanceof PacketRegistryImpl impl
+                ? new FandPluginMessaging(impl)
+                : PluginMessaging.empty();
+    }
+
     private void disablePlugin(LoadedPlugin loadedPlugin) {
+        boolean wasEnabled = loadedPlugin.enabled;
         try {
-            if (loadedPlugin.enabled) {
+            if (wasEnabled) {
                 loadedPlugin.plugin.onDisable(loadedPlugin.context);
             }
         } catch (Throwable failure) {
             LOGGER.warn("Plugin {} failed during disable", loadedPlugin.descriptor.id(), failure);
         } finally {
+            if (wasEnabled) {
+                firePluginDisableEvent(loadedPlugin.descriptor);
+            }
             loadedPlugin.enabled = false;
             loadedPlugin.context.close();
+        }
+    }
+
+    private void firePluginEnableEvent(PluginDescriptor descriptor) {
+        try {
+            eventBus.fire(new PluginEnableEvent(descriptor));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PluginEnableEvent listener failed for {}", descriptor.id(), failure);
+        }
+    }
+
+    private void firePluginDisableEvent(PluginDescriptor descriptor) {
+        try {
+            eventBus.fire(new PluginDisableEvent(descriptor));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PluginDisableEvent listener failed for {}", descriptor.id(), failure);
         }
     }
 

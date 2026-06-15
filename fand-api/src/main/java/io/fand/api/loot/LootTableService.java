@@ -14,6 +14,10 @@ public interface LootTableService {
         return java.util.List.of();
     }
 
+    default LootTableRegistration replace(Key key, LootGenerator generator) {
+        throw new UnsupportedOperationException("Loot table replacement is not supported");
+    }
+
     static LootTableService empty() {
         return key -> Optional.empty();
     }

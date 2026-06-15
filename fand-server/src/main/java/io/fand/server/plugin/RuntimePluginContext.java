@@ -1,12 +1,16 @@
 package io.fand.server.plugin;
 
+import io.fand.api.advancement.AdvancementRegistry;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.config.Configuration;
 import io.fand.api.config.ConfigurationService;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
+import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.gui.GuiService;
+import io.fand.api.map.MapService;
+import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.PluginContext;
@@ -15,6 +19,7 @@ import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.storage.PluginStorage;
+import io.fand.api.structure.StructureService;
 import io.fand.server.config.FandConfigurationService;
 import io.fand.server.config.YamlConfiguration;
 import java.io.IOException;
@@ -35,8 +40,13 @@ public final class RuntimePluginContext implements PluginContext {
     private final PermissionService permissions;
     private final CommandRegistry commands;
     private final RecipeRegistry recipes;
+    private final AdvancementRegistry advancements;
+    private final EnchantmentRegistry enchantments;
+    private final StructureService structures;
+    private final MapService maps;
     private final ScoreboardService scoreboard;
     private final PacketRegistry packets;
+    private final PluginMessaging pluginMessaging;
     private final CustomItemRegistry customItems;
     private final CustomBlockRegistry customBlocks;
     private final GuiService guis;
@@ -54,8 +64,13 @@ public final class RuntimePluginContext implements PluginContext {
             PermissionService permissions,
             CommandRegistry commands,
             RecipeRegistry recipes,
+            AdvancementRegistry advancements,
+            EnchantmentRegistry enchantments,
+            StructureService structures,
+            MapService maps,
             ScoreboardService scoreboard,
             PacketRegistry packets,
+            PluginMessaging pluginMessaging,
             CustomItemRegistry customItems,
             CustomBlockRegistry customBlocks,
             GuiService guis,
@@ -70,8 +85,13 @@ public final class RuntimePluginContext implements PluginContext {
         this.permissions = permissions;
         this.commands = commands;
         this.recipes = recipes;
+        this.advancements = advancements;
+        this.enchantments = enchantments;
+        this.structures = structures;
+        this.maps = maps;
         this.scoreboard = scoreboard;
         this.packets = packets;
+        this.pluginMessaging = pluginMessaging;
         this.customItems = customItems;
         this.customBlocks = customBlocks;
         this.guis = guis;
@@ -112,6 +132,26 @@ public final class RuntimePluginContext implements PluginContext {
     }
 
     @Override
+    public AdvancementRegistry advancements() {
+        return advancements;
+    }
+
+    @Override
+    public EnchantmentRegistry enchantments() {
+        return enchantments;
+    }
+
+    @Override
+    public StructureService structures() {
+        return structures;
+    }
+
+    @Override
+    public MapService maps() {
+        return maps;
+    }
+
+    @Override
     public ScoreboardService scoreboard() {
         return scoreboard;
     }
@@ -119,6 +159,11 @@ public final class RuntimePluginContext implements PluginContext {
     @Override
     public PacketRegistry packets() {
         return packets;
+    }
+
+    @Override
+    public PluginMessaging pluginMessaging() {
+        return pluginMessaging;
     }
 
     @Override

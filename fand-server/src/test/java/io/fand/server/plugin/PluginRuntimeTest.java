@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.fand.api.lifecycle.PluginDisableEvent;
+import io.fand.api.lifecycle.PluginEnableEvent;
 import io.fand.server.command.CommandManager;
 import io.fand.server.event.EventDispatcher;
 import io.fand.server.permission.PermissionManager;
@@ -347,6 +349,91 @@ final class PluginRuntimeTest {
         } finally {
             manager.close();
         }
+    }
+
+    @Test
+    void firesPluginEnableAndDisableEvents() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("events.jar"),
+                PluginRuntimeTestSupport.descriptorJson("events", "testplugins.events.EventsPlugin", List.of()),
+                Map.of("testplugins/events/EventsPlugin.java", pluginSource("testplugins.events", "EventsPlugin", null, null, null)),
+                List.of()
+        );
+
+        var dispatcher = new EventDispatcher();
+        var seen = new java.util.ArrayList<String>();
+        dispatcher.subscribe(PluginEnableEvent.class, event -> seen.add("enable:" + event.plugin().id()));
+        dispatcher.subscribe(PluginDisableEvent.class, event -> seen.add("disable:" + event.plugin().id()));
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new CommandManager(),
+                dispatcher,
+                new PermissionManager(),
+                new TaskScheduler()
+        );
+        try {
+            manager.loadPlugins();
+            manager.enablePlugins();
+        } finally {
+            manager.close();
+        }
+
+        assertThat(seen).containsExactly("enable:events", "disable:events");
+    }
+
+    @Test
+    void firesPluginDisableEventWhenOnDisableFails() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("broken-disable.jar"),
+                PluginRuntimeTestSupport.descriptorJson("broken-disable", "testplugins.brokendisable.BrokenDisablePlugin", List.of()),
+                Map.of("testplugins/brokendisable/BrokenDisablePlugin.java", """
+                        package testplugins.brokendisable;
+
+                        import io.fand.api.plugin.Plugin;
+                        import io.fand.api.plugin.PluginContext;
+
+                        public final class BrokenDisablePlugin implements Plugin {
+                            @Override
+                            public void onEnable(PluginContext context) {
+                            }
+
+                            @Override
+                            public void onDisable(PluginContext context) {
+                                throw new RuntimeException("disable");
+                            }
+                        }
+                        """),
+                List.of()
+        );
+
+        var dispatcher = new EventDispatcher();
+        var seen = new java.util.ArrayList<String>();
+        dispatcher.subscribe(PluginDisableEvent.class, event -> seen.add(event.plugin().id()));
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new CommandManager(),
+                dispatcher,
+                new PermissionManager(),
+                new TaskScheduler()
+        );
+        try {
+            manager.loadPlugins();
+            manager.enablePlugins();
+        } finally {
+            manager.close();
+        }
+
+        assertThat(seen).containsExactly("broken-disable");
     }
 
     @Test

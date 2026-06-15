@@ -3,6 +3,7 @@ package io.fand.api.player;
 import io.fand.api.inventory.PlayerInventory;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.key.Key;
 
 /**
@@ -21,4 +22,6 @@ public interface OfflinePlayer {
     int statistic(Key key);
 
     Optional<PlayerInventory> inventory();
+
+    CompletableFuture<Boolean> save();
 }

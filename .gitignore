@@ -4,6 +4,7 @@ out/
 target/
 *.class
 *.jar
+/minecraftdocs/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/**/*.jar
 PROJECT_PROPOSAL.md

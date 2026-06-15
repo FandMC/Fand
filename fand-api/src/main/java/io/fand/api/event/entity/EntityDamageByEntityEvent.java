@@ -1,6 +1,7 @@
 package io.fand.api.event.entity;
 
 import io.fand.api.entity.LivingEntity;
+import java.util.Map;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
@@ -22,6 +23,17 @@ public final class EntityDamageByEntityEvent extends EntityDamageEvent {
             LivingEntity damager,
             @Nullable LivingEntity directEntity) {
         super(entity, cause, amount, directEntity, Objects.requireNonNull(damager, "damager"));
+        this.damager = damager;
+    }
+
+    public EntityDamageByEntityEvent(
+            LivingEntity entity,
+            String cause,
+            double amount,
+            Map<DamageModifier, Double> modifiers,
+            LivingEntity damager,
+            @Nullable LivingEntity directEntity) {
+        super(entity, DamageCause.of(cause), amount, modifiers, directEntity, Objects.requireNonNull(damager, "damager"));
         this.damager = damager;
     }
 

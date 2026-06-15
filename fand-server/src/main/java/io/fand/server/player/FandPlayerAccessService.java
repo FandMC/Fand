@@ -1,10 +1,13 @@
 package io.fand.server.player;
 
 import io.fand.api.player.BanEntry;
+import io.fand.api.player.OfflinePlayer;
 import io.fand.api.player.OperatorEntry;
 import io.fand.api.player.OperatorLevel;
 import io.fand.api.player.PlayerAccessService;
 import io.fand.api.player.PlayerProfile;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Date;
@@ -14,11 +17,14 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.stats.ServerStatsCounter;
+import net.minecraft.util.FileUtil;
 import net.minecraft.server.players.NameAndId;
 import net.minecraft.server.players.ServerOpListEntry;
 import net.minecraft.server.players.UserBanListEntry;
 import net.minecraft.server.players.UserWhiteListEntry;
 import net.minecraft.util.Util;
+import net.minecraft.world.level.storage.LevelResource;
 import org.jspecify.annotations.Nullable;
 
 public final class FandPlayerAccessService implements PlayerAccessService {
@@ -46,6 +52,28 @@ public final class FandPlayerAccessService implements PlayerAccessService {
     @Override
     public PlayerProfile offlineProfile(String name) {
         return PlayerProfiles.fromVanilla(NameAndId.createOffline(requireName(name)));
+    }
+
+    @Override
+    public CompletableFuture<Optional<OfflinePlayer>> offlinePlayer(UUID uniqueId) {
+        Objects.requireNonNull(uniqueId, "uniqueId");
+        var current = server();
+        return CompletableFuture.supplyAsync(() -> {
+            var profile = current.services().nameToIdCache().get(uniqueId)
+                    .orElseGet(() -> new NameAndId(uniqueId, uniqueId.toString()));
+            return offlinePlayer(current, profile);
+        }, Util.nonCriticalIoPool());
+    }
+
+    @Override
+    public CompletableFuture<Optional<OfflinePlayer>> offlinePlayer(String name) {
+        var checked = requireName(name);
+        var current = server();
+        return CompletableFuture.supplyAsync(() -> {
+            var cached = current.services().nameToIdCache().get(checked)
+                    .orElseGet(() -> NameAndId.createOffline(checked));
+            return offlinePlayer(current, cached);
+        }, Util.nonCriticalIoPool());
     }
 
     @Override
@@ -214,6 +242,32 @@ public final class FandPlayerAccessService implements PlayerAccessService {
                 PlayerProfiles.fromVanilla(user),
                 OperatorLevels.fromVanilla(entry.permissions().level()),
                 entry.getBypassesPlayerLimit()));
+    }
+
+    private Optional<OfflinePlayer> offlinePlayer(MinecraftServer current, NameAndId profile) {
+        return current.getPlayerList().loadPlayerData(profile)
+                .map(data -> new FandOfflinePlayer(
+                        profile,
+                        PlayerProfiles.fromVanilla(profile),
+                        data,
+                        new ServerStatsCounter(current, statsFile(current, profile)),
+                        current));
+    }
+
+    private static Path statsFile(MinecraftServer server, NameAndId profile) {
+        var statFolder = server.getWorldPath(LevelResource.PLAYER_STATS_DIR);
+        var uuidStatsFile = statFolder.resolve(profile.id() + ".json");
+        if (Files.exists(uuidStatsFile)) {
+            return uuidStatsFile;
+        }
+        var playerNameStatsFile = profile.name() + ".json";
+        if (FileUtil.isValidPathSegment(playerNameStatsFile)) {
+            var playerNameStatsPath = statFolder.resolve(playerNameStatsFile);
+            if (Files.isRegularFile(playerNameStatsPath)) {
+                return playerNameStatsPath;
+            }
+        }
+        return uuidStatsFile;
     }
 
     private MinecraftServer server() {

@@ -3,12 +3,17 @@ package io.fand.server;
 import io.fand.api.Fand;
 import io.fand.api.Server;
 import io.fand.api.command.CommandRegistry;
+import io.fand.api.advancement.AdvancementRegistry;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
+import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.event.world.WorldLoadEvent;
 import io.fand.api.event.world.WorldUnloadEvent;
 import io.fand.api.gui.GuiService;
+import io.fand.api.loot.LootTableService;
+import io.fand.api.map.MapService;
+import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.lifecycle.LifecyclePhase;
 import io.fand.api.lifecycle.ServerStartedEvent;
 import io.fand.api.lifecycle.ServerStartingEvent;
@@ -20,12 +25,14 @@ import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
+import io.fand.api.structure.StructureService;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldCreateOptions;
 import io.fand.api.world.WorldTemplate;
 import io.fand.api.world.generation.GenerationMode;
 import io.fand.api.world.generation.VanillaBiomeSource;
 import io.fand.server.block.FandCustomBlockRegistry;
+import io.fand.server.advancement.FandAdvancementRegistry;
 import io.fand.server.command.BuiltinCommands;
 import io.fand.server.chunk.ChunkSendScheduler;
 import io.fand.server.chunk.ChunkTrackingMetrics;
@@ -35,9 +42,13 @@ import io.fand.server.config.ConfigReloader;
 import io.fand.server.config.FandConfig;
 import io.fand.server.entity.EntityRegistry;
 import io.fand.server.entity.PlayerRegistry;
+import io.fand.server.enchantment.FandEnchantmentRegistry;
 import io.fand.server.event.EventDispatcher;
 import io.fand.server.gui.FandGuiService;
 import io.fand.server.item.FandCustomItemRegistry;
+import io.fand.server.loot.FandLootTableService;
+import io.fand.server.map.FandMapService;
+import io.fand.server.messaging.FandPluginMessaging;
 import io.fand.server.network.ProxyForwardingSettings;
 import io.fand.server.network.packet.PacketRegistryImpl;
 import io.fand.server.permission.PermissionManager;
@@ -47,6 +58,7 @@ import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.recipe.FandRecipeRegistry;
 import io.fand.server.scheduler.TaskScheduler;
 import io.fand.server.scoreboard.FandScoreboardService;
+import io.fand.server.structure.FandStructureService;
 import io.fand.server.tag.FandTags;
 import io.fand.server.world.WorldRegistry;
 import java.nio.file.Path;
@@ -91,9 +103,15 @@ public final class FandServer implements Server, AutoCloseable {
     private final FandRecipeRegistry recipes;
     private final FandScoreboardService scoreboard;
     private final PacketRegistryImpl packets;
+    private final FandPluginMessaging pluginMessaging;
     private final FandCustomItemRegistry customItems;
     private final FandCustomBlockRegistry customBlocks;
     private final FandGuiService guis;
+    private final FandLootTableService lootTables;
+    private final FandAdvancementRegistry advancements;
+    private final FandEnchantmentRegistry enchantments;
+    private final FandStructureService structures;
+    private final FandMapService maps;
     private final PluginRuntime plugins;
     private final PlayerRegistry players;
     private final FandPlayerAccessService playerAccess;
@@ -130,9 +148,15 @@ public final class FandServer implements Server, AutoCloseable {
         this.recipes = new FandRecipeRegistry();
         this.scoreboard = new FandScoreboardService(minecraftServer::get);
         this.packets = new PacketRegistryImpl();
+        this.pluginMessaging = new FandPluginMessaging(packets);
         this.customItems = new FandCustomItemRegistry();
         this.customBlocks = new FandCustomBlockRegistry(events, customItems);
         this.guis = new FandGuiService(events);
+        this.lootTables = new FandLootTableService(minecraftServer::get);
+        this.advancements = new FandAdvancementRegistry(minecraftServer::get);
+        this.enchantments = new FandEnchantmentRegistry(minecraftServer::get);
+        this.structures = new FandStructureService(minecraftServer::get);
+        this.maps = new FandMapService(minecraftServer::get);
         this.players = new PlayerRegistry(permissions);
         this.playerAccess = new FandPlayerAccessService(minecraftServer::get);
         this.performance = new ServerPerformanceTracker(() -> chunks.metrics().pendingJobs());
@@ -148,6 +172,11 @@ public final class FandServer implements Server, AutoCloseable {
                 recipes,
                 scoreboard,
                 packets,
+                pluginMessaging,
+                advancements,
+                enchantments,
+                structures,
+                maps,
                 customItems,
                 customBlocks,
                 guis,
@@ -225,6 +254,8 @@ public final class FandServer implements Server, AutoCloseable {
         players.bindWorldResolver(registry::wrap);
         io.fand.server.item.FandItemStacks.useRegistries(server.registryAccess());
         recipes.bind(server);
+        advancements.applyLoadedAdvancements();
+        enchantments.applyLoadedEnchantments();
     }
 
     /**
@@ -327,6 +358,11 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
+    public PluginMessaging pluginMessaging() {
+        return pluginMessaging;
+    }
+
+    @Override
     public CustomItemRegistry customItems() {
         return customItems;
     }
@@ -338,6 +374,31 @@ public final class FandServer implements Server, AutoCloseable {
 
     public FandCustomBlockRegistry customBlockRegistry() {
         return customBlocks;
+    }
+
+    @Override
+    public LootTableService lootTables() {
+        return lootTables;
+    }
+
+    @Override
+    public AdvancementRegistry advancements() {
+        return advancements;
+    }
+
+    @Override
+    public EnchantmentRegistry enchantments() {
+        return enchantments;
+    }
+
+    @Override
+    public StructureService structures() {
+        return structures;
+    }
+
+    @Override
+    public MapService maps() {
+        return maps;
     }
 
     @Override
@@ -369,6 +430,44 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public io.fand.api.performance.ServerPerformance performance() {
         return performance.snapshot();
+    }
+
+    @Override
+    public void broadcast(net.kyori.adventure.text.Component message) {
+        Objects.requireNonNull(message, "message");
+        players.snapshot().forEach(player -> player.sendMessage(message));
+    }
+
+    @Override
+    public int currentTick() {
+        var server = minecraftServer.get();
+        return server == null ? Server.super.currentTick() : server.getTickCount();
+    }
+
+    @Override
+    public String motd() {
+        var server = minecraftServer.get();
+        return server == null ? "" : server.getMotd();
+    }
+
+    @Override
+    public void setMotd(String motd) {
+        Objects.requireNonNull(motd, "motd");
+        var server = minecraftServer.get();
+        if (server == null) {
+            throw new IllegalStateException("Minecraft server is not attached");
+        }
+        server.setMotd(motd);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> reloadData() {
+        var server = minecraftServer.get();
+        if (server == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is not attached"));
+        }
+        return server.reloadResources(server.getPackRepository().getSelectedIds())
+                .thenApply(ignored -> true);
     }
 
     @Override
@@ -620,6 +719,7 @@ public final class FandServer implements Server, AutoCloseable {
         }
         plugins.disablePlugins();
         plugins.close();
+        pluginMessaging.close();
         packets.close();
         guis.close();
         chunks.close();

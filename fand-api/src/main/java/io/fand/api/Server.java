@@ -131,6 +131,11 @@ public interface Server extends ForwardingAudience {
     /** Latest published server tick performance snapshot. */
     ServerPerformance performance();
 
+    default void broadcast(net.kyori.adventure.text.Component message) {
+        java.util.Objects.requireNonNull(message, "message");
+        sendMessage(message);
+    }
+
     default int currentTick() {
         return (int) Math.min(Integer.MAX_VALUE, performance().tickCount());
     }

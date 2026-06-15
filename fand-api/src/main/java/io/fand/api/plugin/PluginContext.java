@@ -1,12 +1,15 @@
 package io.fand.api.plugin;
 
+import io.fand.api.advancement.AdvancementRegistry;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.config.Configuration;
 import io.fand.api.config.ConfigurationService;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
+import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.gui.GuiService;
+import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.permission.PermissionService;
@@ -14,6 +17,7 @@ import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.storage.PluginStorage;
+import io.fand.api.structure.StructureService;
 import java.nio.file.Path;
 import org.slf4j.Logger;
 
@@ -38,6 +42,26 @@ public interface PluginContext {
 
     /** Recipe registry scoped to this plugin's lifecycle. */
     RecipeRegistry recipes();
+
+    /** Advancement registry scoped to this plugin's lifecycle and namespace. */
+    default AdvancementRegistry advancements() {
+        return AdvancementRegistry.empty();
+    }
+
+    /** Enchantment registry scoped to this plugin's lifecycle and namespace. */
+    default EnchantmentRegistry enchantments() {
+        return EnchantmentRegistry.empty();
+    }
+
+    /** Structure template and locate service visible to this plugin. */
+    default StructureService structures() {
+        return StructureService.empty();
+    }
+
+    /** Custom map rendering service visible to this plugin. */
+    default MapService maps() {
+        return MapService.empty();
+    }
 
     /** Persistent scoreboard service scoped to this plugin's lifecycle. */
     ScoreboardService scoreboard();

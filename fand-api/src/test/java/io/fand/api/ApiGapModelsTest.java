@@ -57,6 +57,27 @@ class ApiGapModelsTest {
         assertThat(event.modifiers()).containsOnly(Map.entry(DamageModifier.BASE, 3.0));
     }
 
+    @Test
+    void damageEventAcceptsRuntimeDamageBreakdown() {
+        var event = new EntityDamageEvent(
+                new TestLivingEntity(),
+                DamageCause.PLAYER_ATTACK,
+                4.0,
+                Map.of(
+                        DamageModifier.BASE, 8.0,
+                        DamageModifier.ARMOR, -2.0,
+                        DamageModifier.RESISTANCE, -1.0,
+                        DamageModifier.ABSORPTION, -1.0),
+                null,
+                null);
+
+        assertThat(event.amount()).isEqualTo(4.0);
+        assertThat(event.modifier(DamageModifier.BASE)).isEqualTo(8.0);
+        assertThat(event.modifier(DamageModifier.ARMOR)).isEqualTo(-2.0);
+        assertThat(event.modifier(DamageModifier.RESISTANCE)).isEqualTo(-1.0);
+        assertThat(event.modifier(DamageModifier.ABSORPTION)).isEqualTo(-1.0);
+    }
+
     private record TestItemType(Key key, int maxStackSize) implements ItemType {
     }
 
