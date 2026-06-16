@@ -12,8 +12,10 @@ import io.fand.api.packet.PacketDirection;
 import io.fand.api.packet.PacketProtocol;
 import io.fand.server.network.packet.PacketRegistryImpl;
 import java.lang.reflect.Proxy;
+import java.util.Arrays;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
 
@@ -103,6 +105,23 @@ final class FandPluginMessagingTest {
                 .handle(new StubPacketContext(stubPlayer()), new CustomPacket(channel, new byte[] {1}));
 
         assertThat(called).hasValue(1);
+    }
+
+    @Test
+    void serverboundPayloadIsIsolatedBetweenHandlers() {
+        var packets = new PacketRegistryImpl();
+        var messaging = new FandPluginMessaging(packets);
+        var channel = Key.key("example:isolated");
+        var secondPayload = new AtomicReference<byte[]>();
+        messaging.register(channel, PluginMessageDirection.SERVERBOUND, (player, registeredChannel, payload) -> payload[0] = 9);
+        messaging.register(channel, PluginMessageDirection.SERVERBOUND, (player, registeredChannel, payload) ->
+                secondPayload.set(Arrays.copyOf(payload, payload.length)));
+
+        packets.customHandler(PacketProtocol.PLAY, channel)
+                .orElseThrow()
+                .handle(new StubPacketContext(stubPlayer()), new CustomPacket(channel, new byte[] {1, 2, 3}));
+
+        assertThat(secondPayload.get()).containsExactly(1, 2, 3);
     }
 
     @Test

@@ -11,6 +11,8 @@ import io.fand.api.packet.PacketDirection;
 import io.fand.api.packet.PacketRegistration;
 import io.fand.server.entity.FandPlayer;
 import io.fand.server.network.packet.PacketRegistryImpl;
+import io.fand.server.util.ServerThreading;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -70,18 +72,15 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
         if (!(player instanceof FandPlayer fandPlayer)) {
             throw new IllegalArgumentException("Player is not owned by this server: " + player);
         }
+        var payloadCopy = Arrays.copyOf(payload, payload.length);
         var handle = fandPlayer.handle();
         var server = handle.level().getServer();
         Runnable send = () -> {
             if (handle.connection != null) {
-                handle.connection.send(new ClientboundCustomPayloadPacket(new DiscardedPayload(identifier(channel), payload)));
+                handle.connection.send(new ClientboundCustomPayloadPacket(new DiscardedPayload(identifier(channel), payloadCopy)));
             }
         };
-        if (server == null || server.isSameThread()) {
-            send.run();
-        } else {
-            server.executeIfPossible(send);
-        }
+        ServerThreading.run(server, send);
     }
 
     @Override
@@ -225,7 +224,10 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
                         for (var registeredHandler : handlers) {
                             if (registeredHandler.active()) {
                                 try {
-                                    registeredHandler.handler.handle(player, message, payload);
+                                    registeredHandler.handler.handle(
+                                            player,
+                                            message,
+                                            Arrays.copyOf(payload, payload.length));
                                 } catch (RuntimeException failure) {
                                     LOGGER.warn("Plugin message handler failed for {}", channel.asString(), failure);
                                 }

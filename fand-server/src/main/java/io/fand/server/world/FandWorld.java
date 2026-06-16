@@ -36,6 +36,7 @@ import io.fand.server.entity.FandEntityType;
 import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.item.FandItemStacks;
 import io.fand.server.scheduler.TaskScheduler;
+import io.fand.server.util.ServerThreading;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
@@ -924,69 +925,22 @@ public final class FandWorld implements World {
 
     private void runOnServerThread(Runnable task) {
         var server = handle.getServer();
-        if (server == null || server.isSameThread()) {
-            task.run();
-        } else {
-            server.executeIfPossible(task);
-        }
+        ServerThreading.run(server, task);
     }
 
     private CompletableFuture<Void> runOnServerThreadFuture(Runnable task) {
         var server = handle.getServer();
-        if (server == null || server.isSameThread()) {
-            try {
-                task.run();
-                return CompletableFuture.completedFuture(null);
-            } catch (Throwable failure) {
-                return CompletableFuture.failedFuture(failure);
-            }
-        }
-        CompletableFuture<Void> future = new CompletableFuture<>();
-        server.executeIfPossible(() -> {
-            try {
-                task.run();
-                future.complete(null);
-            } catch (Throwable failure) {
-                future.completeExceptionally(failure);
-            }
-        });
-        return future;
+        return ServerThreading.runFuture(server, task);
     }
 
     private <T> CompletableFuture<T> runOnServerThreadFuture(Supplier<T> task) {
         var server = handle.getServer();
-        if (server == null || server.isSameThread()) {
-            try {
-                return CompletableFuture.completedFuture(task.get());
-            } catch (Throwable failure) {
-                return CompletableFuture.failedFuture(failure);
-            }
-        }
-        CompletableFuture<T> future = new CompletableFuture<>();
-        server.executeIfPossible(() -> {
-            try {
-                future.complete(task.get());
-            } catch (Throwable failure) {
-                future.completeExceptionally(failure);
-            }
-        });
-        return future;
+        return ServerThreading.callFuture(server, task);
     }
 
     private <T> T callOnServerThread(Supplier<T> task) {
         var server = handle.getServer();
-        if (server == null || server.isSameThread()) {
-            return task.get();
-        }
-        CompletableFuture<T> future = new CompletableFuture<>();
-        server.executeIfPossible(() -> {
-            try {
-                future.complete(task.get());
-            } catch (Throwable failure) {
-                future.completeExceptionally(failure);
-            }
-        });
-        return future.join();
+        return ServerThreading.callBlocking(server, task);
     }
 
     private Entity wrapEntity(net.minecraft.world.entity.Entity entity) {

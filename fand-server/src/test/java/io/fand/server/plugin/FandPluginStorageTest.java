@@ -1,8 +1,10 @@
 package io.fand.server.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.gson.JsonPrimitive;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.UUID;
 import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
@@ -37,5 +39,28 @@ class FandPluginStorageTest {
         var reloaded = new FandPluginStorage(tempDir);
 
         assertThat(reloaded.global().getString("queued")).contains("yes");
+    }
+
+    @Test
+    void worldStorageUsesPortableFileNames() {
+        var storage = new FandPluginStorage(tempDir);
+        storage.world(Key.key("minecraft:the/end")).setString("name", "end");
+        storage.flush();
+
+        var storageRoot = tempDir.resolve("storage").resolve("worlds");
+
+        assertThat(storageRoot.resolve("minecraft__the_end")).doesNotExist();
+        assertThat(storageRoot).isDirectoryContaining(path ->
+                path.getFileName().toString().startsWith("minecraft__") && java.nio.file.Files.isDirectory(path));
+    }
+
+    @Test
+    void closeShutsDownDebouncedFlusher() {
+        var storage = new FandPluginStorage(tempDir);
+        var global = storage.global();
+        storage.close();
+
+        assertThatThrownBy(() -> global.setString("late", "value"))
+                .isInstanceOf(RejectedExecutionException.class);
     }
 }

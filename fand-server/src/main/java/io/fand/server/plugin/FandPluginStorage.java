@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -22,26 +23,30 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import net.kyori.adventure.key.Key;
 
 public final class FandPluginStorage implements PluginStorage, AutoCloseable {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final long FLUSH_DELAY_MILLIS = 250L;
-    private static final ScheduledExecutorService FLUSHER = Executors.newSingleThreadScheduledExecutor(task -> {
-        var thread = new Thread(task, "Fand Plugin Storage Flusher");
-        thread.setDaemon(true);
-        return thread;
-    });
 
     private final Path root;
+    private final ScheduledExecutorService flusher;
     private final ConcurrentHashMap<String, JsonScopedStorage> stores = new ConcurrentHashMap<>();
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
     public FandPluginStorage(Path pluginDataDirectory) {
         this.root = Objects.requireNonNull(pluginDataDirectory, "pluginDataDirectory").resolve("storage");
+        this.flusher = Executors.newSingleThreadScheduledExecutor(task -> {
+            var thread = new Thread(task, "Fand Plugin Storage Flusher");
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 
     @Override
@@ -78,7 +83,10 @@ public final class FandPluginStorage implements PluginStorage, AutoCloseable {
     }
 
     private ScopedStorage store(String id, Path path) {
-        return stores.computeIfAbsent(id, ignored -> new JsonScopedStorage(path));
+        if (closed.get()) {
+            throw new RejectedExecutionException("plugin storage is closed");
+        }
+        return stores.computeIfAbsent(id, ignored -> new JsonScopedStorage(path, flusher, closed));
     }
 
     @Override
@@ -90,23 +98,32 @@ public final class FandPluginStorage implements PluginStorage, AutoCloseable {
 
     @Override
     public void close() {
-        flush();
+        if (closed.compareAndSet(false, true)) {
+            flush();
+            flusher.shutdownNow();
+        }
     }
 
     private static String fileName(Key key) {
-        return key.namespace() + "__" + key.value().replace('/', '_');
+        return key.namespace() + "__" + Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(key.value().getBytes(StandardCharsets.UTF_8));
     }
 
     private static final class JsonScopedStorage implements ScopedStorage {
 
         private final Path path;
+        private final ScheduledExecutorService flusher;
+        private final AtomicBoolean closed;
         private final Object lock = new Object();
         private JsonObject values;
         private boolean dirty;
         private ScheduledFuture<?> scheduledFlush;
 
-        private JsonScopedStorage(Path path) {
+        private JsonScopedStorage(Path path, ScheduledExecutorService flusher, AtomicBoolean closed) {
             this.path = path;
+            this.flusher = flusher;
+            this.closed = closed;
         }
 
         @Override
@@ -134,6 +151,7 @@ public final class FandPluginStorage implements PluginStorage, AutoCloseable {
             Objects.requireNonNull(key, "key");
             Objects.requireNonNull(value, "value");
             synchronized (lock) {
+                ensureOpenForWrite();
                 load().add(key, value.deepCopy());
                 markDirty();
             }
@@ -143,6 +161,7 @@ public final class FandPluginStorage implements PluginStorage, AutoCloseable {
         public void remove(String key) {
             Objects.requireNonNull(key, "key");
             synchronized (lock) {
+                ensureOpenForWrite();
                 if (load().remove(key) != null) {
                     markDirty();
                 }
@@ -152,6 +171,7 @@ public final class FandPluginStorage implements PluginStorage, AutoCloseable {
         @Override
         public void clear() {
             synchronized (lock) {
+                ensureOpenForWrite();
                 values = new JsonObject();
                 markDirty();
             }
@@ -193,7 +213,13 @@ public final class FandPluginStorage implements PluginStorage, AutoCloseable {
         private void markDirty() {
             dirty = true;
             if (scheduledFlush == null || scheduledFlush.isDone()) {
-                scheduledFlush = FLUSHER.schedule(this::flush, FLUSH_DELAY_MILLIS, TimeUnit.MILLISECONDS);
+                scheduledFlush = flusher.schedule(this::flush, FLUSH_DELAY_MILLIS, TimeUnit.MILLISECONDS);
+            }
+        }
+
+        private void ensureOpenForWrite() {
+            if (closed.get()) {
+                throw new RejectedExecutionException("plugin storage is closed");
             }
         }
 

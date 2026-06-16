@@ -6,6 +6,7 @@ import io.fand.api.world.Location;
 import io.fand.api.world.Vector3;
 import io.fand.api.world.World;
 import io.fand.server.component.EntityComponentStorage;
+import io.fand.server.util.ServerThreading;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.WorldRegistry;
 import java.util.List;
@@ -207,7 +208,9 @@ public class FandEntity implements io.fand.api.entity.Entity {
         if (server.isSameThread()) {
             run.run();
         } else {
-            server.executeIfPossible(run);
+            if (!ServerThreading.run(server, run)) {
+                future.completeExceptionally(ServerThreading.serverStopping());
+            }
         }
         return future;
     }
@@ -310,31 +313,12 @@ public class FandEntity implements io.fand.api.entity.Entity {
 
     protected void runOnServerThread(Runnable task) {
         var server = handle.level().getServer();
-        if (server == null || server.isSameThread()) {
-            task.run();
-        } else {
-            server.executeIfPossible(task);
-        }
+        ServerThreading.run(server, task);
     }
 
     protected <T> CompletableFuture<T> runOnServerThreadFuture(Supplier<T> task) {
         var server = handle.level().getServer();
-        if (server == null || server.isSameThread()) {
-            try {
-                return CompletableFuture.completedFuture(task.get());
-            } catch (Throwable failure) {
-                return CompletableFuture.failedFuture(failure);
-            }
-        }
-        var future = new CompletableFuture<T>();
-        server.executeIfPossible(() -> {
-            try {
-                future.complete(task.get());
-            } catch (Throwable failure) {
-                future.completeExceptionally(failure);
-            }
-        });
-        return future;
+        return ServerThreading.callFuture(server, task);
     }
 
     private ServerLevel resolveLevel(World world) {

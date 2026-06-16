@@ -35,6 +35,7 @@ import io.fand.server.inventory.FandPlayerInventory;
 import io.fand.server.item.FandItemStacks;
 import io.fand.server.player.PlayerProfiles;
 import io.fand.server.recipe.FandRecipes;
+import io.fand.server.util.ServerThreading;
 import io.fand.server.world.ParticleEffects;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.SoundEffects;
@@ -152,7 +153,7 @@ public final class FandPlayer implements Player {
         if (server.isSameThread()) {
             run.run();
         } else {
-            server.executeIfPossible(run);
+            ServerThreading.run(server, run);
         }
     }
 
@@ -641,7 +642,9 @@ public final class FandPlayer implements Player {
         if (server.isSameThread()) {
             run.run();
         } else {
-            server.executeIfPossible(run);
+            if (!ServerThreading.run(server, run)) {
+                future.completeExceptionally(ServerThreading.serverStopping());
+            }
         }
         return future;
     }
@@ -836,11 +839,7 @@ public final class FandPlayer implements Player {
         if (server == null) {
             return;
         }
-        if (server.isSameThread()) {
-            task.run();
-        } else {
-            server.executeIfPossible(task);
-        }
+        ServerThreading.run(server, task);
     }
 
     private <T> CompletableFuture<T> runOnServerThreadFuture(Supplier<T> task) {
@@ -848,22 +847,7 @@ public final class FandPlayer implements Player {
         if (server == null) {
             return CompletableFuture.failedFuture(new IllegalStateException("Player is not attached to a server"));
         }
-        if (server.isSameThread()) {
-            try {
-                return CompletableFuture.completedFuture(task.get());
-            } catch (Throwable failure) {
-                return CompletableFuture.failedFuture(failure);
-            }
-        }
-        var future = new CompletableFuture<T>();
-        server.executeIfPossible(() -> {
-            try {
-                future.complete(task.get());
-            } catch (Throwable failure) {
-                future.completeExceptionally(failure);
-            }
-        });
-        return future;
+        return ServerThreading.callFuture(server, task);
     }
 
     private <T> T callOnServerThread(Supplier<T> task) {
@@ -871,10 +855,7 @@ public final class FandPlayer implements Player {
         if (server == null) {
             throw new IllegalStateException("Player is not attached to a server");
         }
-        if (server.isSameThread()) {
-            return task.get();
-        }
-        return server.submit(task).join();
+        return ServerThreading.callBlocking(server, task);
     }
 
     private Optional<World> resolveWorld(net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension) {
@@ -1511,7 +1492,9 @@ public final class FandPlayer implements Player {
         if (server.isSameThread()) {
             run.run();
         } else {
-            server.executeIfPossible(run);
+            if (!ServerThreading.run(server, run)) {
+                future.completeExceptionally(ServerThreading.serverStopping());
+            }
         }
         return future;
     }
@@ -1552,7 +1535,9 @@ public final class FandPlayer implements Player {
         if (server.isSameThread()) {
             run.run();
         } else {
-            server.executeIfPossible(run);
+            if (!ServerThreading.run(server, run)) {
+                future.completeExceptionally(ServerThreading.serverStopping());
+            }
         }
         return future;
     }

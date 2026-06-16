@@ -3,8 +3,8 @@ package io.fand.server.component;
 import com.google.gson.JsonElement;
 import io.fand.api.component.DataComponentContainer;
 import io.fand.api.component.DataComponentMap;
+import io.fand.server.util.ServerThreading;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import net.kyori.adventure.key.Key;
 import net.minecraft.server.MinecraftServer;
@@ -67,34 +67,13 @@ public final class SavedDataComponentContainer implements DataComponentContainer
     }
 
     private void runOnServerThread(Runnable task) {
-        if (server.isSameThread()) {
+        ServerThreading.callBlocking(server, () -> {
             task.run();
-            return;
-        }
-        var future = new CompletableFuture<Void>();
-        server.executeIfPossible(() -> {
-            try {
-                task.run();
-                future.complete(null);
-            } catch (Throwable failure) {
-                future.completeExceptionally(failure);
-            }
+            return null;
         });
-        future.join();
     }
 
     private <T> T callOnServerThread(Supplier<T> task) {
-        if (server.isSameThread()) {
-            return task.get();
-        }
-        var future = new CompletableFuture<T>();
-        server.executeIfPossible(() -> {
-            try {
-                future.complete(task.get());
-            } catch (Throwable failure) {
-                future.completeExceptionally(failure);
-            }
-        });
-        return future.join();
+        return ServerThreading.callBlocking(server, task);
     }
 }
