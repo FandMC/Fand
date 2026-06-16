@@ -8,7 +8,7 @@ import java.util.Objects;
 /**
  * Fired on the server thread before a block source damages a living entity.
  */
-public final class EntityDamageByBlockEvent extends EntityDamageEvent {
+public class EntityDamageByBlockEvent extends EntityDamageEvent {
 
     private final Block damager;
 

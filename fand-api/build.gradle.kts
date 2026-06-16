@@ -6,6 +6,7 @@ description = "Fand Server plugin API"
 
 val generatedFandDataSources = layout.buildDirectory.dir("generated/sources/fandData/main/java")
 val minecraftSourceRoot = rootProject.layout.projectDirectory.dir("fand-server/src/minecraft/java")
+val apiSourceRoot = layout.projectDirectory.dir("src/main/java")
 val fandDataGenerator by configurations.creating {
     isCanBeConsumed = false
     isCanBeResolved = true
@@ -19,8 +20,13 @@ val generateFandData by tasks.registering(JavaExec::class) {
     classpath = fandDataGenerator
     mainClass.set("io.fand.datagenerator.FandDataGenerator")
 
-    args(minecraftSourceRoot.asFile.absolutePath, generatedFandDataSources.get().asFile.absolutePath)
+    args(
+        minecraftSourceRoot.asFile.absolutePath,
+        generatedFandDataSources.get().asFile.absolutePath,
+        apiSourceRoot.asFile.absolutePath,
+    )
     inputs.dir(minecraftSourceRoot)
+    inputs.dir(apiSourceRoot)
     inputs.files(fandDataGenerator).withPropertyName("generatorClasspath")
     outputs.dir(generatedFandDataSources)
 }

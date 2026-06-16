@@ -11,6 +11,8 @@ import io.fand.api.event.entity.EntityCreatePortalEvent;
 import io.fand.api.event.entity.EntityDamageByBlockEvent;
 import io.fand.api.event.entity.EntityDamageByEntityEvent;
 import io.fand.api.event.entity.EntityDamageEvent;
+import io.fand.api.event.entity.DamageEventRegistry;
+import io.fand.api.event.entity.DamageCause;
 import io.fand.api.event.entity.DamageModifier;
 import io.fand.api.event.entity.EntityExplodeEvent;
 import io.fand.api.event.entity.AreaEffectCloudApplyEvent;
@@ -164,7 +166,8 @@ public final class EntityEvents {
         var bus = FandHooks.events();
         return bus.hasListeners(EntityDamageEvent.class)
                 || bus.hasListeners(EntityDamageByEntityEvent.class)
-                || bus.hasListeners(EntityDamageByBlockEvent.class);
+                || bus.hasListeners(EntityDamageByBlockEvent.class)
+                || hasDetailedDamageListeners(bus);
     }
 
     public static @Nullable Float fireDamage(
@@ -176,7 +179,8 @@ public final class EntityEvents {
         boolean hasGenericListeners = bus.hasListeners(EntityDamageEvent.class);
         boolean hasByEntityListeners = bus.hasListeners(EntityDamageByEntityEvent.class);
         boolean hasByBlockListeners = bus.hasListeners(EntityDamageByBlockEvent.class);
-        if (!hasGenericListeners && !hasByEntityListeners && !hasByBlockListeners) {
+        boolean hasDetailedListeners = hasDetailedDamageListeners(bus);
+        if (!hasGenericListeners && !hasByEntityListeners && !hasByBlockListeners && !hasDetailedListeners) {
             return damage.finalDamage();
         }
         var victim = wrapLivingEntityForEvent("EntityDamageEvent victim", entity);
@@ -192,37 +196,24 @@ public final class EntityEvents {
                         .or(() -> Optional.ofNullable(source.sourcePositionRaw()).map(net.minecraft.core.BlockPos::containing))
                         .flatMap(pos -> Optional.ofNullable(FandHooks.wrapWorld(serverLevel))
                                 .map(world -> new FandBlock(world, pos.getX(), pos.getY(), pos.getZ())));
-        if (attacker.isEmpty() && blockSource.isEmpty() && !hasGenericListeners) {
+        if (attacker.isEmpty() && blockSource.isEmpty() && !hasGenericListeners && !hasDetailedListeners) {
             return damage.finalDamage();
         }
-        var cause = source.typeHolder().unwrapKey().map(key -> key.identifier().toString()).orElse("minecraft:generic");
-        EntityDamageEvent event = attacker
-                .<EntityDamageEvent>map(damager -> new EntityDamageByEntityEvent(
-                        victim,
-                        cause,
-                        damage.finalDamage(),
-                        damage.modifiers(),
-                        damager,
-                        directEntity.orElse(null)))
-                .or(() -> blockSource.map(block -> new EntityDamageByBlockEvent(
-                        victim,
-                        cause,
-                        damage.finalDamage(),
-                        damage.modifiers(),
-                        block)))
-                .orElseGet(() -> new EntityDamageEvent(
-                        victim,
-                        io.fand.api.event.entity.DamageCause.of(cause),
-                        damage.finalDamage(),
-                        damage.modifiers(),
-                        directEntity.orElse(null),
-                        null));
+        var cause = source.typeHolder().unwrapKey()
+                .map(key -> DamageCause.of(key.identifier().toString()))
+                .orElse(DamageCause.GENERIC);
+        EntityDamageEvent event = detailedDamageEvent(
+                victim,
+                cause,
+                damage,
+                attacker.orElse(null),
+                directEntity.orElse(null),
+                blockSource.orElse(null),
+                hasDetailedListeners);
         FandHooks.fireOrLog(
                 bus,
                 event,
-                event instanceof EntityDamageByEntityEvent
-                        ? "EntityDamageByEntityEvent"
-                        : event instanceof EntityDamageByBlockEvent ? "EntityDamageByBlockEvent" : "EntityDamageEvent");
+                event.getClass().getSimpleName());
         if (event.cancelled()) {
             return null;
         }
@@ -245,6 +236,63 @@ public final class EntityEvents {
                 NEXT_BLOCK_DAMAGE_SOURCE.set(previous);
             }
         }
+    }
+
+    private static boolean hasDetailedDamageListeners(io.fand.api.event.EventBus bus) {
+        for (var eventType : DamageEventRegistry.detailedEventTypes()) {
+            if (bus.hasListeners(eventType)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static EntityDamageEvent detailedDamageEvent(
+            io.fand.api.entity.LivingEntity victim,
+            DamageCause cause,
+            DamageBreakdown damage,
+            io.fand.api.entity.@Nullable LivingEntity attacker,
+            io.fand.api.entity.@Nullable LivingEntity directEntity,
+            io.fand.api.block.@Nullable Block blockSource,
+            boolean hasDetailedListeners
+    ) {
+        if (hasDetailedListeners) {
+            EntityDamageEvent detailed = DamageEventRegistry.createDetailed(
+                    victim,
+                    cause,
+                    damage.finalDamage(),
+                    damage.modifiers(),
+                    attacker,
+                    directEntity,
+                    blockSource);
+            if (detailed != null) {
+                return detailed;
+            }
+        }
+        if (attacker != null) {
+            return new EntityDamageByEntityEvent(
+                    victim,
+                    cause.asString(),
+                    damage.finalDamage(),
+                    damage.modifiers(),
+                    attacker,
+                    directEntity);
+        }
+        if (blockSource != null) {
+            return new EntityDamageByBlockEvent(
+                    victim,
+                    cause.asString(),
+                    damage.finalDamage(),
+                    damage.modifiers(),
+                    blockSource);
+        }
+        return new EntityDamageEvent(
+                victim,
+                cause,
+                damage.finalDamage(),
+                damage.modifiers(),
+                directEntity,
+                null);
     }
 
     public static boolean fireSpawn(net.minecraft.world.entity.Entity entity, EntitySpawnEvent.Cause cause) {

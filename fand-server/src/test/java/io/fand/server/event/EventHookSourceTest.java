@@ -32,6 +32,63 @@ final class EventHookSourceTest {
     }
 
     @Test
+    void detailedDamageEventsStayWired() throws IOException {
+        var source = read("src/main/java/io/fand/server/event/EntityEvents.java");
+
+        assertThat(source).contains("hasDetailedDamageListeners(bus)");
+        assertThat(source).contains("&& !hasDetailedListeners) {\n            return damage.finalDamage();");
+        assertThat(source).contains("DamageEventRegistry.detailedEventTypes()");
+        assertThat(source).contains("DamageEventRegistry.createDetailed(");
+
+        var generator = read("../fand-data-generator/src/main/java/io/fand/datagenerator/DamageEventSpec.java");
+        assertThat(generator).contains("EntityPlayerAttackDamageEvent");
+        assertThat(generator).contains("EntityMobAttackDamageEvent");
+        assertThat(generator).contains("EntityProjectileDamageEvent");
+        assertThat(generator).contains("EntityArrowDamageEvent");
+        assertThat(generator).contains("EntityTridentDamageEvent");
+        assertThat(generator).contains("EntityMobProjectileDamageEvent");
+        assertThat(generator).contains("EntitySpitDamageEvent");
+        assertThat(generator).contains("EntityFireballDamageEvent");
+        assertThat(generator).contains("EntityUnattributedFireballDamageEvent");
+        assertThat(generator).contains("EntityWitherSkullDamageEvent");
+        assertThat(generator).contains("EntityThrownDamageEvent");
+        assertThat(generator).contains("EntityFireworksDamageEvent");
+        assertThat(generator).contains("EntityWindChargeDamageEvent");
+        assertThat(generator).contains("EntityExplosionDamageEvent");
+        assertThat(generator).contains("EntityBadRespawnPointDamageEvent");
+        assertThat(generator).contains("EntityFallDamageEvent");
+        assertThat(generator).contains("EntityEnderPearlDamageEvent");
+        assertThat(generator).contains("EntityFlyIntoWallDamageEvent");
+        assertThat(generator).contains("EntityStalagmiteDamageEvent");
+        assertThat(generator).contains("EntityFireDamageEvent");
+        assertThat(generator).contains("EntityCampfireDamageEvent");
+        assertThat(generator).contains("EntityHotFloorDamageEvent");
+        assertThat(generator).contains("EntitySulfurCubeHotDamageEvent");
+        assertThat(generator).contains("EntityLightningDamageEvent");
+        assertThat(generator).contains("EntityLavaDamageEvent");
+        assertThat(generator).contains("EntityDrownDamageEvent");
+        assertThat(generator).contains("EntityStarveDamageEvent");
+        assertThat(generator).contains("EntityFreezeDamageEvent");
+        assertThat(generator).contains("EntityMagicDamageEvent");
+        assertThat(generator).contains("EntityWitherDamageEvent");
+        assertThat(generator).contains("EntityDragonBreathDamageEvent");
+        assertThat(generator).contains("EntityThornsDamageEvent");
+        assertThat(generator).contains("EntityCactusDamageEvent");
+        assertThat(generator).contains("EntityOutOfWorldDamageEvent");
+        assertThat(generator).contains("EntitySonicBoomDamageEvent");
+        assertThat(generator).contains("EntityOutsideBorderDamageEvent");
+        assertThat(generator).contains("EntityCrammingDamageEvent");
+        assertThat(generator).contains("EntityInWallDamageEvent");
+        assertThat(generator).contains("EntityDryOutDamageEvent");
+        assertThat(generator).contains("EntitySweetBerryBushDamageEvent");
+        assertThat(generator).contains("EntityFallingBlockDamageEvent");
+        assertThat(generator).contains("EntityFallingAnvilDamageEvent");
+        assertThat(generator).contains("EntityFallingStalactiteDamageEvent");
+        assertThat(generator).contains("EntityStingDamageEvent");
+        assertThat(generator).contains("EntityMaceSmashDamageEvent");
+    }
+
+    @Test
     void offlinePlayerDataCanBeMutatedAndSaved() throws IOException {
         var offline = read("src/main/java/io/fand/server/player/FandOfflinePlayer.java");
         var playerList = read("src/minecraft/java/net/minecraft/server/players/PlayerList.java");

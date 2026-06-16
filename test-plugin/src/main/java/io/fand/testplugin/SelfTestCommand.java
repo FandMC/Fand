@@ -36,7 +36,12 @@ import io.fand.api.event.block.SpongeAbsorbEvent;
 import io.fand.api.event.command.CommandExecuteEvent;
 import io.fand.api.event.command.TabCompleteEvent;
 import io.fand.api.event.entity.AreaEffectCloudApplyEvent;
+import io.fand.api.event.entity.EntityArrowDamageEvent;
+import io.fand.api.event.entity.EntityBadRespawnPointDamageEvent;
+import io.fand.api.event.entity.EntityCampfireDamageEvent;
 import io.fand.api.event.entity.EntityBreedEvent;
+import io.fand.api.event.entity.EntityCactusDamageEvent;
+import io.fand.api.event.entity.EntityCrammingDamageEvent;
 import io.fand.api.event.entity.EntityChangeBlockEvent;
 import io.fand.api.event.entity.EntityCombustByBlockEvent;
 import io.fand.api.event.entity.EntityCombustByEntityEvent;
@@ -47,25 +52,65 @@ import io.fand.api.event.entity.EntityDamageByEntityEvent;
 import io.fand.api.event.entity.EntityDamageEvent;
 import io.fand.api.event.entity.EntityDeathEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
+import io.fand.api.event.entity.EntityDryOutDamageEvent;
+import io.fand.api.event.entity.EntityDrownDamageEvent;
+import io.fand.api.event.entity.EntityDragonBreathDamageEvent;
 import io.fand.api.event.entity.EntityDropItemEvent;
+import io.fand.api.event.entity.EntityExplosionDamageEvent;
 import io.fand.api.event.entity.EntityExplodeEvent;
+import io.fand.api.event.entity.EntityFallDamageEvent;
+import io.fand.api.event.entity.EntityFallingAnvilDamageEvent;
+import io.fand.api.event.entity.EntityFallingBlockDamageEvent;
+import io.fand.api.event.entity.EntityFallingStalactiteDamageEvent;
+import io.fand.api.event.entity.EntityEnderPearlDamageEvent;
+import io.fand.api.event.entity.EntityFireballDamageEvent;
+import io.fand.api.event.entity.EntityFireDamageEvent;
+import io.fand.api.event.entity.EntityFireworksDamageEvent;
+import io.fand.api.event.entity.EntityFreezeDamageEvent;
+import io.fand.api.event.entity.EntityFlyIntoWallDamageEvent;
+import io.fand.api.event.entity.EntityHotFloorDamageEvent;
+import io.fand.api.event.entity.EntityInWallDamageEvent;
 import io.fand.api.event.entity.EntityKnockbackEvent;
+import io.fand.api.event.entity.EntityLightningDamageEvent;
+import io.fand.api.event.entity.EntityLavaDamageEvent;
+import io.fand.api.event.entity.EntityMagicDamageEvent;
+import io.fand.api.event.entity.EntityMaceSmashDamageEvent;
+import io.fand.api.event.entity.EntityMobProjectileDamageEvent;
 import io.fand.api.event.entity.EntityMountEvent;
+import io.fand.api.event.entity.EntityMobAttackDamageEvent;
+import io.fand.api.event.entity.EntityOutOfWorldDamageEvent;
+import io.fand.api.event.entity.EntityOutsideBorderDamageEvent;
 import io.fand.api.event.entity.EntityPickupItemEvent;
+import io.fand.api.event.entity.EntityPlayerAttackDamageEvent;
 import io.fand.api.event.entity.EntityPortalEnterEvent;
 import io.fand.api.event.entity.EntityPortalEvent;
 import io.fand.api.event.entity.EntityPortalExitEvent;
 import io.fand.api.event.entity.EntityPotionEffectEvent;
+import io.fand.api.event.entity.EntityProjectileDamageEvent;
 import io.fand.api.event.entity.EntityRegainHealthEvent;
 import io.fand.api.event.entity.EntityRemoveEvent;
 import io.fand.api.event.entity.EntityResurrectEvent;
 import io.fand.api.event.entity.EntityShootBowEvent;
+import io.fand.api.event.entity.EntitySonicBoomDamageEvent;
+import io.fand.api.event.entity.EntitySpitDamageEvent;
 import io.fand.api.event.entity.EntitySpawnEvent;
+import io.fand.api.event.entity.EntityStalagmiteDamageEvent;
+import io.fand.api.event.entity.EntityStarveDamageEvent;
+import io.fand.api.event.entity.EntityStingDamageEvent;
+import io.fand.api.event.entity.EntitySulfurCubeHotDamageEvent;
+import io.fand.api.event.entity.EntitySweetBerryBushDamageEvent;
 import io.fand.api.event.entity.EntityTameEvent;
 import io.fand.api.event.entity.EntityTargetEvent;
 import io.fand.api.event.entity.EntityTargetLivingEntityEvent;
+import io.fand.api.event.entity.EntityThornsDamageEvent;
+import io.fand.api.event.entity.EntityThrownDamageEvent;
+import io.fand.api.event.entity.EntityTridentDamageEvent;
 import io.fand.api.event.entity.EntityTeleportEvent;
 import io.fand.api.event.entity.EntityTransformEvent;
+import io.fand.api.event.entity.EntityUnattributedFireballDamageEvent;
+import io.fand.api.event.entity.EntityWindChargeDamageEvent;
+import io.fand.api.event.entity.EntityWitherDamageEvent;
+import io.fand.api.event.entity.EntityWitherSkullDamageEvent;
 import io.fand.api.event.entity.ExplosionPrimeEvent;
 import io.fand.api.event.entity.HangingBreakEvent;
 import io.fand.api.event.entity.HangingPlaceEvent;
@@ -287,6 +332,51 @@ final class SelfTestCommand implements io.fand.api.command.CommandExecutor, io.f
             event("player", EntityDamageEvent.class),
             event("entity", EntityDamageByEntityEvent.class),
             event("entity", EntityDamageByBlockEvent.class),
+            event("entity", EntityPlayerAttackDamageEvent.class),
+            event("entity", EntityMobAttackDamageEvent.class),
+            event("entity", EntityProjectileDamageEvent.class),
+            event("entity", EntityArrowDamageEvent.class),
+            event("entity", EntityTridentDamageEvent.class),
+            event("entity", EntityMobProjectileDamageEvent.class),
+            event("entity", EntitySpitDamageEvent.class),
+            event("entity", EntityFireballDamageEvent.class),
+            event("entity", EntityUnattributedFireballDamageEvent.class),
+            event("entity", EntityWitherSkullDamageEvent.class),
+            event("entity", EntityThrownDamageEvent.class),
+            event("entity", EntityFireworksDamageEvent.class),
+            event("entity", EntityWindChargeDamageEvent.class),
+            event("entity", EntityExplosionDamageEvent.class),
+            event("entity", EntityBadRespawnPointDamageEvent.class),
+            event("entity", EntityFallDamageEvent.class),
+            event("entity", EntityEnderPearlDamageEvent.class),
+            event("entity", EntityFlyIntoWallDamageEvent.class),
+            event("entity", EntityStalagmiteDamageEvent.class),
+            event("entity", EntityFireDamageEvent.class),
+            event("entity", EntityCampfireDamageEvent.class),
+            event("entity", EntityHotFloorDamageEvent.class),
+            event("entity", EntitySulfurCubeHotDamageEvent.class),
+            event("entity", EntityLightningDamageEvent.class),
+            event("entity", EntityLavaDamageEvent.class),
+            event("entity", EntityDrownDamageEvent.class),
+            event("entity", EntityStarveDamageEvent.class),
+            event("entity", EntityFreezeDamageEvent.class),
+            event("entity", EntityMagicDamageEvent.class),
+            event("entity", EntityWitherDamageEvent.class),
+            event("entity", EntityDragonBreathDamageEvent.class),
+            event("entity", EntityThornsDamageEvent.class),
+            event("entity", EntityCactusDamageEvent.class),
+            event("entity", EntityOutOfWorldDamageEvent.class),
+            event("entity", EntitySonicBoomDamageEvent.class),
+            event("entity", EntityOutsideBorderDamageEvent.class),
+            event("entity", EntityCrammingDamageEvent.class),
+            event("entity", EntityInWallDamageEvent.class),
+            event("entity", EntityDryOutDamageEvent.class),
+            event("entity", EntitySweetBerryBushDamageEvent.class),
+            event("entity", EntityFallingBlockDamageEvent.class),
+            event("entity", EntityFallingAnvilDamageEvent.class),
+            event("entity", EntityFallingStalactiteDamageEvent.class),
+            event("entity", EntityStingDamageEvent.class),
+            event("entity", EntityMaceSmashDamageEvent.class),
             event("entity", EntityDeathEvent.class),
             event("entity", EntitySpawnEvent.class),
             event("entity", ItemSpawnEvent.class),

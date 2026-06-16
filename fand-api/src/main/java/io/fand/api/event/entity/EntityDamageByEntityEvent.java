@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
  * registered for {@code EntityDamageEvent} also receive this event. Cancelling
  * or changing the amount has the same effect as the generic damage event.
  */
-public final class EntityDamageByEntityEvent extends EntityDamageEvent {
+public class EntityDamageByEntityEvent extends EntityDamageEvent {
 
     private final LivingEntity damager;
 
