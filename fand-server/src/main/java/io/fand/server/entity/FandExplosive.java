@@ -1,12 +1,12 @@
 package io.fand.server.entity;
 
-import io.fand.api.entity.Explosive;
 import io.fand.api.entity.LivingEntity;
+import io.fand.api.entity.TntPrimed;
 import io.fand.server.world.WorldRegistry;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
-public final class FandExplosive extends FandEntity implements Explosive {
+public final class FandExplosive extends FandEntity implements TntPrimed {
 
     public FandExplosive(net.minecraft.world.entity.item.PrimedTnt handle, WorldRegistry worldRegistry) {
         super(handle, worldRegistry);

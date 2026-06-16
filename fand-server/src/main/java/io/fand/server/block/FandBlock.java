@@ -199,6 +199,18 @@ public final class FandBlock implements Block {
         if (entity instanceof net.minecraft.world.level.block.entity.LecternBlockEntity lectern) {
             return new FandLecternBlockEntity(this, lectern);
         }
+        if (entity instanceof net.minecraft.world.level.block.entity.BrewingStandBlockEntity brewingStand) {
+            return new FandBrewingStandBlockEntity(this, brewingStand);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity furnace) {
+            return new FandFurnaceBlockEntity(this, furnace);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.JukeboxBlockEntity jukebox) {
+            return new FandJukeboxBlockEntity(this, jukebox);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.SculkSensorBlockEntity sculkSensor) {
+            return new FandSculkSensorBlockEntity(this, sculkSensor);
+        }
         if (entity instanceof net.minecraft.world.level.block.entity.CommandBlockEntity commandBlock) {
             return new FandCommandBlockEntity(this, commandBlock);
         }

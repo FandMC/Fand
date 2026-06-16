@@ -6,7 +6,7 @@ import io.fand.server.world.WorldRegistry;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
-public final class FandTameable extends FandAnimal implements Tameable {
+public class FandTameable extends FandAnimal implements Tameable {
 
     public FandTameable(net.minecraft.world.entity.TamableAnimal handle, WorldRegistry worldRegistry) {
         super(handle, worldRegistry);

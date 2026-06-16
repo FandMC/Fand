@@ -7,7 +7,7 @@ import io.fand.server.inventory.FandContainerInventory;
 import net.minecraft.world.Container;
 import net.minecraft.world.level.block.entity.BlockEntityTypes;
 
-public final class FandContainerBlockEntity extends FandBlockEntity implements ContainerBlockEntity {
+public class FandContainerBlockEntity extends FandBlockEntity implements ContainerBlockEntity {
 
     private final Container container;
     private final Inventory inventory;

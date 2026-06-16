@@ -72,6 +72,7 @@ import net.minecraft.stats.Stats;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.UseCooldown;
+import net.minecraft.world.entity.Entity.RemovalReason;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
 import net.minecraft.world.level.storage.LevelData;
@@ -85,6 +86,7 @@ public final class FandPlayer implements Player {
     private final PlayerRegistry registry;
     private final BossBarTracker bossBars;
     private final Set<UUID> hiddenTabListTargets = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final Set<UUID> hiddenEntityTargets = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public FandPlayer(ServerPlayer handle, PermissionService permissions, PlayerRegistry registry) {
         this.bound = new Bound(handle, new FandPlayerInventory(handle.getInventory()));
@@ -1127,6 +1129,54 @@ public final class FandPlayer implements Player {
             if (handle.level().getBlockEntity(pos) instanceof SignBlockEntity sign) {
                 handle.openTextEdit(sign, true);
             }
+        });
+    }
+
+    @Override
+    public void hideEntity(Player viewer, io.fand.api.entity.Entity entity) {
+        Objects.requireNonNull(viewer, "viewer");
+        Objects.requireNonNull(entity, "entity");
+        if (!(viewer instanceof FandPlayer fandViewer)) {
+            return;
+        }
+        var target = EntityHandles.unwrap(entity);
+        runOnServerThread(() -> {
+            if (fandViewer.bound.handle.connection == null || target.isRemoved()) {
+                return;
+            }
+            if (fandViewer.hiddenEntityTargets.add(target.getUUID())) {
+                EntityVisibility.hide(fandViewer.bound.handle, target);
+            }
+        });
+    }
+
+    @Override
+    public void showEntity(Player viewer, io.fand.api.entity.Entity entity) {
+        Objects.requireNonNull(viewer, "viewer");
+        Objects.requireNonNull(entity, "entity");
+        if (!(viewer instanceof FandPlayer fandViewer)) {
+            return;
+        }
+        var target = EntityHandles.unwrap(entity);
+        runOnServerThread(() -> {
+            if (!fandViewer.hiddenEntityTargets.remove(target.getUUID())
+                    || target.isRemoved()
+                    || fandViewer.bound.handle.connection == null) {
+                return;
+            }
+            EntityVisibility.show(fandViewer.bound.handle, target);
+        });
+    }
+
+    @Override
+    public void respawn() {
+        runOnServerThread(() -> {
+            var handle = bound.handle;
+            var server = handle.level().getServer();
+            if (server == null || handle.isAlive()) {
+                return;
+            }
+            server.getPlayerList().respawn(handle, false, RemovalReason.KILLED);
         });
     }
 

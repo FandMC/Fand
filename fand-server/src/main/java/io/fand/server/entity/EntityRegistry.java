@@ -88,6 +88,12 @@ public final class EntityRegistry {
         if (handle instanceof net.minecraft.world.entity.item.PrimedTnt explosive) {
             return new FandExplosive(explosive, worldRegistry);
         }
+        if (handle instanceof net.minecraft.world.entity.item.FallingBlockEntity fallingBlock) {
+            return new FandFallingBlock(fallingBlock, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.Interaction interaction) {
+            return new FandInteraction(interaction, worldRegistry);
+        }
         if (handle instanceof net.minecraft.world.entity.ExperienceOrb orb) {
             return new FandExperienceOrb(orb, worldRegistry);
         }
@@ -109,6 +115,9 @@ public final class EntityRegistry {
         if (handle instanceof net.minecraft.world.entity.vehicle.minecart.AbstractMinecart minecart) {
             return new FandMinecart(minecart, worldRegistry);
         }
+        if (handle instanceof net.minecraft.world.entity.vehicle.boat.AbstractBoat boat) {
+            return new FandBoat(boat, worldRegistry);
+        }
         if (handle instanceof net.minecraft.world.entity.vehicle.VehicleEntity vehicle) {
             return new FandVehicle(vehicle, worldRegistry);
         }
@@ -118,6 +127,12 @@ public final class EntityRegistry {
         if (handle instanceof net.minecraft.world.entity.projectile.Projectile projectile) {
             return new FandProjectile(projectile, worldRegistry);
         }
+        if (handle instanceof net.minecraft.world.entity.animal.feline.Cat cat) {
+            return new FandCat(cat, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.animal.wolf.Wolf wolf) {
+            return new FandWolf(wolf, worldRegistry);
+        }
         if (handle instanceof net.minecraft.world.entity.TamableAnimal tameable) {
             return new FandTameable(tameable, worldRegistry);
         }
@@ -126,6 +141,12 @@ public final class EntityRegistry {
         }
         if (handle instanceof net.minecraft.world.entity.animal.equine.AbstractHorse horse) {
             return new FandHorse(horse, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.animal.axolotl.Axolotl axolotl) {
+            return new FandAxolotl(axolotl, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.animal.bee.Bee bee) {
+            return new FandBee(bee, worldRegistry);
         }
         if (handle instanceof net.minecraft.world.entity.animal.Animal animal) {
             return new FandAnimal(animal, worldRegistry);
@@ -138,6 +159,9 @@ public final class EntityRegistry {
         }
         if (handle instanceof net.minecraft.world.entity.monster.Creeper creeper) {
             return new FandCreeper(creeper, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.monster.warden.Warden warden) {
+            return new FandWarden(warden, worldRegistry);
         }
         if (handle instanceof net.minecraft.world.entity.Mob mob) {
             return new FandMob(mob, worldRegistry);
