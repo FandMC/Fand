@@ -177,6 +177,12 @@ public final class ConfigReloader {
                 "network.forwarding.secret",
                 previous.network.forwarding.secret,
                 reloaded.network.forwarding.secret);
+        if (changed(
+                previous.network.protocolCompatibility.allowMinecraft21AndNewer,
+                reloaded.network.protocolCompatibility.allowMinecraft21AndNewer)) {
+            io.fand.server.hooks.FandHooks.applyNetworkConfig(reloaded.network);
+            changes.hot("network.protocolCompatibility.allowMinecraft21AndNewer");
+        }
         var previousTheme = GuiTheme.fromConfig(previous.console.gui.theme);
         var reloadedTheme = GuiTheme.fromConfig(reloaded.console.gui.theme);
         if (changed(previousTheme, reloadedTheme)) {

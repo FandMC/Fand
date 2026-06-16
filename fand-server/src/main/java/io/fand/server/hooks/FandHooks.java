@@ -110,6 +110,7 @@ public final class FandHooks {
     // default config.
     private static volatile boolean playerSpeedCheck = true;
     private static volatile boolean playerCommandLogging = true;
+    private static volatile boolean allowMinecraft21AndNewerProtocols = false;
     private static volatile boolean explosionDensityCacheEnabled = true;
     private static volatile boolean collisionTeamCacheEnabled = true;
     private static volatile boolean explosionBlockCacheEnabled = true;
@@ -191,6 +192,15 @@ public final class FandHooks {
     public static void applyPlayerConfig(io.fand.server.config.FandConfig.Players players) {
         playerSpeedCheck = players.speedCheck;
         playerCommandLogging = players.logCommands;
+    }
+
+    public static void applyNetworkConfig(io.fand.server.config.FandConfig.Network network) {
+        allowMinecraft21AndNewerProtocols = network.protocolCompatibility.allowMinecraft21AndNewer;
+    }
+
+    public static boolean acceptsClientProtocol(int clientProtocol, int serverProtocol) {
+        return clientProtocol == serverProtocol
+                || (allowMinecraft21AndNewerProtocols && clientProtocol >= 767);
     }
 
     public static void applyChunkConfig(io.fand.server.config.FandConfig.Chunks chunks) {

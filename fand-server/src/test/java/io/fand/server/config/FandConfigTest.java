@@ -36,6 +36,7 @@ final class FandConfigTest {
         assertThat(config.console.gui.theme).isEqualTo("system");
         assertThat(config.network.forwarding.mode).isEqualTo("none");
         assertThat(config.network.forwarding.secret).isEmpty();
+        assertThat(config.network.protocolCompatibility.allowMinecraft21AndNewer).isFalse();
         assertThat(config.performance.entityHardCollisionCandidateIndex).isTrue();
         assertThat(config.performance.entitySectionChunkScan).isTrue();
         assertThat(config.performance.entityCollisionAbortPropagation).isTrue();
@@ -105,6 +106,8 @@ final class FandConfigTest {
                 .contains("forwarding:")
                 .contains("mode: none")
                 .contains("secret: ''")
+                .contains("protocolCompatibility:")
+                .contains("allowMinecraft21AndNewer: false")
                 .contains("performance:")
                 .contains("entityHardCollisionCandidateIndex: true")
                 .contains("entitySectionChunkScan: true")
@@ -186,6 +189,8 @@ final class FandConfigTest {
                   forwarding:
                     mode: velocity-modern
                     secret: 'shared-secret'
+                  protocolCompatibility:
+                    allowMinecraft21AndNewer: true
 
                 performance:
                   entityHardCollisionCandidateIndex: false
@@ -252,6 +257,7 @@ final class FandConfigTest {
         assertThat(config.console.gui.theme).isEqualTo("dark");
         assertThat(config.network.forwarding.mode).isEqualTo("velocity-modern");
         assertThat(config.network.forwarding.secret).isEqualTo("shared-secret");
+        assertThat(config.network.protocolCompatibility.allowMinecraft21AndNewer).isTrue();
         assertThat(config.performance.entityHardCollisionCandidateIndex).isFalse();
         assertThat(config.performance.entitySectionChunkScan).isFalse();
         assertThat(config.performance.entityCollisionAbortPropagation).isFalse();

@@ -432,6 +432,9 @@ public final class FandConfig {
 
         @ConfigComment("Proxy player information forwarding settings.")
         public final Forwarding forwarding = new Forwarding();
+
+        @ConfigComment("Client protocol compatibility settings.")
+        public final ProtocolCompatibility protocolCompatibility = new ProtocolCompatibility();
     }
 
     public static final class Forwarding {
@@ -444,5 +447,15 @@ public final class FandConfig {
 
         @ConfigComment("Shared secret used by velocity-modern forwarding.")
         public String secret = "";
+    }
+
+    public static final class ProtocolCompatibility {
+
+        @ConfigComment({
+                "Allow clients using Minecraft 1.21 or newer protocols to pass",
+                "the vanilla handshake version check. This does not translate",
+                "packets or registry data; incompatible clients may still fail later."
+        })
+        public volatile boolean allowMinecraft21AndNewer = false;
     }
 }

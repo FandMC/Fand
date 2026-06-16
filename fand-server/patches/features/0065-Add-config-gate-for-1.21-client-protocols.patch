@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: bedkillerspacex-boop <bedkillerspacex@gmail.com>
+Date: Wed, 17 Jun 2026 07:54:13 +0800
+Subject: [PATCH] Add config gate for 1.21+ client protocols
+
+
+diff --git a/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java b/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
+index 40034da46c788bc9c8d4d94d60c4f8a83292263c..6fc75fbdb2eefa0cd89b85082edd0f743edbf1c1 100644
+--- a/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
+@@ -54,7 +54,7 @@ public class ServerHandshakePacketListenerImpl implements ServerHandshakePacketL
+
+     private void beginLogin(final ClientIntentionPacket packet, final boolean transfer) {
+         this.connection.setupOutboundProtocol(LoginProtocols.CLIENTBOUND);
+-        if (packet.protocolVersion() != SharedConstants.getCurrentVersion().protocolVersion()) {
++        if (!io.fand.server.hooks.FandHooks.acceptsClientProtocol(packet.protocolVersion(), SharedConstants.getCurrentVersion().protocolVersion())) { // Fand - optional 1.21+ handshake compatibility gate
+             Component reason;
+             if (packet.protocolVersion() < 754) {
+                 reason = Component.translatable("multiplayer.disconnect.outdated_client", SharedConstants.getCurrentVersion().name());
