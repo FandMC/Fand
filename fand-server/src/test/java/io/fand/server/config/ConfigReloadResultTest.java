@@ -36,7 +36,7 @@ final class ConfigReloadResultTest {
                 chunks:
                   workerThreads: 0
                   trackingDiffApplyBudget: 256
-                  worldgenParallelism: 0
+                  worldgenParallelism: 1
                   dedicatedLightThread: true
                   lightTaskQueueFastPath: true
 
@@ -115,6 +115,9 @@ final class ConfigReloadResultTest {
                 "network.forwarding.mode",
                 "network.forwarding.secret"
         );
+        assertThat(io.fand.server.hooks.FandHooks.chunkWorldgenParallelism()).isEqualTo(1);
+        assertThat(io.fand.server.hooks.FandHooks.chunkDedicatedLightThreadEnabled()).isTrue();
+        assertThat(io.fand.server.hooks.FandHooks.chunkLightTaskQueueFastPathEnabled()).isTrue();
         assertThat(result.restartRequired()).isTrue();
         assertThat(result.changed()).isTrue();
     }
