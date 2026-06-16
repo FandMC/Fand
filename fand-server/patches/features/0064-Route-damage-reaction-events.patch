@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Tue, 16 Jun 2026 13:38:07 +0800
+Subject: [PATCH] Route damage reaction events
+
+
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index 5bb27555dafabaa34ec743d17945d3806dfdf634..75e9c2d4c6174545e825d730f599f10df0109f52 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -1656,6 +1656,10 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     }
+ 
+     public void onReputationEvent(final ReputationEventType type, final Entity source, final ReputationEventHandler target) {
++        if (!io.fand.server.event.EntityEvents.fireVillagerReputation(type, source, target)) {
++            return;
++        }
++
+         target.onReputationEventFrom(type, source);
+     }
+ 
+diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
+index 516b0fe14a149f4f69c5b1518c3ed3457caed75c..81558b755e8ffb94924864ecd17e146920d90cfb 100644
+--- a/net/minecraft/world/entity/LivingEntity.java
++++ b/net/minecraft/world/entity/LivingEntity.java
+@@ -632,6 +632,15 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+     }
+ 
+     public void setLastHurtByPlayer(final Player player, final int timeToRemember) {
++        if (!io.fand.server.event.EntityEvents.fireDamageReaction(
++            this,
++            player,
++            io.fand.api.event.entity.EntityDamageReactionEvent.Cause.HURT_BY_PLAYER,
++            io.fand.api.event.entity.EntityDamageReactionEvent.Impact.NEGATIVE
++        )) {
++            return;
++        }
++
+         this.setLastHurtByPlayer(EntityReference.of(player), timeToRemember);
+     }
+ 
+@@ -645,6 +654,15 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+     }
+ 
+     public void setLastHurtByMob(final @Nullable LivingEntity hurtBy) {
++        if (hurtBy != null && !io.fand.server.event.EntityEvents.fireDamageReaction(
++            this,
++            hurtBy,
++            io.fand.api.event.entity.EntityDamageReactionEvent.Cause.HURT_BY_MOB,
++            io.fand.api.event.entity.EntityDamageReactionEvent.Impact.NEGATIVE
++        )) {
++            return;
++        }
++
+         this.lastHurtByMob = EntityReference.of(hurtBy);
+         this.lastHurtByMobTimestamp = this.tickCount;
+     }
+@@ -1386,8 +1404,15 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+ 
+         boolean success = !blocked || damage > 0.0F;
+         if (success) {
+-            this.lastDamageSource = source;
+-            this.lastDamageStamp = this.level().getGameTime();
++            if (io.fand.server.event.EntityEvents.fireDamageReaction(
++                this,
++                source.getEntity(),
++                io.fand.api.event.entity.EntityDamageReactionEvent.Cause.HURT_MEMORY,
++                io.fand.api.event.entity.EntityDamageReactionEvent.Impact.NEGATIVE
++            )) {
++                this.lastDamageSource = source;
++                this.lastDamageStamp = this.level().getGameTime();
++            }
+ 
+             for (MobEffectInstance effect : this.getActiveEffects()) {
+                 effect.onMobHurt(level, this, source, damage);

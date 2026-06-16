@@ -112,6 +112,31 @@ final class EventHookSourceTest {
     }
 
     @Test
+    void villagerReputationEventStaysWiredAndMercyUsesListeners() throws IOException {
+        var entityEvents = read("src/main/java/io/fand/server/event/EntityEvents.java");
+        var serverLevel = read("src/minecraft/java/net/minecraft/server/level/ServerLevel.java");
+        var living = read("src/minecraft/java/net/minecraft/world/entity/LivingEntity.java");
+        var demo = read("../test-plugin/src/main/java/io/fand/testplugin/DemoEntityEvents.java");
+
+        assertThat(entityEvents).contains("public static boolean fireDamageReaction");
+        assertThat(entityEvents).contains("new EntityDamageReactionEvent(");
+        assertThat(entityEvents).contains("EntityDamageReactionEvent.Cause.ENTITY_TARGET");
+        assertThat(entityEvents).contains("EntityDamageReactionEvent.Cause.VILLAGER_REPUTATION");
+        assertThat(entityEvents).contains("targetImpact(target, cause)");
+        assertThat(entityEvents).contains("public static boolean fireVillagerReputation");
+        assertThat(entityEvents).contains("new VillagerReputationEvent(apiVillager, fandSource, reputationCause(type))");
+        assertThat(serverLevel).contains("if (!io.fand.server.event.EntityEvents.fireVillagerReputation(type, source, target))");
+        assertThat(living).contains("EntityDamageReactionEvent.Cause.HURT_MEMORY");
+        assertThat(living).contains("EntityDamageReactionEvent.Cause.HURT_BY_PLAYER");
+        assertThat(living).contains("EntityDamageReactionEvent.Cause.HURT_BY_MOB");
+        assertThat(demo).contains("event.setDamageApplicationCancelled(true)");
+        assertThat(demo).contains("rememberMercyAttack(player.uniqueId(), event.entity().uniqueId())");
+        assertThat(demo).contains("public void onEntityDamageReaction(EntityDamageReactionEvent event)");
+        assertThat(demo).contains("event.negative()");
+        assertThat(demo).contains("public void onVillagerReputation(VillagerReputationEvent event)");
+    }
+
+    @Test
     void offlinePlayerDataCanBeMutatedAndSaved() throws IOException {
         var offline = read("src/main/java/io/fand/server/player/FandOfflinePlayer.java");
         var playerList = read("src/minecraft/java/net/minecraft/server/players/PlayerList.java");

@@ -14,6 +14,7 @@ import io.fand.api.event.entity.EntityCombustEvent;
 import io.fand.api.event.entity.EntityCreatePortalEvent;
 import io.fand.api.event.entity.EntityDamageByBlockEvent;
 import io.fand.api.event.entity.EntityDamageByEntityEvent;
+import io.fand.api.event.entity.EntityDamageReactionEvent;
 import io.fand.api.event.entity.EntityDeathEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
 import io.fand.api.event.entity.EntityDropItemEvent;
@@ -47,6 +48,8 @@ import io.fand.api.event.entity.PlayerItemFrameChangeEvent;
 import io.fand.api.event.entity.PotionSplashEvent;
 import io.fand.api.event.entity.ProjectileHitEvent;
 import io.fand.api.event.entity.ProjectileLaunchEvent;
+import io.fand.api.event.entity.VillagerReputationEvent;
+import io.fand.api.Fand;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.component.ItemEquipmentSlot;
 import io.fand.api.event.vehicle.VehicleCreateEvent;
@@ -54,6 +57,10 @@ import io.fand.api.event.vehicle.VehicleDestroyEvent;
 import io.fand.api.event.vehicle.VehicleEnterEvent;
 import io.fand.api.event.vehicle.VehicleExitEvent;
 import io.fand.api.event.vehicle.VehicleMoveEvent;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import io.fand.api.plugin.PluginContext;
@@ -63,6 +70,7 @@ final class DemoEntityEvents implements Listener {
 
     private final PluginContext context;
     private final Logger logger;
+    private final Map<MercyAttack, Integer> mercyAttacks = new LinkedHashMap<>();
 
     DemoEntityEvents(PluginContext context) {
         this.context = context;
@@ -259,6 +267,7 @@ final class DemoEntityEvents implements Listener {
         ItemStack weapon = player.inventory().heldItem();
         if (hasEnchantment(weapon, MERCY_ENCHANTMENT)) {
             event.setDamageApplicationCancelled(true);
+            rememberMercyAttack(player.uniqueId(), event.entity().uniqueId());
         }
         if (hasEnchantment(weapon, PLUNDER_ENCHANTMENT)) {
             var stolen = plunderTargetItem(event.entity());
@@ -363,6 +372,56 @@ final class DemoEntityEvents implements Listener {
                     event.livingTarget().type().key().asString(),
                     event.cause());
         }
+    }
+
+    @Subscribe
+    public void onEntityDamageReaction(EntityDamageReactionEvent event) {
+        if (event.negative()
+                && event.source().filter(source -> isRecentMercyAttack(source.uniqueId(), event.entity().uniqueId())).isPresent()) {
+            event.setCancelled(true);
+            return;
+        }
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            logger.info("Entity damage reaction: {} source={} cause={} impact={}",
+                    event.entity().type().key().asString(),
+                    event.source().map(entity -> entity.type().key().asString()).orElse("none"),
+                    event.cause(),
+                    event.impact());
+        }
+    }
+
+    @Subscribe
+    public void onVillagerReputation(VillagerReputationEvent event) {
+        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+            logger.info("Villager reputation: {} source={} cause={}",
+                    event.villager().type().key().asString(),
+                    event.source().type().key().asString(),
+                    event.cause());
+        }
+    }
+
+    private void rememberMercyAttack(UUID attacker, UUID target) {
+        cleanupMercyAttacks();
+        mercyAttacks.put(new MercyAttack(attacker, target), Fand.server().currentTick() + 2);
+    }
+
+    private boolean isRecentMercyAttack(UUID attacker, UUID target) {
+        cleanupMercyAttacks();
+        Integer expiresAt = mercyAttacks.get(new MercyAttack(attacker, target));
+        return expiresAt != null && expiresAt >= Fand.server().currentTick();
+    }
+
+    private void cleanupMercyAttacks() {
+        int tick = Fand.server().currentTick();
+        Iterator<Map.Entry<MercyAttack, Integer>> iterator = mercyAttacks.entrySet().iterator();
+        while (iterator.hasNext()) {
+            if (iterator.next().getValue() < tick) {
+                iterator.remove();
+            }
+        }
+    }
+
+    private record MercyAttack(UUID attacker, UUID target) {
     }
 
     @Subscribe

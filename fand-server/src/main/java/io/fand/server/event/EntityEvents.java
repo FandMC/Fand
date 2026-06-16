@@ -11,6 +11,7 @@ import io.fand.api.event.entity.EntityCreatePortalEvent;
 import io.fand.api.event.entity.EntityDamageByBlockEvent;
 import io.fand.api.event.entity.EntityDamageByEntityEvent;
 import io.fand.api.event.entity.EntityDamageEvent;
+import io.fand.api.event.entity.EntityDamageReactionEvent;
 import io.fand.api.event.entity.DamageEventRegistry;
 import io.fand.api.event.entity.DamageCause;
 import io.fand.api.event.entity.DamageModifier;
@@ -45,6 +46,7 @@ import io.fand.api.event.entity.PlayerItemFrameChangeEvent;
 import io.fand.api.event.entity.PotionSplashEvent;
 import io.fand.api.event.entity.ProjectileHitEvent;
 import io.fand.api.event.entity.ProjectileLaunchEvent;
+import io.fand.api.event.entity.VillagerReputationEvent;
 import io.fand.api.event.block.BlockFace;
 import io.fand.api.event.vehicle.VehicleCreateEvent;
 import io.fand.api.event.vehicle.VehicleDestroyEvent;
@@ -635,11 +637,15 @@ public final class EntityEvents {
         boolean hasGeneric = bus.hasListeners(EntityTargetEvent.class);
         boolean hasLiving = target != null && bus.hasListeners(EntityTargetLivingEntityEvent.class);
         if (!hasGeneric && !hasLiving) {
-            return new TargetResult(true, target);
+            return fireDamageReaction(entity, target, EntityDamageReactionEvent.Cause.ENTITY_TARGET, targetImpact(target, cause))
+                    ? new TargetResult(true, target)
+                    : new TargetResult(false, target);
         }
         var fandEntity = FandHooks.wrapLivingEntity(entity);
         if (fandEntity == null) {
-            return new TargetResult(true, target);
+            return fireDamageReaction(entity, target, EntityDamageReactionEvent.Cause.ENTITY_TARGET, targetImpact(target, cause))
+                    ? new TargetResult(true, target)
+                    : new TargetResult(false, target);
         }
         var oldTarget = Optional.ofNullable(entity.getTargetUnchecked())
                 .map(FandHooks::wrapLivingEntity)
@@ -659,7 +665,111 @@ public final class EntityEvents {
         if (event.cancelled()) {
             return new TargetResult(false, target);
         }
-        return new TargetResult(true, event.target().map(EntityEvents::toVanillaLiving).orElse(null));
+        net.minecraft.world.entity.@Nullable LivingEntity nextTarget = event.target().map(EntityEvents::toVanillaLiving).orElse(null);
+        if (!fireDamageReaction(entity, nextTarget, EntityDamageReactionEvent.Cause.ENTITY_TARGET, targetImpact(nextTarget, cause))) {
+            return new TargetResult(false, target);
+        }
+        return new TargetResult(true, nextTarget);
+    }
+
+    private static EntityDamageReactionEvent.Impact targetImpact(
+            net.minecraft.world.entity.@Nullable LivingEntity target,
+            EntityTargetEvent.Cause cause
+    ) {
+        if (target == null || cause == EntityTargetEvent.Cause.FORGOT_TARGET) {
+            return EntityDamageReactionEvent.Impact.NEUTRAL;
+        }
+        return EntityDamageReactionEvent.Impact.NEGATIVE;
+    }
+
+    public static boolean fireDamageReaction(
+            net.minecraft.world.entity.LivingEntity entity,
+            net.minecraft.world.entity.@Nullable Entity source,
+            EntityDamageReactionEvent.Cause cause,
+            EntityDamageReactionEvent.Impact impact
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(EntityDamageReactionEvent.class)) {
+            return true;
+        }
+        var fandEntity = FandHooks.wrapLivingEntity(entity);
+        if (fandEntity == null) {
+            return true;
+        }
+        var event = new EntityDamageReactionEvent(
+                fandEntity,
+                source == null ? null : FandHooks.wrapEntity(source),
+                cause,
+                impact);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityDamageReactionEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireVillagerReputation(
+            net.minecraft.world.entity.ai.village.ReputationEventType type,
+            net.minecraft.world.entity.Entity source,
+            net.minecraft.world.entity.ReputationEventHandler target
+    ) {
+        var bus = FandHooks.events();
+        if (!(target instanceof net.minecraft.world.entity.npc.villager.Villager villager)) {
+            return true;
+        }
+        if (!fireDamageReaction(villager, source, EntityDamageReactionEvent.Cause.VILLAGER_REPUTATION, reputationImpact(type))) {
+            return false;
+        }
+        if (!bus.hasListeners(VillagerReputationEvent.class)) {
+            return true;
+        }
+        var fandVillager = FandHooks.wrapEntity(villager);
+        var fandSource = FandHooks.wrapEntity(source);
+        if (!(fandVillager instanceof io.fand.api.entity.Villager apiVillager) || fandSource == null) {
+            return true;
+        }
+        var event = new VillagerReputationEvent(apiVillager, fandSource, reputationCause(type));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("VillagerReputationEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    private static VillagerReputationEvent.Cause reputationCause(net.minecraft.world.entity.ai.village.ReputationEventType type) {
+        if (type == net.minecraft.world.entity.ai.village.ReputationEventType.ZOMBIE_VILLAGER_CURED) {
+            return VillagerReputationEvent.Cause.ZOMBIE_VILLAGER_CURED;
+        }
+        if (type == net.minecraft.world.entity.ai.village.ReputationEventType.GOLEM_KILLED) {
+            return VillagerReputationEvent.Cause.GOLEM_KILLED;
+        }
+        if (type == net.minecraft.world.entity.ai.village.ReputationEventType.VILLAGER_HURT) {
+            return VillagerReputationEvent.Cause.VILLAGER_HURT;
+        }
+        if (type == net.minecraft.world.entity.ai.village.ReputationEventType.VILLAGER_KILLED) {
+            return VillagerReputationEvent.Cause.VILLAGER_KILLED;
+        }
+        if (type == net.minecraft.world.entity.ai.village.ReputationEventType.TRADE) {
+            return VillagerReputationEvent.Cause.TRADE;
+        }
+        return VillagerReputationEvent.Cause.UNKNOWN;
+    }
+
+    private static EntityDamageReactionEvent.Impact reputationImpact(net.minecraft.world.entity.ai.village.ReputationEventType type) {
+        if (type == net.minecraft.world.entity.ai.village.ReputationEventType.VILLAGER_HURT
+                || type == net.minecraft.world.entity.ai.village.ReputationEventType.VILLAGER_KILLED
+                || type == net.minecraft.world.entity.ai.village.ReputationEventType.GOLEM_KILLED) {
+            return EntityDamageReactionEvent.Impact.NEGATIVE;
+        }
+        if (type == net.minecraft.world.entity.ai.village.ReputationEventType.TRADE
+                || type == net.minecraft.world.entity.ai.village.ReputationEventType.ZOMBIE_VILLAGER_CURED) {
+            return EntityDamageReactionEvent.Impact.POSITIVE;
+        }
+        return EntityDamageReactionEvent.Impact.NEUTRAL;
     }
 
     public static boolean firePotionEffect(

@@ -50,6 +50,7 @@ import io.fand.api.event.entity.EntityCreatePortalEvent;
 import io.fand.api.event.entity.EntityDamageByBlockEvent;
 import io.fand.api.event.entity.EntityDamageByEntityEvent;
 import io.fand.api.event.entity.EntityDamageEvent;
+import io.fand.api.event.entity.EntityDamageReactionEvent;
 import io.fand.api.event.entity.EntityDeathEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
 import io.fand.api.event.entity.EntityDryOutDamageEvent;
@@ -122,6 +123,7 @@ import io.fand.api.event.entity.PlayerItemFrameChangeEvent;
 import io.fand.api.event.entity.PotionSplashEvent;
 import io.fand.api.event.entity.ProjectileHitEvent;
 import io.fand.api.event.entity.ProjectileLaunchEvent;
+import io.fand.api.event.entity.VillagerReputationEvent;
 import io.fand.api.event.inventory.BrewEvent;
 import io.fand.api.event.inventory.BrewingStandFuelEvent;
 import io.fand.api.event.inventory.BlockCookEvent;
@@ -356,6 +358,7 @@ final class SelfTestCommand implements io.fand.api.command.CommandExecutor, io.f
             event("player", EntityDamageEvent.class),
             event("entity", EntityDamageByEntityEvent.class),
             event("entity", EntityDamageByBlockEvent.class),
+            event("entity", EntityDamageReactionEvent.class),
             event("entity", EntityPlayerAttackDamageEvent.class),
             event("entity", EntityMobAttackDamageEvent.class),
             event("entity", EntityProjectileDamageEvent.class),
@@ -427,6 +430,7 @@ final class SelfTestCommand implements io.fand.api.command.CommandExecutor, io.f
             event("entity", EntityShootBowEvent.class),
             event("entity", EntityTargetEvent.class),
             event("entity", EntityTargetLivingEntityEvent.class),
+            event("entity", VillagerReputationEvent.class),
             event("entity", EntityPotionEffectEvent.class),
             event("entity", PotionSplashEvent.class),
             event("entity", LingeringPotionSplashEvent.class),
