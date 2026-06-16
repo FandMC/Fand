@@ -33,6 +33,8 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
     private final PacketRegistryImpl packets;
     private final PluginChannelAdvertiser advertiser;
     private final ConcurrentMap<Key, ChannelState> channels = new ConcurrentHashMap<>();
+    private final Object lifecycleLock = new Object();
+    private volatile boolean closed;
 
     public FandPluginMessaging(PacketRegistryImpl packets) {
         this(packets, java.util.List::of);
@@ -45,6 +47,9 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
 
     @Override
     public Collection<PluginMessageChannel> channels() {
+        if (closed) {
+            return java.util.List.of();
+        }
         return channels.entrySet().stream()
                 .map(entry -> new PluginMessageChannel(entry.getKey(), entry.getValue().direction()))
                 .toList();
@@ -72,6 +77,7 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(channel, "channel");
         Objects.requireNonNull(payload, "payload");
+        ensureOpen();
         var state = channels.get(channel);
         if (state == null || !state.direction().allowsClientbound()) {
             throw new IllegalArgumentException("Plugin messaging channel is not registered for clientbound traffic: " + channel.asString());
@@ -96,10 +102,16 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
 
     @Override
     public void close() {
-        for (var state : channels.values()) {
-            state.close();
+        synchronized (lifecycleLock) {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            for (var state : channels.values()) {
+                state.close();
+            }
+            channels.clear();
         }
-        channels.clear();
     }
 
     private PluginMessageRegistration registerInternal(
@@ -110,24 +122,35 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
         Objects.requireNonNull(channel, "channel");
         Objects.requireNonNull(direction, "direction");
         var listener = handler == null ? null : new HandlerRegistration(handler);
-        var state = channels.compute(channel, (ignored, existing) -> {
-            if (existing == null) {
-                return new ChannelState(channel, direction, listener, packets);
+        synchronized (lifecycleLock) {
+            ensureOpen();
+            var state = channels.compute(channel, (ignored, existing) -> {
+                if (existing == null) {
+                    return new ChannelState(channel, direction, listener, packets);
+                }
+                existing.add(direction, listener, packets);
+                return existing;
+            });
+            if (direction.allowsServerbound()) {
+                advertiser.broadcast(serverboundChannels());
             }
-            existing.add(direction, listener, packets);
-            return existing;
-        });
-        if (direction.allowsServerbound()) {
-            advertiser.broadcast(serverboundChannels());
+            return new Registration(this, state, direction, listener);
         }
-        return new Registration(this, state, direction, listener);
+    }
+
+    private void ensureOpen() {
+        if (closed) {
+            throw new IllegalStateException("Plugin messaging service is closed");
+        }
     }
 
     private void release(Registration registration) {
-        channels.computeIfPresent(registration.state.channel, (ignored, state) -> {
-            state.remove(registration.direction, registration.listener);
-            return state.empty() ? null : state;
-        });
+        synchronized (lifecycleLock) {
+            channels.computeIfPresent(registration.state.channel, (ignored, state) -> {
+                state.remove(registration.direction, registration.listener);
+                return state.empty() ? null : state;
+            });
+        }
     }
 
     private static boolean requiresHandler(PluginMessageDirection direction) {
