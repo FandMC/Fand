@@ -32,6 +32,7 @@ features:
   log-entity-removes: false
   log-entity-teleports: false
   log-entity-detail-events: false
+  log-detailed-damage-events: false
   log-player-move-events: false
   log-player-state-events: false
   log-player-detail-events: false

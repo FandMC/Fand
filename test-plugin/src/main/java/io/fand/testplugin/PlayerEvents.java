@@ -16,6 +16,7 @@ final class PlayerEvents {
         events.registerListener(new DemoCommandEvents(context, demoGuiViewers));
         events.registerListener(new DemoPlayerEvents(context, demoGuiViewers));
         events.registerListener(new DemoEntityEvents(context));
+        DemoDetailedDamageEvents.registerAll(context);
         events.registerListener(new DemoBlockEvents(context));
         events.registerListener(new DemoInventoryEvents(context, demoGuiViewers));
         events.registerListener(new DemoWorldEvents(context));

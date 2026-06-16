@@ -25,10 +25,13 @@ final class EventHookSourceTest {
         var living = read("src/minecraft/java/net/minecraft/world/entity/LivingEntity.java");
 
         assertThat(hooks).contains("public record DamageBreakdown");
+        assertThat(hooks).contains("public record DamageResult");
         assertThat(hooks).contains("damage.modifiers()");
         assertThat(living).contains("this.fand$calculateDamageBreakdown(level, source, damage)");
         assertThat(living).contains("io.fand.server.event.EntityEvents.fireDamage(this, source, fandAppliedBreakdown)");
-        assertThat(living).contains("this.fand$applyFinalDamage(level, source, fandHealthDamage, fandAppliedBreakdown)");
+        assertThat(living).contains("fandDamageApplicationCancelled = fandDamage.damageApplicationCancelled()");
+        assertThat(living).contains("this.fand$applyFinalDamage(level, source, fandHealthDamage, fandAppliedBreakdown, fandDamageApplicationCancelled)");
+        assertThat(living).contains("if (damageApplicationCancelled) {\n            return;");
     }
 
     @Test
@@ -36,7 +39,7 @@ final class EventHookSourceTest {
         var source = read("src/main/java/io/fand/server/event/EntityEvents.java");
 
         assertThat(source).contains("hasDetailedDamageListeners(bus)");
-        assertThat(source).contains("&& !hasDetailedListeners) {\n            return damage.finalDamage();");
+        assertThat(source).contains("&& !hasDetailedListeners) {\n            return DamageResult.apply(damage.finalDamage());");
         assertThat(source).contains("DamageEventRegistry.detailedEventTypes()");
         assertThat(source).contains("DamageEventRegistry.createDetailed(");
 

@@ -154,7 +154,7 @@ public final class EntityEvents {
         }
     }
 
-    public static @Nullable Float fireDamage(
+    public static @Nullable DamageResult fireDamage(
             net.minecraft.world.entity.LivingEntity entity,
             DamageSource source,
             float damage
@@ -170,7 +170,7 @@ public final class EntityEvents {
                 || hasDetailedDamageListeners(bus);
     }
 
-    public static @Nullable Float fireDamage(
+    public static @Nullable DamageResult fireDamage(
             net.minecraft.world.entity.LivingEntity entity,
             DamageSource source,
             DamageBreakdown damage
@@ -181,11 +181,11 @@ public final class EntityEvents {
         boolean hasByBlockListeners = bus.hasListeners(EntityDamageByBlockEvent.class);
         boolean hasDetailedListeners = hasDetailedDamageListeners(bus);
         if (!hasGenericListeners && !hasByEntityListeners && !hasByBlockListeners && !hasDetailedListeners) {
-            return damage.finalDamage();
+            return DamageResult.apply(damage.finalDamage());
         }
         var victim = wrapLivingEntityForEvent("EntityDamageEvent victim", entity);
         if (victim == null) {
-            return damage.finalDamage();
+            return DamageResult.apply(damage.finalDamage());
         }
         var directEntity = wrapLivingDamageSource(source.getDirectEntity(), "EntityDamageEvent direct entity");
         var attacker = wrapLivingDamageSource(source.getEntity(), "EntityDamageEvent attacker");
@@ -197,7 +197,7 @@ public final class EntityEvents {
                         .flatMap(pos -> Optional.ofNullable(FandHooks.wrapWorld(serverLevel))
                                 .map(world -> new FandBlock(world, pos.getX(), pos.getY(), pos.getZ())));
         if (attacker.isEmpty() && blockSource.isEmpty() && !hasGenericListeners && !hasDetailedListeners) {
-            return damage.finalDamage();
+            return DamageResult.apply(damage.finalDamage());
         }
         var cause = source.typeHolder().unwrapKey()
                 .map(key -> DamageCause.of(key.identifier().toString()))
@@ -221,7 +221,7 @@ public final class EntityEvents {
         if (adjusted <= 0.0) {
             return null;
         }
-        return (float) adjusted;
+        return new DamageResult((float) adjusted, event.damageApplicationCancelled());
     }
 
     public static boolean withBlockDamageSource(BlockPos sourcePos, java.util.function.BooleanSupplier task) {
@@ -1681,6 +1681,15 @@ public final class EntityEvents {
                     0.0F,
                     damage,
                     Map.of(DamageModifier.BASE, (double) damage));
+        }
+    }
+
+    public record DamageResult(
+            float amount,
+            boolean damageApplicationCancelled
+    ) {
+        public static DamageResult apply(float amount) {
+            return new DamageResult(amount, false);
         }
     }
 

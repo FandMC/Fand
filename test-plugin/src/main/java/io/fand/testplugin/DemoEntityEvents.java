@@ -14,13 +14,13 @@ import io.fand.api.event.entity.EntityCombustEvent;
 import io.fand.api.event.entity.EntityCreatePortalEvent;
 import io.fand.api.event.entity.EntityDamageByBlockEvent;
 import io.fand.api.event.entity.EntityDamageByEntityEvent;
-import io.fand.api.event.entity.DamageCause;
 import io.fand.api.event.entity.EntityDeathEvent;
 import io.fand.api.event.entity.EntityDismountEvent;
 import io.fand.api.event.entity.EntityDropItemEvent;
 import io.fand.api.event.entity.EntityExplodeEvent;
 import io.fand.api.event.entity.EntityKnockbackEvent;
 import io.fand.api.event.entity.EntityMountEvent;
+import io.fand.api.event.entity.EntityPlayerAttackDamageEvent;
 import io.fand.api.event.entity.EntityPickupItemEvent;
 import io.fand.api.event.entity.EntityPortalEnterEvent;
 import io.fand.api.event.entity.EntityPortalEvent;
@@ -244,24 +244,28 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
-        if (isPlayerMeleeAttack(event)
-                && hasEnchantment(((Player) event.damager()).inventory().heldItem(), MERCY_ENCHANTMENT)) {
-            event.setAmount(0.0);
-        }
-        if (isPlayerMeleeAttack(event)
-                && hasEnchantment(((Player) event.damager()).inventory().heldItem(), PLUNDER_ENCHANTMENT)) {
-            var stolen = plunderTargetItem(event.entity());
-            if (stolen != null) {
-                event.entity().setEquipment(stolen.slot(), ItemStack.EMPTY);
-                event.entity().world().dropItem(event.entity().location(), stolen.stack());
-            }
-        }
         if (context.config().getBoolean("features.log-entity-detail-events", false)) {
             logger.info("Entity attacked: {} <- {} cause={} amount={}",
                     event.entity().type().key().asString(),
                     event.damager().type().key().asString(),
                     event.cause(),
                     trim(event.amount()));
+        }
+    }
+
+    @Subscribe
+    public void onEntityPlayerAttack(EntityPlayerAttackDamageEvent event) {
+        Player player = event.damager();
+        ItemStack weapon = player.inventory().heldItem();
+        if (hasEnchantment(weapon, MERCY_ENCHANTMENT)) {
+            event.setDamageApplicationCancelled(true);
+        }
+        if (hasEnchantment(weapon, PLUNDER_ENCHANTMENT)) {
+            var stolen = plunderTargetItem(event.entity());
+            if (stolen != null) {
+                event.entity().setEquipment(stolen.slot(), ItemStack.EMPTY);
+                event.entity().world().dropItem(event.entity().location(), stolen.stack());
+            }
         }
     }
 
@@ -276,10 +280,6 @@ final class DemoEntityEvents implements Listener {
                     event.cause(),
                     trim(event.amount()));
         }
-    }
-
-    private static boolean isPlayerMeleeAttack(EntityDamageByEntityEvent event) {
-        return event.damager() instanceof Player && event.damageCause().equals(DamageCause.PLAYER_ATTACK);
     }
 
     private static PlunderedItem plunderTargetItem(io.fand.api.entity.Entity entity) {

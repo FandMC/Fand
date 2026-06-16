@@ -140,6 +140,7 @@ final class TestPluginTest {
                 "log-crafting-events: false",
                 "log-block-detail-events: false",
                 "log-entity-detail-events: false",
+                "log-detailed-damage-events: false",
                 "log-player-detail-events: false",
                 "log-player-move-events: false",
                 "decorate-player-death-message: true");
@@ -178,6 +179,7 @@ final class TestPluginTest {
                 PlayerJoinEvent.class);
         var covered = new java.util.LinkedHashSet<>(subscribed);
         covered.addAll(inlineSubscriptions);
+        covered.addAll(DemoDetailedDamageEvents.subscribedEventTypes());
 
         assertThat(SelfTestCommand.expectedEvents())
                 .allSatisfy(event -> assertThat(covered)

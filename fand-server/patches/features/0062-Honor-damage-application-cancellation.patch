@@ -1,0 +1,92 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Tue, 16 Jun 2026 10:27:38 +0800
+Subject: [PATCH] Honor damage application cancellation
+
+
+diff --git a/net/minecraft/world/entity/LivingEntity.java b/net/minecraft/world/entity/LivingEntity.java
+index a9815541d0a47d32521a11af160a04ebac962a0f..516b0fe14a149f4f69c5b1518c3ed3457caed75c 100644
+--- a/net/minecraft/world/entity/LivingEntity.java
++++ b/net/minecraft/world/entity/LivingEntity.java
+@@ -1273,6 +1273,7 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+         io.fand.server.event.EntityEvents.DamageBreakdown fandDamageBreakdown = null;
+         io.fand.server.event.EntityEvents.DamageBreakdown fandAppliedBreakdown = null;
+         float fandHealthDamage = damage;
++        boolean fandDamageApplicationCancelled = false;
+         if (io.fand.server.event.EntityEvents.hasDamageListeners()) {
+             fandDamageBreakdown = this.fand$calculateDamageBreakdown(level, source, damage);
+             damage = fandDamageBreakdown.damageBeforeArmor();
+@@ -1284,11 +1285,13 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+             } else {
+                 fandAppliedBreakdown = fandDamageBreakdown;
+             }
+-            Float fandDamage = io.fand.server.event.EntityEvents.fireDamage(this, source, fandAppliedBreakdown);
++            io.fand.server.event.EntityEvents.DamageResult fandDamage =
++                io.fand.server.event.EntityEvents.fireDamage(this, source, fandAppliedBreakdown);
+             if (fandDamage == null) {
+                 return false;
+             }
+-            fandHealthDamage = fandDamage;
++            fandHealthDamage = fandDamage.amount();
++            fandDamageApplicationCancelled = fandDamage.damageApplicationCancelled();
+         }
+ 
+         if (this.isSleeping()) {
+@@ -1332,7 +1335,7 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+             if (fandDamageBreakdown == null) {
+                 this.actuallyHurt(level, source, damage - this.lastHurt);
+             } else {
+-                this.fand$applyFinalDamage(level, source, fandHealthDamage, fandAppliedBreakdown);
++                this.fand$applyFinalDamage(level, source, fandHealthDamage, fandAppliedBreakdown, fandDamageApplicationCancelled);
+             }
+             this.lastHurt = damage;
+             tookFullDamage = false;
+@@ -1342,7 +1345,7 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+             if (fandDamageBreakdown == null) {
+                 this.actuallyHurt(level, source, damage);
+             } else {
+-                this.fand$applyFinalDamage(level, source, fandHealthDamage, fandAppliedBreakdown);
++                this.fand$applyFinalDamage(level, source, fandHealthDamage, fandAppliedBreakdown, fandDamageApplicationCancelled);
+             }
+             this.hurtDuration = 10;
+             this.hurtTime = this.hurtDuration;
+@@ -1623,7 +1626,8 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+             final ServerLevel level,
+             final DamageSource source,
+             float damage,
+-            final io.fand.server.event.EntityEvents.DamageBreakdown breakdown
++            final io.fand.server.event.EntityEvents.DamageBreakdown breakdown,
++            final boolean damageApplicationCancelled
+     ) {
+         if (this.isInvulnerableTo(level, source)) {
+             return;
+@@ -1633,6 +1637,9 @@ public abstract class LivingEntity extends Entity implements Attackable, Waypoin
+             this.hurtArmor(source, breakdown.damageBeforeArmor());
+         }
+         this.fand$awardResistanceStats(source, breakdown.resistedDamage());
++        if (damageApplicationCancelled) {
++            return;
++        }
+         float absorbedDamage = Math.min(this.getAbsorptionAmount(), Math.max(breakdown.absorbedDamage(), 0.0F));
+         if (absorbedDamage > 0.0F) {
+             this.setAbsorptionAmount(this.getAbsorptionAmount() - absorbedDamage);
+diff --git a/net/minecraft/world/entity/player/Player.java b/net/minecraft/world/entity/player/Player.java
+index 07e3ffa0a77e897d96da8a41d2b8aae3be7fd04c..07fffd623bbcd350d6e3f8c790d916551e169aa8 100644
+--- a/net/minecraft/world/entity/player/Player.java
++++ b/net/minecraft/world/entity/player/Player.java
+@@ -772,9 +772,13 @@ public abstract class Player extends Avatar implements ContainerUser {
+             final ServerLevel level,
+             final DamageSource source,
+             float damage,
+-            final io.fand.server.event.EntityEvents.DamageBreakdown breakdown
++            final io.fand.server.event.EntityEvents.DamageBreakdown breakdown,
++            final boolean damageApplicationCancelled
+     ) {
+-        super.fand$applyFinalDamage(level, source, damage, breakdown);
++        super.fand$applyFinalDamage(level, source, damage, breakdown, damageApplicationCancelled);
++        if (damageApplicationCancelled) {
++            return;
++        }
+         float absorbedDamage = breakdown.absorbedDamage();
+         if (absorbedDamage > 0.0F && absorbedDamage < 3.4028235E37F) {
+             this.awardStat(Stats.DAMAGE_ABSORBED, Math.round(absorbedDamage * 10.0F));
