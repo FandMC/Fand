@@ -10,8 +10,10 @@ import io.fand.api.event.player.PlayerBucketFillEvent;
 import io.fand.api.event.player.PlayerChangedMainHandEvent;
 import io.fand.api.event.player.PlayerChangedWorldEvent;
 import io.fand.api.event.player.PlayerClientBrandEvent;
+import io.fand.api.event.player.PlayerCommandTeleportEvent;
 import io.fand.api.event.player.PlayerEditBookEvent;
 import io.fand.api.event.player.PlayerEggThrowEvent;
+import io.fand.api.event.player.PlayerEnderPearlTeleportEvent;
 import io.fand.api.event.player.PlayerExperienceChangeEvent;
 import io.fand.api.event.player.PlayerFoodLevelChangeEvent;
 import io.fand.api.event.player.PlayerGameModeChangeEvent;
@@ -28,13 +30,22 @@ import io.fand.api.event.player.PlayerItemMendEvent;
 import io.fand.api.event.player.PlayerKickEvent;
 import io.fand.api.event.player.PlayerLevelChangeEvent;
 import io.fand.api.event.player.PlayerLocaleChangeEvent;
+import io.fand.api.event.player.PlayerMainHandRightClickAirEvent;
+import io.fand.api.event.player.PlayerMainHandRightClickBlockEvent;
+import io.fand.api.event.player.PlayerOffHandRightClickAirEvent;
+import io.fand.api.event.player.PlayerOffHandRightClickBlockEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
+import io.fand.api.event.player.PlayerPluginTeleportEvent;
 import io.fand.api.event.player.PlayerPortalEvent;
+import io.fand.api.event.player.PlayerPortalTeleportEvent;
 import io.fand.api.event.player.PlayerRecipeDiscoverEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
 import io.fand.api.event.player.PlayerResourcePackStatusEvent;
+import io.fand.api.event.player.PlayerRightClickAirEvent;
+import io.fand.api.event.player.PlayerRightClickBlockEvent;
 import io.fand.api.event.player.PlayerRiptideEvent;
 import io.fand.api.event.player.PlayerShearEntityEvent;
+import io.fand.api.event.player.PlayerSpectateTeleportEvent;
 import io.fand.api.event.player.PlayerStatisticIncrementEvent;
 import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
@@ -42,6 +53,7 @@ import io.fand.api.event.player.PlayerToggleFlightEvent;
 import io.fand.api.event.player.PlayerToggleSneakEvent;
 import io.fand.api.event.player.PlayerToggleSprintEvent;
 import io.fand.api.event.player.PlayerUnleashEntityEvent;
+import io.fand.api.event.player.PlayerUnknownTeleportEvent;
 import io.fand.api.event.player.PlayerVelocityEvent;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
@@ -465,6 +477,56 @@ public final class PlayerEvents {
         return !event.cancelled();
     }
 
+    public static boolean fireRightClickBlock(
+            ServerPlayer player,
+            ServerLevel level,
+            BlockPos pos,
+            InteractionHand hand,
+            net.minecraft.world.item.ItemStack itemStack
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(rightClickBlockType(hand))) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        var world = FandHooks.wrapWorld(level);
+        if (fandPlayer == null || world == null) {
+            return true;
+        }
+        var block = new FandBlock(world, pos.getX(), pos.getY(), pos.getZ());
+        var event = rightClickBlockEvent(fandPlayer, block, hand, FandItemStacks.fromVanilla(itemStack));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("{} listener failed", event.getClass().getSimpleName(), failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public static boolean fireRightClickAir(
+            ServerPlayer player,
+            InteractionHand hand,
+            net.minecraft.world.item.ItemStack itemStack
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(rightClickAirType(hand))) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return true;
+        }
+        var event = rightClickAirEvent(fandPlayer, hand, FandItemStacks.fromVanilla(itemStack));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("{} listener failed", event.getClass().getSimpleName(), failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
     public static boolean fireShearEntity(
             net.minecraft.world.entity.player.Player player,
             net.minecraft.world.entity.Entity target,
@@ -798,7 +860,8 @@ public final class PlayerEvents {
 
     public static @Nullable TeleportTransition fireTeleport(ServerPlayer player, TeleportTransition transition) {
         var bus = FandHooks.events();
-        if (SUPPRESS_TELEPORT_EVENT.get() > 0 || !bus.hasListeners(PlayerTeleportEvent.class)) {
+        PlayerTeleportEvent.Cause cause = currentTeleportCause();
+        if (SUPPRESS_TELEPORT_EVENT.get() > 0 || !bus.hasListeners(teleportEventType(cause))) {
             return transition;
         }
         FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
@@ -822,7 +885,7 @@ public final class PlayerEvents {
                 absolute.position().z,
                 absolute.yRot(),
                 absolute.xRot());
-        var event = new PlayerTeleportEvent(fandPlayer, from, to, currentTeleportCause());
+        var event = teleportEvent(fandPlayer, from, to, cause);
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {
@@ -1262,6 +1325,66 @@ public final class PlayerEvents {
             return explicit;
         }
         return CommandEvents.inCommandContext() ? PlayerTeleportEvent.Cause.COMMAND : PlayerTeleportEvent.Cause.UNKNOWN;
+    }
+
+    private static Class<? extends PlayerInteractEvent> rightClickBlockType(InteractionHand hand) {
+        return hand == InteractionHand.OFF_HAND
+                ? PlayerOffHandRightClickBlockEvent.class
+                : PlayerMainHandRightClickBlockEvent.class;
+    }
+
+    private static PlayerRightClickBlockEvent rightClickBlockEvent(
+            FandPlayer player,
+            FandBlock block,
+            InteractionHand hand,
+            io.fand.api.item.ItemStack item
+    ) {
+        return hand == InteractionHand.OFF_HAND
+                ? new PlayerOffHandRightClickBlockEvent(player, block, item)
+                : new PlayerMainHandRightClickBlockEvent(player, block, item);
+    }
+
+    private static Class<? extends PlayerInteractEvent> rightClickAirType(InteractionHand hand) {
+        return hand == InteractionHand.OFF_HAND
+                ? PlayerOffHandRightClickAirEvent.class
+                : PlayerMainHandRightClickAirEvent.class;
+    }
+
+    private static PlayerRightClickAirEvent rightClickAirEvent(
+            FandPlayer player,
+            InteractionHand hand,
+            io.fand.api.item.ItemStack item
+    ) {
+        return hand == InteractionHand.OFF_HAND
+                ? new PlayerOffHandRightClickAirEvent(player, item)
+                : new PlayerMainHandRightClickAirEvent(player, item);
+    }
+
+    private static Class<? extends PlayerTeleportEvent> teleportEventType(PlayerTeleportEvent.Cause cause) {
+        return switch (cause) {
+            case COMMAND -> PlayerCommandTeleportEvent.class;
+            case PLUGIN -> PlayerPluginTeleportEvent.class;
+            case ENDER_PEARL -> PlayerEnderPearlTeleportEvent.class;
+            case PORTAL -> PlayerPortalTeleportEvent.class;
+            case SPECTATE -> PlayerSpectateTeleportEvent.class;
+            case UNKNOWN -> PlayerUnknownTeleportEvent.class;
+        };
+    }
+
+    private static PlayerTeleportEvent teleportEvent(
+            FandPlayer player,
+            Location from,
+            Location to,
+            PlayerTeleportEvent.Cause cause
+    ) {
+        return switch (cause) {
+            case COMMAND -> new PlayerCommandTeleportEvent(player, from, to);
+            case PLUGIN -> new PlayerPluginTeleportEvent(player, from, to);
+            case ENDER_PEARL -> new PlayerEnderPearlTeleportEvent(player, from, to);
+            case PORTAL -> new PlayerPortalTeleportEvent(player, from, to);
+            case SPECTATE -> new PlayerSpectateTeleportEvent(player, from, to);
+            case UNKNOWN -> new PlayerUnknownTeleportEvent(player, from, to);
+        };
     }
 
     private static void restoreTeleportCause(PlayerTeleportEvent.Cause previous) {

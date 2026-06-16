@@ -158,11 +158,13 @@ import io.fand.api.event.player.PlayerChangedMainHandEvent;
 import io.fand.api.event.player.PlayerChangedWorldEvent;
 import io.fand.api.event.player.PlayerChatEvent;
 import io.fand.api.event.player.PlayerClientBrandEvent;
+import io.fand.api.event.player.PlayerCommandTeleportEvent;
 import io.fand.api.event.player.PlayerCommandPreprocessEvent;
 import io.fand.api.event.player.PlayerDeathEvent;
 import io.fand.api.event.player.PlayerDropItemEvent;
 import io.fand.api.event.player.PlayerEditBookEvent;
 import io.fand.api.event.player.PlayerEggThrowEvent;
+import io.fand.api.event.player.PlayerEnderPearlTeleportEvent;
 import io.fand.api.event.player.PlayerExperienceChangeEvent;
 import io.fand.api.event.player.PlayerFoodLevelChangeEvent;
 import io.fand.api.event.player.PlayerGameModeChangeEvent;
@@ -180,16 +182,25 @@ import io.fand.api.event.player.PlayerLeashEntityEvent;
 import io.fand.api.event.player.PlayerLevelChangeEvent;
 import io.fand.api.event.player.PlayerLocaleChangeEvent;
 import io.fand.api.event.player.PlayerLoginEvent;
+import io.fand.api.event.player.PlayerMainHandRightClickAirEvent;
+import io.fand.api.event.player.PlayerMainHandRightClickBlockEvent;
 import io.fand.api.event.player.PlayerMoveEvent;
+import io.fand.api.event.player.PlayerOffHandRightClickAirEvent;
+import io.fand.api.event.player.PlayerOffHandRightClickBlockEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
+import io.fand.api.event.player.PlayerPluginTeleportEvent;
 import io.fand.api.event.player.PlayerPortalEvent;
+import io.fand.api.event.player.PlayerPortalTeleportEvent;
 import io.fand.api.event.player.PlayerPreLoginEvent;
 import io.fand.api.event.player.PlayerQuitEvent;
 import io.fand.api.event.player.PlayerRecipeDiscoverEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
 import io.fand.api.event.player.PlayerResourcePackStatusEvent;
+import io.fand.api.event.player.PlayerRightClickAirEvent;
+import io.fand.api.event.player.PlayerRightClickBlockEvent;
 import io.fand.api.event.player.PlayerRiptideEvent;
 import io.fand.api.event.player.PlayerShearEntityEvent;
+import io.fand.api.event.player.PlayerSpectateTeleportEvent;
 import io.fand.api.event.player.PlayerStatisticIncrementEvent;
 import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
@@ -197,6 +208,7 @@ import io.fand.api.event.player.PlayerToggleFlightEvent;
 import io.fand.api.event.player.PlayerToggleSneakEvent;
 import io.fand.api.event.player.PlayerToggleSprintEvent;
 import io.fand.api.event.player.PlayerUnleashEntityEvent;
+import io.fand.api.event.player.PlayerUnknownTeleportEvent;
 import io.fand.api.event.player.PlayerVelocityEvent;
 import io.fand.api.event.permission.PermissionCheckEvent;
 import io.fand.api.event.server.ServerCommandEvent;
@@ -300,6 +312,12 @@ final class SelfTestCommand implements io.fand.api.command.CommandExecutor, io.f
             event("player", PlayerToggleSprintEvent.class),
             event("player", PlayerToggleFlightEvent.class),
             event("player", PlayerTeleportEvent.class),
+            event("player", PlayerCommandTeleportEvent.class),
+            event("player", PlayerPluginTeleportEvent.class),
+            event("player", PlayerEnderPearlTeleportEvent.class),
+            event("player", PlayerPortalTeleportEvent.class),
+            event("player", PlayerSpectateTeleportEvent.class),
+            event("player", PlayerUnknownTeleportEvent.class),
             event("player", PlayerPortalEvent.class),
             event("player", PlayerChangedWorldEvent.class),
             event("player", PlayerRespawnEvent.class),
@@ -313,6 +331,12 @@ final class SelfTestCommand implements io.fand.api.command.CommandExecutor, io.f
             event("player", PlayerClientBrandEvent.class),
             event("player", PlayerResourcePackStatusEvent.class),
             event("player", PlayerInteractEvent.class),
+            event("player", PlayerRightClickBlockEvent.class),
+            event("player", PlayerMainHandRightClickBlockEvent.class),
+            event("player", PlayerOffHandRightClickBlockEvent.class),
+            event("player", PlayerRightClickAirEvent.class),
+            event("player", PlayerMainHandRightClickAirEvent.class),
+            event("player", PlayerOffHandRightClickAirEvent.class),
             event("player", PlayerInteractEntityEvent.class),
             event("player", PlayerShearEntityEvent.class),
             event("player", PlayerLeashEntityEvent.class),

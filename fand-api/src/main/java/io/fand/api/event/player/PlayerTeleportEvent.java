@@ -10,7 +10,7 @@ import java.util.Objects;
  * Fired on the server thread before a player is teleported. Cancelling the
  * event rejects the teleport. Listeners may replace the destination.
  */
-public final class PlayerTeleportEvent implements Event, Cancellable {
+public class PlayerTeleportEvent implements Event, Cancellable {
 
     public enum Cause {
         COMMAND,

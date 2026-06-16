@@ -19,7 +19,7 @@ import org.jspecify.annotations.Nullable;
  * {@link io.fand.api.event.block.BlockBreakEvent} instead and are not fired
  * here.
  */
-public final class PlayerInteractEvent implements Event, Cancellable {
+public class PlayerInteractEvent implements Event, Cancellable {
 
     public enum Action {
         RIGHT_CLICK_BLOCK,

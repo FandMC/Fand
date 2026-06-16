@@ -92,6 +92,26 @@ final class EventHookSourceTest {
     }
 
     @Test
+    void detailedPlayerInteractAndTeleportEventsStayWired() throws IOException {
+        var playerEvents = read("src/main/java/io/fand/server/event/PlayerEvents.java");
+        var packetListener = read("src/minecraft/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java");
+
+        assertThat(packetListener).contains("PlayerEvents.fireRightClickBlock(this.player, level, pos, hand, itemStack)");
+        assertThat(packetListener).contains("PlayerEvents.fireRightClickAir(this.player, hand, itemStack)");
+        assertThat(playerEvents).contains("PlayerMainHandRightClickBlockEvent.class");
+        assertThat(playerEvents).contains("new PlayerOffHandRightClickBlockEvent(player, block, item)");
+        assertThat(playerEvents).contains("new PlayerMainHandRightClickAirEvent(player, item)");
+        assertThat(playerEvents).contains("new PlayerOffHandRightClickAirEvent(player, item)");
+        assertThat(playerEvents).contains("bus.hasListeners(teleportEventType(cause))");
+        assertThat(playerEvents).contains("new PlayerCommandTeleportEvent(player, from, to)");
+        assertThat(playerEvents).contains("new PlayerPluginTeleportEvent(player, from, to)");
+        assertThat(playerEvents).contains("new PlayerEnderPearlTeleportEvent(player, from, to)");
+        assertThat(playerEvents).contains("new PlayerPortalTeleportEvent(player, from, to)");
+        assertThat(playerEvents).contains("new PlayerSpectateTeleportEvent(player, from, to)");
+        assertThat(playerEvents).contains("new PlayerUnknownTeleportEvent(player, from, to)");
+    }
+
+    @Test
     void offlinePlayerDataCanBeMutatedAndSaved() throws IOException {
         var offline = read("src/main/java/io/fand/server/player/FandOfflinePlayer.java");
         var playerList = read("src/minecraft/java/net/minecraft/server/players/PlayerList.java");

@@ -1,0 +1,76 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Tue, 16 Jun 2026 11:07:52 +0800
+Subject: [PATCH] Route detailed player interaction events
+
+
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 644b1609eeff11fcac4d31f215481a363c6ac790..916f90d6ca4aa5344c608f36d2f2f81199debf08 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -1444,32 +1444,10 @@ public class ServerGamePacketListenerImpl
+                             if (this.server.isUnderSpawnProtection(level, pos, this.player)) {
+                                 this.player.sendSpawnProtectionMessage(pos);
+                             } else if (this.awaitingPositionFromClient == null && level.mayInteract(this.player, pos)) {
+-                                var fandBus = io.fand.server.hooks.FandHooks.events();
+-                                if (fandBus.hasListeners(io.fand.api.event.player.PlayerInteractEvent.class)) {
+-                                    var fandPlayer = io.fand.server.hooks.FandHooks.findPlayer(this.player.getUUID());
+-                                    if (fandPlayer != null) {
+-                                        var fandWorld = io.fand.server.hooks.FandHooks.wrapWorld(level);
+-                                        io.fand.api.block.Block fandBlock = fandWorld == null
+-                                                ? null
+-                                                : new io.fand.server.block.FandBlock(fandWorld, pos.getX(), pos.getY(), pos.getZ());
+-                                        var fandHand = hand == net.minecraft.world.InteractionHand.OFF_HAND
+-                                                ? io.fand.api.event.player.PlayerInteractEvent.Hand.OFF_HAND
+-                                                : io.fand.api.event.player.PlayerInteractEvent.Hand.MAIN_HAND;
+-                                        var fandInteractEvent = io.fand.server.hooks.FandHooks.fireOrLog(
+-                                                fandBus,
+-                                                new io.fand.api.event.player.PlayerInteractEvent(
+-                                                        fandPlayer,
+-                                                        io.fand.api.event.player.PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK,
+-                                                        fandHand,
+-                                                        fandBlock,
+-                                                        io.fand.server.item.FandItemStacks.fromVanilla(itemStack)),
+-                                                "PlayerInteractEvent");
+-                                        if (fandInteractEvent.cancelled()) {
+-                                            this.send(new ClientboundBlockUpdatePacket(level, pos));
+-                                            this.send(new ClientboundBlockUpdatePacket(level, pos.relative(direction)));
+-                                            return;
+-                                        }
+-                                    }
++                                if (!io.fand.server.event.PlayerEvents.fireRightClickBlock(this.player, level, pos, hand, itemStack)) {
++                                    this.send(new ClientboundBlockUpdatePacket(level, pos));
++                                    this.send(new ClientboundBlockUpdatePacket(level, pos.relative(direction)));
++                                    return;
+                                 }
+                                 InteractionResult interactionResult = this.player.gameMode.useItemOn(this.player, level, itemStack, hand, blockHit);
+                                 if (interactionResult.consumesAction()) {
+@@ -1532,26 +1510,8 @@ public class ServerGamePacketListenerImpl
+                     this.player.absSnapRotationTo(targetYRot, targetXRot);
+                 }
+ 
+-                var fandBus = io.fand.server.hooks.FandHooks.events();
+-                if (fandBus.hasListeners(io.fand.api.event.player.PlayerInteractEvent.class)) {
+-                    var fandPlayer = io.fand.server.hooks.FandHooks.findPlayer(this.player.getUUID());
+-                    if (fandPlayer != null) {
+-                        var fandHand = hand == net.minecraft.world.InteractionHand.OFF_HAND
+-                                ? io.fand.api.event.player.PlayerInteractEvent.Hand.OFF_HAND
+-                                : io.fand.api.event.player.PlayerInteractEvent.Hand.MAIN_HAND;
+-                        var fandInteractEvent = io.fand.server.hooks.FandHooks.fireOrLog(
+-                                fandBus,
+-                                new io.fand.api.event.player.PlayerInteractEvent(
+-                                        fandPlayer,
+-                                        io.fand.api.event.player.PlayerInteractEvent.Action.RIGHT_CLICK_AIR,
+-                                        fandHand,
+-                                        null,
+-                                        io.fand.server.item.FandItemStacks.fromVanilla(itemStack)),
+-                                "PlayerInteractEvent");
+-                        if (fandInteractEvent.cancelled()) {
+-                            return;
+-                        }
+-                    }
++                if (!io.fand.server.event.PlayerEvents.fireRightClickAir(this.player, hand, itemStack)) {
++                    return;
+                 }
+ 
+                 if (this.player.gameMode.useItem(this.player, level, itemStack, hand) instanceof InteractionResult.Success success

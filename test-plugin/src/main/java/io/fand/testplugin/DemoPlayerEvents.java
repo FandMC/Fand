@@ -17,10 +17,12 @@ import io.fand.api.event.player.PlayerBucketFillEvent;
 import io.fand.api.event.player.PlayerChangedMainHandEvent;
 import io.fand.api.event.player.PlayerChangedWorldEvent;
 import io.fand.api.event.player.PlayerClientBrandEvent;
+import io.fand.api.event.player.PlayerCommandTeleportEvent;
 import io.fand.api.event.player.PlayerDeathEvent;
 import io.fand.api.event.player.PlayerDropItemEvent;
 import io.fand.api.event.player.PlayerEditBookEvent;
 import io.fand.api.event.player.PlayerEggThrowEvent;
+import io.fand.api.event.player.PlayerEnderPearlTeleportEvent;
 import io.fand.api.event.player.PlayerExperienceChangeEvent;
 import io.fand.api.event.player.PlayerFoodLevelChangeEvent;
 import io.fand.api.event.player.PlayerGameModeChangeEvent;
@@ -36,14 +38,23 @@ import io.fand.api.event.player.PlayerKickEvent;
 import io.fand.api.event.player.PlayerLeashEntityEvent;
 import io.fand.api.event.player.PlayerLevelChangeEvent;
 import io.fand.api.event.player.PlayerLocaleChangeEvent;
+import io.fand.api.event.player.PlayerMainHandRightClickAirEvent;
+import io.fand.api.event.player.PlayerMainHandRightClickBlockEvent;
 import io.fand.api.event.player.PlayerMoveEvent;
+import io.fand.api.event.player.PlayerOffHandRightClickAirEvent;
+import io.fand.api.event.player.PlayerOffHandRightClickBlockEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
+import io.fand.api.event.player.PlayerPluginTeleportEvent;
 import io.fand.api.event.player.PlayerPortalEvent;
+import io.fand.api.event.player.PlayerPortalTeleportEvent;
 import io.fand.api.event.player.PlayerRecipeDiscoverEvent;
 import io.fand.api.event.player.PlayerRespawnEvent;
 import io.fand.api.event.player.PlayerResourcePackStatusEvent;
+import io.fand.api.event.player.PlayerRightClickAirEvent;
+import io.fand.api.event.player.PlayerRightClickBlockEvent;
 import io.fand.api.event.player.PlayerRiptideEvent;
 import io.fand.api.event.player.PlayerShearEntityEvent;
+import io.fand.api.event.player.PlayerSpectateTeleportEvent;
 import io.fand.api.event.player.PlayerStatisticIncrementEvent;
 import io.fand.api.event.player.PlayerSwapHandItemsEvent;
 import io.fand.api.event.player.PlayerTeleportEvent;
@@ -51,6 +62,7 @@ import io.fand.api.event.player.PlayerToggleFlightEvent;
 import io.fand.api.event.player.PlayerToggleSneakEvent;
 import io.fand.api.event.player.PlayerToggleSprintEvent;
 import io.fand.api.event.player.PlayerUnleashEntityEvent;
+import io.fand.api.event.player.PlayerUnknownTeleportEvent;
 import io.fand.api.event.player.PlayerVelocityEvent;
 import io.fand.api.plugin.PluginContext;
 import java.util.Set;
@@ -250,6 +262,36 @@ final class DemoPlayerEvents implements Listener {
     }
 
     @Subscribe
+    public void onCommandTeleport(PlayerCommandTeleportEvent event) {
+        logDetailedTeleport(event);
+    }
+
+    @Subscribe
+    public void onPluginTeleport(PlayerPluginTeleportEvent event) {
+        logDetailedTeleport(event);
+    }
+
+    @Subscribe
+    public void onEnderPearlTeleport(PlayerEnderPearlTeleportEvent event) {
+        logDetailedTeleport(event);
+    }
+
+    @Subscribe
+    public void onPortalTeleport(PlayerPortalTeleportEvent event) {
+        logDetailedTeleport(event);
+    }
+
+    @Subscribe
+    public void onSpectateTeleport(PlayerSpectateTeleportEvent event) {
+        logDetailedTeleport(event);
+    }
+
+    @Subscribe
+    public void onUnknownTeleport(PlayerUnknownTeleportEvent event) {
+        logDetailedTeleport(event);
+    }
+
+    @Subscribe
     public void onPortal(PlayerPortalEvent event) {
         if (context.config().getBoolean("features.log-teleports", false)) {
             logger.info("{} portal {} -> {}", event.player().name(), compactLocation(event.from()), compactLocation(event.to()));
@@ -358,6 +400,45 @@ final class DemoPlayerEvents implements Listener {
         event.block().ifPresent(block -> event.player().sendMessage(Component.text(
                 "Right-clicked " + blockName(block.type()) + " at " + block.x() + "," + block.y() + "," + block.z(),
                 NamedTextColor.GRAY)));
+    }
+
+    @Subscribe
+    public void onRightClickBlock(PlayerRightClickBlockEvent event) {
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} right-click block hand={} block={} item={}",
+                    event.player().name(),
+                    event.hand(),
+                    blockName(event.clickedBlock().type()),
+                    stackName(event.item()));
+        }
+    }
+
+    @Subscribe
+    public void onMainHandRightClickBlock(PlayerMainHandRightClickBlockEvent event) {
+        reportDetailedRightClick(event, "main-hand block");
+    }
+
+    @Subscribe
+    public void onOffHandRightClickBlock(PlayerOffHandRightClickBlockEvent event) {
+        reportDetailedRightClick(event, "off-hand block");
+    }
+
+    @Subscribe
+    public void onRightClickAir(PlayerRightClickAirEvent event) {
+        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+            logger.info("{} right-click air hand={} item={}",
+                    event.player().name(), event.hand(), stackName(event.item()));
+        }
+    }
+
+    @Subscribe
+    public void onMainHandRightClickAir(PlayerMainHandRightClickAirEvent event) {
+        reportDetailedRightClick(event, "main-hand air");
+    }
+
+    @Subscribe
+    public void onOffHandRightClickAir(PlayerOffHandRightClickAirEvent event) {
+        reportDetailedRightClick(event, "off-hand air");
     }
 
     @Subscribe
@@ -474,6 +555,24 @@ final class DemoPlayerEvents implements Listener {
                 && event.cause().equals("minecraft:fall")) {
             event.setCancelled(true);
             player.sendMessage(Component.text("Fall damage cancelled by test-plugin.", NamedTextColor.YELLOW));
+        }
+    }
+
+    private void logDetailedTeleport(PlayerTeleportEvent event) {
+        if (context.config().getBoolean("features.log-teleports", false)) {
+            logger.info("{} detailed teleport {} {} -> {}",
+                    event.player().name(),
+                    event.getClass().getSimpleName(),
+                    compactLocation(event.from()),
+                    compactLocation(event.to()));
+        }
+    }
+
+    private void reportDetailedRightClick(PlayerInteractEvent event, String kind) {
+        if (context.config().getBoolean("features.report-right-clicks", false)) {
+            event.player().sendActionBar(Component.text(
+                    "Right-click " + kind + " via " + event.getClass().getSimpleName(),
+                    NamedTextColor.GRAY));
         }
     }
 }
