@@ -1062,8 +1062,11 @@ final class EventPayloadTest {
         assertThat(new WorldLoadEvent(world).world()).isSameAs(world);
         assertThat(new WorldUnloadEvent(world).world()).isSameAs(world);
         assertThat(new WorldSaveEvent(world).world()).isSameAs(world);
-        assertThat(new ChunkLoadEvent(world, 1, -2).chunkX()).isEqualTo(1);
-        assertThat(new ChunkUnloadEvent(world, 1, -2).chunkZ()).isEqualTo(-2);
+        var chunk = world.chunkAt(1, -2);
+        assertThat(new ChunkLoadEvent(world, 1, -2).chunk()).isEqualTo(chunk);
+        assertThat(new ChunkLoadEvent(chunk).chunkX()).isEqualTo(1);
+        assertThat(new ChunkUnloadEvent(world, 1, -2).chunk()).isEqualTo(chunk);
+        assertThat(new ChunkUnloadEvent(chunk).chunkZ()).isEqualTo(-2);
         var weather = new WeatherChangeEvent(world, false, true);
         var thunder = new ThunderChangeEvent(world, false, true);
         thunder.setCancelled(true);

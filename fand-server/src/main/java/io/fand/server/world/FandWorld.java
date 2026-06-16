@@ -15,6 +15,7 @@ import io.fand.api.world.BlockBatchOptions;
 import io.fand.api.world.BlockBatchResult;
 import io.fand.api.world.BlockClipboard;
 import io.fand.api.world.BlockRayTraceResult;
+import io.fand.api.world.Chunk;
 import io.fand.api.world.ChunkSnapshot;
 import io.fand.api.world.Difficulty;
 import io.fand.api.world.EntityRayTraceResult;
@@ -636,6 +637,11 @@ public final class FandWorld implements World {
     @Override
     public boolean chunkLoaded(int chunkX, int chunkZ) {
         return callOnServerThread(() -> handle.getChunkSource().hasChunk(chunkX, chunkZ));
+    }
+
+    @Override
+    public Chunk chunkAt(int chunkX, int chunkZ) {
+        return new FandChunk(this, chunkX, chunkZ);
     }
 
     @Override

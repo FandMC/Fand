@@ -166,7 +166,7 @@ public final class WorldEvents {
             return;
         }
         try {
-            bus.fire(new ChunkLoadEvent(world, pos.x(), pos.z()));
+            bus.fire(new ChunkLoadEvent(world.chunkAt(pos.x(), pos.z())));
         } catch (RuntimeException failure) {
             LOGGER.warn("ChunkLoadEvent listener failed", failure);
         }
@@ -183,7 +183,7 @@ public final class WorldEvents {
             return;
         }
         try {
-            bus.fire(new ChunkUnloadEvent(world, pos.x(), pos.z()));
+            bus.fire(new ChunkUnloadEvent(world.chunkAt(pos.x(), pos.z())));
         } catch (RuntimeException failure) {
             LOGGER.warn("ChunkUnloadEvent listener failed", failure);
         }

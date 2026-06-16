@@ -504,6 +504,17 @@ public interface World extends ForwardingAudience {
         return false;
     }
 
+    /** Returns a lazy handle for the chunk at chunk coordinates. */
+    default Chunk chunkAt(int chunkX, int chunkZ) {
+        return new WorldChunk(this, chunkX, chunkZ);
+    }
+
+    /** Returns a lazy handle for the chunk containing {@code location}. */
+    default Chunk chunkAt(Location location) {
+        requireSameWorld(location, this, "location");
+        return chunkAt(location.blockX() >> 4, location.blockZ() >> 4);
+    }
+
     /** Loads or generates the chunk at chunk coordinates. Marshals to the server thread. */
     default CompletableFuture<Boolean> loadChunk(int chunkX, int chunkZ) {
         return CompletableFuture.completedFuture(false);

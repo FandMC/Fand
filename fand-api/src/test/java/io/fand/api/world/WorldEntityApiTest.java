@@ -108,6 +108,22 @@ final class WorldEntityApiTest {
         assertThat(world.rayTraceBlock(world.at(0, 64, 0), new Vector3(1, 0, 0), 4.0)).isEmpty();
         assertThat(world.rayTraceEntity(world.at(0, 64, 0), new Vector3(1, 0, 0), 4.0)).isEmpty();
         assertThat(world.chunkLoaded(0, 0)).isFalse();
+        var chunk = world.chunkAt(1, -2);
+        assertThat(chunk.world()).isSameAs(world);
+        assertThat(chunk.x()).isEqualTo(1);
+        assertThat(chunk.z()).isEqualTo(-2);
+        assertThat(chunk.minBlockX()).isEqualTo(16);
+        assertThat(chunk.maxBlockZ()).isEqualTo(-17);
+        assertThat(world.chunkAt(world.at(31, 64, -17))).isEqualTo(world.chunkAt(1, -2));
+        assertThat(chunk.loaded()).isFalse();
+        assertThat(chunk.forceLoaded()).isFalse();
+        assertThat(chunk.load().join()).isFalse();
+        assertThat(chunk.unload().join()).isFalse();
+        assertThat(chunk.setForceLoaded(true).join()).isFalse();
+        assertThat(chunk.entityCount()).isZero();
+        assertThat(chunk.entities()).isEmpty();
+        assertThat(chunk.snapshot())
+                .isEqualTo(new ChunkSnapshot(world, 1, -2, false, false, 0));
         assertThat(world.chunkForceLoaded(0, 0)).isFalse();
         assertThat(world.loadChunk(0, 0).join()).isFalse();
         assertThat(world.unloadChunk(0, 0).join()).isFalse();
