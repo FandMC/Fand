@@ -18,11 +18,17 @@ public final class PluginCommandRegistry implements CommandRegistry {
     private final CommandRegistry delegate;
     private final PluginResourceTracker tracker;
     private final String namespace;
+    private final PluginPermissionService permissions;
 
     public PluginCommandRegistry(CommandRegistry delegate, PluginResourceTracker tracker, String namespace) {
+        this(delegate, tracker, namespace, null);
+    }
+
+    PluginCommandRegistry(CommandRegistry delegate, PluginResourceTracker tracker, String namespace, PluginPermissionService permissions) {
         this.delegate = delegate;
         this.tracker = tracker;
         this.namespace = namespace;
+        this.permissions = permissions;
     }
 
     public String namespace() {
@@ -36,6 +42,9 @@ public final class PluginCommandRegistry implements CommandRegistry {
 
     @Override
     public CommandRegistration register(CommandDescriptor descriptor, CommandExecutor executor, CommandCompleter completer) {
+        if (descriptor.permission() != null && permissions != null) {
+            permissions.requireOwned(descriptor.permission());
+        }
         var scoped = new CommandDescriptor(
                 namespace,
                 descriptor.label(),

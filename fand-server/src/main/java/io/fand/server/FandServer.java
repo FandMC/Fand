@@ -60,6 +60,7 @@ import io.fand.server.permission.PermissionManager;
 import io.fand.server.performance.ServerPerformanceTracker;
 import io.fand.server.player.FandPlayerAccessService;
 import io.fand.server.plugin.PluginRuntime;
+import io.fand.server.protocol.ProtocolCompatibilityManager;
 import io.fand.server.recipe.FandRecipeRegistry;
 import io.fand.server.scheduler.TaskScheduler;
 import io.fand.server.scoreboard.FandScoreboardService;
@@ -79,6 +80,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.SharedConstants;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -109,6 +111,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final FandRecipeRegistry recipes;
     private final FandScoreboardService scoreboard;
     private final PacketRegistryImpl packets;
+    private final ProtocolCompatibilityManager protocolCompatibility;
     private final FandPluginMessaging pluginMessaging;
     private final ModProtocolCompatibility modProtocols;
     private final EventSubscription pluginChannelAdvertisement;
@@ -157,6 +160,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.recipes = new FandRecipeRegistry();
         this.scoreboard = new FandScoreboardService(minecraftServer::get);
         this.packets = new PacketRegistryImpl();
+        this.protocolCompatibility = new ProtocolCompatibilityManager();
         this.players = new PlayerRegistry(permissions);
         this.pluginMessaging = new FandPluginMessaging(packets, players::snapshot);
         this.modProtocols = new ModProtocolCompatibility(pluginMessaging, initialConfig.compat.modProtocols);
@@ -334,6 +338,11 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
+    public int minecraftProtocolVersion() {
+        return SharedConstants.getCurrentVersion().protocolVersion();
+    }
+
+    @Override
     public PluginManager plugins() {
         return plugins;
     }
@@ -370,6 +379,11 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public PacketRegistry packets() {
         return packets;
+    }
+
+    @Override
+    public io.fand.api.protocol.ProtocolCompatibilityService protocolCompatibility() {
+        return protocolCompatibility;
     }
 
     @Override
@@ -741,6 +755,7 @@ public final class FandServer implements Server, AutoCloseable {
         plugins.close();
         pluginChannelAdvertisement.close();
         modProtocols.close();
+        protocolCompatibility.close();
         pluginMessaging.close();
         packets.close();
         guis.close();

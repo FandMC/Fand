@@ -365,12 +365,13 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 var dependencies = dependencyClassLoaders(artifact.descriptor.depends());
                 var classLoader = new PluginClassLoader(toJarUrl(artifact.jarPath), parentClassLoader, dependencies);
                 var resources = new PluginResourceTracker();
+                var pluginPermissions = new PluginPermissionService(permissions, artifact.descriptor.id());
                 var context = new RuntimePluginContext(
                         artifact.descriptor,
                         LoggerFactory.getLogger(artifact.descriptor.id()),
                         new PluginEventBus(eventBus, resources, artifact.descriptor.id()),
-                        permissions,
-                        new PluginCommandRegistry(commandRegistry, resources, artifact.descriptor.id()),
+                        pluginPermissions,
+                        new PluginCommandRegistry(commandRegistry, resources, artifact.descriptor.id(), pluginPermissions),
                         new PluginRecipeRegistry(recipeRegistry, resources, artifact.descriptor.id()),
                         new PluginAdvancementRegistry(advancementRegistry, resources, artifact.descriptor.id()),
                         new PluginEnchantmentRegistry(enchantmentRegistry, resources, artifact.descriptor.id()),

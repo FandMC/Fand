@@ -1,6 +1,7 @@
 package io.fand.server.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.fand.api.command.CommandArgument;
 import io.fand.api.command.CommandArgumentType;
@@ -47,6 +48,31 @@ final class PluginCommandIntegrationTest {
         assertThat(descriptor.namespace()).isEqualTo("demo");
         assertThat(descriptor.typedArguments()).hasSize(1);
         assertThat(descriptor.typedArguments().getFirst().type()).isEqualTo(CommandArgumentType.PLAYERS);
+    }
+
+    @Test
+    void rejectsPluginCommandPermissionOutsidePluginNamespace() {
+        var permissions = new PermissionManager();
+        var commands = new CommandManager(permissions);
+        var scopedPermissions = new PluginPermissionService(permissions, "demo");
+        var registry = new PluginCommandRegistry(commands, new PluginResourceTracker(), "demo", scopedPermissions);
+
+        assertThatThrownBy(() -> registry.register(
+                new CommandDescriptor(
+                        "ignored",
+                        "takeover",
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        "other.command.takeover"),
+                (sender, label, args) -> {},
+                (sender, label, args) -> List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("outside its namespace");
+
+        assertThat(permissions.lookup("other.command.takeover")).isEmpty();
+        assertThat(commands.lookup("demo:takeover")).isEmpty();
     }
 
     @Test

@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Wed, 17 Jun 2026 19:45:00 +0800
+Subject: [PATCH] Expose protocol compatibility hooks
+
+
+diff --git a/net/minecraft/network/Connection.java b/net/minecraft/network/Connection.java
+index 1c9d80179c2f996c19a9bb4cd0cb13ba07885079..d5b7fe6a8ed0f44d1a5905af22bedb5e0f4bb023 100644
+--- a/net/minecraft/network/Connection.java
++++ b/net/minecraft/network/Connection.java
+@@ -498,6 +498,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+             .addLast(
+                 outboundHandlerName(configureOutbound), configureOutbound ? new PacketEncoder<>(INITIAL_PROTOCOL) : new UnconfiguredPipelineHandler.Outbound()
+             );
++        io.fand.server.hooks.FandHooks.injectProtocolCompatibility(pipeline);
+     }
+ 
+     private static ChannelOutboundHandler createFrameEncoder(final boolean local) {
+diff --git a/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java b/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
+index 502f00d509e267140084077f34a60db92083861a..f3556b6f7e70810d5353d990158fe9df0dce7297 100644
+--- a/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
+@@ -46,7 +46,7 @@ public class ServerHandshakePacketListenerImpl implements ServerHandshakePacketL
+ 
+     private void beginLogin(final ClientIntentionPacket packet, final boolean transfer) {
+         this.connection.setupOutboundProtocol(LoginProtocols.CLIENTBOUND);
+-        if (packet.protocolVersion() != SharedConstants.getCurrentVersion().protocolVersion()) {
++        if (!io.fand.server.hooks.FandHooks.acceptsClientProtocol(packet.protocolVersion(), SharedConstants.getCurrentVersion().protocolVersion())) {
+             Component reason;
+             if (packet.protocolVersion() < 754) {
+                 reason = Component.translatable("multiplayer.disconnect.outdated_client", SharedConstants.getCurrentVersion().name());

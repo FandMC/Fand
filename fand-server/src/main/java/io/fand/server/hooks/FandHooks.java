@@ -37,6 +37,7 @@ import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.network.PacketListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
+import io.netty.channel.ChannelPipeline;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.network.ServerPlayerConnection;
 import net.minecraft.tags.BlockTags;
@@ -580,6 +581,20 @@ public final class FandHooks {
     public static ProxyForwardingMode proxyForwardingMode() {
         var runtime = activeRuntime();
         return runtime == null ? ProxyForwardingMode.NONE : runtime.proxyForwarding().mode();
+    }
+
+    public static boolean acceptsClientProtocol(int clientProtocol, int serverProtocol) {
+        var runtime = activeRuntime();
+        return runtime == null
+                ? clientProtocol == serverProtocol
+                : runtime.protocolCompatibility().acceptsClientProtocol(clientProtocol, serverProtocol);
+    }
+
+    public static void injectProtocolCompatibility(ChannelPipeline pipeline) {
+        var runtime = activeRuntime();
+        if (runtime != null) {
+            runtime.protocolCompatibility().inject(pipeline);
+        }
     }
 
     public static boolean consoleGuiEnabled() {
