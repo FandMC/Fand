@@ -36,6 +36,10 @@ public final class PluginCommandRegistry implements CommandRegistry {
 
     @Override
     public CommandRegistration register(CommandDescriptor descriptor, CommandExecutor executor, CommandCompleter completer) {
+        var permission = descriptor.permission();
+        if (permission != null && !permission.isBlank() && !ownedPermission(permission.trim())) {
+            throw new IllegalArgumentException("Plugin " + namespace + " cannot register command permission node: " + permission);
+        }
         var scoped = new CommandDescriptor(
                 namespace,
                 descriptor.label(),
@@ -81,5 +85,9 @@ public final class PluginCommandRegistry implements CommandRegistry {
 
     private boolean ownedByThisPlugin(RegisteredCommand command) {
         return namespace.equals(command.descriptor().namespace());
+    }
+
+    private boolean ownedPermission(String permission) {
+        return permission.equals(namespace) || permission.startsWith(namespace + ".");
     }
 }
