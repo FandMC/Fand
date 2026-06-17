@@ -1,6 +1,6 @@
 # Fand
 
-A patched-vanilla Minecraft server for Java Edition 26.2-rc2 with a fresh,
+A patched-vanilla Minecraft server for Java Edition 26.2 with a fresh,
 type-safe plugin API. Spiritually a sibling of Paper: same mechanism (work on
 the decompiled vanilla server, ship as a chain of patches), different surface
 (no Bukkit compatibility, modernised core APIs).
