@@ -8,6 +8,9 @@ import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
+import io.fand.api.event.EventPriority;
+import io.fand.api.event.EventSubscription;
+import io.fand.api.event.player.PlayerJoinEvent;
 import io.fand.api.event.world.WorldLoadEvent;
 import io.fand.api.event.world.WorldUnloadEvent;
 import io.fand.api.gui.GuiService;
@@ -38,6 +41,7 @@ import io.fand.server.command.BuiltinCommands;
 import io.fand.server.chunk.ChunkSendScheduler;
 import io.fand.server.chunk.ChunkTrackingMetrics;
 import io.fand.server.command.CommandManager;
+import io.fand.server.compat.modprotocol.ModProtocolCompatibility;
 import io.fand.server.config.ConfigReloadResult;
 import io.fand.server.config.ConfigReloader;
 import io.fand.server.config.FandConfig;
@@ -106,6 +110,8 @@ public final class FandServer implements Server, AutoCloseable {
     private final FandScoreboardService scoreboard;
     private final PacketRegistryImpl packets;
     private final FandPluginMessaging pluginMessaging;
+    private final ModProtocolCompatibility modProtocols;
+    private final EventSubscription pluginChannelAdvertisement;
     private final FandCustomItemRegistry customItems;
     private final FandCustomBlockRegistry customBlocks;
     private final FandGuiService guis;
@@ -151,7 +157,13 @@ public final class FandServer implements Server, AutoCloseable {
         this.recipes = new FandRecipeRegistry();
         this.scoreboard = new FandScoreboardService(minecraftServer::get);
         this.packets = new PacketRegistryImpl();
-        this.pluginMessaging = new FandPluginMessaging(packets);
+        this.players = new PlayerRegistry(permissions);
+        this.pluginMessaging = new FandPluginMessaging(packets, players::snapshot);
+        this.modProtocols = new ModProtocolCompatibility(pluginMessaging, initialConfig.compat.modProtocols);
+        this.pluginChannelAdvertisement = events.subscribe(
+                PlayerJoinEvent.class,
+                EventPriority.OBSERVER,
+                event -> pluginMessaging.advertise(event.player()));
         this.customItems = new FandCustomItemRegistry();
         this.customBlocks = new FandCustomBlockRegistry(events, customItems);
         this.guis = new FandGuiService(events);
@@ -161,7 +173,6 @@ public final class FandServer implements Server, AutoCloseable {
         this.structures = new FandStructureService(minecraftServer::get);
         this.maps = new FandMapService(minecraftServer::get);
         this.tags = new FandTagRegistry();
-        this.players = new PlayerRegistry(permissions);
         this.playerAccess = new FandPlayerAccessService(minecraftServer::get);
         this.performance = new ServerPerformanceTracker(() -> chunks.metrics().pendingJobs());
         var pluginDirectory = Path.of(initialConfig.plugins.directory);
@@ -728,6 +739,8 @@ public final class FandServer implements Server, AutoCloseable {
         }
         plugins.disablePlugins();
         plugins.close();
+        pluginChannelAdvertisement.close();
+        modProtocols.close();
         pluginMessaging.close();
         packets.close();
         guis.close();

@@ -15,6 +15,7 @@ import io.fand.server.util.ServerThreading;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Objects;
+import java.util.function.Supplier;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -30,10 +31,16 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
     private static final Logger LOGGER = LoggerFactory.getLogger(FandPluginMessaging.class);
 
     private final PacketRegistryImpl packets;
+    private final PluginChannelAdvertiser advertiser;
     private final ConcurrentMap<Key, ChannelState> channels = new ConcurrentHashMap<>();
 
     public FandPluginMessaging(PacketRegistryImpl packets) {
+        this(packets, java.util.List::of);
+    }
+
+    public FandPluginMessaging(PacketRegistryImpl packets, Supplier<Collection<? extends Player>> players) {
         this.packets = Objects.requireNonNull(packets, "packets");
+        this.advertiser = new PluginChannelAdvertiser(players);
     }
 
     @Override
@@ -83,6 +90,10 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
         ServerThreading.run(server, send);
     }
 
+    public void advertise(Player player) {
+        advertiser.send(player, serverboundChannels());
+    }
+
     @Override
     public void close() {
         for (var state : channels.values()) {
@@ -106,6 +117,9 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
             existing.add(direction, listener, packets);
             return existing;
         });
+        if (direction.allowsServerbound()) {
+            advertiser.broadcast(serverboundChannels());
+        }
         return new Registration(this, state, direction, listener);
     }
 
@@ -118,6 +132,13 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
 
     private static boolean requiresHandler(PluginMessageDirection direction) {
         return direction == PluginMessageDirection.SERVERBOUND || direction == PluginMessageDirection.BIDIRECTIONAL;
+    }
+
+    private Collection<Key> serverboundChannels() {
+        return channels.entrySet().stream()
+                .filter(entry -> entry.getValue().direction().allowsServerbound())
+                .map(java.util.Map.Entry::getKey)
+                .toList();
     }
 
     private static Identifier identifier(Key key) {

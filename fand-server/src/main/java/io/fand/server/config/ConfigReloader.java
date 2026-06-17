@@ -46,6 +46,10 @@ public final class ConfigReloader {
             field("chunks.dedicatedLightThread", (FandConfig.Chunks config) -> config.dedicatedLightThread),
             field("chunks.lightTaskQueueFastPath", (FandConfig.Chunks config) -> config.lightTaskQueueFastPath)
     );
+    private static final List<ReloadField<FandConfig.RecipeViewers, ?>> RESTART_RECIPE_VIEWER_FIELDS = List.of(
+            field("compat.modProtocols.recipeViewers.jei", (FandConfig.RecipeViewers config) -> config.jei),
+            field("compat.modProtocols.recipeViewers.rei", (FandConfig.RecipeViewers config) -> config.rei)
+    );
     private static final List<ReloadField<FandConfig.Performance, ?>> HOT_PERFORMANCE_FIELDS = List.of(
             field("performance.explosionDensityCache", (FandConfig.Performance config) -> config.explosionDensityCache),
             field("performance.collisionTeamCache", (FandConfig.Performance config) -> config.collisionTeamCache),
@@ -169,6 +173,11 @@ public final class ConfigReloader {
         }
         markRestart(changes, RESTART_CHUNK_FIELDS, previous.chunks, reloaded.chunks);
         io.fand.server.hooks.FandHooks.applyChunkConfig(reloaded.chunks);
+        markRestart(
+                changes,
+                RESTART_RECIPE_VIEWER_FIELDS,
+                previous.compat.modProtocols.recipeViewers,
+                reloaded.compat.modProtocols.recipeViewers);
         changes.restart(
                 "network.forwarding.mode",
                 ProxyForwardingMode.fromConfig(previous.network.forwarding.mode),

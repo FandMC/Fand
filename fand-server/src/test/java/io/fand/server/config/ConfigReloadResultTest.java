@@ -44,6 +44,12 @@ final class ConfigReloadResultTest {
                   forwarding:
                     mode: none
                     secret: ''
+
+                compat:
+                  modProtocols:
+                    recipeViewers:
+                      jei: true
+                      rei: true
                 """);
 
         var initial = FandConfig.load(path);
@@ -77,6 +83,12 @@ final class ConfigReloadResultTest {
                   forwarding:
                     mode: velocity-modern
                     secret: 'shared-secret'
+
+                compat:
+                  modProtocols:
+                    recipeViewers:
+                      jei: false
+                      rei: false
                 """);
 
         var result = server.reloadConfig();
@@ -98,6 +110,8 @@ final class ConfigReloadResultTest {
                 "chunks.worldgenParallelism",
                 "chunks.dedicatedLightThread",
                 "chunks.lightTaskQueueFastPath",
+                "compat.modProtocols.recipeViewers.jei",
+                "compat.modProtocols.recipeViewers.rei",
                 "network.forwarding.mode",
                 "network.forwarding.secret"
         );

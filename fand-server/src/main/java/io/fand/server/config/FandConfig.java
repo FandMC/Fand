@@ -23,6 +23,9 @@ public final class FandConfig {
     @ConfigComment("Network and proxy settings.")
     public final Network network = new Network();
 
+    @ConfigComment("Compatibility shims for mod-side protocols.")
+    public final Compat compat = new Compat();
+
     @ConfigComment("Chunk loading and player chunk-send scheduling settings.")
     public final Chunks chunks = new Chunks();
 
@@ -102,6 +105,27 @@ public final class FandConfig {
         })
         @ConfigRange(min = 0, max = 1024)
         public int asyncThreads = 0;
+    }
+
+    public static final class Compat {
+
+        @ConfigComment("Mod protocol compatibility settings.")
+        public final ModProtocols modProtocols = new ModProtocols();
+    }
+
+    public static final class ModProtocols {
+
+        @ConfigComment("Recipe viewer protocol compatibility settings.")
+        public final RecipeViewers recipeViewers = new RecipeViewers();
+    }
+
+    public static final class RecipeViewers {
+
+        @ConfigComment("Expose JEI-compatible plugin messaging channels.")
+        public volatile boolean jei = true;
+
+        @ConfigComment("Expose REI-compatible plugin messaging channels.")
+        public volatile boolean rei = true;
     }
 
     public static final class Chunks {

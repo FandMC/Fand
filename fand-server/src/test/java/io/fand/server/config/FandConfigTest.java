@@ -36,6 +36,8 @@ final class FandConfigTest {
         assertThat(config.console.gui.theme).isEqualTo("system");
         assertThat(config.network.forwarding.mode).isEqualTo("none");
         assertThat(config.network.forwarding.secret).isEmpty();
+        assertThat(config.compat.modProtocols.recipeViewers.jei).isTrue();
+        assertThat(config.compat.modProtocols.recipeViewers.rei).isTrue();
         assertThat(config.performance.entityHardCollisionCandidateIndex).isTrue();
         assertThat(config.performance.entitySectionChunkScan).isTrue();
         assertThat(config.performance.entityCollisionAbortPropagation).isTrue();
@@ -105,6 +107,11 @@ final class FandConfigTest {
                 .contains("forwarding:")
                 .contains("mode: none")
                 .contains("secret: ''")
+                .contains("compat:")
+                .contains("modProtocols:")
+                .contains("recipeViewers:")
+                .contains("jei: true")
+                .contains("rei: true")
                 .contains("performance:")
                 .contains("entityHardCollisionCandidateIndex: true")
                 .contains("entitySectionChunkScan: true")
@@ -187,6 +194,12 @@ final class FandConfigTest {
                     mode: velocity-modern
                     secret: 'shared-secret'
 
+                compat:
+                  modProtocols:
+                    recipeViewers:
+                      jei: false
+                      rei: false
+
                 performance:
                   entityHardCollisionCandidateIndex: false
                   entitySectionChunkScan: false
@@ -252,6 +265,8 @@ final class FandConfigTest {
         assertThat(config.console.gui.theme).isEqualTo("dark");
         assertThat(config.network.forwarding.mode).isEqualTo("velocity-modern");
         assertThat(config.network.forwarding.secret).isEqualTo("shared-secret");
+        assertThat(config.compat.modProtocols.recipeViewers.jei).isFalse();
+        assertThat(config.compat.modProtocols.recipeViewers.rei).isFalse();
         assertThat(config.performance.entityHardCollisionCandidateIndex).isFalse();
         assertThat(config.performance.entitySectionChunkScan).isFalse();
         assertThat(config.performance.entityCollisionAbortPropagation).isFalse();
