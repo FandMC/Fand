@@ -122,6 +122,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final ConfigReloader configReloader;
     private final ProxyForwardingSettings proxyForwarding;
     private final io.fand.server.console.gui.GuiThemeService guiThemes;
+    private final io.fand.server.protocol.FandViaVersion viaVersion;
     private final AtomicReference<WorldRegistry> worlds = new AtomicReference<>();
     private final AtomicReference<EntityRegistry> entities = new AtomicReference<>();
     private final AtomicReference<FandConfig> config;
@@ -187,11 +188,13 @@ public final class FandServer implements Server, AutoCloseable {
                 ConfigReloader.toPluginOptions(initialConfig)
         );
         this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, chunks, guiThemes);
+        this.viaVersion = new io.fand.server.protocol.FandViaVersion(configPath.getParent() == null ? Path.of(".") : configPath.getParent());
         io.fand.server.hooks.FandHooks.applyNetworkConfig(initialConfig.network);
         io.fand.server.hooks.FandHooks.applyPlayerConfig(initialConfig.players);
         io.fand.server.hooks.FandHooks.applyChunkConfig(initialConfig.chunks);
         io.fand.server.hooks.FandHooks.applyPerformanceConfig(initialConfig.performance);
         io.fand.server.hooks.FandHooks.applyTechnicalConfig(initialConfig.technical);
+        viaVersion.configure(initialConfig.network.protocolCompatibility.allowMinecraft21AndNewer);
     }
 
     /**
@@ -233,6 +236,10 @@ public final class FandServer implements Server, AutoCloseable {
 
     public ConfigReloadResult reloadConfig() {
         return configReloader.reload();
+    }
+
+    public io.fand.server.protocol.FandViaVersion viaVersion() {
+        return viaVersion;
     }
 
     public ProxyForwardingSettings proxyForwarding() {

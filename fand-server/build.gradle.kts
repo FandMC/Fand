@@ -33,6 +33,7 @@ dependencies {
     implementation("com.electronwill.night-config:toml:3.8.1")
     implementation("it.unimi.dsi:fastutil:8.5.13")
     implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
+    implementation("com.viaversion:viaversion-common:5.9.1")
     implementation("net.minecrell:terminalconsoleappender:1.3.0")
     implementation("org.jline:jline-terminal:3.27.0")
     implementation("org.jline:jline-terminal-jni:3.27.0")

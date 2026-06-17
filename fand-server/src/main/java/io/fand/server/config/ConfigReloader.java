@@ -181,6 +181,7 @@ public final class ConfigReloader {
                 previous.network.protocolCompatibility.allowMinecraft21AndNewer,
                 reloaded.network.protocolCompatibility.allowMinecraft21AndNewer)) {
             io.fand.server.hooks.FandHooks.applyNetworkConfig(reloaded.network);
+            io.fand.server.Main.runtime().viaVersion().configure(reloaded.network.protocolCompatibility.allowMinecraft21AndNewer);
             changes.hot("network.protocolCompatibility.allowMinecraft21AndNewer");
         }
         var previousTheme = GuiTheme.fromConfig(previous.console.gui.theme);

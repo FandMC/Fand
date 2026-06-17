@@ -28,6 +28,7 @@ import io.fand.server.network.VelocityForwardingQueryAnswerPayload;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.WorldRegistry;
 import java.net.SocketAddress;
+import io.netty.channel.ChannelPipeline;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.Optional;
@@ -201,6 +202,13 @@ public final class FandHooks {
     public static boolean acceptsClientProtocol(int clientProtocol, int serverProtocol) {
         return clientProtocol == serverProtocol
                 || (allowMinecraft21AndNewerProtocols && clientProtocol >= 767);
+    }
+
+    public static void injectProtocolCompatibility(ChannelPipeline pipeline) {
+        var runtime = activeRuntime();
+        if (runtime != null) {
+            runtime.viaVersion().inject(pipeline);
+        }
     }
 
     public static void applyChunkConfig(io.fand.server.config.FandConfig.Chunks chunks) {

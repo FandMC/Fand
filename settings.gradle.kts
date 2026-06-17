@@ -20,5 +20,6 @@ dependencyResolutionManagement {
         mavenCentral()
         maven("https://repo.papermc.io/repository/maven-public/")
         maven("https://maven.neoforged.net/releases/")
+        maven("https://repo.viaversion.com/")
     }
 }

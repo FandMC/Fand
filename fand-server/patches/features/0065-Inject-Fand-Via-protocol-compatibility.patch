@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: bedkillerspacex-boop <bedkillerspacex@gmail.com>
+Date: Wed, 17 Jun 2026 18:24:54 +0800
+Subject: [PATCH] Inject Fand Via protocol compatibility
+
+
+diff --git a/net/minecraft/network/Connection.java b/net/minecraft/network/Connection.java
+index 6c220b1e64053a00c10f173078c4448a3da16594..574834924c9c7bb67af5e04c4466a9b0f880544e 100644
+--- a/net/minecraft/network/Connection.java
++++ b/net/minecraft/network/Connection.java
+@@ -497,6 +497,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+             .addLast(
+                 outboundHandlerName(configureOutbound), configureOutbound ? new PacketEncoder<>(INITIAL_PROTOCOL) : new UnconfiguredPipelineHandler.Outbound()
+             );
++        io.fand.server.hooks.FandHooks.injectProtocolCompatibility(pipeline);
+     }
+
+     private static ChannelOutboundHandler createFrameEncoder(final boolean local) {
+diff --git a/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java b/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
+index 40034da46c788bc9c8d4d94d60c4f8a83292263c..4e8dce94c9b61bd764ac45caf06a479c42ea1b55 100644
+--- a/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
+@@ -54,7 +54,7 @@ public class ServerHandshakePacketListenerImpl implements ServerHandshakePacketL
+
+     private void beginLogin(final ClientIntentionPacket packet, final boolean transfer) {
+         this.connection.setupOutboundProtocol(LoginProtocols.CLIENTBOUND);
+-        if (packet.protocolVersion() != SharedConstants.getCurrentVersion().protocolVersion()) {
++        if (!io.fand.server.hooks.FandHooks.acceptsClientProtocol(packet.protocolVersion(), SharedConstants.getCurrentVersion().protocolVersion())) { // Fand - optional ViaVersion protocol compatibility gate
+             Component reason;
+             if (packet.protocolVersion() < 754) {
+                 reason = Component.translatable("multiplayer.disconnect.outdated_client", SharedConstants.getCurrentVersion().name());

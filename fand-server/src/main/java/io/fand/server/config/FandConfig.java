@@ -452,9 +452,8 @@ public final class FandConfig {
     public static final class ProtocolCompatibility {
 
         @ConfigComment({
-                "Allow clients using Minecraft 1.21 or newer protocols to pass",
-                "the vanilla handshake version check. This does not translate",
-                "packets or registry data; incompatible clients may still fail later."
+                "Enable embedded ViaVersion protocol translation for clients",
+                "using Minecraft 1.21 or newer protocols."
         })
         public volatile boolean allowMinecraft21AndNewer = false;
     }

@@ -2,6 +2,8 @@ package io.fand.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.fand.server.Main;
+import io.fand.server.config.ConfigReloadResult;
 import io.fand.server.config.FandConfig;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -41,6 +43,8 @@ final class ConfigReloadResultTest {
                   lightTaskQueueFastPath: true
 
                 network:
+                  protocolCompatibility:
+                    allowMinecraft21AndNewer: false
                   forwarding:
                     mode: none
                     secret: ''
@@ -74,12 +78,20 @@ final class ConfigReloadResultTest {
                   lightTaskQueueFastPath: false
 
                 network:
+                  protocolCompatibility:
+                    allowMinecraft21AndNewer: true
                   forwarding:
                     mode: velocity-modern
                     secret: 'shared-secret'
                 """);
 
-        var result = server.reloadConfig();
+        Main.bind(server);
+        ConfigReloadResult result;
+        try {
+            result = server.reloadConfig();
+        } finally {
+            Main.unbind(server);
+        }
 
         assertThat(server.brand()).isEqualTo("Reloaded Fand");
         assertThat(result.hotApplied()).containsExactlyInAnyOrder(
@@ -91,7 +103,8 @@ final class ConfigReloadResultTest {
                 "players.logCommands",
                 "scheduler.asyncThreads",
                 "chunks.workerThreads",
-                "chunks.trackingDiffApplyBudget"
+                "chunks.trackingDiffApplyBudget",
+                "network.protocolCompatibility.allowMinecraft21AndNewer"
         );
         assertThat(result.requiresRestart()).containsExactlyInAnyOrder(
                 "plugins.directory",
