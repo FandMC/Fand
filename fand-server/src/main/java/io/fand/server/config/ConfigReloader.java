@@ -172,7 +172,6 @@ public final class ConfigReloader {
             chunks.reconfigure(reloaded.chunks);
         }
         markRestart(changes, RESTART_CHUNK_FIELDS, previous.chunks, reloaded.chunks);
-        io.fand.server.hooks.FandHooks.applyChunkConfig(reloaded.chunks);
         markRestart(
                 changes,
                 RESTART_RECIPE_VIEWER_FIELDS,
