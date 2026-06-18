@@ -369,7 +369,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                         artifact.descriptor,
                         LoggerFactory.getLogger(artifact.descriptor.id()),
                         new PluginEventBus(eventBus, resources, artifact.descriptor.id()),
-                        permissions,
+                        new PluginPermissionService(permissions, artifact.descriptor.id()),
                         new PluginCommandRegistry(commandRegistry, resources, artifact.descriptor.id()),
                         new PluginRecipeRegistry(recipeRegistry, resources, artifact.descriptor.id()),
                         new PluginAdvancementRegistry(advancementRegistry, resources, artifact.descriptor.id()),

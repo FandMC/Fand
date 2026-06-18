@@ -1,6 +1,7 @@
 package io.fand.server.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.fand.api.command.CommandArgument;
 import io.fand.api.command.CommandArgumentType;
@@ -47,6 +48,65 @@ final class PluginCommandIntegrationTest {
         assertThat(descriptor.namespace()).isEqualTo("demo");
         assertThat(descriptor.typedArguments()).hasSize(1);
         assertThat(descriptor.typedArguments().getFirst().type()).isEqualTo(CommandArgumentType.PLAYERS);
+    }
+
+    @Test
+    void pluginCommandRegistryOnlyResolvesOwnCommands() {
+        var commands = new CommandManager(new PermissionManager());
+        var demo = new PluginCommandRegistry(commands, new PluginResourceTracker(), "demo");
+        var other = new PluginCommandRegistry(commands, new PluginResourceTracker(), "other");
+        var sender = new Sender(true);
+
+        demo.register(
+                new CommandDescriptor("ignored", "own", List.of(), List.of(), List.of(), List.of(), null),
+                (current, label, args) -> {},
+                (current, label, args) -> List.of("owned"));
+        other.register(
+                new CommandDescriptor("ignored", "foreign", List.of(), List.of(), List.of(), List.of(), null),
+                (current, label, args) -> {},
+                (current, label, args) -> List.of("hidden"));
+
+        assertThat(demo.resolve(sender, List.of("own"))).isPresent();
+        assertThat(demo.resolve(sender, List.of("demo:own"))).isPresent();
+        assertThat(demo.resolve(sender, List.of("foreign"))).isEmpty();
+        assertThat(demo.resolve(sender, List.of("other:foreign"))).isEmpty();
+        assertThat(demo.suggestions(sender, List.of(""))).contains("own", "demo:own")
+                .doesNotContain("foreign", "other:foreign");
+        assertThat(demo.suggestions(sender, List.of("foreign", ""))).isEmpty();
+        assertThat(demo.claims(List.of("own"))).isTrue();
+        assertThat(demo.claims(List.of("foreign"))).isFalse();
+    }
+
+    @Test
+    void rejectsCommandPermissionsOutsidePluginNamespaceBeforeDelegateRegistration() {
+        var permissions = new PermissionManager();
+        var commands = new CommandManager(permissions);
+        var registry = new PluginCommandRegistry(commands, new PluginResourceTracker(), "demo");
+
+        assertThatThrownBy(() -> registry.register(
+                new CommandDescriptor("ignored", "takeover", List.of(), List.of(), "other.admin"),
+                (sender, label, args) -> {},
+                (sender, label, args) -> List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("other.admin");
+
+        assertThat(permissions.lookup("other.admin")).isEmpty();
+        assertThat(commands.lookup("demo:takeover")).isEmpty();
+    }
+
+    @Test
+    void allowsCommandPermissionsInsidePluginNamespace() {
+        var permissions = new PermissionManager();
+        var commands = new CommandManager(permissions);
+        var registry = new PluginCommandRegistry(commands, new PluginResourceTracker(), "demo");
+
+        registry.register(
+                new CommandDescriptor("ignored", "owned", List.of(), List.of(), "demo.command.owned"),
+                (sender, label, args) -> {},
+                (sender, label, args) -> List.of());
+
+        assertThat(permissions.lookup("demo.command.owned")).isPresent();
+        assertThat(commands.lookup("demo:owned")).isPresent();
     }
 
     @Test
