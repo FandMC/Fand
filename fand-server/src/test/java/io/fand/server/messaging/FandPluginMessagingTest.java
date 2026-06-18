@@ -142,6 +142,22 @@ final class FandPluginMessagingTest {
                 .hasMessageContaining("cannot have a handler");
     }
 
+    @Test
+    void closedMessagingRejectsNewRegistrations() {
+        var packets = new PacketRegistryImpl();
+        var messaging = new FandPluginMessaging(packets);
+        var channel = Key.key("example:closed");
+        messaging.register(channel, PluginMessageDirection.SERVERBOUND, noopHandler());
+
+        messaging.close();
+
+        assertThat(packets.customHandler(PacketProtocol.PLAY, channel)).isEmpty();
+        assertThatThrownBy(() -> messaging.register(channel, PluginMessageDirection.SERVERBOUND, noopHandler()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("closed");
+        assertThat(packets.customHandler(PacketProtocol.PLAY, channel)).isEmpty();
+    }
+
     private static PluginMessageHandler noopHandler() {
         AtomicInteger ignored = new AtomicInteger();
         return (Player player, io.fand.api.messaging.PluginMessageChannel channel, byte[] payload) -> ignored.incrementAndGet();
