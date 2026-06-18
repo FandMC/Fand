@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.fand.api.command.CommandSender;
 import io.fand.api.permission.PermissionSubject;
 import io.fand.server.config.FandConfig;
+import io.fand.server.console.gui.GuiTheme;
 import io.fand.server.permission.PermissionSet;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -73,6 +74,22 @@ final class FandReloadCommandTest {
                 Component.text("Hot-applied: identity.brand, plugins.continueOnLoadFailure, console.gui.theme"),
                 Component.text("Requires restart: console.gui.enabled")
         );
+    }
+
+    @Test
+    void guiThemeSelectionPersistsAcrossServerRestart() throws Exception {
+        var path = tempDir.resolve("fand.yml");
+        FandConfig.load(path);
+
+        try (var server = new FandServer(path, FandConfig.load(path), getClass().getClassLoader())) {
+            server.guiThemes().select(GuiTheme.DARK);
+        }
+
+        assertThat(FandConfig.load(path).console.gui.theme).isEqualTo("dark");
+
+        try (var restarted = new FandServer(path, FandConfig.load(path), getClass().getClassLoader())) {
+            assertThat(restarted.guiThemes().current()).isEqualTo(GuiTheme.DARK);
+        }
     }
 
     private static final class TestSender implements CommandSender, PermissionSubject {

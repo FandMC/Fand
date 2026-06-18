@@ -128,6 +128,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final ConfigReloader configReloader;
     private final ProxyForwardingSettings proxyForwarding;
     private final io.fand.server.console.gui.GuiThemeService guiThemes;
+    private final Object configSaveLock = new Object();
     private final AtomicReference<WorldRegistry> worlds = new AtomicReference<>();
     private final AtomicReference<EntityRegistry> entities = new AtomicReference<>();
     private final AtomicReference<FandConfig> config;
@@ -147,7 +148,8 @@ public final class FandServer implements Server, AutoCloseable {
         this.config = new AtomicReference<>(initialConfig);
         this.proxyForwarding = ProxyForwardingSettings.fromConfig(initialConfig);
         this.guiThemes = new io.fand.server.console.gui.GuiThemeService(
-                io.fand.server.console.gui.GuiTheme.fromConfig(initialConfig.console.gui.theme));
+                io.fand.server.console.gui.GuiTheme.fromConfig(initialConfig.console.gui.theme),
+                this::persistGuiTheme);
         this.events = new EventDispatcher();
         this.permissions = new PermissionManager(events);
         this.commands = new CommandManager(permissions);
@@ -242,7 +244,9 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     public ConfigReloadResult reloadConfig() {
-        return configReloader.reload();
+        synchronized (configSaveLock) {
+            return configReloader.reload();
+        }
     }
 
     public ProxyForwardingSettings proxyForwarding() {
@@ -255,6 +259,16 @@ public final class FandServer implements Server, AutoCloseable {
 
     public io.fand.server.console.gui.GuiThemeService guiThemes() {
         return guiThemes;
+    }
+
+    private void persistGuiTheme(io.fand.server.console.gui.GuiTheme theme) {
+        Objects.requireNonNull(theme, "theme");
+        synchronized (configSaveLock) {
+            var persisted = FandConfig.load(configPath);
+            persisted.console.gui.theme = theme.configValue();
+            FandConfig.save(configPath, persisted);
+            config.get().console.gui.theme = theme.configValue();
+        }
     }
 
     public void attach(MinecraftServer server) {

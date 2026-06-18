@@ -41,6 +41,10 @@ public final class YamlConfigLoader<T> {
         return config;
     }
 
+    public void save(Path path, T config) {
+        write(path, config);
+    }
+
     private void write(Path path, T config) {
         try {
             if (path.getParent() != null) {

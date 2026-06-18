@@ -3,6 +3,7 @@ package io.fand.server.console.gui;
 import java.awt.Color;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 
 /**
  * Runtime-owned holder for the active {@link GuiTheme} and the listeners that
@@ -24,10 +25,17 @@ public final class GuiThemeService implements AutoCloseable {
 
     private volatile GuiTheme current;
     private final CopyOnWriteArrayList<Runnable> listeners = new CopyOnWriteArrayList<>();
+    private final Consumer<GuiTheme> selectionHandler;
     private volatile boolean closed;
 
     public GuiThemeService(GuiTheme initial) {
+        this(initial, ignored -> {
+        });
+    }
+
+    public GuiThemeService(GuiTheme initial, Consumer<GuiTheme> selectionHandler) {
         this.current = Objects.requireNonNull(initial, "initial");
+        this.selectionHandler = Objects.requireNonNull(selectionHandler, "selectionHandler");
     }
 
     public GuiTheme current() {
@@ -49,10 +57,20 @@ public final class GuiThemeService implements AutoCloseable {
         }
     }
 
+    /** Applies a user-selected theme and lets the runtime persist that choice. */
+    public void select(GuiTheme theme) {
+        Objects.requireNonNull(theme, "theme");
+        if (closed) {
+            return;
+        }
+        selectionHandler.accept(theme);
+        set(theme);
+    }
+
     /** Advances to the next theme and notifies listeners. Returns the new theme. */
     public GuiTheme cycle() {
         var next = current.next();
-        set(next);
+        select(next);
         return next;
     }
 

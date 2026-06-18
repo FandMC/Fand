@@ -84,6 +84,10 @@ public enum GuiTheme {
         };
     }
 
+    public String configValue() {
+        return name().toLowerCase(Locale.ROOT);
+    }
+
     /**
      * Parses a configured theme name. Blank values default to {@link #SYSTEM};
      * unrecognised values are rejected with a {@link ConfigException} so a typo is

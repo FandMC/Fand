@@ -3,6 +3,7 @@ package io.fand.server.console.gui;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class GuiThemeServiceTest {
@@ -16,6 +17,26 @@ class GuiThemeServiceTest {
         assertThat(service.cycle()).isEqualTo(GuiTheme.LIGHT);
         assertThat(service.current()).isEqualTo(GuiTheme.LIGHT);
         assertThat(notifications).hasValue(1);
+    }
+
+    @Test
+    void cyclePublishesUserSelection() {
+        var selected = new AtomicReference<GuiTheme>();
+        var service = new GuiThemeService(GuiTheme.DARK, selected::set);
+
+        service.cycle();
+
+        assertThat(selected).hasValue(GuiTheme.LIGHT);
+    }
+
+    @Test
+    void setDoesNotPublishUserSelection() {
+        var selected = new AtomicReference<GuiTheme>();
+        var service = new GuiThemeService(GuiTheme.DARK, selected::set);
+
+        service.set(GuiTheme.LIGHT);
+
+        assertThat(selected.get()).isNull();
     }
 
     @Test

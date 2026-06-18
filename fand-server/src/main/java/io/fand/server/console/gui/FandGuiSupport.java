@@ -65,7 +65,14 @@ public final class FandGuiSupport {
         var label = new JLabel("Theme:");
         var button = new JButton(themes.current().displayName());
         button.setFocusable(false);
-        button.addActionListener(event -> themes.cycle());
+        button.addActionListener(event -> {
+            try {
+                themes.cycle();
+            } catch (RuntimeException failure) {
+                LOGGER.warn("Failed to persist GUI theme selection", failure);
+                button.setText(themes.current().displayName());
+            }
+        });
 
         AutoCloseable handle = themes.addListener(
                 () -> runOnEdt(() -> button.setText(themes.current().displayName())));

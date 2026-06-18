@@ -44,6 +44,11 @@ public final class FandConfig {
         return config;
     }
 
+    public static void save(Path path, FandConfig config) {
+        validate(config);
+        new YamlConfigLoader<>(FandConfig.class).save(path, config);
+    }
+
     private static void validate(FandConfig config) {
         var mode = ProxyForwardingMode.fromConfig(config.network.forwarding.mode);
         if (mode.requiresSecret() && config.network.forwarding.secret.isBlank()) {
