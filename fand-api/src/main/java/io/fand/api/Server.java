@@ -22,6 +22,7 @@ import io.fand.api.packet.PacketRegistry;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.player.PlayerAccessService;
 import io.fand.api.plugin.PluginManager;
+import io.fand.api.protocol.ProtocolCompatibilityService;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
@@ -60,6 +61,11 @@ public interface Server extends ForwardingAudience {
     /** Minecraft protocol version this server implements. */
     String minecraftVersion();
 
+    /** Numeric Minecraft protocol version this server implements. */
+    default int minecraftProtocolVersion() {
+        return -1;
+    }
+
     /** Plugin lifecycle and lookup. */
     PluginManager plugins();
 
@@ -80,6 +86,18 @@ public interface Server extends ForwardingAudience {
 
     /** Global packet registry. Prefer {@link io.fand.api.plugin.PluginContext#packets()} for plugin-owned registrations. */
     PacketRegistry packets();
+
+    /**
+     * Protocol compatibility extension point for external server plugins.
+     *
+     * <p>Plugins should register through this service during
+     * {@link io.fand.api.plugin.Plugin#onEnable(io.fand.api.plugin.PluginContext)}
+     * and unregister during disable. Without a registered provider, Fand only
+     * accepts clients whose protocol exactly matches the running server.
+     */
+    default ProtocolCompatibilityService protocolCompatibility() {
+        return ProtocolCompatibilityService.unsupported();
+    }
 
     /** Global custom item registry. Prefer {@link io.fand.api.plugin.PluginContext#customItems()} for plugin-owned registrations. */
     CustomItemRegistry customItems();

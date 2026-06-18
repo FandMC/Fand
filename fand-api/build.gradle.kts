@@ -56,6 +56,7 @@ dependencies {
     api("org.jetbrains:annotations:24.1.0")
     api("org.slf4j:slf4j-api:2.0.13")
 
+    compileOnlyApi("io.netty:netty-transport:4.2.15.Final")
     compileOnlyApi("org.jspecify:jspecify:1.0.0")
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
