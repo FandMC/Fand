@@ -62,6 +62,9 @@ public final class PluginCustomItemRegistry implements CustomItemRegistry {
 
     @Override
     public ItemStack untag(ItemStack stack) {
+        if (customId(stack).isEmpty()) {
+            return stack;
+        }
         return delegate.untag(stack);
     }
 
