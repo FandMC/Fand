@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.fand.api.lifecycle.PluginDisableEvent;
 import io.fand.api.lifecycle.PluginEnableEvent;
+import io.fand.api.permission.PermissionDefault;
+import io.fand.api.permission.PermissionDescriptor;
 import io.fand.server.command.CommandManager;
 import io.fand.server.event.EventDispatcher;
 import io.fand.server.permission.PermissionManager;
@@ -434,6 +436,54 @@ final class PluginRuntimeTest {
         }
 
         assertThat(seen).containsExactly("broken-disable");
+    }
+
+    @Test
+    void closesPermissionAttachmentsOwnedByPlugins() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("permissions.jar"),
+                PluginRuntimeTestSupport.descriptorJson("permissions", "testplugins.permissions.PermissionsPlugin", List.of()),
+                Map.of("testplugins/permissions/PermissionsPlugin.java", """
+                        package testplugins.permissions;
+
+                        import io.fand.api.plugin.Plugin;
+                        import io.fand.api.plugin.PluginContext;
+                        import io.fand.server.plugin.PermissionAttachmentTestBridge;
+
+                        public final class PermissionsPlugin implements Plugin {
+                            @Override
+                            public void onLoad(PluginContext context) {
+                                PermissionAttachmentTestBridge.attach(context);
+                            }
+
+                            @Override
+                            public void onEnable(PluginContext context) {
+                            }
+                        }
+                        """),
+                List.of()
+        );
+
+        var permissions = new PermissionManager();
+        permissions.register(new PermissionDescriptor("fand.injected", PermissionDefault.FALSE));
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new CommandManager(),
+                new EventDispatcher(),
+                permissions,
+                new TaskScheduler()
+        );
+
+        manager.loadPlugins();
+        assertThat(permissions.hasPermission(PermissionAttachmentTestBridge.SUBJECT, "fand.injected")).isTrue();
+
+        manager.close();
+        assertThat(permissions.hasPermission(PermissionAttachmentTestBridge.SUBJECT, "fand.injected")).isFalse();
     }
 
     @Test

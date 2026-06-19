@@ -82,7 +82,7 @@ public final class RuntimePluginContext implements PluginContext {
         this.descriptor = descriptor;
         this.logger = logger;
         this.events = events;
-        this.permissions = permissions;
+        this.permissions = new PluginPermissionService(permissions, resources);
         this.commands = commands;
         this.recipes = recipes;
         this.advancements = advancements;

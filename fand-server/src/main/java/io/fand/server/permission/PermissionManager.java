@@ -2,11 +2,17 @@ package io.fand.server.permission;
 
 import io.fand.api.event.EventBus;
 import io.fand.api.event.permission.PermissionCheckEvent;
+import io.fand.api.permission.PermissionAttachment;
 import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.permission.PermissionSubject;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,6 +28,8 @@ public final class PermissionManager implements PermissionService {
 
     private final @Nullable EventBus events;
     private final ConcurrentHashMap<String, PermissionDescriptor> descriptors = new ConcurrentHashMap<>();
+    private final Map<PermissionSubject, List<FandPermissionAttachment>> attachments =
+            Collections.synchronizedMap(new IdentityHashMap<>());
 
     public PermissionManager() {
         this(null);
@@ -55,8 +63,34 @@ public final class PermissionManager implements PermissionService {
         return computePermission(subject, normalized);
     }
 
+    @Override
+    public PermissionAttachment attach(PermissionSubject subject) {
+        Objects.requireNonNull(subject, "subject");
+        var attachment = new FandPermissionAttachment(this, subject);
+        synchronized (attachments) {
+            attachments.computeIfAbsent(subject, ignored -> new ArrayList<>()).add(attachment);
+        }
+        return attachment;
+    }
+
+    void detach(FandPermissionAttachment attachment) {
+        synchronized (attachments) {
+            var list = attachments.get(attachment.attachedSubject());
+            if (list == null) {
+                return;
+            }
+            list.remove(attachment);
+            if (list.isEmpty()) {
+                attachments.remove(attachment.attachedSubject());
+            }
+        }
+    }
+
     private boolean computePermission(PermissionSubject subject, String normalized) {
-        var explicit = explicitValue(subject, normalized);
+        var explicit = attachmentValue(subject, normalized);
+        if (explicit == null) {
+            explicit = explicitValue(subject, normalized);
+        }
         if (explicit != null) {
             return fireCheck(subject, normalized, explicit);
         }
@@ -66,6 +100,24 @@ public final class PermissionManager implements PermissionService {
             return fireCheck(subject, normalized, false);
         }
         return fireCheck(subject, normalized, descriptor.defaultAccess().value(subject.operator()));
+    }
+
+    private Boolean attachmentValue(PermissionSubject subject, String node) {
+        List<FandPermissionAttachment> snapshot;
+        synchronized (attachments) {
+            var list = attachments.get(subject);
+            if (list == null || list.isEmpty()) {
+                return null;
+            }
+            snapshot = List.copyOf(list);
+        }
+        for (int i = snapshot.size() - 1; i >= 0; i--) {
+            var value = explicitAttachmentValue(snapshot.get(i), node);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private boolean fireCheck(PermissionSubject subject, String node, boolean defaultResult) {
@@ -80,6 +132,25 @@ public final class PermissionManager implements PermissionService {
             return defaultResult;
         }
         return event.effectiveResult();
+    }
+
+    private static Boolean explicitAttachmentValue(FandPermissionAttachment attachment, String node) {
+        var exact = attachment.permissionValue(node).orElse(null);
+        if (exact != null) {
+            return exact;
+        }
+        var wildcard = node;
+        while (true) {
+            var separator = wildcard.lastIndexOf('.');
+            if (separator < 0) {
+                return attachment.permissionValue("*").orElse(null);
+            }
+            wildcard = wildcard.substring(0, separator);
+            var value = attachment.permissionValue(wildcard + ".*").orElse(null);
+            if (value != null) {
+                return value;
+            }
+        }
     }
 
     private static Boolean explicitValue(PermissionSubject subject, String node) {
@@ -101,7 +172,7 @@ public final class PermissionManager implements PermissionService {
         }
     }
 
-    private static String normalize(String node) {
+    static String normalize(String node) {
         Objects.requireNonNull(node, "node");
         var normalized = node.trim().toLowerCase(Locale.ROOT);
         if (normalized.equals("*")) {
@@ -111,5 +182,22 @@ public final class PermissionManager implements PermissionService {
             throw new IllegalArgumentException("Invalid permission node: " + node);
         }
         return normalized;
+    }
+
+    static String normalizeAttachmentNode(String node) {
+        Objects.requireNonNull(node, "node");
+        var normalized = node.trim().toLowerCase(Locale.ROOT);
+        if (normalized.equals("*")) {
+            return normalized;
+        }
+        if (normalized.endsWith(".*")) {
+            var prefix = normalized.substring(0, normalized.length() - 2);
+            if (NODE.matcher(prefix).matches()) {
+                return normalized;
+            }
+        } else if (NODE.matcher(normalized).matches()) {
+            return normalized;
+        }
+        throw new IllegalArgumentException("Invalid permission node: " + node);
     }
 }

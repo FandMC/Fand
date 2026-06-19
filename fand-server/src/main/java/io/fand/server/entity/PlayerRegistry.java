@@ -1,6 +1,7 @@
 package io.fand.server.entity;
 
 import io.fand.api.permission.PermissionService;
+import io.fand.server.scoreboard.FandScoreboardService;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.WorldRegistry;
 import java.util.ArrayList;
@@ -26,6 +27,7 @@ import org.jspecify.annotations.Nullable;
 public final class PlayerRegistry {
 
     private final PermissionService permissions;
+    private final @Nullable FandScoreboardService scoreboards;
     private final ConcurrentHashMap<UUID, FandPlayer> byId = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, FandPlayer> byName = new ConcurrentHashMap<>();
     private volatile Map<ServerLevel, List<FandPlayer>> snapshotsByLevel = Map.of();
@@ -34,7 +36,12 @@ public final class PlayerRegistry {
     private volatile @Nullable WorldRegistry worldRegistry;
 
     public PlayerRegistry(PermissionService permissions) {
+        this(permissions, null);
+    }
+
+    public PlayerRegistry(PermissionService permissions, @Nullable FandScoreboardService scoreboards) {
         this.permissions = permissions;
+        this.scoreboards = scoreboards;
     }
 
     public void bindWorldResolver(Function<ServerLevel, FandWorld> resolver) {
@@ -55,7 +62,7 @@ public final class PlayerRegistry {
             byName.put(existing.name(), existing);
             return existing;
         }
-        var player = new FandPlayer(handle, permissions, this);
+        var player = new FandPlayer(handle, permissions, this, scoreboards);
         byId.put(handle.getUUID(), player);
         byName.put(player.name(), player);
         rebuildSnapshots();

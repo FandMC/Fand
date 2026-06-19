@@ -20,6 +20,7 @@ import io.fand.api.player.PlayerSkin;
 import io.fand.api.player.ResourcePackRequest;
 import io.fand.api.player.RespawnLocation;
 import io.fand.api.recipe.Recipe;
+import io.fand.api.scoreboard.PlayerScoreboard;
 import io.fand.api.world.Location;
 import io.fand.api.world.Vector3;
 import io.fand.api.world.World;
@@ -35,6 +36,8 @@ import io.fand.server.inventory.FandPlayerInventory;
 import io.fand.server.item.FandItemStacks;
 import io.fand.server.player.PlayerProfiles;
 import io.fand.server.recipe.FandRecipes;
+import io.fand.server.scoreboard.FandPlayerScoreboard;
+import io.fand.server.scoreboard.FandScoreboardService;
 import io.fand.server.util.ServerThreading;
 import io.fand.server.world.ParticleEffects;
 import io.fand.server.world.FandWorld;
@@ -85,14 +88,25 @@ public final class FandPlayer implements Player {
     private final PermissionService permissions;
     private final PlayerRegistry registry;
     private final BossBarTracker bossBars;
+    private final @Nullable FandPlayerScoreboard scoreboard;
     private final Set<UUID> hiddenTabListTargets = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<UUID> hiddenEntityTargets = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public FandPlayer(ServerPlayer handle, PermissionService permissions, PlayerRegistry registry) {
+        this(handle, permissions, registry, null);
+    }
+
+    public FandPlayer(
+            ServerPlayer handle,
+            PermissionService permissions,
+            PlayerRegistry registry,
+            @Nullable FandScoreboardService scoreboards
+    ) {
         this.bound = new Bound(handle, new FandPlayerInventory(handle.getInventory()));
         this.permissions = permissions;
         this.registry = registry;
         this.bossBars = new BossBarTracker(handle);
+        this.scoreboard = scoreboards == null ? null : scoreboards.registerPlayerScoreboard(this);
     }
 
     public ServerPlayer handle() {
@@ -102,10 +116,17 @@ public final class FandPlayer implements Player {
     void refreshHandle(ServerPlayer newHandle) {
         this.bound = new Bound(newHandle, new FandPlayerInventory(newHandle.getInventory()));
         bossBars.rebind(newHandle);
+        if (scoreboard != null) {
+            scoreboard.resendDisplayedObjectives();
+        }
     }
 
     public void clearTransientState() {
         bossBars.clear();
+        if (scoreboard != null) {
+            scoreboard.clearTransientState();
+            scoreboard.unregister();
+        }
     }
 
     private record Bound(ServerPlayer handle, FandPlayerInventory inventory) {
@@ -266,6 +287,14 @@ public final class FandPlayer implements Player {
     @Override
     public boolean online() {
         return !bound.handle.hasDisconnected();
+    }
+
+    @Override
+    public PlayerScoreboard scoreboard() {
+        if (scoreboard == null) {
+            throw new UnsupportedOperationException("Per-player scoreboards are not supported");
+        }
+        return scoreboard;
     }
 
     @Override

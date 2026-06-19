@@ -12,6 +12,7 @@ import io.fand.api.player.PlayerProfile;
 import io.fand.api.player.PlayerSkin;
 import io.fand.api.player.StatisticKey;
 import io.fand.api.recipe.Recipe;
+import io.fand.api.scoreboard.PlayerScoreboard;
 import io.fand.api.world.Location;
 import io.fand.api.world.particle.ParticleEffect;
 import io.fand.api.world.particle.ParticleEmission;
@@ -57,6 +58,10 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     /** Current profile identity and texture data used for this player. */
     default PlayerProfile profile() {
         return new PlayerProfile(uniqueId(), name());
+    }
+
+    default PlayerScoreboard scoreboard() {
+        throw new UnsupportedOperationException("Per-player scoreboards are not supported");
     }
 
     /** Current skin texture, if one is present on the player's profile. */

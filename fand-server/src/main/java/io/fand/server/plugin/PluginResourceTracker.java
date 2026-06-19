@@ -10,6 +10,7 @@ import io.fand.api.event.EventSubscription;
 import io.fand.api.gui.GuiView;
 import io.fand.api.messaging.PluginMessageRegistration;
 import io.fand.api.packet.PacketRegistration;
+import io.fand.api.permission.PermissionAttachment;
 import io.fand.api.recipe.RecipeRegistration;
 import io.fand.api.scheduler.Task;
 import io.fand.api.scoreboard.ScoreboardRegistration;
@@ -26,6 +27,7 @@ final class PluginResourceTracker {
     private final Set<TrackedSubscription> subscriptions = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCommandRegistration> commandRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedRecipeRegistration> recipeRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedPermissionAttachment> permissionAttachments = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedScoreboardRegistration> scoreboardRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPacketRegistration> packetRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPluginMessageRegistration> pluginMessageRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -110,6 +112,22 @@ final class PluginResourceTracker {
         }
         if (dispose) {
             tracked.unregisterFromTracker();
+        }
+        return tracked;
+    }
+
+    TrackedPermissionAttachment track(PermissionAttachment delegate) {
+        var tracked = new TrackedPermissionAttachment(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                permissionAttachments.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.closeFromTracker();
         }
         return tracked;
     }
@@ -266,6 +284,12 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedPermissionAttachment attachment) {
+        synchronized (lock) {
+            permissionAttachments.remove(attachment);
+        }
+    }
+
     void release(TrackedScoreboardRegistration registration) {
         synchronized (lock) {
             scoreboardRegistrations.remove(registration);
@@ -343,6 +367,7 @@ final class PluginResourceTracker {
         List<TrackedSubscription> subscriptionsToClose;
         List<TrackedCommandRegistration> commandRegistrationsToClose;
         List<TrackedRecipeRegistration> recipeRegistrationsToClose;
+        List<TrackedPermissionAttachment> permissionAttachmentsToClose;
         List<TrackedScoreboardRegistration> scoreboardRegistrationsToClose;
         List<TrackedPacketRegistration> packetRegistrationsToClose;
         List<TrackedPluginMessageRegistration> pluginMessageRegistrationsToClose;
@@ -361,6 +386,7 @@ final class PluginResourceTracker {
             subscriptionsToClose = new ArrayList<>(subscriptions);
             commandRegistrationsToClose = new ArrayList<>(commandRegistrations);
             recipeRegistrationsToClose = new ArrayList<>(recipeRegistrations);
+            permissionAttachmentsToClose = new ArrayList<>(permissionAttachments);
             scoreboardRegistrationsToClose = new ArrayList<>(scoreboardRegistrations);
             packetRegistrationsToClose = new ArrayList<>(packetRegistrations);
             pluginMessageRegistrationsToClose = new ArrayList<>(pluginMessageRegistrations);
@@ -374,6 +400,7 @@ final class PluginResourceTracker {
             subscriptions.clear();
             commandRegistrations.clear();
             recipeRegistrations.clear();
+            permissionAttachments.clear();
             scoreboardRegistrations.clear();
             packetRegistrations.clear();
             pluginMessageRegistrations.clear();
@@ -393,6 +420,9 @@ final class PluginResourceTracker {
         }
         for (var registration : recipeRegistrationsToClose) {
             registration.unregisterFromTracker();
+        }
+        for (var attachment : permissionAttachmentsToClose) {
+            attachment.closeFromTracker();
         }
         for (var registration : scoreboardRegistrationsToClose) {
             registration.unregisterFromTracker();
@@ -571,6 +601,73 @@ final class PluginResourceTracker {
             if (!released) {
                 released = true;
                 delegate.unregister();
+            }
+        }
+    }
+
+    static final class TrackedPermissionAttachment implements PermissionAttachment {
+
+        private final PluginResourceTracker owner;
+        private final PermissionAttachment delegate;
+        private volatile boolean released;
+
+        TrackedPermissionAttachment(PluginResourceTracker owner, PermissionAttachment delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public io.fand.api.permission.PermissionSubject subject() {
+            return delegate.subject();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public java.util.Map<String, Boolean> permissions() {
+            return delegate.permissions();
+        }
+
+        @Override
+        public java.util.Optional<Boolean> permissionValue(String node) {
+            return released ? java.util.Optional.empty() : delegate.permissionValue(node);
+        }
+
+        @Override
+        public void setPermission(String node, boolean value) {
+            if (released) {
+                throw new IllegalStateException("Permission attachment is closed");
+            }
+            delegate.setPermission(node, value);
+        }
+
+        @Override
+        public boolean unsetPermission(String node) {
+            if (released) {
+                throw new IllegalStateException("Permission attachment is closed");
+            }
+            return delegate.unsetPermission(node);
+        }
+
+        @Override
+        public void close() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.close();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void closeFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.close();
             }
         }
     }

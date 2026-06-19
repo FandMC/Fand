@@ -8,8 +8,11 @@ import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.scoreboard.ScoreboardTeam;
 import io.fand.server.command.AdventureBridge;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 import net.kyori.adventure.text.Component;
 import net.minecraft.server.MinecraftServer;
@@ -21,6 +24,8 @@ import net.minecraft.world.scores.criteria.ObjectiveCriteria;
 public final class FandScoreboardService implements ScoreboardService {
 
     private final Supplier<MinecraftServer> server;
+    private final Set<FandPlayerScoreboard> playerScoreboards =
+            Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
 
     public FandScoreboardService(MinecraftServer server) {
         this(() -> Objects.requireNonNull(server, "server"));
@@ -40,6 +45,16 @@ public final class FandScoreboardService implements ScoreboardService {
 
     net.minecraft.server.ServerScoreboard handle() {
         return server().getScoreboard();
+    }
+
+    public FandPlayerScoreboard registerPlayerScoreboard(io.fand.server.entity.FandPlayer player) {
+        var scoreboard = new FandPlayerScoreboard(player, this);
+        playerScoreboards.add(scoreboard);
+        return scoreboard;
+    }
+
+    public void unregisterPlayerScoreboard(FandPlayerScoreboard scoreboard) {
+        playerScoreboards.remove(scoreboard);
     }
 
     @Override
@@ -119,12 +134,20 @@ public final class FandScoreboardService implements ScoreboardService {
             }
             handle().setDisplayObjective(vanillaSlot, vanillaObjective);
         });
+        resendPlayerOverrides(slot);
     }
 
     @Override
     public void clearDisplayedObjective(ScoreDisplaySlot slot) {
         var vanillaSlot = ScoreboardConversions.toVanilla(slot);
         ScoreboardThreading.run(server(), () -> handle().setDisplayObjective(vanillaSlot, null));
+        resendPlayerOverrides(slot);
+    }
+
+    private void resendPlayerOverrides(ScoreDisplaySlot slot) {
+        for (var scoreboard : playerScoreboards.toArray(FandPlayerScoreboard[]::new)) {
+            scoreboard.resendDisplayedObjective(slot);
+        }
     }
 
     @Override

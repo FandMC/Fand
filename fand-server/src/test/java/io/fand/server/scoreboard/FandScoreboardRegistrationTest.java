@@ -45,6 +45,25 @@ final class FandScoreboardRegistrationTest {
         assertThat(current).hasValue(secondTeam);
     }
 
+    @Test
+    void oldPlayerObjectiveRegistrationCannotRemoveReplacementWithSameName() {
+        var current = new AtomicReference<Object>();
+        var firstObjective = new Object();
+        var secondObjective = new Object();
+
+        current.set(firstObjective);
+        var first = registration("sidebar", current, firstObjective);
+        current.set(null);
+        current.set(secondObjective);
+        var second = registration("sidebar", current, secondObjective);
+
+        first.close();
+
+        assertThat(first.active()).isFalse();
+        assertThat(second.active()).isTrue();
+        assertThat(current).hasValue(secondObjective);
+    }
+
     private static FandScoreboardRegistration registration(String name, AtomicReference<Object> current, Object installed) {
         return new FandScoreboardRegistration(
                 name,

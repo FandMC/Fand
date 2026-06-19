@@ -159,7 +159,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.recipes = new FandRecipeRegistry();
         this.scoreboard = new FandScoreboardService(minecraftServer::get);
         this.packets = new PacketRegistryImpl();
-        this.players = new PlayerRegistry(permissions);
+        this.players = new PlayerRegistry(permissions, scoreboard);
         this.pluginMessaging = new FandPluginMessaging(packets, players::snapshot);
         this.modProtocols = new ModProtocolCompatibility(pluginMessaging, initialConfig.compat.modProtocols);
         this.pluginChannelAdvertisement = events.subscribe(

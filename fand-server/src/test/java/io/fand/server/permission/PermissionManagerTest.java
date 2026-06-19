@@ -54,6 +54,35 @@ final class PermissionManagerTest {
     }
 
     @Test
+    void attachmentsOverrideSubjectValuesAndRegisteredDefaults() {
+        var manager = new PermissionManager();
+        manager.register(new PermissionDescriptor("fand.command.reload", PermissionDefault.FALSE));
+        var subject = new PermissionSet(false).set("fand.command.reload", false);
+        var attachment = manager.attach(subject, "fand.command.reload", true);
+
+        assertThat(manager.hasPermission(subject, "fand.command.reload")).isTrue();
+
+        attachment.close();
+
+        assertThat(manager.hasPermission(subject, "fand.command.reload")).isFalse();
+    }
+
+    @Test
+    void newerAttachmentsTakePriorityAndStillSupportWildcards() {
+        var manager = new PermissionManager();
+        manager.register(new PermissionDescriptor("fand.command.reload", PermissionDefault.FALSE));
+        var subject = new PermissionSet(false);
+        manager.attach(subject, "fand.command.*", true);
+        var newer = manager.attach(subject, "fand.command.reload", false);
+
+        assertThat(manager.hasPermission(subject, "fand.command.reload")).isFalse();
+
+        newer.close();
+
+        assertThat(manager.hasPermission(subject, "fand.command.reload")).isTrue();
+    }
+
+    @Test
     void returnsFalseForUnknownPermissionsWithoutExplicitGrant() {
         var manager = new PermissionManager();
 
