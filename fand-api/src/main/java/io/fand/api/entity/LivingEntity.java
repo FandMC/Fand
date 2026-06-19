@@ -3,9 +3,11 @@ package io.fand.api.entity;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.component.EffectKey;
 import io.fand.api.item.component.ItemEquipmentSlot;
+import io.fand.api.world.Location;
 import java.util.Collection;
 import java.util.Optional;
 import net.kyori.adventure.key.Key;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An entity with health (mobs, players, armor stands, etc.).
@@ -83,6 +85,46 @@ public interface LivingEntity extends Entity {
     /** Sets the item equipped in {@code slot}. Empty stacks clear the slot. Marshals to the server thread. */
     void setEquipment(ItemEquipmentSlot slot, ItemStack item);
 
+    default Optional<? extends LivingEntity> target() {
+        return Optional.empty();
+    }
+
+    default void setTarget(@Nullable LivingEntity target) {
+        throw new UnsupportedOperationException("Targeting is not supported");
+    }
+
+    default boolean ai() {
+        return !noAi();
+    }
+
+    default void setAi(boolean ai) {
+        setNoAi(!ai);
+    }
+
+    default boolean noAi() {
+        return false;
+    }
+
+    default void setNoAi(boolean noAi) {
+        throw new UnsupportedOperationException("AI state is not supported");
+    }
+
+    default boolean aggressive() {
+        return false;
+    }
+
+    default void setAggressive(boolean aggressive) {
+        throw new UnsupportedOperationException("Aggressive state is not supported");
+    }
+
+    default boolean persistent() {
+        return false;
+    }
+
+    default void setPersistent() {
+        throw new UnsupportedOperationException("Persistence state is not supported");
+    }
+
     default int remainingAir() {
         throw new UnsupportedOperationException("Air supply is not supported");
     }
@@ -114,5 +156,25 @@ public interface LivingEntity extends Entity {
     default boolean lineOfSight(Entity target) {
         java.util.Objects.requireNonNull(target, "target");
         return false;
+    }
+
+    default boolean hasLineOfSight(Entity target) {
+        return lineOfSight(target);
+    }
+
+    default boolean sleeping() {
+        return false;
+    }
+
+    default Optional<Location> sleepingLocation() {
+        return Optional.empty();
+    }
+
+    default boolean sleep(Location location) {
+        throw new UnsupportedOperationException("Sleeping is not supported");
+    }
+
+    default void wakeUp() {
+        throw new UnsupportedOperationException("Sleeping is not supported");
     }
 }

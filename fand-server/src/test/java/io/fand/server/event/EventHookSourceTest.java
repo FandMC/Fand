@@ -3,6 +3,8 @@ package io.fand.server.event;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -109,6 +111,150 @@ final class EventHookSourceTest {
         assertThat(playerEvents).contains("new PlayerPortalTeleportEvent(player, from, to)");
         assertThat(playerEvents).contains("new PlayerSpectateTeleportEvent(player, from, to)");
         assertThat(playerEvents).contains("new PlayerUnknownTeleportEvent(player, from, to)");
+    }
+
+    @Test
+    void requestedEventGapHooksStayWired() throws IOException {
+        var playerEvents = read("src/main/java/io/fand/server/event/PlayerEvents.java");
+        var entityEvents = read("src/main/java/io/fand/server/event/EntityEvents.java");
+        var commandEvents = read("src/main/java/io/fand/server/command/CommandEvents.java");
+        var pluginRuntime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
+        var packetListener = read("src/minecraft/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java");
+        var itemStack = read("src/minecraft/java/net/minecraft/world/item/ItemStack.java");
+        var experienceOrb = read("src/minecraft/java/net/minecraft/world/entity/ExperienceOrb.java");
+        var tridentItem = read("src/minecraft/java/net/minecraft/world/item/TridentItem.java");
+        var livingEntity = read("src/minecraft/java/net/minecraft/world/entity/LivingEntity.java");
+        var areaEffectCloud = read("src/minecraft/java/net/minecraft/world/entity/AreaEffectCloud.java");
+        var dedicatedServer = read("src/minecraft/java/net/minecraft/server/dedicated/DedicatedServer.java");
+
+        assertThat(playerEvents).contains("new PlayerToggleFlightEvent(fandPlayer, flying)");
+        assertThat(packetListener).contains("PlayerEvents.fireToggleFlight(this.player, flying)");
+        assertThat(playerEvents).contains("new PlayerAnimationEvent(");
+        assertThat(packetListener).contains("PlayerEvents.fireAnimation(this.player, packet.getHand())");
+        assertThat(playerEvents).contains("new PlayerItemBreakEvent(fandPlayer, FandItemStacks.fromVanilla(itemStack))");
+        assertThat(itemStack).contains("PlayerEvents.fireItemBreak(player, this)");
+        assertThat(playerEvents).contains("new PlayerItemMendEvent(fandPlayer, FandItemStacks.fromVanilla(itemStack), repairAmount)");
+        assertThat(experienceOrb).contains("PlayerEvents.fireItemMend(player, itemStack, repair)");
+        assertThat(playerEvents).contains("new PlayerRiptideEvent(fandPlayer, FandItemStacks.fromVanilla(itemStack))");
+        assertThat(tridentItem).contains("PlayerEvents.fireRiptide(player, itemStack)");
+
+        assertThat(entityEvents).contains("new EntityKnockbackEvent(");
+        assertThat(livingEntity).contains("EntityEvents.fireKnockback(this, source, knockbackMovement)");
+        assertThat(entityEvents).contains("new AreaEffectCloudApplyEvent(apiCloud, apiAffected)");
+        assertThat(areaEffectCloud).contains("EntityEvents.fireAreaEffectCloudApply(this, affectedEntities)");
+
+        assertThat(commandEvents).contains("new ServerCommandEvent(sender(source), command)");
+        assertThat(dedicatedServer).contains("CommandEvents.fireServerCommand(input.source, input.msg)");
+        assertThat(dedicatedServer).contains("CommandEvents.fireServerCommand(source, command)");
+        assertThat(pluginRuntime).contains("eventBus.fire(new PluginEnableEvent(descriptor))");
+        assertThat(pluginRuntime).contains("eventBus.fire(new PluginDisableEvent(descriptor))");
+    }
+
+    @Test
+    void requestedEventCoverageMatrixHasApiDispatcherHooksAndCancellationSemantics() throws IOException {
+        var probes = List.of(
+                new EventProbe(
+                        "PlayerToggleFlightEvent",
+                        "../fand-api/src/main/java/io/fand/api/event/player/PlayerToggleFlightEvent.java",
+                        "src/main/java/io/fand/server/event/PlayerEvents.java",
+                        List.of("public static boolean fireToggleFlight", "new PlayerToggleFlightEvent(fandPlayer, flying)", "return !event.cancelled();"),
+                        "src/minecraft/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java",
+                        List.of("PlayerEvents.fireToggleFlight(this.player, flying)", "this.player.onUpdateAbilities();", "return;"),
+                        List.of("implements Event, Cancellable")),
+                new EventProbe(
+                        "PlayerAnimationEvent",
+                        "../fand-api/src/main/java/io/fand/api/event/player/PlayerAnimationEvent.java",
+                        "src/main/java/io/fand/server/event/PlayerEvents.java",
+                        List.of("public static boolean fireAnimation", "new PlayerAnimationEvent(", "return !event.cancelled();"),
+                        "src/minecraft/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java",
+                        List.of("PlayerEvents.fireAnimation(this.player, packet.getHand())", "return;", "this.player.swing(packet.getHand());"),
+                        List.of("implements Event, Cancellable")),
+                new EventProbe(
+                        "PlayerItemBreakEvent",
+                        "../fand-api/src/main/java/io/fand/api/event/player/PlayerItemBreakEvent.java",
+                        "src/main/java/io/fand/server/event/PlayerEvents.java",
+                        List.of("public static void fireItemBreak", "new PlayerItemBreakEvent(fandPlayer, FandItemStacks.fromVanilla(itemStack))", "bus.fire("),
+                        "src/minecraft/java/net/minecraft/world/item/ItemStack.java",
+                        List.of("PlayerEvents.fireItemBreak(player, this)", "this.shrink(1);"),
+                        List.of("implements Event")),
+                new EventProbe(
+                        "PlayerItemMendEvent",
+                        "../fand-api/src/main/java/io/fand/api/event/player/PlayerItemMendEvent.java",
+                        "src/main/java/io/fand/server/event/PlayerEvents.java",
+                        List.of("public static int fireItemMend", "new PlayerItemMendEvent(fandPlayer, FandItemStacks.fromVanilla(itemStack), repairAmount)", "event.cancelled() ? 0"),
+                        "src/minecraft/java/net/minecraft/world/entity/ExperienceOrb.java",
+                        List.of("repair = io.fand.server.event.PlayerEvents.fireItemMend(player, itemStack, repair)", "itemStack.setDamageValue(itemStack.getDamageValue() - repair)"),
+                        List.of("implements Event, Cancellable", "void setRepairAmount")),
+                new EventProbe(
+                        "EntityKnockbackEvent",
+                        "../fand-api/src/main/java/io/fand/api/event/entity/EntityKnockbackEvent.java",
+                        "src/main/java/io/fand/server/event/EntityEvents.java",
+                        List.of("public static @Nullable Vec3 fireKnockback", "new EntityKnockbackEvent(", "event.cancelled() ? null"),
+                        "src/minecraft/java/net/minecraft/world/entity/LivingEntity.java",
+                        List.of("EntityEvents.fireKnockback(this, source, knockbackMovement)", "if (knockbackMovement == null)", "return;"),
+                        List.of("implements Event, Cancellable", "void setVelocity")),
+                new EventProbe(
+                        "PlayerRiptideEvent",
+                        "../fand-api/src/main/java/io/fand/api/event/player/PlayerRiptideEvent.java",
+                        "src/main/java/io/fand/server/event/PlayerEvents.java",
+                        List.of("public static void fireRiptide", "new PlayerRiptideEvent(fandPlayer, FandItemStacks.fromVanilla(itemStack))", "bus.fire("),
+                        "src/minecraft/java/net/minecraft/world/item/TridentItem.java",
+                        List.of("PlayerEvents.fireRiptide(player, itemStack)"),
+                        List.of("implements Event")),
+                new EventProbe(
+                        "AreaEffectCloudApplyEvent",
+                        "../fand-api/src/main/java/io/fand/api/event/entity/AreaEffectCloudApplyEvent.java",
+                        "src/main/java/io/fand/server/event/EntityEvents.java",
+                        List.of("public static @Nullable List<net.minecraft.world.entity.LivingEntity> fireAreaEffectCloudApply", "new AreaEffectCloudApplyEvent(apiCloud, apiAffected)", "event.cancelled() ? null"),
+                        "src/minecraft/java/net/minecraft/world/entity/AreaEffectCloud.java",
+                        List.of("EntityEvents.fireAreaEffectCloudApply(this, affectedEntities)", "if (affectedEntities == null)", "affectedEntities = List.of();"),
+                        List.of("implements Event, Cancellable", "List<LivingEntity> affectedEntities()")),
+                new EventProbe(
+                        "ServerCommandEvent",
+                        "../fand-api/src/main/java/io/fand/api/event/server/ServerCommandEvent.java",
+                        "src/main/java/io/fand/server/command/CommandEvents.java",
+                        List.of("public static Optional<String> fireServerCommand", "new ServerCommandEvent(sender(source), command)", "event.cancelled() ? Optional.empty()"),
+                        "src/minecraft/java/net/minecraft/server/dedicated/DedicatedServer.java",
+                        List.of("CommandEvents.fireServerCommand(input.source, input.msg)", "CommandEvents.fireServerCommand(source, command)", "performPrefixedCommand"),
+                        List.of("implements Event, Cancellable", "void setCommandLine")),
+                new EventProbe(
+                        "PluginEnableEvent",
+                        "../fand-api/src/main/java/io/fand/api/lifecycle/PluginEnableEvent.java",
+                        "src/main/java/io/fand/server/plugin/PluginRuntime.java",
+                        List.of("private void firePluginEnableEvent", "eventBus.fire(new PluginEnableEvent(descriptor))", "loadedPlugin.plugin.onEnable(loadedPlugin.context)"),
+                        "src/main/java/io/fand/server/plugin/PluginRuntime.java",
+                        List.of("loadedPlugin.enabled = true;", "firePluginEnableEvent(loadedPlugin.descriptor)"),
+                        List.of("implements Event")),
+                new EventProbe(
+                        "PluginDisableEvent",
+                        "../fand-api/src/main/java/io/fand/api/lifecycle/PluginDisableEvent.java",
+                        "src/main/java/io/fand/server/plugin/PluginRuntime.java",
+                        List.of("private void firePluginDisableEvent", "eventBus.fire(new PluginDisableEvent(descriptor))", "LOGGER.warn(\"PluginDisableEvent listener failed"),
+                        "src/main/java/io/fand/server/plugin/PluginRuntime.java",
+                        List.of("if (wasEnabled) {", "firePluginDisableEvent(loadedPlugin.descriptor)", "loadedPlugin.enabled = false;"),
+                        List.of("implements Event")));
+
+        for (var probe : probes) {
+            assertProbe(probe);
+        }
+    }
+
+    @Test
+    void apiEventsAreNotOrphanedFromServerOrMinecraftSources() throws IOException {
+        var sourceIndex = readAllSources(
+                Path.of("src/main/java"),
+                Path.of("src/minecraft/java"));
+        var orphaned = new ArrayList<String>();
+
+        for (var event : apiEventClasses()) {
+            if (!sourceIndex.contains(event)) {
+                orphaned.add(event);
+            }
+        }
+
+        assertThat(orphaned)
+                .as("API event classes must be referenced by server dispatchers, plugin runtime, or Minecraft hooks")
+                .isEmpty();
     }
 
     @Test
@@ -233,5 +379,61 @@ final class EventHookSourceTest {
 
     private static String read(String path) throws IOException {
         return Files.readString(Path.of(path), StandardCharsets.UTF_8).replace("\r\n", "\n");
+    }
+
+    private static void assertProbe(EventProbe probe) throws IOException {
+        var api = read(probe.apiPath());
+        assertThat(api).as(probe.name() + " API file").contains(probe.apiMarkers().toArray(String[]::new));
+
+        var dispatcher = read(probe.dispatcherPath());
+        assertThat(dispatcher).as(probe.name() + " dispatcher").contains(probe.dispatcherMarkers().toArray(String[]::new));
+
+        var hook = read(probe.hookPath());
+        assertThat(hook).as(probe.name() + " hook").contains(probe.hookMarkers().toArray(String[]::new));
+    }
+
+    private static List<String> apiEventClasses() throws IOException {
+        var roots = List.of(
+                Path.of("../fand-api/src/main/java/io/fand/api/event"),
+                Path.of("../fand-api/src/main/java/io/fand/api/lifecycle"));
+        var events = new ArrayList<String>();
+        for (var root : roots) {
+            try (var stream = Files.walk(root)) {
+                stream.filter(Files::isRegularFile)
+                        .filter(path -> path.getFileName().toString().endsWith("Event.java"))
+                        .filter(path -> !path.getFileName().toString().equals("Event.java"))
+                        .map(path -> path.getFileName().toString().replace(".java", ""))
+                        .forEach(events::add);
+            }
+        }
+        events.sort(String::compareTo);
+        return events;
+    }
+
+    private static String readAllSources(Path... roots) throws IOException {
+        var builder = new StringBuilder();
+        for (var root : roots) {
+            try (var stream = Files.walk(root)) {
+                var files = stream.filter(Files::isRegularFile)
+                        .filter(path -> path.getFileName().toString().endsWith(".java"))
+                        .sorted()
+                        .toList();
+                for (var file : files) {
+                    builder.append(read(file.toString())).append('\n');
+                }
+            }
+        }
+        return builder.toString();
+    }
+
+    private record EventProbe(
+            String name,
+            String apiPath,
+            String dispatcherPath,
+            List<String> dispatcherMarkers,
+            String hookPath,
+            List<String> hookMarkers,
+            List<String> apiMarkers
+    ) {
     }
 }

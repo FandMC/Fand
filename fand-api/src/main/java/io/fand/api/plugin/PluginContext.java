@@ -9,6 +9,7 @@ import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.gui.GuiService;
+import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.packet.PacketRegistry;
@@ -42,6 +43,11 @@ public interface PluginContext {
 
     /** Recipe registry scoped to this plugin's lifecycle. */
     RecipeRegistry recipes();
+
+    /** Loot table service scoped to this plugin's lifecycle and namespace. */
+    default LootTableService lootTables() {
+        return LootTableService.empty();
+    }
 
     /** Advancement registry scoped to this plugin's lifecycle and namespace. */
     default AdvancementRegistry advancements() {

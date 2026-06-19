@@ -11,14 +11,20 @@ final class PluginPermissionService implements PermissionService {
 
     private final PermissionService delegate;
     private final PluginResourceTracker tracker;
+    private final String pluginId;
 
-    PluginPermissionService(PermissionService delegate, PluginResourceTracker tracker) {
+    PluginPermissionService(PermissionService delegate, PluginResourceTracker tracker, String pluginId) {
         this.delegate = Objects.requireNonNull(delegate, "delegate");
         this.tracker = Objects.requireNonNull(tracker, "tracker");
+        this.pluginId = Objects.requireNonNull(pluginId, "pluginId");
     }
 
     @Override
     public void register(PermissionDescriptor descriptor) {
+        PluginRuntime.validatePluginPermissionNode(pluginId, descriptor.node());
+        for (var child : descriptor.children().keySet()) {
+            PluginRuntime.validatePluginPermissionNode(pluginId, child);
+        }
         delegate.register(descriptor);
     }
 
@@ -30,6 +36,16 @@ final class PluginPermissionService implements PermissionService {
     @Override
     public boolean hasPermission(PermissionSubject subject, String node) {
         return delegate.hasPermission(subject, node);
+    }
+
+    @Override
+    public void recalculate(PermissionSubject subject) {
+        delegate.recalculate(subject);
+    }
+
+    @Override
+    public void recalculateAll() {
+        delegate.recalculateAll();
     }
 
     @Override

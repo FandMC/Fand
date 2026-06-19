@@ -1,5 +1,7 @@
 package io.fand.server.advancement;
 
+import com.google.gson.JsonElement;
+import com.mojang.serialization.JsonOps;
 import io.fand.api.advancement.AdvancementRegistry;
 import io.fand.api.advancement.AdvancementRegistration;
 import io.fand.api.advancement.AdvancementView;
@@ -7,7 +9,6 @@ import io.fand.api.advancement.CustomAdvancement;
 import io.fand.server.command.AdventureBridge;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -15,15 +16,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import net.minecraft.advancements.Advancement;
 import net.minecraft.advancements.AdvancementHolder;
-import net.minecraft.advancements.AdvancementRequirements;
-import net.minecraft.advancements.AdvancementRewards;
-import net.minecraft.advancements.AdvancementType;
-import net.minecraft.advancements.DisplayInfo;
-import net.minecraft.advancements.triggers.CriteriaTriggers;
-import net.minecraft.advancements.triggers.Criterion;
 import net.kyori.adventure.key.Key;
-import net.minecraft.world.item.ItemStackTemplate;
-import net.minecraft.world.item.Items;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 
@@ -82,7 +75,7 @@ public final class FandAdvancementRegistry implements AdvancementRegistry {
             return;
         }
         snapshot.stream()
-                .map(FandAdvancementRegistry::vanillaAdvancement)
+                .map(advancement -> vanillaAdvancement(current, advancement))
                 .forEach(current.getAdvancements()::fand$addCustomAdvancement);
     }
 
@@ -135,7 +128,7 @@ public final class FandAdvancementRegistry implements AdvancementRegistry {
         if (current == null) {
             return;
         }
-        var holder = vanillaAdvancement(advancement);
+        var holder = vanillaAdvancement(current, advancement);
         callOnServerThread(current, () -> {
             current.getAdvancements().fand$addCustomAdvancement(holder);
             current.getPlayerList().reloadResources();
@@ -155,30 +148,20 @@ public final class FandAdvancementRegistry implements AdvancementRegistry {
         });
     }
 
-    private static AdvancementHolder vanillaAdvancement(CustomAdvancement advancement) {
-        Map<String, Criterion<?>> criteria = new LinkedHashMap<>();
-        for (var criterion : advancement.criteria()) {
-            criteria.put(criterion, CriteriaTriggers.IMPOSSIBLE.createCriterion(new net.minecraft.advancements.triggers.ImpossibleTrigger.TriggerInstance()));
-        }
+    private static AdvancementHolder vanillaAdvancement(MinecraftServer server, CustomAdvancement advancement) {
         var id = identifier(advancement.key());
-        var display = new DisplayInfo(
-                new ItemStackTemplate(Items.PAPER),
-                AdventureBridge.toVanilla(advancement.title(), null),
-                AdventureBridge.toVanilla(advancement.description(), null),
-                Optional.empty(),
-                AdvancementType.TASK,
-                true,
-                true,
-                false);
-        return new AdvancementHolder(
-                id,
-                new Advancement(
-                        Optional.empty(),
-                        Optional.of(display),
-                        AdvancementRewards.EMPTY,
-                        criteria,
-                        AdvancementRequirements.allOf(criteria.keySet()),
-                        false));
+        Advancement vanilla = Advancement.CODEC.parse(ops(server), advancement.toVanillaJson())
+                .getOrThrow(error -> new IllegalArgumentException("Invalid custom advancement "
+                        + advancement.key().asString()
+                        + ": "
+                        + error));
+        advancement.display().ifPresent(apiDisplay ->
+                vanilla.display().ifPresent(display -> display.setLocation(apiDisplay.x(), apiDisplay.y())));
+        return new AdvancementHolder(id, vanilla);
+    }
+
+    private static com.mojang.serialization.DynamicOps<JsonElement> ops(MinecraftServer server) {
+        return server.registryAccess().createSerializationContext(JsonOps.INSTANCE);
     }
 
     private static Identifier identifier(Key key) {

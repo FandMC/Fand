@@ -8,12 +8,16 @@ import io.fand.api.customitem.CustomItemRegistration;
 import io.fand.api.enchantment.EnchantmentRegistration;
 import io.fand.api.event.EventSubscription;
 import io.fand.api.gui.GuiView;
+import io.fand.api.loot.LootTableRegistration;
+import io.fand.api.map.MapRenderer;
+import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessageRegistration;
 import io.fand.api.packet.PacketRegistration;
 import io.fand.api.permission.PermissionAttachment;
 import io.fand.api.recipe.RecipeRegistration;
 import io.fand.api.scheduler.Task;
 import io.fand.api.scoreboard.ScoreboardRegistration;
+import io.fand.server.map.FandMapService;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.IdentityHashMap;
@@ -27,12 +31,14 @@ final class PluginResourceTracker {
     private final Set<TrackedSubscription> subscriptions = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCommandRegistration> commandRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedRecipeRegistration> recipeRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedLootTableRegistration> lootTableRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPermissionAttachment> permissionAttachments = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedScoreboardRegistration> scoreboardRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPacketRegistration> packetRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPluginMessageRegistration> pluginMessageRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedAdvancementRegistration> advancementRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedEnchantmentRegistration> enchantmentRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<MapRendererBinding> mapRendererBindings = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCustomItemRegistration> customItemRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCustomBlockRegistration> customBlockRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCustomBlockItemBinding> customBlockItemBindings = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -92,6 +98,22 @@ final class PluginResourceTracker {
                 dispose = true;
             } else {
                 recipeRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.unregisterFromTracker();
+        }
+        return tracked;
+    }
+
+    TrackedLootTableRegistration track(LootTableRegistration delegate) {
+        var tracked = new TrackedLootTableRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                lootTableRegistrations.add(tracked);
             }
         }
         if (dispose) {
@@ -196,6 +218,20 @@ final class PluginResourceTracker {
         return tracked;
     }
 
+    void track(MapRendererBinding binding) {
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                mapRendererBindings.add(binding);
+            }
+        }
+        if (dispose) {
+            binding.closeFromTracker();
+        }
+    }
+
     TrackedCustomItemRegistration track(CustomItemRegistration delegate) {
         var tracked = new TrackedCustomItemRegistration(this, delegate);
         var dispose = false;
@@ -284,6 +320,12 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedLootTableRegistration registration) {
+        synchronized (lock) {
+            lootTableRegistrations.remove(registration);
+        }
+    }
+
     void release(TrackedPermissionAttachment attachment) {
         synchronized (lock) {
             permissionAttachments.remove(attachment);
@@ -367,12 +409,14 @@ final class PluginResourceTracker {
         List<TrackedSubscription> subscriptionsToClose;
         List<TrackedCommandRegistration> commandRegistrationsToClose;
         List<TrackedRecipeRegistration> recipeRegistrationsToClose;
+        List<TrackedLootTableRegistration> lootTableRegistrationsToClose;
         List<TrackedPermissionAttachment> permissionAttachmentsToClose;
         List<TrackedScoreboardRegistration> scoreboardRegistrationsToClose;
         List<TrackedPacketRegistration> packetRegistrationsToClose;
         List<TrackedPluginMessageRegistration> pluginMessageRegistrationsToClose;
         List<TrackedAdvancementRegistration> advancementRegistrationsToClose;
         List<TrackedEnchantmentRegistration> enchantmentRegistrationsToClose;
+        List<MapRendererBinding> mapRendererBindingsToClose;
         List<TrackedCustomItemRegistration> customItemRegistrationsToClose;
         List<TrackedCustomBlockRegistration> customBlockRegistrationsToClose;
         List<TrackedCustomBlockItemBinding> customBlockItemBindingsToClose;
@@ -386,12 +430,14 @@ final class PluginResourceTracker {
             subscriptionsToClose = new ArrayList<>(subscriptions);
             commandRegistrationsToClose = new ArrayList<>(commandRegistrations);
             recipeRegistrationsToClose = new ArrayList<>(recipeRegistrations);
+            lootTableRegistrationsToClose = new ArrayList<>(lootTableRegistrations);
             permissionAttachmentsToClose = new ArrayList<>(permissionAttachments);
             scoreboardRegistrationsToClose = new ArrayList<>(scoreboardRegistrations);
             packetRegistrationsToClose = new ArrayList<>(packetRegistrations);
             pluginMessageRegistrationsToClose = new ArrayList<>(pluginMessageRegistrations);
             advancementRegistrationsToClose = new ArrayList<>(advancementRegistrations);
             enchantmentRegistrationsToClose = new ArrayList<>(enchantmentRegistrations);
+            mapRendererBindingsToClose = new ArrayList<>(mapRendererBindings);
             customItemRegistrationsToClose = new ArrayList<>(customItemRegistrations);
             customBlockRegistrationsToClose = new ArrayList<>(customBlockRegistrations);
             customBlockItemBindingsToClose = new ArrayList<>(customBlockItemBindings);
@@ -400,12 +446,14 @@ final class PluginResourceTracker {
             subscriptions.clear();
             commandRegistrations.clear();
             recipeRegistrations.clear();
+            lootTableRegistrations.clear();
             permissionAttachments.clear();
             scoreboardRegistrations.clear();
             packetRegistrations.clear();
             pluginMessageRegistrations.clear();
             advancementRegistrations.clear();
             enchantmentRegistrations.clear();
+            mapRendererBindings.clear();
             customItemRegistrations.clear();
             customBlockRegistrations.clear();
             customBlockItemBindings.clear();
@@ -419,6 +467,9 @@ final class PluginResourceTracker {
             registration.unregisterFromTracker();
         }
         for (var registration : recipeRegistrationsToClose) {
+            registration.unregisterFromTracker();
+        }
+        for (var registration : lootTableRegistrationsToClose) {
             registration.unregisterFromTracker();
         }
         for (var attachment : permissionAttachmentsToClose) {
@@ -438,6 +489,9 @@ final class PluginResourceTracker {
         }
         for (var registration : enchantmentRegistrationsToClose) {
             registration.closeFromTracker();
+        }
+        for (var binding : mapRendererBindingsToClose) {
+            binding.closeFromTracker();
         }
         for (var registration : customItemRegistrationsToClose) {
             registration.unregisterFromTracker();
@@ -571,6 +625,47 @@ final class PluginResourceTracker {
         private volatile boolean released;
 
         TrackedRecipeRegistration(PluginResourceTracker owner, RecipeRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public net.kyori.adventure.key.Key key() {
+            return delegate.key();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void unregister() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.unregister();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void unregisterFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.unregister();
+            }
+        }
+    }
+
+    static final class TrackedLootTableRegistration implements LootTableRegistration {
+
+        private final PluginResourceTracker owner;
+        private final LootTableRegistration delegate;
+        private volatile boolean released;
+
+        TrackedLootTableRegistration(PluginResourceTracker owner, LootTableRegistration delegate) {
             this.owner = owner;
             this.delegate = delegate;
         }
@@ -817,6 +912,19 @@ final class PluginResourceTracker {
             if (!released) {
                 released = true;
                 delegate.close();
+            }
+        }
+    }
+
+    record MapRendererBinding(MapService service, int mapId, MapRenderer renderer) {
+        MapRendererBinding {
+            java.util.Objects.requireNonNull(service, "service");
+            java.util.Objects.requireNonNull(renderer, "renderer");
+        }
+
+        void closeFromTracker() {
+            if (service instanceof FandMapService maps) {
+                maps.clearRenderer(mapId, renderer);
             }
         }
     }

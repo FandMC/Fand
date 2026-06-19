@@ -4,7 +4,6 @@ import io.fand.api.advancement.AdvancementRegistry;
 import io.fand.api.advancement.AdvancementRegistration;
 import io.fand.api.advancement.AdvancementView;
 import io.fand.api.advancement.CustomAdvancement;
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import net.kyori.adventure.key.Key;
@@ -31,14 +30,25 @@ public final class PluginAdvancementRegistry implements AdvancementRegistry {
         Objects.requireNonNull(advancement, "advancement");
         return tracker.track(delegate.register(new CustomAdvancement(
                 scopedKey(advancement.key()),
-                advancement.title(),
-                advancement.description(),
-                List.copyOf(advancement.criteria()))));
+                advancement.parent().map(this::scopedParentKey),
+                advancement.display(),
+                advancement.rewards(),
+                advancement.criteria(),
+                advancement.requirements(),
+                advancement.sendsTelemetryEvent())));
     }
 
     private Key scopedKey(Key key) {
         Objects.requireNonNull(key, "key");
         if (namespace.equals(key.namespace())) {
+            return key;
+        }
+        return Key.key(namespace, key.value());
+    }
+
+    private Key scopedParentKey(Key key) {
+        Objects.requireNonNull(key, "key");
+        if ("minecraft".equals(key.namespace()) || namespace.equals(key.namespace())) {
             return key;
         }
         return Key.key(namespace, key.value());

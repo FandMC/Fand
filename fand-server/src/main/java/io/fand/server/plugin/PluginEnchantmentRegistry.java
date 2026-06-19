@@ -31,7 +31,9 @@ public final class PluginEnchantmentRegistry implements EnchantmentRegistry {
         return tracker.track(delegate.register(new CustomEnchantment(
                 scopedKey(enchantment.key()),
                 enchantment.description(),
-                enchantment.maxLevel())));
+                enchantment.definition(),
+                enchantment.effects(),
+                enchantment.exclusiveSet())));
     }
 
     private Key scopedKey(Key key) {

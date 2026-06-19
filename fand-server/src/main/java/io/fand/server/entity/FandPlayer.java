@@ -285,6 +285,85 @@ public final class FandPlayer implements Player {
     }
 
     @Override
+    public int remainingAir() {
+        return bound.handle.getAirSupply();
+    }
+
+    @Override
+    public void setRemainingAir(int ticks) {
+        runOnServerThread(() -> bound.handle.setAirSupply(Math.max(0, ticks)));
+    }
+
+    @Override
+    public int maximumAir() {
+        return bound.handle.getMaxAirSupply();
+    }
+
+    @Override
+    public int freezeTicks() {
+        return bound.handle.getTicksFrozen();
+    }
+
+    @Override
+    public void setFreezeTicks(int ticks) {
+        runOnServerThread(() -> bound.handle.setTicksFrozen(Math.max(0, ticks)));
+    }
+
+    @Override
+    public int invulnerableTicks() {
+        return bound.handle.invulnerableTime;
+    }
+
+    @Override
+    public void setInvulnerableTicks(int ticks) {
+        runOnServerThread(() -> bound.handle.invulnerableTime = Math.max(0, ticks));
+    }
+
+    @Override
+    public boolean lineOfSight(io.fand.api.entity.Entity target) {
+        Objects.requireNonNull(target, "target");
+        return bound.handle.hasLineOfSight(EntityHandles.unwrap(target));
+    }
+
+    @Override
+    public boolean sleeping() {
+        return bound.handle.isSleeping();
+    }
+
+    @Override
+    public Optional<Location> sleepingLocation() {
+        return bound.handle.getSleepingPos().map(pos -> new Location(
+                registry.wrapLevel(bound.handle.level()),
+                pos.getX(),
+                pos.getY(),
+                pos.getZ(),
+                bound.handle.getYRot(),
+                bound.handle.getXRot()));
+    }
+
+    @Override
+    public boolean sleep(Location location) {
+        Objects.requireNonNull(location, "location");
+        return runOnServerThreadFuture(() -> {
+            var handle = bound.handle;
+            if (!online() || !sameWorld(location, handle.level())) {
+                return false;
+            }
+            var pos = BlockPos.containing(location.x(), location.y(), location.z());
+            return handle.startSleepInBed(pos).right().isPresent();
+        }).join();
+    }
+
+    @Override
+    public void wakeUp() {
+        runOnServerThread(() -> {
+            if (bound.handle.isSleeping()) {
+                bound.handle.stopSleepInBed(true, true);
+            }
+        });
+    }
+
+    @Override
     public boolean online() {
         return !bound.handle.hasDisconnected();
     }

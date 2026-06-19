@@ -4,11 +4,13 @@ import io.fand.api.entity.LivingEntity;
 import io.fand.api.entity.EntityEffect;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.component.ItemEquipmentSlot;
+import io.fand.api.world.Location;
 import io.fand.server.item.FandItemStacks;
 import io.fand.server.world.WorldRegistry;
 import java.util.Collection;
 import java.util.Optional;
 import net.kyori.adventure.key.Key;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Thin handle around a vanilla {@link net.minecraft.world.entity.LivingEntity}
@@ -153,6 +155,63 @@ public class FandLivingEntity extends FandEntity implements LivingEntity {
     }
 
     @Override
+    public Optional<? extends LivingEntity> target() {
+        if (!(handle() instanceof net.minecraft.world.entity.Mob mob)) {
+            return Optional.empty();
+        }
+        var target = mob.getTarget();
+        return target == null ? Optional.empty() : Optional.of(worldRegistry.entityRegistry().wrap(target));
+    }
+
+    @Override
+    public void setTarget(@Nullable LivingEntity target) {
+        var mob = requireMob("Targeting");
+        net.minecraft.world.entity.@Nullable LivingEntity vanillaTarget = null;
+        if (target != null) {
+            var handle = EntityHandles.unwrap(target);
+            if (!(handle instanceof net.minecraft.world.entity.LivingEntity livingTarget)) {
+                throw new IllegalArgumentException("Target must be a living entity: " + target.uniqueId());
+            }
+            vanillaTarget = livingTarget;
+        }
+        var nextTarget = vanillaTarget;
+        runOnServerThread(() -> mob.setTarget(nextTarget));
+    }
+
+    @Override
+    public boolean noAi() {
+        return handle() instanceof net.minecraft.world.entity.Mob mob && mob.isNoAi();
+    }
+
+    @Override
+    public void setNoAi(boolean noAi) {
+        var mob = requireMob("AI state");
+        runOnServerThread(() -> mob.setNoAi(noAi));
+    }
+
+    @Override
+    public boolean aggressive() {
+        return handle() instanceof net.minecraft.world.entity.Mob mob && mob.isAggressive();
+    }
+
+    @Override
+    public void setAggressive(boolean aggressive) {
+        var mob = requireMob("Aggressive state");
+        runOnServerThread(() -> mob.setAggressive(aggressive));
+    }
+
+    @Override
+    public boolean persistent() {
+        return handle() instanceof net.minecraft.world.entity.Mob mob && mob.isPersistenceRequired();
+    }
+
+    @Override
+    public void setPersistent() {
+        var mob = requireMob("Persistence state");
+        runOnServerThread(mob::setPersistenceRequired);
+    }
+
+    @Override
     public int remainingAir() {
         return handle().getAirSupply();
     }
@@ -191,5 +250,56 @@ public class FandLivingEntity extends FandEntity implements LivingEntity {
     public boolean lineOfSight(io.fand.api.entity.Entity target) {
         java.util.Objects.requireNonNull(target, "target");
         return handle().hasLineOfSight(EntityHandles.unwrap(target));
+    }
+
+    @Override
+    public boolean sleeping() {
+        return handle().isSleeping();
+    }
+
+    @Override
+    public Optional<Location> sleepingLocation() {
+        return handle().getSleepingPos().map(pos -> new Location(
+                worldRegistry.wrap((net.minecraft.server.level.ServerLevel) handle().level()),
+                pos.getX(),
+                pos.getY(),
+                pos.getZ(),
+                handle().getYRot(),
+                handle().getXRot()));
+    }
+
+    @Override
+    public boolean sleep(Location location) {
+        java.util.Objects.requireNonNull(location, "location");
+        if (!sameWorld(location)) {
+            return false;
+        }
+        var pos = net.minecraft.core.BlockPos.containing(location.x(), location.y(), location.z());
+        return runOnServerThreadFuture(() -> {
+            handle().startSleeping(pos);
+            return handle().isSleeping();
+        }).join();
+    }
+
+    @Override
+    public void wakeUp() {
+        runOnServerThread(() -> {
+            if (handle().isSleeping()) {
+                handle().stopSleeping();
+            }
+        });
+    }
+
+    private boolean sameWorld(Location location) {
+        var key = location.world().key();
+        var identifier = handle().level().dimension().identifier();
+        return identifier.getNamespace().equals(key.namespace()) && identifier.getPath().equals(key.value());
+    }
+
+    private net.minecraft.world.entity.Mob requireMob(String feature) {
+        if (handle() instanceof net.minecraft.world.entity.Mob mob) {
+            return mob;
+        }
+        throw new UnsupportedOperationException(feature + " is not supported for non-mob living entities");
     }
 }

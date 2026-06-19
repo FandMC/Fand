@@ -90,6 +90,40 @@ final class FandPluginMessagingTest {
     }
 
     @Test
+    void removingClientboundSideKeepsBidirectionalServerboundHandlerActive() {
+        var packets = new PacketRegistryImpl();
+        var messaging = new FandPluginMessaging(packets);
+        var channel = Key.key("example:both");
+
+        var clientbound = messaging.register(channel, PluginMessageDirection.CLIENTBOUND);
+        messaging.register(channel, PluginMessageDirection.SERVERBOUND, noopHandler());
+
+        clientbound.close();
+
+        assertThat(packets.customHandler(PacketProtocol.PLAY, channel)).isPresent();
+        assertThat(messaging.channels()).containsExactly(new io.fand.api.messaging.PluginMessageChannel(
+                channel,
+                PluginMessageDirection.SERVERBOUND));
+    }
+
+    @Test
+    void removingLastServerboundSideKeepsClientboundChannelVisible() {
+        var packets = new PacketRegistryImpl();
+        var messaging = new FandPluginMessaging(packets);
+        var channel = Key.key("example:both");
+
+        messaging.register(channel, PluginMessageDirection.CLIENTBOUND);
+        var serverbound = messaging.register(channel, PluginMessageDirection.SERVERBOUND, noopHandler());
+
+        serverbound.close();
+
+        assertThat(packets.customHandler(PacketProtocol.PLAY, channel)).isEmpty();
+        assertThat(messaging.channels()).containsExactly(new io.fand.api.messaging.PluginMessageChannel(
+                channel,
+                PluginMessageDirection.CLIENTBOUND));
+    }
+
+    @Test
     void failingServerboundHandlerDoesNotStopLaterHandlers() {
         var packets = new PacketRegistryImpl();
         var messaging = new FandPluginMessaging(packets);

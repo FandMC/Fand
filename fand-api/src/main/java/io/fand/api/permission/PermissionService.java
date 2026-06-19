@@ -1,5 +1,6 @@
 package io.fand.api.permission;
 
+import java.util.Objects;
 import java.util.Optional;
 
 public interface PermissionService {
@@ -9,6 +10,13 @@ public interface PermissionService {
     Optional<PermissionDescriptor> lookup(String node);
 
     boolean hasPermission(PermissionSubject subject, String node);
+
+    default void recalculate(PermissionSubject subject) {
+        Objects.requireNonNull(subject, "subject");
+    }
+
+    default void recalculateAll() {
+    }
 
     default PermissionAttachment attach(PermissionSubject subject) {
         throw new UnsupportedOperationException("Permission attachments are not supported");

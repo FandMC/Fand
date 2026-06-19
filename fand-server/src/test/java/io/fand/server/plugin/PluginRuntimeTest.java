@@ -6,10 +6,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.fand.api.lifecycle.PluginDisableEvent;
 import io.fand.api.lifecycle.PluginEnableEvent;
+import io.fand.api.loot.LootContext;
 import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
 import io.fand.server.command.CommandManager;
 import io.fand.server.event.EventDispatcher;
+import io.fand.server.loot.FandLootTableService;
 import io.fand.server.permission.PermissionManager;
 import io.fand.server.scheduler.TaskScheduler;
 import java.io.IOException;
@@ -17,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -484,6 +487,207 @@ final class PluginRuntimeTest {
 
         manager.close();
         assertThat(permissions.hasPermission(PermissionAttachmentTestBridge.SUBJECT, "fand.injected")).isFalse();
+    }
+
+    @Test
+    void scopesAndClosesLootTableReplacementsOwnedByPlugins() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("loot.jar"),
+                PluginRuntimeTestSupport.descriptorJson("loot", "testplugins.loot.LootPlugin", List.of()),
+                Map.of("testplugins/loot/LootPlugin.java", """
+                        package testplugins.loot;
+
+                        import io.fand.api.plugin.Plugin;
+                        import io.fand.api.plugin.PluginContext;
+                        import net.kyori.adventure.key.Key;
+
+                        public final class LootPlugin implements Plugin {
+                            @Override
+                            public void onLoad(PluginContext context) {
+                                context.lootTables().replace(Key.key("minecraft:chests/simple_dungeon"), ignored -> java.util.List.of());
+                            }
+
+                            @Override
+                            public void onEnable(PluginContext context) {
+                            }
+                        }
+                        """),
+                List.of()
+        );
+
+        var lootTables = new FandLootTableService(() -> null);
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new CommandManager(),
+                new EventDispatcher(),
+                new PermissionManager(),
+                new TaskScheduler(),
+                new io.fand.server.recipe.FandRecipeRegistry(),
+                lootTables,
+                new io.fand.server.scoreboard.FandScoreboardService(() -> {
+                    throw new IllegalStateException("Minecraft server is not attached");
+                }),
+                new io.fand.server.network.packet.PacketRegistryImpl(),
+                io.fand.api.messaging.PluginMessaging.empty(),
+                io.fand.api.advancement.AdvancementRegistry.empty(),
+                io.fand.api.enchantment.EnchantmentRegistry.empty(),
+                io.fand.api.structure.StructureService.empty(),
+                io.fand.api.map.MapService.empty(),
+                new io.fand.server.item.FandCustomItemRegistry(),
+                new io.fand.server.block.FandCustomBlockRegistry(new EventDispatcher(), new io.fand.server.item.FandCustomItemRegistry()),
+                new io.fand.server.gui.FandGuiService(new EventDispatcher()),
+                new PluginRuntime.Options(false, false, false)
+        );
+
+        manager.loadPlugins();
+        assertThat(lootTables.table(Key.key("loot:chests/simple_dungeon"))).isPresent();
+        assertThat(lootTables.generate(Key.key("loot:chests/simple_dungeon"), LootContext.empty())).isEmpty();
+        assertThat(lootTables.table(Key.key("minecraft:chests/simple_dungeon"))).isEmpty();
+
+        manager.close();
+        assertThat(lootTables.table(Key.key("loot:chests/simple_dungeon"))).isEmpty();
+    }
+
+    @Test
+    void registersPermissionsDeclaredByPluginDescriptor() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("perms.jar"),
+                PluginRuntimeTestSupport.descriptorJson(
+                        "perms",
+                        "testplugins.perms.PermsPlugin",
+                        List.of(),
+                        """
+                                [
+                                  {
+                                    "node": "perms.admin",
+                                    "defaultAccess": "FALSE",
+                                    "children": {
+                                      "perms.command.reload": true,
+                                      "perms.command.danger": false
+                                    }
+                                  }
+                                ]
+                                """
+                ),
+                Map.of("testplugins/perms/PermsPlugin.java", pluginSource("testplugins.perms", "PermsPlugin", null, null, null)),
+                List.of()
+        );
+
+        var permissions = new PermissionManager();
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new CommandManager(),
+                new EventDispatcher(),
+                permissions,
+                new TaskScheduler(),
+                new PluginRuntime.Options(false, false, false)
+        );
+        try {
+            manager.loadPlugins();
+
+            var subject = new io.fand.server.permission.PermissionSet(false).set("perms.admin", true);
+            assertThat(permissions.lookup("perms.admin")).isPresent();
+            assertThat(permissions.hasPermission(subject, "perms.command.reload")).isTrue();
+            assertThat(permissions.hasPermission(subject, "perms.command.danger")).isFalse();
+        } finally {
+            manager.close();
+        }
+    }
+
+    @Test
+    void rejectsPluginDescriptorPermissionsOutsidePluginNamespace() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("perms.jar"),
+                PluginRuntimeTestSupport.descriptorJson(
+                        "perms",
+                        "testplugins.perms.PermsPlugin",
+                        List.of(),
+                        """
+                                [
+                                  {
+                                    "node": "other.admin",
+                                    "defaultAccess": "FALSE"
+                                  }
+                                ]
+                                """
+                ),
+                Map.of("testplugins/perms/PermsPlugin.java", pluginSource("testplugins.perms", "PermsPlugin", null, null, null)),
+                List.of()
+        );
+
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new CommandManager(),
+                new EventDispatcher(),
+                new PermissionManager(),
+                new TaskScheduler(),
+                new PluginRuntime.Options(false, false, false)
+        );
+
+        assertThatThrownBy(manager::loadPlugins)
+                .isInstanceOf(PluginLoadException.class)
+                .hasMessageContaining("invalid permission declaration");
+    }
+
+    @Test
+    void rejectsRuntimePermissionRegistrationOutsidePluginNamespace() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("perms.jar"),
+                PluginRuntimeTestSupport.descriptorJson("perms", "testplugins.perms.PermsPlugin", List.of()),
+                Map.of("testplugins/perms/PermsPlugin.java", """
+                        package testplugins.perms;
+
+                        import io.fand.api.permission.PermissionDefault;
+                        import io.fand.api.permission.PermissionDescriptor;
+                        import io.fand.api.plugin.Plugin;
+                        import io.fand.api.plugin.PluginContext;
+
+                        public final class PermsPlugin implements Plugin {
+                            @Override
+                            public void onLoad(PluginContext context) {
+                                context.permissions().register(new PermissionDescriptor("other.admin", PermissionDefault.FALSE));
+                            }
+
+                            @Override
+                            public void onEnable(PluginContext context) {
+                            }
+                        }
+                        """),
+                List.of()
+        );
+
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new CommandManager(),
+                new EventDispatcher(),
+                new PermissionManager(),
+                new TaskScheduler(),
+                new PluginRuntime.Options(false, false, false)
+        );
+
+        assertThatThrownBy(manager::loadPlugins)
+                .isInstanceOf(PluginLoadException.class)
+                .hasMessageContaining("Failed to load plugin 'perms'");
     }
 
     @Test

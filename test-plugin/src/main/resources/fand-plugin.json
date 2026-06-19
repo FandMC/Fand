@@ -3,5 +3,27 @@
   "version": "0.1.0",
   "mainClass": "io.fand.testplugin.TestPlugin",
   "authors": ["Fand"],
-  "depends": []
+  "depends": [],
+  "permissions": [
+    {
+      "node": "fand.testplugin.*",
+      "defaultAccess": "OPERATOR",
+      "children": {
+        "fand.testplugin.help": true,
+        "fand.testplugin.mode": true,
+        "fand.testplugin.fly": true,
+        "fand.testplugin.gui": true,
+        "fand.testplugin.actionbar": true,
+        "fand.testplugin.title": true,
+        "fand.testplugin.bossbar": true,
+        "fand.testplugin.particle": true,
+        "fand.testplugin.sound": true,
+        "fand.testplugin.kick": true,
+        "fand.testplugin.tab": true,
+        "fand.testplugin.recipe": true,
+        "fand.testplugin.components": true,
+        "fand.testplugin.selftest": true
+      }
+    }
+  ]
 }

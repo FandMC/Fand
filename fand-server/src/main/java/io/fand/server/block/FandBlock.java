@@ -208,6 +208,9 @@ public final class FandBlock implements Block {
         if (entity instanceof net.minecraft.world.level.block.entity.JukeboxBlockEntity jukebox) {
             return new FandJukeboxBlockEntity(this, jukebox);
         }
+        if (entity instanceof net.minecraft.world.level.block.entity.BeehiveBlockEntity beehive) {
+            return new FandBeehiveBlockEntity(this, beehive);
+        }
         if (entity instanceof net.minecraft.world.level.block.entity.SculkSensorBlockEntity sculkSensor) {
             return new FandSculkSensorBlockEntity(this, sculkSensor);
         }

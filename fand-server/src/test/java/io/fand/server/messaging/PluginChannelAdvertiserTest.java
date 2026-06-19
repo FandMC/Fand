@@ -22,6 +22,16 @@ final class PluginChannelAdvertiserTest {
     }
 
     @Test
+    void legacyUnregisterPayloadUsesSameNullSeparatedFormat() {
+        var payload = PluginChannelAdvertiser.legacyPayload(List.of(
+                Key.key("example:old"),
+                Key.key("example:gone")));
+
+        assertThat(new String(payload, StandardCharsets.US_ASCII))
+                .isEqualTo("example:old\0example:gone");
+    }
+
+    @Test
     void commonRegisterPayloadUsesPlayProtocolAndIdentifierList() {
         var payload = PluginChannelAdvertiser.commonRegisterPayload(List.of(
                 Key.key("jei:give_item_stack"),

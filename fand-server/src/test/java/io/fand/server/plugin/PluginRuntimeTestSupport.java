@@ -61,15 +61,20 @@ final class PluginRuntimeTestSupport {
     }
 
     static String descriptorJson(String id, String mainClass, List<String> depends) {
+        return descriptorJson(id, mainClass, depends, "[]");
+    }
+
+    static String descriptorJson(String id, String mainClass, List<String> depends, String permissionsJson) {
         return """
                 {
                   \"id\": \"%s\",
                   \"version\": \"1.0.0\",
                   \"mainClass\": \"%s\",
                   \"authors\": [\"test\"],
-                  \"depends\": %s
+                  \"depends\": %s,
+                  \"permissions\": %s
                 }
-                """.formatted(id, mainClass, dependsToJson(depends));
+                """.formatted(id, mainClass, dependsToJson(depends), permissionsJson);
     }
 
     static void restoreProperty(String key, String value) {

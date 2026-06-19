@@ -11,9 +11,12 @@ import io.fand.api.event.EventBus;
 import io.fand.api.gui.GuiService;
 import io.fand.api.lifecycle.PluginDisableEvent;
 import io.fand.api.lifecycle.PluginEnableEvent;
+import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.packet.PacketRegistry;
+import io.fand.api.permission.PermissionDefault;
+import io.fand.api.permission.PermissionDescriptor;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.Plugin;
 import io.fand.api.plugin.PluginDescriptor;
@@ -43,6 +46,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -56,6 +60,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(PluginRuntime.class);
     private static final Gson GSON = new Gson();
     private static final Pattern PLUGIN_ID = Pattern.compile("[a-z0-9]+(?:-[a-z0-9]+)*");
+    private static final Pattern PERMISSION_NODE = Pattern.compile("[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\\.[a-z0-9]+(?:[._-][a-z0-9]+)*)*(?:\\.\\*)?");
     private static final String DESCRIPTOR_PATH = "fand-plugin.json";
 
     private final Path pluginsDirectory;
@@ -65,6 +70,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final EventBus eventBus;
     private final PermissionService permissions;
     private final RecipeRegistry recipeRegistry;
+    private final LootTableService lootTableService;
     private final AdvancementRegistry advancementRegistry;
     private final EnchantmentRegistry enchantmentRegistry;
     private final StructureService structureService;
@@ -122,6 +128,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 permissions,
                 scheduler,
                 new FandRecipeRegistry(),
+                LootTableService.empty(),
                 unavailableScoreboardService(),
                 new PacketRegistryImpl(),
                 null,
@@ -187,6 +194,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 permissions,
                 scheduler,
                 recipeRegistry,
+                LootTableService.empty(),
                 unavailableScoreboardService(),
                 new PacketRegistryImpl(),
                 null,
@@ -231,6 +239,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 permissions,
                 scheduler,
                 recipeRegistry,
+                LootTableService.empty(),
                 scoreboardService,
                 packetRegistry,
                 defaultPluginMessaging(packetRegistry),
@@ -241,6 +250,53 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 customItemRegistry,
                 customBlockRegistry,
                 guiService,
+                options
+        );
+    }
+
+    public PluginRuntime(
+            Path pluginsDirectory,
+            Path dataDirectoryRoot,
+            ClassLoader parentClassLoader,
+            CommandRegistry commandRegistry,
+            EventBus eventBus,
+            PermissionService permissions,
+            Scheduler scheduler,
+            RecipeRegistry recipeRegistry,
+            LootTableService lootTableService,
+            ScoreboardService scoreboardService,
+            PacketRegistry packetRegistry,
+            PluginMessaging pluginMessaging,
+            AdvancementRegistry advancementRegistry,
+            EnchantmentRegistry enchantmentRegistry,
+            StructureService structureService,
+            MapService mapService,
+            CustomItemRegistry customItemRegistry,
+            CustomBlockRegistry customBlockRegistry,
+            GuiService guiService,
+            Options options
+    ) {
+        this(
+                pluginsDirectory,
+                dataDirectoryRoot,
+                parentClassLoader,
+                commandRegistry,
+                eventBus,
+                permissions,
+                scheduler,
+                recipeRegistry,
+                lootTableService,
+                scoreboardService,
+                packetRegistry,
+                pluginMessaging,
+                advancementRegistry,
+                enchantmentRegistry,
+                structureService,
+                mapService,
+                customItemRegistry,
+                customBlockRegistry,
+                guiService,
+                false,
                 options
         );
     }
@@ -275,6 +331,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 permissions,
                 scheduler,
                 recipeRegistry,
+                LootTableService.empty(),
                 scoreboardService,
                 packetRegistry,
                 pluginMessaging,
@@ -299,6 +356,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             PermissionService permissions,
             Scheduler scheduler,
             RecipeRegistry recipeRegistry,
+            LootTableService lootTableService,
             ScoreboardService scoreboardService,
             PacketRegistry packetRegistry,
             PluginMessaging pluginMessaging,
@@ -319,6 +377,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.eventBus = eventBus;
         this.permissions = permissions;
         this.recipeRegistry = recipeRegistry;
+        this.lootTableService = lootTableService;
         this.advancementRegistry = advancementRegistry;
         this.enchantmentRegistry = enchantmentRegistry;
         this.structureService = structureService;
@@ -372,10 +431,11 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                         permissions,
                         new PluginCommandRegistry(commandRegistry, resources, artifact.descriptor.id()),
                         new PluginRecipeRegistry(recipeRegistry, resources, artifact.descriptor.id()),
+                        new PluginLootTableService(lootTableService, resources, artifact.descriptor.id()),
                         new PluginAdvancementRegistry(advancementRegistry, resources, artifact.descriptor.id()),
                         new PluginEnchantmentRegistry(enchantmentRegistry, resources, artifact.descriptor.id()),
-                        structureService,
-                        mapService,
+                        new PluginStructureService(structureService, artifact.descriptor.id()),
+                        new PluginMapService(mapService, resources),
                         new PluginScoreboardService(scoreboardService, resources, artifact.descriptor.id()),
                         new PluginPacketRegistry(packetRegistry, resources),
                         new PluginPluginMessaging(pluginMessaging, resources),
@@ -388,6 +448,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                         classLoader
                 );
                 try {
+                    registerDeclaredPermissions(artifact.descriptor);
                     var plugin = instantiatePlugin(artifact.descriptor, classLoader);
                     plugin.onLoad(context);
                     loadedPlugins.put(artifact.descriptor.id(), new LoadedPlugin(artifact.descriptor, plugin, context, classLoader));
@@ -614,7 +675,54 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 throw new PluginLoadException("Plugin jar " + jarPath + " has invalid dependency id '" + dependency + "'");
             }
         }
+        for (var permission : descriptor.permissions()) {
+            validateDescriptorPermission(jarPath, descriptor.id(), permission);
+        }
         return descriptor;
+    }
+
+    private void registerDeclaredPermissions(PluginDescriptor descriptor) {
+        for (var permission : descriptor.permissions()) {
+            permissions.register(permission);
+        }
+    }
+
+    private static void validateDescriptorPermission(Path jarPath, String pluginId, PermissionDescriptor permission) {
+        try {
+            validatePluginPermissionNode(pluginId, permission.node());
+            for (var child : permission.children().keySet()) {
+                validatePluginPermissionNode(pluginId, child);
+            }
+        } catch (IllegalArgumentException ex) {
+            throw new PluginLoadException("Plugin jar " + jarPath + " has invalid permission declaration '" + permission.node() + "'", ex);
+        }
+    }
+
+    static void validatePluginPermissionNode(String pluginId, String node) {
+        var normalized = node == null ? "" : node.trim().toLowerCase(Locale.ROOT);
+        if (normalized.equals("*") || !PERMISSION_NODE.matcher(normalized).matches()) {
+            throw new IllegalArgumentException("Invalid permission node: " + node);
+        }
+        var base = normalized.endsWith(".*") ? normalized.substring(0, normalized.length() - 2) : normalized;
+        for (var namespace : permissionNamespaces(pluginId)) {
+            if (base.equals(namespace) || base.startsWith(namespace + ".")) {
+                return;
+            }
+        }
+        throw new IllegalArgumentException("Permission node '" + node + "' is outside plugin namespace '" + pluginId + "'");
+    }
+
+    private static List<String> permissionNamespaces(String pluginId) {
+        var id = pluginId.toLowerCase(Locale.ROOT);
+        var namespaces = new ArrayList<String>();
+        namespaces.add(id);
+        namespaces.add(id.replace('-', '.'));
+        namespaces.add(id.replace("-", ""));
+        var firstDash = id.indexOf('-');
+        if (firstDash >= 0) {
+            namespaces.add(id.substring(0, firstDash) + "." + id.substring(firstDash + 1).replace("-", ""));
+        }
+        return namespaces.stream().distinct().toList();
     }
 
     private SortResult sortArtifacts(List<PluginArtifact> artifacts) {
@@ -876,7 +984,8 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             String version,
             String mainClass,
             List<String> authors,
-            List<String> depends
+            List<String> depends,
+            List<PermissionFile> permissions
     ) {
         private PluginDescriptor toDescriptor() {
             return new PluginDescriptor(
@@ -884,7 +993,8 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                     required(version, "version"),
                     required(mainClass, "mainClass"),
                     authors == null ? List.of() : authors,
-                    depends == null ? List.of() : depends
+                    depends == null ? List.of() : depends,
+                    permissions == null ? List.of() : permissions.stream().map(PermissionFile::toDescriptor).toList()
             );
         }
 
@@ -903,6 +1013,20 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     ) {
         public static Options defaults() {
             return new Options(true, true, true);
+        }
+    }
+
+    private record PermissionFile(
+            String node,
+            String defaultAccess,
+            Map<String, Boolean> children
+    ) {
+        private PermissionDescriptor toDescriptor() {
+            return new PermissionDescriptor(
+                    DescriptorFile.required(node, "permissions[].node"),
+                    defaultAccess == null ? PermissionDefault.FALSE : PermissionDefault.valueOf(defaultAccess.trim().toUpperCase(Locale.ROOT)),
+                    children == null ? Map.of() : children
+            );
         }
     }
 }

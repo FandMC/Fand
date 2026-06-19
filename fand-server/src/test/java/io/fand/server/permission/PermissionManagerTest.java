@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 final class PermissionManagerTest {
@@ -54,6 +55,53 @@ final class PermissionManagerTest {
     }
 
     @Test
+    void registeredWildcardDefaultsApplyToMatchingChildren() {
+        var manager = new PermissionManager();
+        manager.register(new PermissionDescriptor("fand.command.*", PermissionDefault.OPERATOR));
+
+        assertThat(manager.lookup("fand.command.reload")).isPresent();
+        assertThat(manager.hasPermission(new PermissionSet(false), "fand.command.reload")).isFalse();
+        assertThat(manager.hasPermission(new PermissionSet(true), "fand.command.reload")).isTrue();
+    }
+
+    @Test
+    void parentPermissionsExpandDeclaredChildrenWhenParentIsGranted() {
+        var manager = new PermissionManager();
+        manager.register(new PermissionDescriptor(
+                "fand.admin",
+                PermissionDefault.FALSE,
+                Map.of(
+                        "fand.command.reload", true,
+                        "fand.command.danger", false
+                )
+        ));
+
+        var subject = new PermissionSet(false);
+        assertThat(manager.hasPermission(subject, "fand.command.reload")).isFalse();
+
+        subject.set("fand.admin", true);
+
+        assertThat(manager.hasPermission(subject, "fand.command.reload")).isTrue();
+        assertThat(manager.hasPermission(subject, "fand.command.danger")).isFalse();
+    }
+
+    @Test
+    void explicitChildPermissionOverridesInheritedParentChildren() {
+        var manager = new PermissionManager();
+        manager.register(new PermissionDescriptor(
+                "fand.admin",
+                PermissionDefault.FALSE,
+                Map.of("fand.command.reload", true)
+        ));
+
+        var subject = new PermissionSet(false)
+                .set("fand.admin", true)
+                .set("fand.command.reload", false);
+
+        assertThat(manager.hasPermission(subject, "fand.command.reload")).isFalse();
+    }
+
+    @Test
     void attachmentsOverrideSubjectValuesAndRegisteredDefaults() {
         var manager = new PermissionManager();
         manager.register(new PermissionDescriptor("fand.command.reload", PermissionDefault.FALSE));
@@ -87,6 +135,24 @@ final class PermissionManagerTest {
         var manager = new PermissionManager();
 
         assertThat(manager.hasPermission(new PermissionSet(false), "fand.unknown")).isFalse();
+    }
+
+    @Test
+    void recalculateEntrypointsKeepRealtimePermissionState() {
+        var manager = new PermissionManager();
+        manager.register(new PermissionDescriptor("fand.command.reload", PermissionDefault.FALSE));
+        var subject = new PermissionSet(false);
+
+        assertThat(manager.hasPermission(subject, "fand.command.reload")).isFalse();
+
+        subject.set("fand.command.reload", true);
+        manager.recalculate(subject);
+
+        assertThat(manager.hasPermission(subject, "fand.command.reload")).isTrue();
+
+        manager.recalculateAll();
+
+        assertThat(manager.hasPermission(subject, "fand.command.reload")).isTrue();
     }
 
     @Test

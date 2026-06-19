@@ -9,6 +9,7 @@ import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.gui.GuiService;
+import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.packet.PacketRegistry;
@@ -40,6 +41,7 @@ public final class RuntimePluginContext implements PluginContext {
     private final PermissionService permissions;
     private final CommandRegistry commands;
     private final RecipeRegistry recipes;
+    private final LootTableService lootTables;
     private final AdvancementRegistry advancements;
     private final EnchantmentRegistry enchantments;
     private final StructureService structures;
@@ -64,6 +66,7 @@ public final class RuntimePluginContext implements PluginContext {
             PermissionService permissions,
             CommandRegistry commands,
             RecipeRegistry recipes,
+            LootTableService lootTables,
             AdvancementRegistry advancements,
             EnchantmentRegistry enchantments,
             StructureService structures,
@@ -82,9 +85,10 @@ public final class RuntimePluginContext implements PluginContext {
         this.descriptor = descriptor;
         this.logger = logger;
         this.events = events;
-        this.permissions = new PluginPermissionService(permissions, resources);
+        this.permissions = new PluginPermissionService(permissions, resources, descriptor.id());
         this.commands = commands;
         this.recipes = recipes;
+        this.lootTables = lootTables;
         this.advancements = advancements;
         this.enchantments = enchantments;
         this.structures = structures;
@@ -129,6 +133,11 @@ public final class RuntimePluginContext implements PluginContext {
     @Override
     public RecipeRegistry recipes() {
         return recipes;
+    }
+
+    @Override
+    public LootTableService lootTables() {
+        return lootTables;
     }
 
     @Override

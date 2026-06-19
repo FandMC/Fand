@@ -34,4 +34,10 @@ public class FandBlockEntity implements BlockEntity {
     public boolean removed() {
         return handle.isRemoved();
     }
+
+    protected void syncBlockEntity() {
+        handle.setChanged();
+        var state = block.worldHandle().getBlockState(block.position());
+        block.worldHandle().sendBlockUpdated(block.position(), state, state, net.minecraft.world.level.block.Block.UPDATE_NONE);
+    }
 }

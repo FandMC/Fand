@@ -187,6 +187,7 @@ public final class FandServer implements Server, AutoCloseable {
                 permissions,
                 scheduler,
                 recipes,
+                lootTables,
                 scoreboard,
                 packets,
                 pluginMessaging,
@@ -311,6 +312,7 @@ public final class FandServer implements Server, AutoCloseable {
         }
         scheduler.tick();
         recipes.tick();
+        maps.tick();
         for (var world : worlds()) {
             customBlocks.tick(world);
         }

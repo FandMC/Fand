@@ -18,6 +18,7 @@ import net.minecraft.server.MinecraftServer;
 final class PluginChannelAdvertiser {
 
     private static final Key LEGACY_REGISTER = Key.key("minecraft:register");
+    private static final Key LEGACY_UNREGISTER = Key.key("minecraft:unregister");
     private static final Key COMMON_REGISTER = Key.key("c:register");
     private static final String COMMON_PLAY_PROTOCOL = "play";
     private static final int COMMON_VERSION = 1;
@@ -38,6 +39,16 @@ final class PluginChannelAdvertiser {
         }
     }
 
+    void broadcastUnregister(Collection<Key> channels) {
+        var snapshot = sorted(channels);
+        if (snapshot.isEmpty()) {
+            return;
+        }
+        for (var player : players.get()) {
+            sendUnregister(player, snapshot);
+        }
+    }
+
     void send(Player player, Collection<Key> channels) {
         Objects.requireNonNull(player, "player");
         var snapshot = sorted(channels);
@@ -55,6 +66,26 @@ final class PluginChannelAdvertiser {
             }
             handle.connection.send(packet(LEGACY_REGISTER, legacyPayload(snapshot)));
             handle.connection.send(packet(COMMON_REGISTER, commonRegisterPayload(snapshot)));
+        };
+        run(server, send);
+    }
+
+    void sendUnregister(Player player, Collection<Key> channels) {
+        Objects.requireNonNull(player, "player");
+        var snapshot = sorted(channels);
+        if (snapshot.isEmpty() || !(player instanceof FandPlayer fandPlayer)) {
+            return;
+        }
+        var handle = fandPlayer.handle();
+        var server = handle.level().getServer();
+        if (server == null) {
+            return;
+        }
+        Runnable send = () -> {
+            if (handle.connection == null) {
+                return;
+            }
+            handle.connection.send(packet(LEGACY_UNREGISTER, legacyPayload(snapshot)));
         };
         run(server, send);
     }

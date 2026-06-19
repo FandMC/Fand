@@ -36,11 +36,35 @@ public final class ReflectionFields {
         }
     }
 
+    public static void setInt(Field field, Object instance, int value) {
+        try {
+            field.setInt(instance, value);
+        } catch (IllegalAccessException failure) {
+            throw new IllegalStateException("Cannot write field " + field, failure);
+        }
+    }
+
+    public static boolean booleanValue(Field field, Object instance) {
+        try {
+            return field.getBoolean(instance);
+        } catch (IllegalAccessException failure) {
+            throw new IllegalStateException("Cannot read field " + field, failure);
+        }
+    }
+
     public static Object value(Field field, Object instance) {
         try {
             return field.get(instance);
         } catch (IllegalAccessException failure) {
             throw new IllegalStateException("Cannot read field " + field, failure);
+        }
+    }
+
+    public static void set(Field field, Object instance, Object value) {
+        try {
+            field.set(instance, value);
+        } catch (IllegalAccessException failure) {
+            throw new IllegalStateException("Cannot write field " + field, failure);
         }
     }
 

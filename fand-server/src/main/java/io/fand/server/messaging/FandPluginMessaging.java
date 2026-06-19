@@ -124,10 +124,20 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
     }
 
     private void release(Registration registration) {
+        var removedServerbound = new java.util.ArrayList<Key>(1);
         channels.computeIfPresent(registration.state.channel, (ignored, state) -> {
+            boolean wasServerbound = state.direction().allowsServerbound();
             state.remove(registration.direction, registration.listener);
+            boolean nowServerbound = !state.empty() && state.direction().allowsServerbound();
+            if (wasServerbound && !nowServerbound) {
+                removedServerbound.add(registration.state.channel);
+            }
             return state.empty() ? null : state;
         });
+        if (!removedServerbound.isEmpty()) {
+            advertiser.broadcastUnregister(removedServerbound);
+            advertiser.broadcast(serverboundChannels());
+        }
     }
 
     private static boolean requiresHandler(PluginMessageDirection direction) {

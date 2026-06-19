@@ -26,4 +26,29 @@ public final class FandJukeboxBlockEntity extends FandBlockEntity implements Juk
         Objects.requireNonNull(record, "record");
         block.runOnServerThread(() -> handle().setTheItem(FandItemStacks.toVanilla(record)));
     }
+
+    @Override
+    public boolean playing() {
+        return handle().getSongPlayer().isPlaying();
+    }
+
+    @Override
+    public long playTicks() {
+        return handle().getSongPlayer().getTicksSinceSongStarted();
+    }
+
+    @Override
+    public void play() {
+        block.runOnServerThread(() -> handle().tryForcePlaySong());
+    }
+
+    @Override
+    public void stop() {
+        block.runOnServerThread(() -> handle().getSongPlayer().stop(block.worldHandle(), block.worldHandle().getBlockState(block.position())));
+    }
+
+    @Override
+    public void eject() {
+        block.runOnServerThread(() -> handle().popOutTheItem());
+    }
 }

@@ -8,6 +8,8 @@ public final class FandBrewingStandBlockEntity extends FandContainerBlockEntity 
 
     private static final Field BREW_TIME = ReflectionFields.field(
             net.minecraft.world.level.block.entity.BrewingStandBlockEntity.class, "brewTime");
+    private static final Field FUEL = ReflectionFields.field(
+            net.minecraft.world.level.block.entity.BrewingStandBlockEntity.class, "fuel");
 
     public FandBrewingStandBlockEntity(FandBlock block, net.minecraft.world.level.block.entity.BrewingStandBlockEntity handle) {
         super(block, handle, handle);
@@ -21,5 +23,29 @@ public final class FandBrewingStandBlockEntity extends FandContainerBlockEntity 
     @Override
     public int brewTime() {
         return ReflectionFields.intValue(BREW_TIME, handle());
+    }
+
+    @Override
+    public void setBrewTime(int ticks) {
+        updateBrewingStand(() -> ReflectionFields.setInt(BREW_TIME, handle(), Math.max(0, ticks)));
+    }
+
+    @Override
+    public int fuel() {
+        return ReflectionFields.intValue(FUEL, handle());
+    }
+
+    @Override
+    public void setFuel(int fuel) {
+        updateBrewingStand(() -> ReflectionFields.setInt(FUEL, handle(), Math.max(0, fuel)));
+    }
+
+    private void updateBrewingStand(Runnable update) {
+        block.runOnServerThread(() -> {
+            update.run();
+            handle().setChanged();
+            var state = block.worldHandle().getBlockState(block.position());
+            block.worldHandle().sendBlockUpdated(block.position(), state, state, net.minecraft.world.level.block.Block.UPDATE_NONE);
+        });
     }
 }

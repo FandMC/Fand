@@ -1,9 +1,15 @@
 package io.fand.server.enchantment;
 
+import com.google.gson.JsonElement;
+import com.mojang.serialization.JsonOps;
 import io.fand.api.enchantment.CustomEnchantment;
+import io.fand.api.enchantment.EnchantmentCost;
+import io.fand.api.enchantment.EnchantmentDefinition;
 import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.enchantment.EnchantmentRegistration;
+import io.fand.api.enchantment.EnchantmentSlotGroup;
 import io.fand.api.enchantment.EnchantmentView;
+import io.fand.api.registry.RegistryReference;
 import io.fand.server.command.AdventureBridge;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -20,6 +26,8 @@ import net.minecraft.core.HolderSet;
 import net.minecraft.core.MappedRegistry;
 import net.minecraft.core.RegistrationInfo;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.RegistryOps;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.EquipmentSlotGroup;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
@@ -27,6 +35,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.EnchantmentEffectComponents;
 
 public final class FandEnchantmentRegistry implements EnchantmentRegistry {
 
@@ -64,7 +73,18 @@ public final class FandEnchantmentRegistry implements EnchantmentRegistry {
                     return new EnchantmentView(
                             key,
                             AdventureBridge.fromVanilla(enchantment.description(), current.registryAccess()),
-                            enchantment.getMaxLevel());
+                            enchantment.getMaxLevel(),
+                            fromVanillaDefinition(enchantment.definition()),
+                            encodeEffects(current, enchantment),
+                            enchantment.exclusiveSet().unwrapKey()
+                                    .map(tag -> List.of(RegistryReference.tag(apiKey(tag.location()))))
+                                    .orElseGet(() -> enchantment.exclusiveSet().stream()
+                                            .map(Holder::unwrapKey)
+                                            .flatMap(Optional::stream)
+                                            .map(ResourceKey::identifier)
+                                            .map(FandEnchantmentRegistry::apiKey)
+                                            .map(RegistryReference::key)
+                                            .toList()));
                 }));
     }
 
@@ -72,7 +92,13 @@ public final class FandEnchantmentRegistry implements EnchantmentRegistry {
     public EnchantmentRegistration register(CustomEnchantment enchantment) {
         Objects.requireNonNull(enchantment, "enchantment");
         var token = sequence.incrementAndGet();
-        var view = new EnchantmentView(enchantment.key(), enchantment.description(), enchantment.maxLevel());
+        var view = new EnchantmentView(
+                enchantment.key(),
+                enchantment.description(),
+                enchantment.maxLevel(),
+                enchantment.definition(),
+                enchantment.effects(),
+                enchantment.exclusiveSet());
         synchronized (lock) {
             removedEnchantments.remove(enchantment.key());
             customEnchantments.put(enchantment.key(), new CustomEntry(token, view, enchantment));
@@ -158,32 +184,164 @@ public final class FandEnchantmentRegistry implements EnchantmentRegistry {
     }
 
     private static Enchantment vanillaEnchantment(MinecraftServer server, CustomEnchantment custom) {
-        var supportedItems = allItems(server);
         return new Enchantment(
                 AdventureBridge.toVanilla(custom.description(), server.registryAccess()),
-                Enchantment.definition(
-                        supportedItems,
-                        1,
-                        custom.maxLevel(),
-                        Enchantment.constantCost(1),
-                        Enchantment.constantCost(1),
-                        0,
-                        EquipmentSlotGroup.ANY),
-                HolderSet.empty(),
-                net.minecraft.core.component.DataComponentMap.EMPTY);
+                definition(server, custom.definition()),
+                enchantmentSet(server, custom.exclusiveSet()),
+                effects(server, custom.effects()));
     }
 
-    private static HolderSet<Item> allItems(MinecraftServer server) {
+    private static Enchantment.EnchantmentDefinition definition(MinecraftServer server, EnchantmentDefinition definition) {
+        var supportedItems = itemSet(server, definition.supportedItems());
+        var primaryItems = definition.primaryItems().map(references -> itemSet(server, references));
+        var slots = definition.slots().stream()
+                .map(FandEnchantmentRegistry::slotGroup)
+                .toArray(EquipmentSlotGroup[]::new);
+        if (primaryItems.isPresent()) {
+            return Enchantment.definition(
+                    supportedItems,
+                    primaryItems.orElseThrow(),
+                    definition.weight(),
+                    definition.maxLevel(),
+                    cost(definition.minCost()),
+                    cost(definition.maxCost()),
+                    definition.anvilCost(),
+                    slots);
+        }
+        return Enchantment.definition(
+                supportedItems,
+                definition.weight(),
+                definition.maxLevel(),
+                cost(definition.minCost()),
+                cost(definition.maxCost()),
+                definition.anvilCost(),
+                slots);
+    }
+
+    private static Enchantment.Cost cost(EnchantmentCost cost) {
+        return Enchantment.dynamicCost(cost.base(), cost.perLevelAboveFirst());
+    }
+
+    private static HolderSet<Item> itemSet(MinecraftServer server, List<RegistryReference> references) {
         var items = server.registryAccess().lookupOrThrow(Registries.ITEM);
-        List<Holder<Item>> holders = items.listElements()
-                .filter(holder -> holder.value() != Items.AIR)
-                .map(holder -> (Holder<Item>) holder)
-                .toList();
-        return HolderSet.direct(holders);
+        var holders = new LinkedHashMap<Identifier, Holder<Item>>();
+        for (var reference : references) {
+            if (reference.tag() && reference.key().equals(net.kyori.adventure.key.Key.key("fand:all"))) {
+                items.listElements()
+                        .filter(holder -> holder.value() != Items.AIR)
+                        .forEach(holder -> holders.put(holder.key().identifier(), (Holder<Item>) holder));
+                continue;
+            }
+            if (reference.tag()) {
+                var tag = TagKey.create(Registries.ITEM, identifier(reference.key()));
+                var named = items.get(tag).orElseThrow(() -> new IllegalArgumentException("Unknown item tag: " + reference.asString()));
+                named.stream().forEach(holder -> holders.put(holder.unwrapKey().orElseThrow().identifier(), holder));
+            } else {
+                var holder = items.get(ResourceKey.create(Registries.ITEM, identifier(reference.key())))
+                        .orElseThrow(() -> new IllegalArgumentException("Unknown item: " + reference.asString()));
+                holders.put(holder.key().identifier(), holder);
+            }
+        }
+        if (holders.isEmpty()) {
+            throw new IllegalArgumentException("Enchantment item set resolved to empty: " + references);
+        }
+        return HolderSet.direct(holders.values().stream().toList());
+    }
+
+    private static HolderSet<Enchantment> enchantmentSet(MinecraftServer server, List<RegistryReference> references) {
+        if (references.isEmpty()) {
+            return HolderSet.empty();
+        }
+        var enchantments = server.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
+        if (references.size() == 1 && references.getFirst().tag()) {
+            var tag = TagKey.create(Registries.ENCHANTMENT, identifier(references.getFirst().key()));
+            return enchantments.get(tag).orElseThrow(() -> new IllegalArgumentException("Unknown enchantment tag: " + references.getFirst().asString()));
+        }
+        var holders = new LinkedHashMap<Identifier, Holder<Enchantment>>();
+        for (var reference : references) {
+            if (reference.tag()) {
+                var tag = TagKey.create(Registries.ENCHANTMENT, identifier(reference.key()));
+                var named = enchantments.get(tag).orElseThrow(() -> new IllegalArgumentException("Unknown enchantment tag: " + reference.asString()));
+                named.stream().forEach(holder -> holders.put(holder.unwrapKey().orElseThrow().identifier(), holder));
+            } else {
+                var holder = enchantments.get(ResourceKey.create(Registries.ENCHANTMENT, identifier(reference.key())))
+                        .orElseThrow(() -> new IllegalArgumentException("Unknown enchantment: " + reference.asString()));
+                holders.put(holder.key().identifier(), holder);
+            }
+        }
+        return HolderSet.direct(holders.values().stream().toList());
+    }
+
+    private static net.minecraft.core.component.DataComponentMap effects(MinecraftServer server, JsonElement effects) {
+        if (effects == null || effects.isJsonNull() || effects.getAsJsonObject().isEmpty()) {
+            return net.minecraft.core.component.DataComponentMap.EMPTY;
+        }
+        return EnchantmentEffectComponents.CODEC.parse(ops(server), effects)
+                .getOrThrow(error -> new IllegalArgumentException("Invalid enchantment effects: " + error));
+    }
+
+    private static com.google.gson.JsonObject encodeEffects(MinecraftServer server, Enchantment enchantment) {
+        var encoded = EnchantmentEffectComponents.CODEC.encodeStart(ops(server), enchantment.effects())
+                .getOrThrow(error -> new IllegalArgumentException("Could not encode enchantment effects: " + error));
+        return encoded.isJsonObject() ? encoded.getAsJsonObject() : new com.google.gson.JsonObject();
+    }
+
+    private static RegistryOps<JsonElement> ops(MinecraftServer server) {
+        return server.registryAccess().createSerializationContext(JsonOps.INSTANCE);
+    }
+
+    private static EnchantmentDefinition fromVanillaDefinition(Enchantment.EnchantmentDefinition definition) {
+        return new EnchantmentDefinition(
+                List.of(RegistryReference.all()),
+                Optional.empty(),
+                definition.weight(),
+                definition.maxLevel(),
+                new EnchantmentCost(definition.minCost().base(), definition.minCost().perLevelAboveFirst()),
+                new EnchantmentCost(definition.maxCost().base(), definition.maxCost().perLevelAboveFirst()),
+                definition.anvilCost(),
+                definition.slots().stream()
+                        .map(FandEnchantmentRegistry::slotGroup)
+                        .toList());
+    }
+
+    private static EquipmentSlotGroup slotGroup(EnchantmentSlotGroup slot) {
+        return switch (slot) {
+            case ANY -> EquipmentSlotGroup.ANY;
+            case MAINHAND -> EquipmentSlotGroup.MAINHAND;
+            case OFFHAND -> EquipmentSlotGroup.OFFHAND;
+            case HAND -> EquipmentSlotGroup.HAND;
+            case FEET -> EquipmentSlotGroup.FEET;
+            case LEGS -> EquipmentSlotGroup.LEGS;
+            case CHEST -> EquipmentSlotGroup.CHEST;
+            case HEAD -> EquipmentSlotGroup.HEAD;
+            case ARMOR -> EquipmentSlotGroup.ARMOR;
+            case BODY -> EquipmentSlotGroup.BODY;
+            case SADDLE -> EquipmentSlotGroup.SADDLE;
+        };
+    }
+
+    private static EnchantmentSlotGroup slotGroup(EquipmentSlotGroup slot) {
+        return switch (slot) {
+            case ANY -> EnchantmentSlotGroup.ANY;
+            case MAINHAND -> EnchantmentSlotGroup.MAINHAND;
+            case OFFHAND -> EnchantmentSlotGroup.OFFHAND;
+            case HAND -> EnchantmentSlotGroup.HAND;
+            case FEET -> EnchantmentSlotGroup.FEET;
+            case LEGS -> EnchantmentSlotGroup.LEGS;
+            case CHEST -> EnchantmentSlotGroup.CHEST;
+            case HEAD -> EnchantmentSlotGroup.HEAD;
+            case ARMOR -> EnchantmentSlotGroup.ARMOR;
+            case BODY -> EnchantmentSlotGroup.BODY;
+            case SADDLE -> EnchantmentSlotGroup.SADDLE;
+        };
     }
 
     private static Identifier identifier(Key key) {
         return Identifier.fromNamespaceAndPath(key.namespace(), key.value());
+    }
+
+    private static Key apiKey(Identifier id) {
+        return Key.key(id.getNamespace(), id.getPath());
     }
 
     private static <T> T callOnServerThread(MinecraftServer server, Supplier<T> task) {

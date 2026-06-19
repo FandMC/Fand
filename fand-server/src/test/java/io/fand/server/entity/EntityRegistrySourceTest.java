@@ -29,6 +29,32 @@ final class EntityRegistrySourceTest {
         assertBefore(source, "new FandCreeper", "new FandMob");
     }
 
+    @Test
+    void livingEntitySleepAndStateControlsAreImplementedForPlayersToo() throws IOException {
+        var living = read("src/main/java/io/fand/server/entity/FandLivingEntity.java");
+        var player = read("src/main/java/io/fand/server/entity/FandPlayer.java");
+        var vanillaLiving = read("src/minecraft/java/net/minecraft/world/entity/LivingEntity.java");
+        var vanillaPlayer = read("src/minecraft/java/net/minecraft/world/entity/player/Player.java");
+
+        assertThat(living).contains("public boolean sleeping()");
+        assertThat(living).contains("public Optional<Location> sleepingLocation()");
+        assertThat(living).contains("public boolean sleep(Location location)");
+        assertThat(living).contains("public void wakeUp()");
+        assertThat(player).contains("public int remainingAir()");
+        assertThat(player).contains("public int freezeTicks()");
+        assertThat(player).contains("public int invulnerableTicks()");
+        assertThat(player).contains("public boolean lineOfSight");
+        assertThat(player).contains("public boolean sleeping()");
+        assertThat(player).contains("handle.startSleepInBed(pos)");
+        assertThat(vanillaLiving).contains("public void startSleeping(final BlockPos bedPosition)");
+        assertThat(vanillaLiving).contains("public void stopSleeping()");
+        assertThat(vanillaPlayer).contains("public Either<Player.BedSleepingProblem, Unit> startSleepInBed");
+    }
+
+    private static String read(String path) throws IOException {
+        return Files.readString(Path.of(path), StandardCharsets.UTF_8);
+    }
+
     private static void assertBefore(String source, String first, String second) {
         assertThat(source.indexOf(first))
                 .as(first + " exists")

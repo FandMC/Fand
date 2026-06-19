@@ -37,6 +37,7 @@ import io.fand.server.entity.FandEntityType;
 import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.item.FandItemStacks;
 import io.fand.server.scheduler.TaskScheduler;
+import io.fand.server.scoreboard.FandScoreboardService;
 import io.fand.server.util.ServerThreading;
 import java.util.Collection;
 import java.util.Iterator;
@@ -955,7 +956,7 @@ public final class FandWorld implements World {
         }
         var fallbackRegistry = new WorldRegistry(
                 handle.getServer(),
-                players != null ? players : new PlayerRegistry(new io.fand.server.permission.PermissionManager()),
+                players != null ? players : fallbackPlayerRegistry(),
                 scheduler
         );
         return fallbackRegistry.entityRegistry().wrap(entity);
@@ -969,6 +970,12 @@ public final class FandWorld implements World {
             return worldRegistry.wrap(level);
         }
         return new FandWorld(level, players, null, scheduler);
+    }
+
+    private PlayerRegistry fallbackPlayerRegistry() {
+        return new PlayerRegistry(
+                new io.fand.server.permission.PermissionManager(),
+                new FandScoreboardService(handle.getServer()));
     }
 
     private Collection<? extends Entity> streamEntities(Iterable<net.minecraft.world.entity.Entity> entities) {

@@ -9,7 +9,10 @@ import io.fand.api.permission.PermissionService;
 import io.fand.api.permission.PermissionSubject;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -42,25 +45,31 @@ public final class PermissionManager implements PermissionService {
     @Override
     public void register(PermissionDescriptor descriptor) {
         Objects.requireNonNull(descriptor, "descriptor");
-        var normalized = normalize(descriptor.node());
-        var stored = new PermissionDescriptor(normalized, descriptor.defaultAccess());
-        var existing = descriptors.putIfAbsent(normalized, stored);
-        if (existing != null && existing.defaultAccess() != stored.defaultAccess()) {
-            throw new IllegalStateException("Permission already registered with a different default: " + normalized);
-        }
+        var normalized = normalizeAttachmentNode(descriptor.node());
+        var stored = new PermissionDescriptor(normalized, descriptor.defaultAccess(), normalizeChildren(descriptor.children()));
+        descriptors.compute(normalized, (node, existing) -> mergeDescriptor(node, existing, stored));
     }
 
     @Override
     public Optional<PermissionDescriptor> lookup(String node) {
-        return Optional.ofNullable(descriptors.get(normalize(node)));
+        return Optional.ofNullable(descriptorFor(normalizeAttachmentNode(node)));
     }
 
     @Override
     public boolean hasPermission(PermissionSubject subject, String node) {
         Objects.requireNonNull(subject, "subject");
-        var normalized = normalize(node);
+        var normalized = normalizeAttachmentNode(node);
 
         return computePermission(subject, normalized);
+    }
+
+    @Override
+    public void recalculate(PermissionSubject subject) {
+        Objects.requireNonNull(subject, "subject");
+    }
+
+    @Override
+    public void recalculateAll() {
     }
 
     @Override
@@ -87,19 +96,73 @@ public final class PermissionManager implements PermissionService {
     }
 
     private boolean computePermission(PermissionSubject subject, String normalized) {
+        var resolved = resolvePermission(subject, normalized, new HashSet<>());
+        return fireCheck(subject, normalized, resolved);
+    }
+
+    private boolean resolvePermission(PermissionSubject subject, String normalized, HashSet<String> resolving) {
+        if (!resolving.add(normalized)) {
+            return directDescriptorDefault(subject, normalized);
+        }
         var explicit = attachmentValue(subject, normalized);
         if (explicit == null) {
             explicit = explicitValue(subject, normalized);
         }
         if (explicit != null) {
-            return fireCheck(subject, normalized, explicit);
+            resolving.remove(normalized);
+            return explicit;
         }
 
-        var descriptor = descriptors.get(normalized);
-        if (descriptor == null) {
-            return fireCheck(subject, normalized, false);
+        var inherited = descriptorChildValue(subject, normalized, resolving);
+        if (inherited != null) {
+            resolving.remove(normalized);
+            return inherited;
         }
-        return fireCheck(subject, normalized, descriptor.defaultAccess().value(subject.operator()));
+
+        var result = directDescriptorDefault(subject, normalized);
+        resolving.remove(normalized);
+        return result;
+    }
+
+    private boolean directDescriptorDefault(PermissionSubject subject, String normalized) {
+        var descriptor = descriptorFor(normalized);
+        if (descriptor == null) {
+            return false;
+        }
+        return descriptor.defaultAccess().value(subject.operator());
+    }
+
+    private Boolean descriptorChildValue(PermissionSubject subject, String normalized, HashSet<String> resolving) {
+        var parents = descriptors.values().stream()
+                .filter(descriptor -> descriptor.children().containsKey(normalized))
+                .sorted(Comparator.comparingInt((PermissionDescriptor descriptor) -> descriptor.node().length()).reversed())
+                .toList();
+        for (var parent : parents) {
+            var parentValue = resolvePermission(subject, parent.node(), resolving);
+            if (parentValue) {
+                return parent.children().get(normalized);
+            }
+        }
+        return null;
+    }
+
+    private @Nullable PermissionDescriptor descriptorFor(String node) {
+        var exact = descriptors.get(node);
+        if (exact != null) {
+            return exact;
+        }
+        var wildcard = node;
+        while (true) {
+            var separator = wildcard.lastIndexOf('.');
+            if (separator < 0) {
+                return descriptors.get("*");
+            }
+            wildcard = wildcard.substring(0, separator);
+            var descriptor = descriptors.get(wildcard + ".*");
+            if (descriptor != null) {
+                return descriptor;
+            }
+        }
     }
 
     private Boolean attachmentValue(PermissionSubject subject, String node) {
@@ -199,5 +262,37 @@ public final class PermissionManager implements PermissionService {
             return normalized;
         }
         throw new IllegalArgumentException("Invalid permission node: " + node);
+    }
+
+    private static Map<String, Boolean> normalizeChildren(Map<String, Boolean> children) {
+        Objects.requireNonNull(children, "children");
+        var normalized = new LinkedHashMap<String, Boolean>();
+        for (var entry : children.entrySet()) {
+            normalized.put(normalizeAttachmentNode(entry.getKey()), Objects.requireNonNull(entry.getValue(), "child permission value"));
+        }
+        return normalized;
+    }
+
+    private static PermissionDescriptor mergeDescriptor(
+            String node,
+            @Nullable PermissionDescriptor existing,
+            PermissionDescriptor incoming
+    ) {
+        if (existing == null) {
+            return incoming;
+        }
+        if (existing.defaultAccess() != incoming.defaultAccess()) {
+            throw new IllegalStateException("Permission already registered with a different default: " + node);
+        }
+        if (existing.children().equals(incoming.children())) {
+            return existing;
+        }
+        if (existing.children().isEmpty()) {
+            return incoming;
+        }
+        if (incoming.children().isEmpty()) {
+            return existing;
+        }
+        throw new IllegalStateException("Permission already registered with different children: " + node);
     }
 }

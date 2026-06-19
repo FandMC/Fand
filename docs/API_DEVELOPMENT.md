@@ -18,7 +18,16 @@
   "version": "0.1.0",
   "mainClass": "com.example.ExamplePlugin",
   "authors": ["Example"],
-  "depends": []
+  "depends": [],
+  "permissions": [
+    {
+      "node": "example-plugin.admin",
+      "defaultAccess": "OPERATOR",
+      "children": {
+        "example-plugin.reload": true
+      }
+    }
+  ]
 }
 ```
 
@@ -85,6 +94,9 @@ public final class ExamplePlugin implements Plugin {
 `Fand.server()` 返回当前运行中的 `Server`。它适合读取全局状态、查找在线玩家、访问世界、
 广播 Adventure 消息、创建或卸载动态世界、读取性能快照等。插件拥有的注册仍应优先走
 `PluginContext`。
+
+插件也可以在 `fand-plugin.json` 的 `permissions` 中声明权限树。`node` 和 `children` 必须属于插件
+自己的命名空间；运行时会在插件加载阶段自动注册这些权限，`children` 在父权限实际授予时展开。
 
 ## 事件
 
@@ -206,6 +218,9 @@ context.permissions().register(new PermissionDescriptor("example.hello", Permiss
 - 世界、实体、方块、物品类型通过 Adventure `Key` 或生成的 vanilla key 查询。
 - `RecipeRegistry.register` 会更新实时 vanilla 配方管理器，返回的注册句柄关闭后移除同一个配方。
 - `ScoreboardService` 操作持久 vanilla 计分板目标和队伍。
+- `LivingEntity` 暴露空气、冻结、无敌 tick、视线判断和睡眠/唤醒控制；玩家睡眠走 vanilla 床规则。
+- `FurnaceBlockEntity`、`BrewingStandBlockEntity`、`BeehiveBlockEntity`、`SculkSensorBlockEntity`
+  暴露常用运行状态，插件可以读写计时、燃料、蜂巢释放和振动频率。
 - `GuiService.open(Player, Gui)` 打开轻量 GUI，并把库存事件路由到对应 `GuiView`。
 - `PacketRegistry` 支持 vanilla 包拦截和自定义 payload 通道；优先使用 `context.packets()`。
 - `Server.performance()` 返回最新 tick 性能快照，适合命令和监控展示。
