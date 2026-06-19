@@ -11,12 +11,21 @@ import io.fand.api.packet.PacketContext;
 import io.fand.api.packet.PacketDirection;
 import io.fand.api.packet.PacketProtocol;
 import io.fand.server.network.packet.PacketRegistryImpl;
+import io.netty.buffer.Unpooled;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import net.kyori.adventure.key.Key;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
+import net.minecraft.network.protocol.common.ClientboundPingPacket;
+import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
+import net.minecraft.network.protocol.common.ServerboundPongPacket;
+import net.minecraft.network.protocol.common.custom.DiscardedPayload;
 import org.junit.jupiter.api.Test;
 
 final class FandPluginMessagingTest {
@@ -176,9 +185,118 @@ final class FandPluginMessagingTest {
                 .hasMessageContaining("cannot have a handler");
     }
 
+    @Test
+    void pluginChannelConfigurationTaskAdvertisesServerboundChannelsToFabricClients() {
+        var messaging = new FandPluginMessaging(new PacketRegistryImpl());
+        messaging.register(Key.key("example:client"), PluginMessageDirection.CLIENTBOUND);
+        messaging.register(Key.key("jei:delete_player_item"), PluginMessageDirection.SERVERBOUND, noopHandler());
+        messaging.register(Key.key("jei:cheat_permission"), PluginMessageDirection.CLIENTBOUND);
+        var packets = new ArrayList<Packet<?>>();
+        var task = messaging.pluginChannelConfigurationTask();
+
+        task.start(packets::add);
+
+        assertThat(packets).hasSize(2);
+        var legacy = payload((ClientboundCustomPayloadPacket) packets.get(0));
+        assertThat(legacy.id().toString()).isEqualTo("minecraft:register");
+        assertThat(new String(legacy.payload(), java.nio.charset.StandardCharsets.US_ASCII))
+                .isEqualTo("c:register\0c:version");
+        assertThat(packets.get(1)).isInstanceOf(ClientboundPingPacket.class);
+
+        task.handleCustomPayload(serverboundPayload(
+                "minecraft:register",
+                "c:register\0c:version".getBytes(java.nio.charset.StandardCharsets.US_ASCII)), packets::add);
+        var version = payload((ClientboundCustomPayloadPacket) packets.get(2));
+        assertThat(version.id().toString()).isEqualTo("c:version");
+        assertThat(new FriendlyByteBuf(Unpooled.wrappedBuffer(version.payload())).readVarIntArray())
+                .containsExactly(1);
+
+        task.handleCustomPayload(serverboundPayload("c:version", PluginChannelAdvertiser.commonVersionPayload()), packets::add);
+        var register = payload((ClientboundCustomPayloadPacket) packets.get(3));
+        assertThat(register.id().toString()).isEqualTo("c:register");
+        var buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(register.payload()));
+        assertThat(buffer.readVarInt()).isEqualTo(1);
+        assertThat(buffer.readUtf()).isEqualTo("play");
+        assertThat(buffer.readVarInt()).isEqualTo(1);
+        assertThat(buffer.readIdentifier().toString()).isEqualTo("jei:delete_player_item");
+        assertThat(buffer.readableBytes()).isZero();
+
+        assertThat(task.tick()).isFalse();
+        task.handleCustomPayload(serverboundPayload("c:register", new byte[0]), packets::add);
+        assertThat(task.tick()).isTrue();
+    }
+
+    @Test
+    void pluginChannelConfigurationTaskAdvertisesConfigurationChannelsToFabricClients() {
+        var messaging = new FandPluginMessaging(new PacketRegistryImpl());
+        messaging.registerConfiguration(Key.key("fabric:recipe_sync/supported_serializers"), (listener, payload) -> {});
+        var packets = new ArrayList<Packet<?>>();
+        var task = messaging.pluginChannelConfigurationTask();
+
+        task.start(packets::add);
+
+        assertThat(packets).hasSize(2);
+        var legacy = payload((ClientboundCustomPayloadPacket) packets.get(0));
+        assertThat(legacy.id().toString()).isEqualTo("minecraft:register");
+        assertThat(new String(legacy.payload(), java.nio.charset.StandardCharsets.US_ASCII))
+                .isEqualTo("c:register\0c:version\0fabric:recipe_sync/supported_serializers");
+    }
+
+    @Test
+    void configurationPayloadIsDispatchedToRegisteredHandler() {
+        var messaging = new FandPluginMessaging(new PacketRegistryImpl());
+        var received = new AtomicReference<byte[]>();
+        messaging.registerConfiguration(Key.key("fabric:recipe_sync/supported_serializers"), (listener, payload) -> received.set(payload));
+
+        boolean handled = messaging.handleConfigurationPayload(
+                null,
+                net.minecraft.resources.Identifier.parse("fabric:recipe_sync/supported_serializers"),
+                new byte[] {1, 2, 3});
+
+        assertThat(handled).isTrue();
+        assertThat(received.get()).containsExactly(1, 2, 3);
+    }
+
+    @Test
+    void pluginChannelConfigurationTaskDoesNotBlockVanillaClients() {
+        var messaging = new FandPluginMessaging(new PacketRegistryImpl());
+        messaging.register(Key.key("jei:delete_player_item"), PluginMessageDirection.SERVERBOUND, noopHandler());
+        var packets = new ArrayList<Packet<?>>();
+        var task = messaging.pluginChannelConfigurationTask();
+
+        task.start(packets::add);
+        var ping = (ClientboundPingPacket) packets.get(1);
+
+        assertThat(task.handlePong(new ServerboundPongPacket(ping.getId()), packets::add)).isTrue();
+        assertThat(task.tick()).isTrue();
+    }
+
+    @Test
+    void pluginChannelConfigurationTaskDoesNotBlockModdedClientsWithoutCommonPackets() {
+        var messaging = new FandPluginMessaging(new PacketRegistryImpl());
+        messaging.register(Key.key("jei:delete_player_item"), PluginMessageDirection.SERVERBOUND, noopHandler());
+        var packets = new ArrayList<Packet<?>>();
+        var task = messaging.pluginChannelConfigurationTask();
+
+        task.start(packets::add);
+        assertThat(task.handleCustomPayload(serverboundPayload(
+                "minecraft:register",
+                "example:channel".getBytes(java.nio.charset.StandardCharsets.US_ASCII)), packets::add)).isTrue();
+
+        assertThat(task.tick()).isTrue();
+    }
+
     private static PluginMessageHandler noopHandler() {
         AtomicInteger ignored = new AtomicInteger();
         return (Player player, io.fand.api.messaging.PluginMessageChannel channel, byte[] payload) -> ignored.incrementAndGet();
+    }
+
+    private static DiscardedPayload payload(ClientboundCustomPayloadPacket packet) {
+        return (DiscardedPayload) packet.payload();
+    }
+
+    private static ServerboundCustomPayloadPacket serverboundPayload(String id, byte[] payload) {
+        return new ServerboundCustomPayloadPacket(new DiscardedPayload(net.minecraft.resources.Identifier.parse(id), payload));
     }
 
     private static Player stubPlayer() {

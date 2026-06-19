@@ -99,6 +99,7 @@ import org.slf4j.LoggerFactory;
 public final class FandServer implements Server, AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FandServer.class);
+    private static final long[] PLUGIN_CHANNEL_ADVERTISEMENT_RETRY_TICKS = {1L, 5L, 20L};
 
     private final Path configPath;
     private final EventDispatcher events;
@@ -161,11 +162,11 @@ public final class FandServer implements Server, AutoCloseable {
         this.packets = new PacketRegistryImpl();
         this.players = new PlayerRegistry(permissions, scoreboard);
         this.pluginMessaging = new FandPluginMessaging(packets, players::snapshot);
-        this.modProtocols = new ModProtocolCompatibility(pluginMessaging, initialConfig.compat.modProtocols);
+        this.modProtocols = new ModProtocolCompatibility(pluginMessaging, events, initialConfig.compat.modProtocols);
         this.pluginChannelAdvertisement = events.subscribe(
                 PlayerJoinEvent.class,
                 EventPriority.OBSERVER,
-                event -> pluginMessaging.advertise(event.player()));
+                this::advertisePluginChannels);
         this.customItems = new FandCustomItemRegistry();
         this.customBlocks = new FandCustomBlockRegistry(events, customItems);
         this.guis = new FandGuiService(events);
@@ -444,6 +445,22 @@ public final class FandServer implements Server, AutoCloseable {
 
     public PacketRegistryImpl packetRegistry() {
         return packets;
+    }
+
+    public void addPluginChannelConfigurationTask(java.util.Queue<net.minecraft.server.network.ConfigurationTask> tasks) {
+        tasks.add(pluginMessaging.pluginChannelConfigurationTask());
+    }
+
+    public boolean handlePluginChannelConfigurationPayload(
+            net.minecraft.server.network.ServerConfigurationPacketListenerImpl listener,
+            net.minecraft.resources.Identifier id,
+            byte[] payload
+    ) {
+        return pluginMessaging.handleConfigurationPayload(listener, id, payload);
+    }
+
+    public void syncDataPackContents(net.minecraft.server.level.ServerPlayer player, boolean joined) {
+        modProtocols.syncDataPackContents(player, joined);
     }
 
     @Override
@@ -771,6 +788,15 @@ public final class FandServer implements Server, AutoCloseable {
 
     private void registerBuiltinCommands() {
         BuiltinCommands.registerAll(commands, this);
+    }
+
+    private void advertisePluginChannels(PlayerJoinEvent event) {
+        var player = event.player();
+        var uniqueId = player.uniqueId();
+        pluginMessaging.advertise(player);
+        for (long delayTicks : PLUGIN_CHANNEL_ADVERTISEMENT_RETRY_TICKS) {
+            scheduler.runMainAfterTicks(() -> player(uniqueId).ifPresent(pluginMessaging::advertise), delayTicks);
+        }
     }
 
     private static ResourceKey<Level> dimensionKey(Key key) {

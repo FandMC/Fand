@@ -48,11 +48,6 @@ public final class Fandclip {
 
         String minecraftVersion = ClipManifest.minecraftVersion();
         Path bundler = cacheDir.resolve("mojang_" + minecraftVersion + ".jar");
-        if (Files.exists(bundler)) {
-            System.out.println("[fandclip] verifying vanilla cache mojang_" + minecraftVersion + ".jar");
-        } else {
-            System.out.println("[fandclip] no vanilla cache, downloading mojang_" + minecraftVersion + ".jar");
-        }
         new VanillaDownloader().ensureCached(minecraftVersion, bundler);
 
         BundledLayout bundled = BundledLayout.read();

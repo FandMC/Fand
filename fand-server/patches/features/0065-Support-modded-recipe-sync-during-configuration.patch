@@ -1,0 +1,132 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Fri, 19 Jun 2026 23:08:02 +0800
+Subject: [PATCH] Support modded recipe sync during configuration
+
+
+diff --git a/net/minecraft/server/Main.java b/net/minecraft/server/Main.java
+index 3a6120b61fef0277c74c8de257c0870b09de5a8a..eb1e6c8a0bf7abd6fc066704f2358354b33ad0e6 100644
+--- a/net/minecraft/server/Main.java
++++ b/net/minecraft/server/Main.java
+@@ -67,7 +67,6 @@ public class Main {
+ 
+     @SuppressForbidden(reason = "System.out needed before bootstrap")
+     public static void main(final String[] args) {
+-        LogUtils.getLogger().info("[Fand] Hello from a Fand patch! Booting on top of vanilla.");
+         SharedConstants.tryDetectVersion();
+         OptionParser parser = new OptionParser();
+         OptionSpec<Void> nogui = parser.accepts("nogui");
+diff --git a/net/minecraft/server/network/ConfigurationTask.java b/net/minecraft/server/network/ConfigurationTask.java
+index acfeabad11d0706189bd39556fbaca1362c8c4af..57432d04d02fb69be40745a9181d0ceec371605d 100644
+--- a/net/minecraft/server/network/ConfigurationTask.java
++++ b/net/minecraft/server/network/ConfigurationTask.java
+@@ -2,6 +2,8 @@ package net.minecraft.server.network;
+ 
+ import java.util.function.Consumer;
+ import net.minecraft.network.protocol.Packet;
++import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
++import net.minecraft.network.protocol.common.ServerboundPongPacket;
+ 
+ public interface ConfigurationTask {
+     void start(Consumer<Packet<?>> connection);
+@@ -10,6 +12,14 @@ public interface ConfigurationTask {
+         return false;
+     }
+ 
++    default boolean handleCustomPayload(final ServerboundCustomPayloadPacket packet, final Consumer<Packet<?>> connection) {
++        return false;
++    }
++
++    default boolean handlePong(final ServerboundPongPacket packet, final Consumer<Packet<?>> connection) {
++        return false;
++    }
++
+     ConfigurationTask.Type type();
+ 
+     record Type(String id) {
+diff --git a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+index dfd2c07c3507d645788851627723ab2ec51ce24f..45fa7eaa6e0a051dfdc252c1dd89df93d62d5e7a 100644
+--- a/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java
+@@ -18,8 +18,11 @@ import net.minecraft.network.protocol.PacketUtils;
+ import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
+ import net.minecraft.network.protocol.common.ClientboundServerLinksPacket;
+ import net.minecraft.network.protocol.common.ServerboundClientInformationPacket;
++import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
++import net.minecraft.network.protocol.common.ServerboundPongPacket;
+ import net.minecraft.network.protocol.common.ServerboundResourcePackPacket;
+ import net.minecraft.network.protocol.common.custom.BrandPayload;
++import net.minecraft.network.protocol.common.custom.DiscardedPayload;
+ import net.minecraft.network.protocol.configuration.ClientboundUpdateEnabledFeaturesPacket;
+ import net.minecraft.network.protocol.configuration.ServerConfigurationPacketListener;
+ import net.minecraft.network.protocol.configuration.ServerboundAcceptCodeOfConductPacket;
+@@ -82,6 +85,7 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+ 
+     public void startConfiguration() {
+         this.send(new ClientboundCustomPayloadPacket(new BrandPayload(this.server.getServerModName())));
++        io.fand.server.hooks.FandHooks.addPluginChannelConfigurationTask(this.configurationTasks);
+         ServerLinks serverLinks = this.server.serverLinks();
+         if (!serverLinks.isEmpty()) {
+             this.send(new ClientboundServerLinksPacket(serverLinks.untrust()));
+@@ -127,6 +131,39 @@ public class ServerConfigurationPacketListenerImpl extends ServerCommonPacketLis
+         this.server.getServerResourcePack().ifPresent(info -> this.configurationTasks.add(new ServerResourcePackConfigurationTask(info)));
+     }
+ 
++    @Override
++    public void handlePong(final ServerboundPongPacket packet) {
++        PacketUtils.ensureRunningOnSameThread(packet, this, this.server.packetProcessor());
++        ConfigurationTask task = this.currentTask;
++        if (task != null && task.handlePong(packet, this::send)) {
++            if (task.tick()) {
++                this.finishCurrentTask(task.type());
++            }
++            return;
++        }
++
++        super.handlePong(packet);
++    }
++
++    @Override
++    public void handleCustomPayload(final ServerboundCustomPayloadPacket packet) {
++        PacketUtils.ensureRunningOnSameThread(packet, this, this.server.packetProcessor());
++        ConfigurationTask task = this.currentTask;
++        if (task != null && task.handleCustomPayload(packet, this::send)) {
++            if (task.tick()) {
++                this.finishCurrentTask(task.type());
++            }
++            return;
++        }
++
++        if (packet.payload() instanceof DiscardedPayload payload
++            && io.fand.server.hooks.FandHooks.handlePluginChannelConfigurationPayload(this, payload.id(), payload.payload())) {
++            return;
++        }
++
++        super.handleCustomPayload(packet);
++    }
++
+     @Override
+     public void handleClientInformation(final ServerboundClientInformationPacket packet) {
+         this.clientInformation = packet.information();
+diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
+index fe8c3bd66f698a20c740f9129c76e88c36265725..f7f10b81372811f1fc0adb56688903fd5b7e4c01 100644
+--- a/net/minecraft/server/players/PlayerList.java
++++ b/net/minecraft/server/players/PlayerList.java
+@@ -189,6 +189,7 @@ public abstract class PlayerList {
+         playerConnection.send(new ClientboundChangeDifficultyPacket(levelData.getDifficulty(), levelData.isDifficultyLocked()));
+         playerConnection.send(new ClientboundPlayerAbilitiesPacket(player.getAbilities()));
+         playerConnection.send(new ClientboundSetHeldSlotPacket(player.getInventory().getSelectedSlot()));
++        io.fand.server.hooks.FandHooks.syncDataPackContents(player, true);
+         RecipeManager recipeManager = this.server.getRecipeManager();
+         playerConnection.send(
+             new ClientboundUpdateRecipesPacket(recipeManager.getSynchronizedItemProperties(), recipeManager.getSynchronizedStonecutterRecipes())
+@@ -894,6 +895,9 @@ public abstract class PlayerList {
+             advancements.reload(this.server.getAdvancements());
+         }
+ 
++        for (ServerPlayer player : this.players) {
++            io.fand.server.hooks.FandHooks.syncDataPackContents(player, false);
++        }
+         this.broadcastAll(new ClientboundUpdateTagsPacket(TagNetworkSerialization.serializeTagsToNetwork(this.registries)));
+         RecipeManager recipeManager = this.server.getRecipeManager();
+         ClientboundUpdateRecipesPacket recipes = new ClientboundUpdateRecipesPacket(

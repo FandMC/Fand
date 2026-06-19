@@ -32,6 +32,15 @@ final class PluginChannelAdvertiserTest {
     }
 
     @Test
+    void commonVersionPayloadAdvertisesVersionOne() {
+        var payload = PluginChannelAdvertiser.commonVersionPayload();
+        var buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(payload));
+
+        assertThat(buffer.readVarIntArray()).containsExactly(1);
+        assertThat(buffer.readableBytes()).isZero();
+    }
+
+    @Test
     void commonRegisterPayloadUsesPlayProtocolAndIdentifierList() {
         var payload = PluginChannelAdvertiser.commonRegisterPayload(List.of(
                 Key.key("jei:give_item_stack"),

@@ -15,6 +15,7 @@ import io.fand.server.util.ServerThreading;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -23,6 +24,8 @@ import net.kyori.adventure.key.Key;
 import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
 import net.minecraft.network.protocol.common.custom.DiscardedPayload;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.network.ConfigurationTask;
+import net.minecraft.server.network.ServerConfigurationPacketListenerImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +36,7 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
     private final PacketRegistryImpl packets;
     private final PluginChannelAdvertiser advertiser;
     private final ConcurrentMap<Key, ChannelState> channels = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Key, ConfigurationHandlerRegistration> configurationHandlers = new ConcurrentHashMap<>();
 
     public FandPluginMessaging(PacketRegistryImpl packets) {
         this(packets, java.util.List::of);
@@ -94,12 +98,41 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
         advertiser.send(player, serverboundChannels());
     }
 
+    public ConfigurationTask pluginChannelConfigurationTask() {
+        return new PluginChannelConfigurationTask(serverboundChannels(), configurationServerboundChannels());
+    }
+
+    public ConfigurationMessageRegistration registerConfiguration(Key channel, ConfigurationMessageHandler handler) {
+        Objects.requireNonNull(channel, "channel");
+        Objects.requireNonNull(handler, "handler");
+        var registration = new ConfigurationHandlerRegistration(this, channel, handler);
+        var existing = configurationHandlers.putIfAbsent(channel, registration);
+        if (existing != null) {
+            throw new IllegalArgumentException("Configuration plugin messaging channel already registered: " + channel.asString());
+        }
+        return registration;
+    }
+
+    public boolean handleConfigurationPayload(ServerConfigurationPacketListenerImpl listener, Identifier id, byte[] payload) {
+        var registration = configurationHandlers.get(key(id));
+        if (registration == null || !registration.active()) {
+            return false;
+        }
+        try {
+            registration.handler().handle(listener, Arrays.copyOf(payload, payload.length));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Configuration plugin message handler failed for {}", id, failure);
+        }
+        return true;
+    }
+
     @Override
     public void close() {
         for (var state : channels.values()) {
             state.close();
         }
         channels.clear();
+        configurationHandlers.clear();
     }
 
     private PluginMessageRegistration registerInternal(
@@ -151,8 +184,16 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
                 .toList();
     }
 
+    private Collection<Key> configurationServerboundChannels() {
+        return configurationHandlers.keySet();
+    }
+
     private static Identifier identifier(Key key) {
         return Identifier.fromNamespaceAndPath(key.namespace(), key.value());
+    }
+
+    private static Key key(Identifier id) {
+        return Key.key(id.getNamespace(), id.getPath());
     }
 
     private static final class ChannelState {
@@ -311,6 +352,55 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
             if (active) {
                 active = false;
                 owner.release(this);
+            }
+        }
+    }
+
+    @FunctionalInterface
+    public interface ConfigurationMessageHandler {
+
+        void handle(ServerConfigurationPacketListenerImpl listener, byte[] payload);
+    }
+
+    public interface ConfigurationMessageRegistration extends AutoCloseable {
+
+        boolean active();
+
+        @Override
+        void close();
+    }
+
+    private static final class ConfigurationHandlerRegistration implements ConfigurationMessageRegistration {
+
+        private final FandPluginMessaging owner;
+        private final Key channel;
+        private final ConfigurationMessageHandler handler;
+        private volatile boolean active = true;
+
+        private ConfigurationHandlerRegistration(
+                FandPluginMessaging owner,
+                Key channel,
+                ConfigurationMessageHandler handler
+        ) {
+            this.owner = owner;
+            this.channel = channel;
+            this.handler = handler;
+        }
+
+        private ConfigurationMessageHandler handler() {
+            return handler;
+        }
+
+        @Override
+        public boolean active() {
+            return active;
+        }
+
+        @Override
+        public void close() {
+            if (active) {
+                active = false;
+                owner.configurationHandlers.remove(channel, this);
             }
         }
     }

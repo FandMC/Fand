@@ -31,13 +31,17 @@ import java.net.SocketAddress;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.UUID;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.network.PacketListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.network.ConfigurationTask;
+import net.minecraft.server.network.ServerConfigurationPacketListenerImpl;
 import net.minecraft.server.network.ServerPlayerConnection;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.resources.ResourceKey;
@@ -667,6 +671,47 @@ public final class FandHooks {
         } catch (RuntimeException failure) {
             LOGGER.warn("Fand outbound packet hook failed for {}", packet.type(), failure);
             return packet;
+        }
+    }
+
+    public static void addPluginChannelConfigurationTask(Queue<ConfigurationTask> tasks) {
+        var runtime = activeRuntime();
+        if (runtime == null) {
+            return;
+        }
+        try {
+            runtime.addPluginChannelConfigurationTask(tasks);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Fand plugin channel configuration task failed", failure);
+        }
+    }
+
+    public static boolean handlePluginChannelConfigurationPayload(
+            ServerConfigurationPacketListenerImpl listener,
+            Identifier id,
+            byte[] payload
+    ) {
+        var runtime = activeRuntime();
+        if (runtime == null) {
+            return false;
+        }
+        try {
+            return runtime.handlePluginChannelConfigurationPayload(listener, id, payload);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Fand plugin channel configuration payload failed for {}", id, failure);
+            return true;
+        }
+    }
+
+    public static void syncDataPackContents(net.minecraft.server.level.ServerPlayer player, boolean joined) {
+        var runtime = activeRuntime();
+        if (runtime == null) {
+            return;
+        }
+        try {
+            runtime.syncDataPackContents(player, joined);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Fand data pack content sync failed for {}", player.getGameProfile().name(), failure);
         }
     }
 
