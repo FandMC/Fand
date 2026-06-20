@@ -43,6 +43,12 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
     private final FandCustomItemRegistry customItems;
     private final AtomicReference<LifecycleSubscriptions> lifecycleSubscriptions = new AtomicReference<>();
 
+    // Serializes unregister's teardown (close subscriptions once types becomes
+    // empty) against ensure's lazy creation. Without this, a register that
+    // interleaves the teardown can observe the about-to-be-closed subscriptions,
+    // skip creating its own, and lose its event handlers.
+    private final Object lifecycleLock = new Object();
+
     public FandCustomBlockRegistry(EventBus events) {
         this(events, null);
     }
@@ -298,9 +304,15 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
             binding.deactivate();
             return true;
         });
-        if (types.isEmpty()) {
-            closeLifecycleSubscriptions();
-            activeTickingBlocksByWorld.clear();
+        LifecycleSubscriptions toClose = null;
+        synchronized (lifecycleLock) {
+            if (types.isEmpty()) {
+                toClose = lifecycleSubscriptions.getAndSet(null);
+                activeTickingBlocksByWorld.clear();
+            }
+        }
+        if (toClose != null) {
+            toClose.close();
         }
     }
 
@@ -347,26 +359,19 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
     }
 
     private void ensureLifecycleSubscriptions() {
-        if (lifecycleSubscriptions.get() != null) {
-            return;
-        }
-        var created = new LifecycleSubscriptions(
-                events.subscribe(BlockPlaceEvent.class, EventPriority.OBSERVER, event -> handlePlaced(event.block())),
-                events.subscribe(BlockBreakEvent.class, EventPriority.OBSERVER, event -> {
-                    if (!event.cancelled()) {
-                        handleBroken(event.block());
-                    }
-                }),
-                events.subscribe(PlayerInteractEvent.class, EventPriority.HIGHEST, this::handleInteract));
-        if (!lifecycleSubscriptions.compareAndSet(null, created)) {
-            created.close();
-        }
-    }
-
-    private void closeLifecycleSubscriptions() {
-        var subscriptions = lifecycleSubscriptions.getAndSet(null);
-        if (subscriptions != null) {
-            subscriptions.close();
+        synchronized (lifecycleLock) {
+            if (lifecycleSubscriptions.get() != null) {
+                return;
+            }
+            var created = new LifecycleSubscriptions(
+                    events.subscribe(BlockPlaceEvent.class, EventPriority.OBSERVER, event -> handlePlaced(event.block())),
+                    events.subscribe(BlockBreakEvent.class, EventPriority.OBSERVER, event -> {
+                        if (!event.cancelled()) {
+                            handleBroken(event.block());
+                        }
+                    }),
+                    events.subscribe(PlayerInteractEvent.class, EventPriority.HIGHEST, this::handleInteract));
+            lifecycleSubscriptions.set(created);
         }
     }
 

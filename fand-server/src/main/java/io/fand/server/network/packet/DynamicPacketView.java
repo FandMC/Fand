@@ -5,6 +5,7 @@ import io.fand.api.packet.PacketView;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -28,7 +29,9 @@ public final class DynamicPacketView implements PacketView {
 
     public DynamicPacketView(PacketType packetType, Map<String, ?> fields) {
         this.packetType = Objects.requireNonNull(packetType, "packetType");
-        this.fields = Map.copyOf(new LinkedHashMap<>(Objects.requireNonNull(fields, "fields")));
+        // Preserve insertion order (packet fields are reconstructed in declared
+        // order) with a single defensive copy instead of copying twice.
+        this.fields = Collections.unmodifiableMap(new LinkedHashMap<>(Objects.requireNonNull(fields, "fields")));
     }
 
     @Override

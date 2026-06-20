@@ -12,6 +12,7 @@ public interface CustomItemRegistry {
 
     Optional<CustomItemType> type(Key id);
 
+    /** Point-in-time snapshot of all registered custom-item types; immutable. */
     Collection<CustomItemType> types();
 
     Optional<CustomItemType> customItem(ItemStack stack);

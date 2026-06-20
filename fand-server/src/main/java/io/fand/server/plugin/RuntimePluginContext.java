@@ -28,6 +28,7 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 
 public final class RuntimePluginContext implements PluginContext {
@@ -58,6 +59,7 @@ public final class RuntimePluginContext implements PluginContext {
     private final ClassLoader pluginClassLoader;
     private volatile YamlConfiguration config;
     private volatile PluginStorage storage;
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     public RuntimePluginContext(
             PluginDescriptor descriptor,
@@ -252,9 +254,16 @@ public final class RuntimePluginContext implements PluginContext {
     }
 
     public void close() {
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
         var existingStorage = storage;
         if (existingStorage != null) {
-            existingStorage.flush();
+            try {
+                existingStorage.flush();
+            } catch (RuntimeException ex) {
+                logger.warn("Failed to flush storage for plugin {}", descriptor.id(), ex);
+            }
             if (existingStorage instanceof AutoCloseable closeable) {
                 try {
                     closeable.close();
@@ -263,6 +272,10 @@ public final class RuntimePluginContext implements PluginContext {
                 }
             }
         }
-        resources.close();
+        try {
+            resources.close();
+        } catch (RuntimeException ex) {
+            logger.warn("Failed to close plugin resources for plugin {}", descriptor.id(), ex);
+        }
     }
 }

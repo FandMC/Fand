@@ -4,14 +4,14 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
+import org.jspecify.annotations.Nullable;
 
 public record CustomAdvancement(
         Key key,
-        Optional<Key> parent,
-        Optional<AdvancementDisplay> display,
+        @Nullable Key parent,
+        @Nullable AdvancementDisplay display,
         AdvancementRewards rewards,
         List<AdvancementCriterion> criteria,
         List<List<String>> requirements,
@@ -21,8 +21,8 @@ public record CustomAdvancement(
     public CustomAdvancement(Key key, Component title, Component description, List<String> criteria) {
         this(
                 key,
-                Optional.empty(),
-                Optional.of(AdvancementDisplay.task(title, description)),
+                null,
+                AdvancementDisplay.task(title, description),
                 AdvancementRewards.EMPTY,
                 criteria.stream().map(AdvancementCriterion::impossible).toList(),
                 criteria.stream().map(List::of).toList(),
@@ -31,8 +31,6 @@ public record CustomAdvancement(
 
     public CustomAdvancement {
         Objects.requireNonNull(key, "key");
-        parent = Objects.requireNonNull(parent, "parent");
-        display = Objects.requireNonNull(display, "display");
         Objects.requireNonNull(rewards, "rewards");
         criteria = List.copyOf(criteria);
         if (criteria.isEmpty()) {
@@ -45,11 +43,13 @@ public record CustomAdvancement(
     }
 
     public Component title() {
-        return display.map(AdvancementDisplay::title).orElseGet(() -> net.kyori.adventure.text.Component.text(key.asString()));
+        return display == null
+                ? Component.text(key.asString())
+                : display.title();
     }
 
     public Component description() {
-        return display.map(AdvancementDisplay::description).orElseGet(() -> net.kyori.adventure.text.Component.empty());
+        return display == null ? Component.empty() : display.description();
     }
 
     public List<String> criterionNames() {
@@ -62,8 +62,12 @@ public record CustomAdvancement(
 
     public JsonObject toVanillaJson() {
         var json = new JsonObject();
-        parent.ifPresent(key -> json.addProperty("parent", key.asString()));
-        display.ifPresent(value -> json.add("display", value.toVanillaJson()));
+        if (parent != null) {
+            json.addProperty("parent", parent.asString());
+        }
+        if (display != null) {
+            json.add("display", display.toVanillaJson());
+        }
         var rewardJson = rewards.toVanillaJson();
         if (rewardJson.size() > 0) {
             json.add("rewards", rewardJson);
@@ -104,8 +108,8 @@ public record CustomAdvancement(
 
     public static final class Builder {
         private final Key key;
-        private Optional<Key> parent = Optional.empty();
-        private Optional<AdvancementDisplay> display = Optional.empty();
+        private @Nullable Key parent;
+        private @Nullable AdvancementDisplay display;
         private AdvancementRewards rewards = AdvancementRewards.EMPTY;
         private List<AdvancementCriterion> criteria = List.of();
         private List<List<String>> requirements = List.of();
@@ -116,12 +120,12 @@ public record CustomAdvancement(
         }
 
         public Builder parent(Key parent) {
-            this.parent = Optional.of(parent);
+            this.parent = Objects.requireNonNull(parent, "parent");
             return this;
         }
 
         public Builder display(AdvancementDisplay display) {
-            this.display = Optional.of(display);
+            this.display = Objects.requireNonNull(display, "display");
             return this;
         }
 

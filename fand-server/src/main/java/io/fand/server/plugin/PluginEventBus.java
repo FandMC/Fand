@@ -32,7 +32,7 @@ public final class PluginEventBus implements EventBus {
         return tracker.track(delegate.subscribe(type, priority, event -> {
             try {
                 listener.on(event);
-            } catch (Exception failure) {
+            } catch (Throwable failure) {
                 LOGGER.warn("Plugin {} listener failed for {}", pluginId, type.getName(), failure);
             }
         }));

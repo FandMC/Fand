@@ -13,6 +13,7 @@ import net.kyori.adventure.text.Component;
  */
 public interface PlayerScoreboard {
 
+    /** Point-in-time snapshot of this player's registered objectives; immutable. */
     Map<String, ? extends ScoreboardObjective> objectives();
 
     Optional<? extends ScoreboardObjective> objective(String name);
@@ -23,6 +24,7 @@ public interface PlayerScoreboard {
 
     boolean removeObjective(String name);
 
+    /** Point-in-time snapshot of this player's registered teams; immutable. */
     Map<String, ? extends ScoreboardTeam> teams();
 
     Optional<? extends ScoreboardTeam> team(String name);
@@ -37,6 +39,7 @@ public interface PlayerScoreboard {
 
     Optional<? extends ScoreboardObjective> displayedObjective(ScoreDisplaySlot slot);
 
+    /** Point-in-time snapshot of this player's displayed objectives; immutable. */
     Map<ScoreDisplaySlot, ? extends ScoreboardObjective> displayedObjectives();
 
     void setDisplayedObjective(ScoreDisplaySlot slot, ScoreboardObjective objective);

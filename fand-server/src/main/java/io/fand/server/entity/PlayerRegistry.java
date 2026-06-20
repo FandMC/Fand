@@ -59,7 +59,7 @@ public final class PlayerRegistry {
     public synchronized FandPlayer attach(ServerPlayer handle) {
         var existing = byId.get(handle.getUUID());
         if (existing != null) {
-            byName.put(existing.name(), existing);
+            rebindName(existing);
             return existing;
         }
         var player = new FandPlayer(handle, permissions, this, scoreboards);
@@ -80,7 +80,7 @@ public final class PlayerRegistry {
             return attach(newHandle);
         }
         existing.refreshHandle(newHandle);
-        byName.put(existing.name(), existing);
+        rebindName(existing);
         rebuildSnapshots();
         return existing;
     }
@@ -88,11 +88,19 @@ public final class PlayerRegistry {
     public synchronized Optional<FandPlayer> detach(UUID uniqueId) {
         var removed = byId.remove(uniqueId);
         if (removed != null) {
-            byName.remove(removed.name(), removed);
+            byName.values().removeIf(player -> player == removed);
             removed.clearTransientState();
             rebuildSnapshots();
         }
         return Optional.ofNullable(removed);
+    }
+
+    // Drop any stale name→player mapping for this player before binding the
+    // current name, so a rename (proxy/imposter name swap) does not leave a
+    // dangling old key that findByName would resolve to the wrong identity.
+    private void rebindName(FandPlayer player) {
+        byName.values().removeIf(existing -> existing == player);
+        byName.put(player.name(), player);
     }
 
     public Optional<FandPlayer> find(UUID uniqueId) {

@@ -3,11 +3,11 @@ package io.fand.api.enchantment;
 import io.fand.api.registry.RegistryReference;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 public record EnchantmentDefinition(
         List<RegistryReference> supportedItems,
-        Optional<List<RegistryReference>> primaryItems,
+        @Nullable List<RegistryReference> primaryItems,
         int weight,
         int maxLevel,
         EnchantmentCost minCost,
@@ -18,8 +18,7 @@ public record EnchantmentDefinition(
 
     public EnchantmentDefinition {
         supportedItems = List.copyOf(supportedItems);
-        primaryItems = Objects.requireNonNull(primaryItems, "primaryItems")
-                .map(List::copyOf);
+        primaryItems = primaryItems == null ? null : List.copyOf(primaryItems);
         Objects.requireNonNull(minCost, "minCost");
         Objects.requireNonNull(maxCost, "maxCost");
         slots = List.copyOf(slots);
@@ -43,7 +42,7 @@ public record EnchantmentDefinition(
     public static EnchantmentDefinition allItems(int maxLevel) {
         return new EnchantmentDefinition(
                 List.of(RegistryReference.all()),
-                Optional.empty(),
+                null,
                 1,
                 maxLevel,
                 EnchantmentCost.constant(1),
@@ -58,7 +57,7 @@ public record EnchantmentDefinition(
 
     public static final class Builder {
         private List<RegistryReference> supportedItems = List.of();
-        private Optional<List<RegistryReference>> primaryItems = Optional.empty();
+        private @Nullable List<RegistryReference> primaryItems;
         private int weight = 1;
         private int maxLevel = 1;
         private EnchantmentCost minCost = EnchantmentCost.constant(1);
@@ -75,7 +74,7 @@ public record EnchantmentDefinition(
         }
 
         public Builder primaryItems(List<RegistryReference> primaryItems) {
-            this.primaryItems = Optional.of(List.copyOf(primaryItems));
+            this.primaryItems = List.copyOf(primaryItems);
             return this;
         }
 

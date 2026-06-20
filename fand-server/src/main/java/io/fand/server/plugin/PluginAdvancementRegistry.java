@@ -30,7 +30,7 @@ public final class PluginAdvancementRegistry implements AdvancementRegistry {
         Objects.requireNonNull(advancement, "advancement");
         return tracker.track(delegate.register(new CustomAdvancement(
                 scopedKey(advancement.key()),
-                advancement.parent().map(this::scopedParentKey),
+                advancement.parent() == null ? null : scopedParentKey(advancement.parent()),
                 advancement.display(),
                 advancement.rewards(),
                 advancement.criteria(),

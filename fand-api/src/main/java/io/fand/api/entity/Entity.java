@@ -106,10 +106,20 @@ public interface Entity {
     /** Removes this entity from the world. No-op for already removed entities. */
     void remove();
 
-    /** Entity currently carrying this entity, if any. */
+    /**
+     * Entity currently carrying this entity, if any.
+     *
+     * <p>Reads live entity state; call from the server thread for a consistent
+     * view. The wrapper lookup itself is thread-safe.
+     */
     Optional<? extends Entity> vehicle();
 
-    /** Snapshot of entities riding this entity. */
+    /**
+     * Snapshot of entities riding this entity.
+     *
+     * <p>Reads live entity state; call from the server thread for a consistent
+     * view. The wrapper lookup itself is thread-safe.
+     */
     java.util.List<? extends Entity> passengers();
 
     /** Makes this entity ride {@code vehicle}. Completes with {@code false} when vanilla rejects it. */

@@ -3,9 +3,9 @@ package io.fand.server.entity;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.fand.server.world.WorldRegistry;
-import it.unimi.dsi.fastutil.ints.Int2ObjectLinkedOpenHashMap;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 
@@ -16,8 +16,12 @@ import net.minecraft.world.entity.LivingEntity;
  * <p>Players are delegated to {@link PlayerRegistry}; non-player entries expire
  * after idle access because they do not have explicit attach/detach hooks here.
  *
- * <p>Not thread-safe: the network-id map is only touched from the server
- * thread (all wrap calls originate from patched main-thread event sites).
+ * <p>Thread-safe: the network-id index is a {@link ConcurrentHashMap} so plugins
+ * reading passenger/vehicle trees from async tasks do not race the server thread.
+ * The authoritative cache is the concurrent Caffeine map keyed by UUID; the
+ * network-id map is a best-effort accelerator that evicts an arbitrary entry
+ * past its size cap (correctness survives eviction because lookups fall back to
+ * the UUID cache).
  */
 public final class EntityRegistry {
 
@@ -25,10 +29,7 @@ public final class EntityRegistry {
 
     private final WorldRegistry worldRegistry;
     private final PlayerRegistry players;
-    // Linked map maintains access order manually via getAndMoveToLast, so a
-    // full cache evicts its least-recently-used entry instead of clearing
-    // wholesale (which caused hit-rate collapse on entity-heavy servers).
-    private final Int2ObjectLinkedOpenHashMap<FandEntity> wrappersByNetworkId = new Int2ObjectLinkedOpenHashMap<>();
+    private final ConcurrentHashMap<Integer, FandEntity> wrappersByNetworkId = new ConcurrentHashMap<>();
     private final Cache<UUID, FandEntity> wrappers = Caffeine.newBuilder()
             .expireAfterAccess(Duration.ofMinutes(5))
             .maximumSize(8192)
@@ -45,7 +46,7 @@ public final class EntityRegistry {
             return existing != null ? existing : players.attach(player);
         }
         int networkId = handle.getId();
-        var existingByNetworkId = wrappersByNetworkId.getAndMoveToLast(networkId);
+        var existingByNetworkId = wrappersByNetworkId.get(networkId);
         if (existingByNetworkId != null && existingByNetworkId.handle() == handle) {
             return existingByNetworkId;
         }
@@ -69,9 +70,15 @@ public final class EntityRegistry {
     }
 
     private void rememberNetworkId(int networkId, FandEntity wrapper) {
-        wrappersByNetworkId.putAndMoveToLast(networkId, wrapper);
+        // putIfAbsent keeps the first wrapper for an id; a recycled network id will
+        // miss here and refresh via the UUID cache on the next wrap, which is safe.
+        wrappersByNetworkId.putIfAbsent(networkId, wrapper);
         if (wrappersByNetworkId.size() > NETWORK_ID_WRAPPER_CACHE_MAX_SIZE) {
-            wrappersByNetworkId.removeFirst();
+            var iterator = wrappersByNetworkId.keySet().iterator();
+            if (iterator.hasNext()) {
+                iterator.next();
+                iterator.remove();
+            }
         }
     }
 

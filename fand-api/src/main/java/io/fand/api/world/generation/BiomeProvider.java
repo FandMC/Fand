@@ -11,6 +11,10 @@ import net.kyori.adventure.key.Key;
  *
  * <p>Coordinates are quart coordinates, matching vanilla biome sampling. One
  * biome quart covers four block coordinates on each axis.
+ *
+ * <p><b>Threading:</b> the callback runs on the chunk generation worker pool,
+ * not the server thread. It must not block on I/O or touch live world, entity,
+ * or player state; doing so races the main thread and corrupts generation.
  */
 @FunctionalInterface
 public interface BiomeProvider {

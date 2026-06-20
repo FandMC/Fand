@@ -10,6 +10,7 @@ import io.fand.server.event.EventDispatcher;
 import io.fand.server.messaging.FandPluginMessaging;
 import io.fand.server.messaging.FandPluginMessaging.ConfigurationMessageRegistration;
 import io.netty.buffer.Unpooled;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
@@ -18,8 +19,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import net.kyori.adventure.key.Key;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.FriendlyByteBuf;
@@ -42,12 +43,23 @@ public final class FabricRecipeSyncProtocol implements AutoCloseable {
     private static final Identifier RECIPE_SYNC = Identifier.fromNamespaceAndPath("fabric", "recipe_sync");
     private static final int VANILLA_CUSTOM_PAYLOAD_LIMIT = 1_048_576;
     private static final long[] JOIN_SYNC_RETRY_TICKS = {1L, 5L, 20L};
+    // Capped/bounded caches: a client can send supported_serializers during
+    // configuration and disconnect before reaching PLAY (where PlayerQuitEvent
+    // would forget it). expiry reaps those orphan entries so a misbehaving or
+    // hostile client cannot grow this map without bound.
+    private static final Duration SERIALIZER_CACHE_TTL = Duration.ofMinutes(10);
 
     private final EventSubscription joinSubscription;
     private final EventSubscription quitSubscription;
     private final ConfigurationMessageRegistration serializersRegistration;
-    private final ConcurrentMap<UUID, Set<Identifier>> supportedSerializers = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, Set<Identifier>> supportedSerializersByName = new ConcurrentHashMap<>();
+    private final Cache<UUID, Set<Identifier>> supportedSerializers = Caffeine.newBuilder()
+            .expireAfterWrite(SERIALIZER_CACHE_TTL)
+            .maximumSize(8192)
+            .build();
+    private final Cache<String, Set<Identifier>> supportedSerializersByName = Caffeine.newBuilder()
+            .expireAfterWrite(SERIALIZER_CACHE_TTL)
+            .maximumSize(8192)
+            .build();
 
     public FabricRecipeSyncProtocol(FandPluginMessaging messaging, EventDispatcher events) {
         this.serializersRegistration = messaging.registerConfiguration(SUPPORTED_SERIALIZERS, this::handleSupportedSerializers);
@@ -74,8 +86,8 @@ public final class FabricRecipeSyncProtocol implements AutoCloseable {
     }
 
     private void forgetOnQuit(PlayerQuitEvent event) {
-        supportedSerializers.remove(event.player().uniqueId());
-        supportedSerializersByName.remove(event.player().name().toLowerCase(Locale.ROOT));
+        supportedSerializers.invalidate(event.player().uniqueId());
+        supportedSerializersByName.invalidate(event.player().name().toLowerCase(Locale.ROOT));
     }
 
     public void syncDataPackContents(ServerPlayer player, boolean joined) {
@@ -100,7 +112,7 @@ public final class FabricRecipeSyncProtocol implements AutoCloseable {
                 return;
             }
             player.connection.send(new ClientboundCustomPayloadPacket(new DiscardedPayload(RECIPE_SYNC, payload)));
-        } catch (RuntimeException failure) {
+        } catch (Throwable failure) {
             LOGGER.warn("Fabric recipe sync failed for {}", player.getGameProfile().name(), failure);
         }
     }
@@ -151,11 +163,11 @@ public final class FabricRecipeSyncProtocol implements AutoCloseable {
     }
 
     private Set<Identifier> supported(ServerPlayer player) {
-        Set<Identifier> supported = supportedSerializers.get(player.getUUID());
+        Set<Identifier> supported = supportedSerializers.getIfPresent(player.getUUID());
         if (supported != null) {
             return supported;
         }
-        return supportedSerializersByName.get(player.getGameProfile().name().toLowerCase(Locale.ROOT));
+        return supportedSerializersByName.getIfPresent(player.getGameProfile().name().toLowerCase(Locale.ROOT));
     }
 
     private static boolean shouldSync(Identifier serializerId, Set<Identifier> supported) {
@@ -167,9 +179,12 @@ public final class FabricRecipeSyncProtocol implements AutoCloseable {
 
     private static Set<Identifier> readSerializers(byte[] payload) {
         var buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(payload));
-        int size = buffer.readVarInt();
+        int size = Math.min(buffer.readVarInt(), 1024);
         var serializers = new LinkedHashSet<Identifier>(size);
         for (int i = 0; i < size; i++) {
+            if (!buffer.isReadable(1)) {
+                break;
+            }
             serializers.add(buffer.readIdentifier());
         }
         return serializers;
@@ -195,8 +210,8 @@ public final class FabricRecipeSyncProtocol implements AutoCloseable {
         serializersRegistration.close();
         joinSubscription.close();
         quitSubscription.close();
-        supportedSerializers.clear();
-        supportedSerializersByName.clear();
+        supportedSerializers.invalidateAll();
+        supportedSerializersByName.invalidateAll();
     }
 
     private record Entry(RecipeSerializer<?> serializer, List<RecipeHolder<?>> recipes) {

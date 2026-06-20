@@ -20,6 +20,7 @@ public interface CustomBlockRegistry {
 
     Optional<CustomBlockType> blockForItem(Key itemId);
 
+    /** Point-in-time snapshot of all registered custom-block types; immutable. */
     Collection<CustomBlockType> types();
 
     CustomBlockItemBinding bindItem(Key itemId, Key blockId);
@@ -32,7 +33,9 @@ public interface CustomBlockRegistry {
 
     boolean remove(Block block);
 
+    /** Point-in-time snapshot of custom blocks in the given chunk; immutable. */
     Collection<Block> customBlocks(World world, int chunkX, int chunkZ);
 
+    /** Point-in-time snapshot of ticking custom blocks in the given chunk; immutable. */
     Collection<Block> tickingBlocks(World world, int chunkX, int chunkZ);
 }

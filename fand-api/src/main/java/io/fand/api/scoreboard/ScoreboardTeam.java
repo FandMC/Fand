@@ -50,6 +50,7 @@ public interface ScoreboardTeam {
 
     void setCollisionRule(TeamCollisionRule rule);
 
+    /** Point-in-time snapshot of this team's member strings; immutable. */
     Set<String> members();
 
     boolean addMember(String member);

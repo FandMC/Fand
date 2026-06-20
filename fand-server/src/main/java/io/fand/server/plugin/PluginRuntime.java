@@ -587,7 +587,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             if (loadedPlugin == null) {
                 continue;
             }
-            loadedPlugin.context.close();
+            closeQuietly(loadedPlugin.context, loadedPlugin.descriptor.id());
             closeQuietly(loadedPlugin.classLoader, loadedPlugin.descriptor.id());
         }
         loadedPlugins.clear();
@@ -904,7 +904,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 firePluginDisableEvent(loadedPlugin.descriptor);
             }
             loadedPlugin.enabled = false;
-            loadedPlugin.context.close();
+            closeQuietly(loadedPlugin.context, loadedPlugin.descriptor.id());
         }
     }
 
@@ -928,7 +928,13 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         loadedPlugin.enabled = false;
         loadedPlugins.remove(loadedPlugin.descriptor.id(), loadedPlugin);
         loadOrder.remove(loadedPlugin.descriptor.id());
-        loadedPlugin.context.close();
+        closeQuietly(loadedPlugin.context, loadedPlugin.descriptor.id());
+        // Reclaim plugin-scoped permission declarations / registrations after the
+        // owning plugin is gone, so a reload with a changed default does not trip
+        // "Permission already registered with a different default".
+        if (permissions instanceof io.fand.server.permission.PermissionManager manager) {
+            manager.unregisterNamespaces(new java.util.HashSet<>(permissionNamespaces(loadedPlugin.descriptor.id())));
+        }
         closeQuietly(loadedPlugin.classLoader, loadedPlugin.descriptor.id());
     }
 
@@ -943,6 +949,14 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             classLoader.close();
         } catch (IOException failure) {
             LOGGER.warn("Failed to close classloader for plugin {}", pluginId, failure);
+        }
+    }
+
+    private static void closeQuietly(RuntimePluginContext context, String pluginId) {
+        try {
+            context.close();
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Failed to close context for plugin {}", pluginId, failure);
         }
     }
 

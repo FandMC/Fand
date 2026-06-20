@@ -155,8 +155,10 @@ public final class FandAdvancementRegistry implements AdvancementRegistry {
                         + advancement.key().asString()
                         + ": "
                         + error));
-        advancement.display().ifPresent(apiDisplay ->
-                vanilla.display().ifPresent(display -> display.setLocation(apiDisplay.x(), apiDisplay.y())));
+        var apiDisplay = advancement.display();
+        if (apiDisplay != null) {
+            vanilla.display().ifPresent(display -> display.setLocation(apiDisplay.x(), apiDisplay.y()));
+        }
         return new AdvancementHolder(id, vanilla);
     }
 

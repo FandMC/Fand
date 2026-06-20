@@ -28,7 +28,7 @@ final class RegionTaskScheduler implements AutoCloseable {
         if (closed.get()) {
             throw new RejectedExecutionException("region scheduler is closed");
         }
-        return workers.submit(regionKey(levelId, packedChunk), task);
+        return workers.submit(workerIndex(levelId, packedChunk), task);
     }
 
     void reconfigure(int configuredThreads) {
@@ -64,6 +64,14 @@ final class RegionTaskScheduler implements AutoCloseable {
         return new RegionKey(levelId, Math.floorDiv(chunkX, REGION_SIZE_CHUNKS), Math.floorDiv(chunkZ, REGION_SIZE_CHUNKS));
     }
 
+    // Hash the region directly to a worker without allocating a RegionKey record;
+    // this mirrors RegionKey.hashCode() (Objects.hash of levelId, regionX, regionZ).
+    private int workerIndex(Object levelId, long packedChunk) {
+        var regionX = Math.floorDiv(chunkX(packedChunk), REGION_SIZE_CHUNKS);
+        var regionZ = Math.floorDiv(chunkZ(packedChunk), REGION_SIZE_CHUNKS);
+        return Math.floorMod(Objects.hash(levelId, regionX, regionZ), workers.workers.length);
+    }
+
     private static int chunkX(long packedChunk) {
         return (int) packedChunk;
     }
@@ -91,12 +99,8 @@ final class RegionTaskScheduler implements AutoCloseable {
             return new WorkerSet(workers);
         }
 
-        private <T> CompletableFuture<T> submit(RegionKey key, Supplier<T> task) {
-            return CompletableFuture.supplyAsync(task, worker(key));
-        }
-
-        private ExecutorService worker(RegionKey key) {
-            return workers[Math.floorMod(key.hashCode(), workers.length)];
+        private <T> CompletableFuture<T> submit(int workerIndex, Supplier<T> task) {
+            return CompletableFuture.supplyAsync(task, workers[workerIndex]);
         }
 
         private void shutdown() {

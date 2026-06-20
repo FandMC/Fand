@@ -193,14 +193,14 @@ public final class FandEnchantmentRegistry implements EnchantmentRegistry {
 
     private static Enchantment.EnchantmentDefinition definition(MinecraftServer server, EnchantmentDefinition definition) {
         var supportedItems = itemSet(server, definition.supportedItems());
-        var primaryItems = definition.primaryItems().map(references -> itemSet(server, references));
+        var primaryItems = definition.primaryItems();
         var slots = definition.slots().stream()
                 .map(FandEnchantmentRegistry::slotGroup)
                 .toArray(EquipmentSlotGroup[]::new);
-        if (primaryItems.isPresent()) {
+        if (primaryItems != null) {
             return Enchantment.definition(
                     supportedItems,
-                    primaryItems.orElseThrow(),
+                    itemSet(server, primaryItems),
                     definition.weight(),
                     definition.maxLevel(),
                     cost(definition.minCost()),
@@ -293,7 +293,7 @@ public final class FandEnchantmentRegistry implements EnchantmentRegistry {
     private static EnchantmentDefinition fromVanillaDefinition(Enchantment.EnchantmentDefinition definition) {
         return new EnchantmentDefinition(
                 List.of(RegistryReference.all()),
-                Optional.empty(),
+                null,
                 definition.weight(),
                 definition.maxLevel(),
                 new EnchantmentCost(definition.minCost().base(), definition.minCost().perLevelAboveFirst()),

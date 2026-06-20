@@ -384,6 +384,9 @@ public interface World extends ForwardingAudience {
      * Spawns an entity of {@code type} at {@code location}. The future completes
      * with the spawned entity, or empty when vanilla cannot create/spawn that
      * type in this world.
+     *
+     * <p>The spawn is marshalled to the server thread; the returned future
+     * completes on the server thread.
      */
     default CompletableFuture<java.util.Optional<? extends Entity>> spawnEntity(Location location, EntityType type) {
         return spawnEntity(location, type, EntitySpawnOptions.defaults());
@@ -392,6 +395,9 @@ public interface World extends ForwardingAudience {
     /**
      * Spawns an entity and applies {@code options} immediately after creation.
      * Options that do not apply to the spawned entity type are ignored.
+     *
+     * <p>The spawn is marshalled to the server thread; the returned future
+     * completes on the server thread.
      */
     default CompletableFuture<java.util.Optional<? extends Entity>> spawnEntity(
             Location location,
@@ -418,6 +424,9 @@ public interface World extends ForwardingAudience {
     /**
      * Drops an item stack at {@code location}. The future completes with the
      * dropped item entity, or empty when {@code item} is empty.
+     *
+     * <p>The drop is marshalled to the server thread; the returned future
+     * completes on the server thread.
      */
     default CompletableFuture<java.util.Optional<? extends ItemEntity>> dropItem(Location location, ItemStack item) {
         return dropItem(location, item, EntitySpawnOptions.defaults());
@@ -426,6 +435,9 @@ public interface World extends ForwardingAudience {
     /**
      * Drops an item stack and applies item/common entity options immediately
      * after creation.
+     *
+     * <p>The drop is marshalled to the server thread; the returned future
+     * completes on the server thread.
      */
     default CompletableFuture<java.util.Optional<? extends ItemEntity>> dropItem(
             Location location,
@@ -476,7 +488,7 @@ public interface World extends ForwardingAudience {
     /** Spawns particles at {@code location} for players in this world. Marshals to the server thread. */
     void spawnParticle(Location location, ParticleEffect effect, ParticleEmission emission);
 
-    /** Strikes real lightning at {@code location}. Marshals to the server thread. */
+    /** Strikes real lightning at {@code location}. Marshals to the server thread; the future completes on it. */
     default CompletableFuture<Optional<? extends Entity>> strikeLightning(Location location) {
         return strikeLightning(location, false);
     }
@@ -484,17 +496,23 @@ public interface World extends ForwardingAudience {
     /**
      * Strikes lightning at {@code location}. When {@code visualOnly} is true,
      * vanilla only plays the visual/sound effect.
+     *
+     * <p>Marshals to the server thread; the returned future completes on it.
      */
     default CompletableFuture<Optional<? extends Entity>> strikeLightning(Location location, boolean visualOnly) {
         return CompletableFuture.failedFuture(new UnsupportedOperationException("Lightning is not supported"));
     }
 
-    /** Creates a block-breaking explosion without fire. Marshals to the server thread. */
+    /** Creates a block-breaking explosion without fire. Marshals to the server thread; the future completes on it. */
     default CompletableFuture<Void> createExplosion(Location location, float power) {
         return createExplosion(location, power, false, true);
     }
 
-    /** Creates an explosion. Marshals to the server thread. */
+    /**
+     * Creates an explosion.
+     *
+     * <p>Marshals to the server thread; the returned future completes on it.
+     */
     default CompletableFuture<Void> createExplosion(Location location, float power, boolean fire, boolean breakBlocks) {
         return CompletableFuture.failedFuture(new UnsupportedOperationException("Explosions are not supported"));
     }

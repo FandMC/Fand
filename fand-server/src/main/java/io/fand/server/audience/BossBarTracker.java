@@ -31,6 +31,13 @@ public final class BossBarTracker {
 
     public void rebind(ServerPlayer freshHandle) {
         this.player = freshHandle;
+        // A respawn/portal switch can supply a different connection, in which
+        // case the client no longer has any of this player's active boss bars.
+        // Re-add every tracked bar through the fresh handle, mirroring how the
+        // scoreboard re-displays its objectives on the same path.
+        for (var entry : entries.values()) {
+            sendAdd(freshHandle, entry.event);
+        }
     }
 
     public void show(BossBar bar) {

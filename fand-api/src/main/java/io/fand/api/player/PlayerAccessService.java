@@ -9,6 +9,15 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Player identity lookup and server access-list controls.
+ *
+ * <p><b>Threading:</b> {@code profile(...)} and {@code offlinePlayer(...)}
+ * may resolve via the session-service network lookup and complete on an
+ * asynchronous I/O executor, not the server thread. Do not touch world or
+ * entity state from their future callbacks without marshalling back to the
+ * server thread. The synchronous methods ({@code offlineProfile}, ban/whitelist
+ * accessors) read live server state and should be called from the server
+ * thread. {@link #bans()}, {@link #whitelist()}, and {@link #operators()}
+ * return point-in-time snapshots; mutating them does not affect the server.
  */
 public interface PlayerAccessService {
 

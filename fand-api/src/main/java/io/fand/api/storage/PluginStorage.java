@@ -1,6 +1,14 @@
 package io.fand.api.storage;
 
-/** Per-plugin persistent gameplay data stores. */
+/**
+ * Per-plugin persistent gameplay data stores.
+ *
+ * <p><b>Threading:</b> scope accessors ({@code global()}, {@code player(...)},
+ * etc.) may be called from any thread; each returned scope is independently
+ * thread-safe (see {@link ScopedStorage}). {@link #flush()} persists all dirty
+ * scopes and may block on file I/O — call it from the server thread or an
+ * explicit async task, never from a hot event handler.
+ */
 public interface PluginStorage {
 
     ScopedStorage global();

@@ -9,6 +9,7 @@ import net.kyori.adventure.text.Component;
  */
 public interface ScoreboardService {
 
+    /** Point-in-time snapshot of the server's objectives; immutable. */
     Collection<? extends ScoreboardObjective> objectives();
 
     Optional<? extends ScoreboardObjective> objective(String name);
@@ -25,6 +26,7 @@ public interface ScoreboardService {
 
     void clearDisplayedObjective(ScoreDisplaySlot slot);
 
+    /** Point-in-time snapshot of the server's teams; immutable. */
     Collection<? extends ScoreboardTeam> teams();
 
     Optional<? extends ScoreboardTeam> team(String name);

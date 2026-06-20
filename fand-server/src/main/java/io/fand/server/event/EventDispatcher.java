@@ -370,7 +370,7 @@ public final class EventDispatcher implements EventBus {
             try {
                 listener.on((E) event);
                 return null;
-            } catch (Exception failure) {
+            } catch (Throwable failure) {
                 return failure;
             }
         }

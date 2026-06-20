@@ -11,10 +11,21 @@ public record ChunkTrackingDiff(
         long workerNanos
 ) {
     public ChunkTrackingDiff {
-        enter = LongLists.unmodifiable(new LongArrayList(enter));
-        leave = LongLists.unmodifiable(new LongArrayList(leave));
+        // Wrap the supplied list unmodifiable without copying when it is already a
+        // LongArrayList (the only producer hands one straight over); otherwise take
+        // a defensive copy. Avoids the previous double-allocation that re-copied an
+        // already-built list on every view-distance change.
+        enter = wrapUnmodifiable(enter);
+        leave = wrapUnmodifiable(leave);
         if (workerNanos < 0L) {
             throw new IllegalArgumentException("workerNanos must be >= 0");
         }
+    }
+
+    private static LongList wrapUnmodifiable(LongList list) {
+        if (list instanceof LongArrayList direct) {
+            return LongLists.unmodifiable(direct);
+        }
+        return LongLists.unmodifiable(new LongArrayList(list));
     }
 }

@@ -5,7 +5,17 @@ import com.google.gson.JsonObject;
 import java.util.Map;
 import java.util.Optional;
 
-/** Small JSON/KV store for plugin gameplay data. */
+/**
+ * Small JSON/KV store for plugin gameplay data.
+ *
+ * <p><b>Threading:</b> each scope is individually thread-safe; concurrent
+ * reads and writes to the same scope (including from async scheduler tasks)
+ * are synchronised internally. Different scopes are independent and never
+ * contend. {@code set}/{@code remove} mutate in-memory state only;
+ * {@link #flush()} is what persists a dirty scope to disk and may block on
+ * file I/O. Avoid holding a reference returned from {@link #entries()} across
+ * threads; treat it as a point-in-time snapshot.
+ */
 public interface ScopedStorage {
 
     Optional<JsonElement> get(String key);

@@ -127,7 +127,7 @@ public final class JeiRecipeViewerProtocol implements AutoCloseable {
     private void handleRecipeTransfer(ServerPlayer player, byte[] payload) {
         try {
             RecipeTransfer.transfer(player, new FriendlyByteBuf(Unpooled.wrappedBuffer(payload)));
-        } catch (RuntimeException failure) {
+        } catch (Throwable failure) {
             LOGGER.debug("JEI recipe transfer failed for {}", player.getGameProfile().name(), failure);
         }
     }

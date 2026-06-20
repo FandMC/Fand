@@ -54,10 +54,12 @@ public final class CommandManager implements CommandRegistry {
         Objects.requireNonNull(completer, "completer");
 
         var normalized = normalize(descriptor);
+        PermissionDescriptor autoPermission = null;
         if (normalized.permission() != null && permissions.lookup(normalized.permission()).isEmpty()) {
-            permissions.register(new PermissionDescriptor(normalized.permission(), PermissionDefault.OPERATOR));
+            autoPermission = new PermissionDescriptor(normalized.permission(), PermissionDefault.OPERATOR);
+            permissions.register(autoPermission);
         }
-        var entry = new Entry(normalized, executor, completer, permissions);
+        var entry = new Entry(normalized, executor, completer, permissions, autoPermission);
         synchronized (lock) {
             var current = snapshot;
             var keys = pathKeys(normalized);
@@ -274,6 +276,7 @@ public final class CommandManager implements CommandRegistry {
             }
             snapshot = Snapshot.of(namespacedPaths, localRoots, uniqueLocalRoots);
         }
+        entry.relinquishAutoPermission();
     }
 
     private void trackLocalRoot(
@@ -476,13 +479,33 @@ public final class CommandManager implements CommandRegistry {
         private final CommandExecutor executor;
         private final CommandCompleter completer;
         private final PermissionService permissions;
+        private final @Nullable PermissionDescriptor autoPermission;
         private volatile boolean active = true;
 
-        private Entry(CommandDescriptor descriptor, CommandExecutor executor, CommandCompleter completer, PermissionService permissions) {
+        private Entry(
+                CommandDescriptor descriptor,
+                CommandExecutor executor,
+                CommandCompleter completer,
+                PermissionService permissions,
+                @Nullable PermissionDescriptor autoPermission
+        ) {
             this.descriptor = descriptor;
             this.executor = executor;
             this.completer = completer;
             this.permissions = permissions;
+            this.autoPermission = autoPermission;
+        }
+
+        // Remove only the permission this command auto-registered. If a later registration
+        // (plugin re-declaration, another command) replaced it, the identity check keeps it.
+        private void relinquishAutoPermission() {
+            var registered = autoPermission;
+            if (registered == null) {
+                return;
+            }
+            if (permissions instanceof PermissionManager manager) {
+                manager.unregister(registered.node(), registered);
+            }
         }
 
         boolean allowed(CommandSender sender) {

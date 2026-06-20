@@ -220,10 +220,26 @@ final class PluginResourceTracker {
 
     void track(MapRendererBinding binding) {
         var dispose = false;
+        MapRendererBinding stale = null;
         synchronized (lock) {
             if (closed) {
                 dispose = true;
             } else {
+                // A renderer binding tracks the renderer currently installed on a
+                // map. Replacing the renderer (view.renderer(r2) after r1)
+                // supersedes r1's binding: r1's renderer state is overwritten in
+                // FandMapService when r2 is installed, so dropping the stale
+                // binding here keeps the tracker set bounded instead of growing
+                // once per swap. clearRenderer is a no-op on the stale renderer.
+                for (var existing : mapRendererBindings) {
+                    if (existing.mapId() == binding.mapId() && existing.service() == binding.service()) {
+                        stale = existing;
+                        break;
+                    }
+                }
+                if (stale != null) {
+                    mapRendererBindings.remove(stale);
+                }
                 mapRendererBindings.add(binding);
             }
         }

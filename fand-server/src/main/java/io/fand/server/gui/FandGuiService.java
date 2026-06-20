@@ -33,6 +33,12 @@ public final class FandGuiService implements GuiService, AutoCloseable {
     private final EventSubscription clickSubscription;
     private final EventSubscription closeSubscription;
 
+    // Serializes open, handleClose, finishOpen, and close so a view being
+    // installed or torn down is never observed half-applied by a concurrent
+    // close event (or vice versa). Gui close callbacks may reenter open from
+    // the same thread; synchronized is reentrant.
+    private final Object lock = new Object();
+
     public FandGuiService(EventBus events) {
         this.clickSubscription = events.subscribe(InventoryClickEvent.class, EventPriority.HIGHEST, this::handleClick);
         this.closeSubscription = events.subscribe(InventoryCloseEvent.class, EventPriority.NORMAL, this::handleClose);
@@ -43,21 +49,26 @@ public final class FandGuiService implements GuiService, AutoCloseable {
         java.util.Objects.requireNonNull(player, "player");
         java.util.Objects.requireNonNull(gui, "gui");
         var view = new FandGuiView(this, player, gui, gui.createInventory());
-        var previous = viewsByPlayer.put(player.uniqueId(), view);
-        boolean replacedDisplayedView = false;
-        if (previous != null) {
-            viewsById.remove(previous.id(), previous);
-            if (previous.displayed()) {
-                ignoreNextCloseEvent(player.uniqueId());
-                replacedDisplayedView = true;
+        synchronized (lock) {
+            var previous = viewsByPlayer.put(player.uniqueId(), view);
+            // Register the new view before closing the previous one so a reentrant
+            // open from the previous gui's close callback cannot leak a detached
+            // view back into viewsById.
+            viewsById.put(view.id(), view);
+            boolean replacedDisplayedView = false;
+            if (previous != null) {
+                viewsById.remove(previous.id(), previous);
+                if (previous.displayed()) {
+                    ignoreNextCloseEvent(player.uniqueId());
+                    replacedDisplayedView = true;
+                }
+                closeReplaced(previous);
             }
-            closeReplaced(previous);
+            boolean skipCloseEventOnFailure = replacedDisplayedView;
+            player.openInventory(view.inventory())
+                    .whenComplete((opened, failure) -> finishOpen(view, opened, failure, skipCloseEventOnFailure));
+            return view;
         }
-        viewsById.put(view.id(), view);
-        boolean skipCloseEventOnFailure = replacedDisplayedView;
-        player.openInventory(view.inventory())
-                .whenComplete((opened, failure) -> finishOpen(view, opened, failure, skipCloseEventOnFailure));
-        return view;
     }
 
     @Override
@@ -85,14 +96,16 @@ public final class FandGuiService implements GuiService, AutoCloseable {
     public void close() {
         clickSubscription.unregister();
         closeSubscription.unregister();
-        for (var view : viewsById.values()) {
-            view.detach();
-            notifyCloseListeners(view);
+        synchronized (lock) {
+            for (var view : viewsById.values()) {
+                view.detach();
+                notifyCloseListeners(view);
+            }
+            viewsById.clear();
+            viewsByPlayer.clear();
+            closeListeners.clear();
+            ignoredCloseEvents.clear();
         }
-        viewsById.clear();
-        viewsByPlayer.clear();
-        closeListeners.clear();
-        ignoredCloseEvents.clear();
     }
 
     public AutoCloseable addCloseListener(GuiView view, Runnable listener) {
@@ -139,25 +152,27 @@ public final class FandGuiService implements GuiService, AutoCloseable {
             Throwable failure,
             boolean skipCloseEventOnFailure
     ) {
-        if (failure != null) {
-            LOGGER.warn("GUI open failed", failure);
-            if (skipCloseEventOnFailure) {
-                removeIgnoredCloseEvent(view.player().uniqueId());
+        synchronized (lock) {
+            if (failure != null) {
+                LOGGER.warn("GUI open failed", failure);
+                if (skipCloseEventOnFailure) {
+                    removeIgnoredCloseEvent(view.player().uniqueId());
+                }
+                removeIfCurrent(view);
+                return;
             }
-            removeIfCurrent(view);
-            return;
-        }
-        if (!Boolean.TRUE.equals(opened)) {
-            if (skipCloseEventOnFailure) {
-                removeIgnoredCloseEvent(view.player().uniqueId());
+            if (!Boolean.TRUE.equals(opened)) {
+                if (skipCloseEventOnFailure) {
+                    removeIgnoredCloseEvent(view.player().uniqueId());
+                }
+                removeIfCurrent(view);
+                return;
             }
-            removeIfCurrent(view);
-            return;
-        }
-        if (isCurrent(view)) {
-            view.markDisplayed();
-            view.applyContentsToOpenMenu();
-            view.applyInitialProperties();
+            if (isCurrent(view)) {
+                view.markDisplayed();
+                view.applyContentsToOpenMenu();
+                view.applyInitialProperties();
+            }
         }
     }
 
@@ -209,12 +224,16 @@ public final class FandGuiService implements GuiService, AutoCloseable {
         if (removeIgnoredCloseEvent(event.player().uniqueId())) {
             return;
         }
-        var view = viewsByPlayer.remove(event.player().uniqueId());
-        if (view == null) {
-            return;
+        final FandGuiView view;
+        synchronized (lock) {
+            var current = viewsByPlayer.get(event.player().uniqueId());
+            if (current == null || !viewsByPlayer.remove(event.player().uniqueId(), current)) {
+                return;
+            }
+            viewsById.remove(current.id(), current);
+            current.detach();
+            view = current;
         }
-        viewsById.remove(view.id(), view);
-        view.detach();
         notifyCloseListeners(view);
         view.gui().close(new GuiClose(view, event.player()));
     }

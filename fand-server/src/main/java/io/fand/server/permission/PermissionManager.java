@@ -18,6 +18,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
@@ -48,6 +49,50 @@ public final class PermissionManager implements PermissionService {
         var normalized = normalizeAttachmentNode(descriptor.node());
         var stored = new PermissionDescriptor(normalized, descriptor.defaultAccess(), normalizeChildren(descriptor.children()));
         descriptors.compute(normalized, (node, existing) -> mergeDescriptor(node, existing, stored));
+    }
+
+    /**
+     * Removes the descriptor installed for {@code node}, but only if it still
+     * matches {@code expected}. A later re-registration for the same node is
+     * never removed by closing an older registration.
+     */
+    public void unregister(String node, PermissionDescriptor expected) {
+        Objects.requireNonNull(node, "node");
+        Objects.requireNonNull(expected, "expected");
+        var normalized = normalizeAttachmentNode(node);
+        descriptors.remove(normalized, expected);
+    }
+
+    /**
+     * Removes every descriptor whose node lives under one of {@code namespaces}.
+     * Used during plugin unload to reclaim plugin-scoped permission declarations
+     * and command auto-registered permissions in one pass.
+     */
+    public void unregisterNamespaces(Set<String> namespaces) {
+        Objects.requireNonNull(namespaces, "namespaces");
+        if (namespaces.isEmpty()) {
+            return;
+        }
+        var normalized = new HashSet<String>(namespaces.size());
+        for (var namespace : namespaces) {
+            normalized.add(namespace.trim().toLowerCase(Locale.ROOT));
+        }
+        descriptors.entrySet().removeIf(entry -> underNamespace(entry.getKey(), normalized));
+    }
+
+    private static boolean underNamespace(String node, Set<String> namespaces) {
+        if (namespaces.contains(node)) {
+            return true;
+        }
+        var separator = node.lastIndexOf('.');
+        while (separator >= 0) {
+            var prefix = node.substring(0, separator);
+            if (namespaces.contains(prefix)) {
+                return true;
+            }
+            separator = prefix.lastIndexOf('.');
+        }
+        return false;
     }
 
     @Override

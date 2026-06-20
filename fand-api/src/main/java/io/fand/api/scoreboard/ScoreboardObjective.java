@@ -35,6 +35,7 @@ public interface ScoreboardObjective {
 
     Optional<? extends ScoreboardScore> existingScore(String owner);
 
+    /** Point-in-time snapshot of this objective's scores; immutable. */
     Collection<? extends ScoreboardScore> scores();
 
     boolean resetScore(String owner);

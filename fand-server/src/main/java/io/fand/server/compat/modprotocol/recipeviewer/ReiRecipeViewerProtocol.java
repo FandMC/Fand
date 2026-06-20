@@ -141,7 +141,7 @@ public final class ReiRecipeViewerProtocol implements AutoCloseable {
             if (nbt != null && nbt.getInt("Version").orElse(-1) == 1) {
                 RecipeTransfer.transferReiLike(player, nbt, shift);
             }
-        } catch (RuntimeException failure) {
+        } catch (Throwable failure) {
             LOGGER.debug("REI move-items failed for {}", player.getGameProfile().name(), failure);
         }
     }

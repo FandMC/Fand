@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Diffs an in-memory {@link FandConfig} against the freshly loaded one and
@@ -21,6 +23,8 @@ import java.util.function.Function;
  * lifecycle owner ({@code FandServer}) does not grow with each new config key.
  */
 public final class ConfigReloader {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ConfigReloader.class);
 
     private static final List<ReloadField<FandConfig.Identity, ?>> HOT_IDENTITY_FIELDS = List.of(
             field("identity.brand", (FandConfig.Identity config) -> config.brand)
@@ -163,16 +167,16 @@ public final class ConfigReloader {
         markHot(changes, HOT_PLUGIN_FIELDS, previous.plugins, reloaded.plugins);
         markRestart(changes, RESTART_PLUGIN_FIELDS, previous.plugins, reloaded.plugins);
         markHot(changes, HOT_PLAYER_FIELDS, previous.players, reloaded.players);
-        io.fand.server.hooks.FandHooks.applyPlayerConfig(reloaded.players);
+        apply("players config", () -> io.fand.server.hooks.FandHooks.applyPlayerConfig(reloaded.players));
         if (changed(previous.scheduler.asyncThreads, reloaded.scheduler.asyncThreads)) {
-            scheduler.reconfigureAsyncThreads(reloaded.scheduler.asyncThreads);
             changes.hot("scheduler.asyncThreads");
+            apply("scheduler.asyncThreads", () -> scheduler.reconfigureAsyncThreads(reloaded.scheduler.asyncThreads));
         }
         if (markHot(changes, HOT_CHUNK_FIELDS, previous.chunks, reloaded.chunks)) {
-            chunks.reconfigure(reloaded.chunks);
+            apply("chunks", () -> chunks.reconfigure(reloaded.chunks));
         }
         markRestart(changes, RESTART_CHUNK_FIELDS, previous.chunks, reloaded.chunks);
-        io.fand.server.hooks.FandHooks.applyChunkConfig(reloaded.chunks);
+        apply("chunks config", () -> io.fand.server.hooks.FandHooks.applyChunkConfig(reloaded.chunks));
         markRestart(
                 changes,
                 RESTART_RECIPE_VIEWER_FIELDS,
@@ -189,18 +193,28 @@ public final class ConfigReloader {
         var previousTheme = GuiTheme.fromConfig(previous.console.gui.theme);
         var reloadedTheme = GuiTheme.fromConfig(reloaded.console.gui.theme);
         if (changed(previousTheme, reloadedTheme)) {
-            guiThemes.set(reloadedTheme);
             changes.hot("console.gui.theme");
+            apply("console.gui.theme", () -> guiThemes.set(reloadedTheme));
         }
         changes.restart("console.gui.enabled", previous.console.gui.enabled, reloaded.console.gui.enabled);
         markHot(changes, HOT_PERFORMANCE_FIELDS, previous.performance, reloaded.performance);
-        io.fand.server.hooks.FandHooks.applyPerformanceConfig(reloaded.performance);
+        apply("performance config", () -> io.fand.server.hooks.FandHooks.applyPerformanceConfig(reloaded.performance));
         markHot(changes, HOT_TECHNICAL_FIELDS, previous.technical, reloaded.technical);
-        io.fand.server.hooks.FandHooks.applyTechnicalConfig(reloaded.technical);
+        apply("technical config", () -> io.fand.server.hooks.FandHooks.applyTechnicalConfig(reloaded.technical));
 
-        plugins.reconfigure(toPluginOptions(reloaded));
+        apply("plugins", () -> plugins.reconfigure(toPluginOptions(reloaded)));
+        // Publish the new baseline unconditionally: subsystems already mutated to the
+        // new values, so keeping `previous` here would desync the next reload's diff.
         current.set(reloaded);
         return changes.result();
+    }
+
+    private static void apply(String what, Runnable action) {
+        try {
+            action.run();
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Failed to apply {} during config reload", what, failure);
+        }
     }
 
     public static PluginRuntime.Options toPluginOptions(FandConfig config) {

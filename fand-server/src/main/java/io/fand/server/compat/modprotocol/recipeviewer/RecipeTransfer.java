@@ -11,13 +11,21 @@ import net.minecraft.world.item.ItemStack;
 
 final class RecipeTransfer {
 
+    // Cap attacker-controlled counts before sizing collections: a malicious
+    // varint can encode Integer.MAX_VALUE and trigger OOMError on allocation.
+    private static final int MAX_OPERATIONS = 256;
+    private static final int MAX_SLOTS = 256;
+
     private RecipeTransfer() {
     }
 
     static void transfer(ServerPlayer player, FriendlyByteBuf buffer) {
-        int operationCount = buffer.readVarInt();
+        int operationCount = Math.min(buffer.readVarInt(), MAX_OPERATIONS);
         var operations = new ArrayList<Operation>(operationCount);
         for (int i = 0; i < operationCount; i++) {
+            if (!buffer.isReadable(2)) {
+                break;
+            }
             operations.add(new Operation(buffer.readVarInt(), buffer.readVarInt()));
         }
         var craftingSlots = readSlots(player, buffer);
@@ -167,9 +175,12 @@ final class RecipeTransfer {
     }
 
     private static List<Slot> readSlots(ServerPlayer player, FriendlyByteBuf buffer) {
-        int count = buffer.readVarInt();
+        int count = Math.min(buffer.readVarInt(), MAX_SLOTS);
         var slots = new ArrayList<Slot>(count);
         for (int i = 0; i < count; i++) {
+            if (!buffer.isReadable(1)) {
+                break;
+            }
             addSlot(player, slots, buffer.readVarInt());
         }
         return slots;
