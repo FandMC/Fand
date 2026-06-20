@@ -1,6 +1,7 @@
 package io.fand.api;
 
 import io.fand.api.advancement.AdvancementRegistry;
+import io.fand.api.bossbar.BossBarService;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.block.BlockTagKey;
 import io.fand.api.customblock.CustomBlockRegistry;
@@ -19,6 +20,7 @@ import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.performance.ServerPerformance;
 import io.fand.api.packet.PacketRegistry;
+import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.player.PlayerAccessService;
 import io.fand.api.plugin.PluginManager;
@@ -28,6 +30,8 @@ import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.structure.StructureService;
 import io.fand.api.tag.Tag;
 import io.fand.api.tag.TagRegistry;
+import io.fand.api.tablist.TabListService;
+import io.fand.api.text.MiniMessageService;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldCreateOptions;
 import io.fand.api.world.WorldTemplate;
@@ -110,6 +114,22 @@ public interface Server extends ForwardingAudience {
 
     default MapService maps() {
         return MapService.empty();
+    }
+
+    default BossBarService bossBars() {
+        return BossBarService.empty();
+    }
+
+    default TabListService tabLists() {
+        return TabListService.empty();
+    }
+
+    default PlaceholderService placeholders() {
+        return PlaceholderService.empty();
+    }
+
+    default MiniMessageService miniMessages() {
+        return MiniMessageService.empty();
     }
 
     default PluginMessaging pluginMessaging() {

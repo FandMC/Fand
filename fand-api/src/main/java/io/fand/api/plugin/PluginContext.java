@@ -1,6 +1,7 @@
 package io.fand.api.plugin;
 
 import io.fand.api.advancement.AdvancementRegistry;
+import io.fand.api.bossbar.BossBarService;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.config.Configuration;
 import io.fand.api.config.ConfigurationService;
@@ -13,12 +14,15 @@ import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.packet.PacketRegistry;
+import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.storage.PluginStorage;
 import io.fand.api.structure.StructureService;
+import io.fand.api.tablist.TabListService;
+import io.fand.api.text.MiniMessageService;
 import java.nio.file.Path;
 import org.slf4j.Logger;
 
@@ -67,6 +71,26 @@ public interface PluginContext {
     /** Custom map rendering service visible to this plugin. */
     default MapService maps() {
         return MapService.empty();
+    }
+
+    /** Boss bar service scoped to this plugin's lifecycle and namespace. */
+    default BossBarService bossBars() {
+        return BossBarService.empty();
+    }
+
+    /** Per-viewer tab-list entry service scoped to this plugin's lifecycle. */
+    default TabListService tabLists() {
+        return TabListService.empty();
+    }
+
+    /** Placeholder provider registry scoped to this plugin's lifecycle and namespace. */
+    default PlaceholderService placeholders() {
+        return PlaceholderService.empty();
+    }
+
+    /** MiniMessage parser with Fand placeholder replacement. */
+    default MiniMessageService miniMessages() {
+        return MiniMessageService.empty();
     }
 
     /** Persistent scoreboard service scoped to this plugin's lifecycle. */

@@ -663,11 +663,16 @@ public final class FandHooks {
             return packet;
         }
         var packetRegistry = runtime.packetRegistry();
-        if (!packetRegistry.hasRegistrations()) {
+        var tabLists = runtime.tabListService();
+        if (!packetRegistry.hasRegistrations() && !tabLists.hasPacketOverrides()) {
             return packet;
         }
         try {
-            return packetRegistry.interceptOutbound(protocol, flow, player(listener), remoteAddress, packet);
+            var player = player(listener);
+            var rewritten = tabLists.rewriteOutboundPacket(player, packet);
+            return packetRegistry.hasRegistrations()
+                    ? packetRegistry.interceptOutbound(protocol, flow, player, remoteAddress, rewritten)
+                    : rewritten;
         } catch (RuntimeException failure) {
             LOGGER.warn("Fand outbound packet hook failed for {}", packet.type(), failure);
             return packet;

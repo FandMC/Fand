@@ -3,6 +3,7 @@ package io.fand.server.plugin;
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import io.fand.api.advancement.AdvancementRegistry;
+import io.fand.api.bossbar.BossBarService;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
@@ -15,6 +16,7 @@ import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.packet.PacketRegistry;
+import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
 import io.fand.api.permission.PermissionService;
@@ -25,6 +27,7 @@ import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.structure.StructureService;
+import io.fand.api.tablist.TabListService;
 import io.fand.server.recipe.FandRecipeRegistry;
 import io.fand.server.block.FandCustomBlockRegistry;
 import io.fand.server.gui.FandGuiService;
@@ -32,6 +35,7 @@ import io.fand.server.item.FandCustomItemRegistry;
 import io.fand.server.messaging.FandPluginMessaging;
 import io.fand.server.network.packet.PacketRegistryImpl;
 import io.fand.server.scoreboard.FandScoreboardService;
+import io.fand.server.text.FandMiniMessageService;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.lang.reflect.InvocationTargetException;
@@ -75,6 +79,9 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final EnchantmentRegistry enchantmentRegistry;
     private final StructureService structureService;
     private final MapService mapService;
+    private final BossBarService bossBarService;
+    private final TabListService tabListService;
+    private final PlaceholderService placeholderService;
     private final ScoreboardService scoreboardService;
     private final PacketRegistry packetRegistry;
     private final PluginMessaging pluginMessaging;
@@ -136,6 +143,9 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 EnchantmentRegistry.empty(),
                 StructureService.empty(),
                 MapService.empty(),
+                BossBarService.empty(),
+                TabListService.empty(),
+                PlaceholderService.empty(),
                 customServices.items(),
                 customServices.blocks(),
                 new FandGuiService(eventBus),
@@ -202,6 +212,9 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 EnchantmentRegistry.empty(),
                 StructureService.empty(),
                 MapService.empty(),
+                BossBarService.empty(),
+                TabListService.empty(),
+                PlaceholderService.empty(),
                 customServices.items(),
                 customServices.blocks(),
                 new FandGuiService(eventBus),
@@ -247,6 +260,9 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 enchantmentRegistry,
                 structureService,
                 mapService,
+                BossBarService.empty(),
+                TabListService.empty(),
+                PlaceholderService.empty(),
                 customItemRegistry,
                 customBlockRegistry,
                 guiService,
@@ -293,10 +309,116 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 enchantmentRegistry,
                 structureService,
                 mapService,
+                BossBarService.empty(),
+                TabListService.empty(),
+                PlaceholderService.empty(),
+                customItemRegistry,
+                customBlockRegistry,
+                guiService,
+                options
+        );
+    }
+
+    public PluginRuntime(
+            Path pluginsDirectory,
+            Path dataDirectoryRoot,
+            ClassLoader parentClassLoader,
+            CommandRegistry commandRegistry,
+            EventBus eventBus,
+            PermissionService permissions,
+            Scheduler scheduler,
+            RecipeRegistry recipeRegistry,
+            LootTableService lootTableService,
+            ScoreboardService scoreboardService,
+            PacketRegistry packetRegistry,
+            PluginMessaging pluginMessaging,
+            AdvancementRegistry advancementRegistry,
+            EnchantmentRegistry enchantmentRegistry,
+            StructureService structureService,
+            MapService mapService,
+            BossBarService bossBarService,
+            TabListService tabListService,
+            PlaceholderService placeholderService,
+            CustomItemRegistry customItemRegistry,
+            CustomBlockRegistry customBlockRegistry,
+            GuiService guiService,
+            Options options
+    ) {
+        this(
+                pluginsDirectory,
+                dataDirectoryRoot,
+                parentClassLoader,
+                commandRegistry,
+                eventBus,
+                permissions,
+                scheduler,
+                recipeRegistry,
+                lootTableService,
+                scoreboardService,
+                packetRegistry,
+                pluginMessaging,
+                advancementRegistry,
+                enchantmentRegistry,
+                structureService,
+                mapService,
+                bossBarService,
+                tabListService,
+                placeholderService,
                 customItemRegistry,
                 customBlockRegistry,
                 guiService,
                 false,
+                options
+        );
+    }
+
+    public PluginRuntime(
+            Path pluginsDirectory,
+            Path dataDirectoryRoot,
+            ClassLoader parentClassLoader,
+            CommandRegistry commandRegistry,
+            EventBus eventBus,
+            PermissionService permissions,
+            Scheduler scheduler,
+            RecipeRegistry recipeRegistry,
+            LootTableService lootTableService,
+            ScoreboardService scoreboardService,
+            PacketRegistry packetRegistry,
+            PluginMessaging pluginMessaging,
+            AdvancementRegistry advancementRegistry,
+            EnchantmentRegistry enchantmentRegistry,
+            StructureService structureService,
+            MapService mapService,
+            BossBarService bossBarService,
+            TabListService tabListService,
+            CustomItemRegistry customItemRegistry,
+            CustomBlockRegistry customBlockRegistry,
+            GuiService guiService,
+            Options options
+    ) {
+        this(
+                pluginsDirectory,
+                dataDirectoryRoot,
+                parentClassLoader,
+                commandRegistry,
+                eventBus,
+                permissions,
+                scheduler,
+                recipeRegistry,
+                lootTableService,
+                scoreboardService,
+                packetRegistry,
+                pluginMessaging,
+                advancementRegistry,
+                enchantmentRegistry,
+                structureService,
+                mapService,
+                bossBarService,
+                tabListService,
+                PlaceholderService.empty(),
+                customItemRegistry,
+                customBlockRegistry,
+                guiService,
                 options
         );
     }
@@ -339,6 +461,9 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 enchantmentRegistry,
                 structureService,
                 mapService,
+                BossBarService.empty(),
+                TabListService.empty(),
+                PlaceholderService.empty(),
                 customItemRegistry,
                 customBlockRegistry,
                 guiService,
@@ -364,6 +489,9 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             EnchantmentRegistry enchantmentRegistry,
             StructureService structureService,
             MapService mapService,
+            BossBarService bossBarService,
+            TabListService tabListService,
+            PlaceholderService placeholderService,
             CustomItemRegistry customItemRegistry,
             CustomBlockRegistry customBlockRegistry,
             GuiService guiService,
@@ -382,6 +510,9 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.enchantmentRegistry = enchantmentRegistry;
         this.structureService = structureService;
         this.mapService = mapService;
+        this.bossBarService = bossBarService;
+        this.tabListService = tabListService;
+        this.placeholderService = placeholderService;
         this.scoreboardService = scoreboardService;
         this.packetRegistry = packetRegistry;
         this.pluginMessaging = pluginMessaging == null ? defaultPluginMessaging(packetRegistry) : pluginMessaging;
@@ -424,6 +555,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 var dependencies = dependencyClassLoaders(artifact.descriptor.depends());
                 var classLoader = new PluginClassLoader(toJarUrl(artifact.jarPath), parentClassLoader, dependencies);
                 var resources = new PluginResourceTracker();
+                var pluginPlaceholders = new PluginPlaceholderService(
+                        placeholderService,
+                        resources,
+                        artifact.descriptor.id());
                 var context = new RuntimePluginContext(
                         artifact.descriptor,
                         LoggerFactory.getLogger(artifact.descriptor.id()),
@@ -436,6 +571,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                         new PluginEnchantmentRegistry(enchantmentRegistry, resources, artifact.descriptor.id()),
                         new PluginStructureService(structureService, artifact.descriptor.id()),
                         new PluginMapService(mapService, resources),
+                        new PluginBossBarService(bossBarService, resources, artifact.descriptor.id()),
+                        new PluginTabListService(tabListService, resources),
+                        pluginPlaceholders,
+                        new FandMiniMessageService(pluginPlaceholders),
                         new PluginScoreboardService(scoreboardService, resources, artifact.descriptor.id()),
                         new PluginPacketRegistry(packetRegistry, resources),
                         new PluginPluginMessaging(pluginMessaging, resources),

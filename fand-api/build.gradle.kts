@@ -52,6 +52,7 @@ dependencies {
 
     api("com.google.code.gson:gson:2.11.0")
     api("net.kyori:adventure-api:4.17.0")
+    api("net.kyori:adventure-text-minimessage:4.17.0")
     api("net.kyori:adventure-text-serializer-gson:4.17.0")
     api("org.jetbrains:annotations:24.1.0")
     api("org.slf4j:slf4j-api:2.0.13")

@@ -43,7 +43,7 @@ final class ApiSurfaceSourceTest {
                 "\"TrackedEntity\"",
                 "\"removePlayer\"",
                 "\"updatePlayer\"");
-        assertThat(registry).contains("new FandPlayer(handle, permissions, this, scoreboards)");
+        assertThat(registry).contains("new FandPlayer(handle, permissions, this, scoreboards, tabLists)");
     }
 
     @Test
@@ -262,6 +262,32 @@ final class ApiSurfaceSourceTest {
                 "BlockIgnoreProcessor.STRUCTURE_BLOCK",
                 "place(Key key, Location origin, StructurePlacement placement)",
                 "locate(Key structure, Location origin, int radius)");
+    }
+
+    @Test
+    void miniMessageParserStaysExposedAndBackedByPlaceholders() throws IOException {
+        var server = read("src/main/java/io/fand/server/FandServer.java");
+        var context = read("../fand-api/src/main/java/io/fand/api/plugin/PluginContext.java");
+        var runtimeContext = read("src/main/java/io/fand/server/plugin/RuntimePluginContext.java");
+        var runtime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
+        var service = read("src/main/java/io/fand/server/text/FandMiniMessageService.java");
+
+        assertThat(context).contains(
+                "default MiniMessageService miniMessages()",
+                "return MiniMessageService.empty()");
+        assertThat(server).contains(
+                "this.miniMessages = new FandMiniMessageService(placeholders)",
+                "public MiniMessageService miniMessages()");
+        assertThat(runtimeContext).contains(
+                "private final MiniMessageService miniMessages",
+                "public MiniMessageService miniMessages()");
+        assertThat(runtime).contains(
+                "var pluginPlaceholders = new PluginPlaceholderService",
+                "new FandMiniMessageService(pluginPlaceholders)");
+        assertThat(service).contains(
+                "MiniMessage.miniMessage()",
+                "placeholders.replace(viewer, input)",
+                "parser.deserialize");
     }
 
     private static String read(String path) throws IOException {

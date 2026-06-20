@@ -1,6 +1,8 @@
 package io.fand.server.plugin;
 
 import io.fand.api.advancement.AdvancementRegistration;
+import io.fand.api.bossbar.BossBarHandle;
+import io.fand.api.bossbar.BossBarRegistration;
 import io.fand.api.command.CommandRegistration;
 import io.fand.api.customblock.CustomBlockItemBinding;
 import io.fand.api.customblock.CustomBlockRegistration;
@@ -13,10 +15,12 @@ import io.fand.api.map.MapRenderer;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessageRegistration;
 import io.fand.api.packet.PacketRegistration;
+import io.fand.api.placeholder.PlaceholderRegistration;
 import io.fand.api.permission.PermissionAttachment;
 import io.fand.api.recipe.RecipeRegistration;
 import io.fand.api.scheduler.Task;
 import io.fand.api.scoreboard.ScoreboardRegistration;
+import io.fand.api.tablist.TabListRegistration;
 import io.fand.server.map.FandMapService;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -24,6 +28,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 final class PluginResourceTracker {
 
@@ -33,8 +38,13 @@ final class PluginResourceTracker {
     private final Set<TrackedRecipeRegistration> recipeRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedLootTableRegistration> lootTableRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPermissionAttachment> permissionAttachments = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedBossBarHandle> bossBarHandles = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedBossBarRegistration> bossBarRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedTabListRegistration> tabListRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedTabListVisibility> tabListVisibilities = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedScoreboardRegistration> scoreboardRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPacketRegistration> packetRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedPlaceholderRegistration> placeholderRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPluginMessageRegistration> pluginMessageRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedAdvancementRegistration> advancementRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedEnchantmentRegistration> enchantmentRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -152,6 +162,99 @@ final class PluginResourceTracker {
             tracked.closeFromTracker();
         }
         return tracked;
+    }
+
+    TrackedPlaceholderRegistration track(PlaceholderRegistration delegate) {
+        var tracked = new TrackedPlaceholderRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                placeholderRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.unregisterFromTracker();
+        }
+        return tracked;
+    }
+
+    TrackedBossBarHandle track(BossBarHandle delegate) {
+        var tracked = new TrackedBossBarHandle(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                bossBarHandles.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.closeFromTracker();
+        }
+        return tracked;
+    }
+
+    TrackedBossBarRegistration track(BossBarRegistration delegate) {
+        var tracked = new TrackedBossBarRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                bossBarRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.closeFromTracker();
+        }
+        return tracked;
+    }
+
+    TrackedTabListRegistration track(TabListRegistration delegate) {
+        var tracked = new TrackedTabListRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                tabListRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.removeFromTracker();
+        }
+        return tracked;
+    }
+
+    void trackTabListVisibility(UUID viewerId, UUID targetId, Runnable restore) {
+        var tracked = new TrackedTabListVisibility(this, viewerId, targetId, restore);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else if (tabListVisibilities.stream().noneMatch(visibility -> visibility.matches(viewerId, targetId))) {
+                tabListVisibilities.add(tracked);
+            } else {
+                return;
+            }
+        }
+        if (dispose) {
+            tracked.restoreFromTracker();
+        }
+    }
+
+    void restoreTabListVisibility(UUID viewerId, UUID targetId) {
+        List<TrackedTabListVisibility> matches;
+        synchronized (lock) {
+            matches = tabListVisibilities.stream()
+                    .filter(visibility -> visibility.matches(viewerId, targetId))
+                    .toList();
+        }
+        for (var visibility : matches) {
+            visibility.release();
+        }
     }
 
     TrackedPluginMessageRegistration track(PluginMessageRegistration delegate) {
@@ -348,6 +451,30 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedBossBarHandle handle) {
+        synchronized (lock) {
+            bossBarHandles.remove(handle);
+        }
+    }
+
+    void release(TrackedBossBarRegistration registration) {
+        synchronized (lock) {
+            bossBarRegistrations.remove(registration);
+        }
+    }
+
+    void release(TrackedTabListRegistration registration) {
+        synchronized (lock) {
+            tabListRegistrations.remove(registration);
+        }
+    }
+
+    void release(TrackedTabListVisibility visibility) {
+        synchronized (lock) {
+            tabListVisibilities.remove(visibility);
+        }
+    }
+
     void release(TrackedScoreboardRegistration registration) {
         synchronized (lock) {
             scoreboardRegistrations.remove(registration);
@@ -357,6 +484,12 @@ final class PluginResourceTracker {
     void release(TrackedPacketRegistration registration) {
         synchronized (lock) {
             packetRegistrations.remove(registration);
+        }
+    }
+
+    void release(TrackedPlaceholderRegistration registration) {
+        synchronized (lock) {
+            placeholderRegistrations.remove(registration);
         }
     }
 
@@ -427,8 +560,13 @@ final class PluginResourceTracker {
         List<TrackedRecipeRegistration> recipeRegistrationsToClose;
         List<TrackedLootTableRegistration> lootTableRegistrationsToClose;
         List<TrackedPermissionAttachment> permissionAttachmentsToClose;
+        List<TrackedBossBarHandle> bossBarHandlesToClose;
+        List<TrackedBossBarRegistration> bossBarRegistrationsToClose;
+        List<TrackedTabListRegistration> tabListRegistrationsToClose;
+        List<TrackedTabListVisibility> tabListVisibilitiesToClose;
         List<TrackedScoreboardRegistration> scoreboardRegistrationsToClose;
         List<TrackedPacketRegistration> packetRegistrationsToClose;
+        List<TrackedPlaceholderRegistration> placeholderRegistrationsToClose;
         List<TrackedPluginMessageRegistration> pluginMessageRegistrationsToClose;
         List<TrackedAdvancementRegistration> advancementRegistrationsToClose;
         List<TrackedEnchantmentRegistration> enchantmentRegistrationsToClose;
@@ -448,8 +586,13 @@ final class PluginResourceTracker {
             recipeRegistrationsToClose = new ArrayList<>(recipeRegistrations);
             lootTableRegistrationsToClose = new ArrayList<>(lootTableRegistrations);
             permissionAttachmentsToClose = new ArrayList<>(permissionAttachments);
+            bossBarHandlesToClose = new ArrayList<>(bossBarHandles);
+            bossBarRegistrationsToClose = new ArrayList<>(bossBarRegistrations);
+            tabListRegistrationsToClose = new ArrayList<>(tabListRegistrations);
+            tabListVisibilitiesToClose = new ArrayList<>(tabListVisibilities);
             scoreboardRegistrationsToClose = new ArrayList<>(scoreboardRegistrations);
             packetRegistrationsToClose = new ArrayList<>(packetRegistrations);
+            placeholderRegistrationsToClose = new ArrayList<>(placeholderRegistrations);
             pluginMessageRegistrationsToClose = new ArrayList<>(pluginMessageRegistrations);
             advancementRegistrationsToClose = new ArrayList<>(advancementRegistrations);
             enchantmentRegistrationsToClose = new ArrayList<>(enchantmentRegistrations);
@@ -464,8 +607,13 @@ final class PluginResourceTracker {
             recipeRegistrations.clear();
             lootTableRegistrations.clear();
             permissionAttachments.clear();
+            bossBarHandles.clear();
+            bossBarRegistrations.clear();
+            tabListRegistrations.clear();
+            tabListVisibilities.clear();
             scoreboardRegistrations.clear();
             packetRegistrations.clear();
+            placeholderRegistrations.clear();
             pluginMessageRegistrations.clear();
             advancementRegistrations.clear();
             enchantmentRegistrations.clear();
@@ -491,10 +639,25 @@ final class PluginResourceTracker {
         for (var attachment : permissionAttachmentsToClose) {
             attachment.closeFromTracker();
         }
+        for (var handle : bossBarHandlesToClose) {
+            handle.closeFromTracker();
+        }
+        for (var registration : bossBarRegistrationsToClose) {
+            registration.closeFromTracker();
+        }
+        for (var registration : tabListRegistrationsToClose) {
+            registration.removeFromTracker();
+        }
+        for (var visibility : tabListVisibilitiesToClose) {
+            visibility.restoreFromTracker();
+        }
         for (var registration : scoreboardRegistrationsToClose) {
             registration.unregisterFromTracker();
         }
         for (var registration : packetRegistrationsToClose) {
+            registration.unregisterFromTracker();
+        }
+        for (var registration : placeholderRegistrationsToClose) {
             registration.unregisterFromTracker();
         }
         for (var registration : pluginMessageRegistrationsToClose) {
@@ -783,6 +946,248 @@ final class PluginResourceTracker {
         }
     }
 
+    static class TrackedBossBarHandle implements BossBarHandle {
+
+        protected final PluginResourceTracker owner;
+        private final BossBarHandle delegate;
+        private volatile boolean released;
+
+        TrackedBossBarHandle(PluginResourceTracker owner, BossBarHandle delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public net.kyori.adventure.bossbar.BossBar bossBar() {
+            return delegate.bossBar();
+        }
+
+        @Override
+        public java.util.Collection<? extends io.fand.api.entity.Player> viewers() {
+            return released ? java.util.List.of() : delegate.viewers();
+        }
+
+        @Override
+        public void show(io.fand.api.entity.Player player) {
+            ensureOpen();
+            delegate.show(player);
+        }
+
+        @Override
+        public void hide(io.fand.api.entity.Player player) {
+            if (!released) {
+                delegate.hide(player);
+            }
+        }
+
+        @Override
+        public void hideAll() {
+            if (!released) {
+                delegate.hideAll();
+            }
+        }
+
+        @Override
+        public void setTitle(net.kyori.adventure.text.Component title) {
+            ensureOpen();
+            delegate.setTitle(title);
+        }
+
+        @Override
+        public void setProgress(float progress) {
+            ensureOpen();
+            delegate.setProgress(progress);
+        }
+
+        @Override
+        public void setColor(net.kyori.adventure.bossbar.BossBar.Color color) {
+            ensureOpen();
+            delegate.setColor(color);
+        }
+
+        @Override
+        public void setOverlay(net.kyori.adventure.bossbar.BossBar.Overlay overlay) {
+            ensureOpen();
+            delegate.setOverlay(overlay);
+        }
+
+        @Override
+        public void setFlags(java.util.Set<net.kyori.adventure.bossbar.BossBar.Flag> flags) {
+            ensureOpen();
+            delegate.setFlags(flags);
+        }
+
+        @Override
+        public void addFlag(net.kyori.adventure.bossbar.BossBar.Flag flag) {
+            ensureOpen();
+            delegate.addFlag(flag);
+        }
+
+        @Override
+        public void removeFlag(net.kyori.adventure.bossbar.BossBar.Flag flag) {
+            ensureOpen();
+            delegate.removeFlag(flag);
+        }
+
+        @Override
+        public void close() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.close();
+                } finally {
+                    releaseFromOwner();
+                }
+            }
+        }
+
+        void closeFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.close();
+            }
+        }
+
+        private void ensureOpen() {
+            if (released) {
+                throw new IllegalStateException("Boss bar is closed");
+            }
+        }
+
+        void releaseFromOwner() {
+            owner.release(this);
+        }
+    }
+
+    static final class TrackedBossBarRegistration extends TrackedBossBarHandle implements BossBarRegistration {
+
+        private final BossBarRegistration delegate;
+
+        TrackedBossBarRegistration(PluginResourceTracker owner, BossBarRegistration delegate) {
+            super(owner, delegate);
+            this.delegate = delegate;
+        }
+
+        @Override
+        public net.kyori.adventure.key.Key key() {
+            return delegate.key();
+        }
+
+        @Override
+        void releaseFromOwner() {
+            super.owner.release(this);
+        }
+
+        @Override
+        void closeFromTracker() {
+            super.closeFromTracker();
+        }
+    }
+
+    static final class TrackedTabListRegistration implements TabListRegistration {
+
+        private final PluginResourceTracker owner;
+        private final TabListRegistration delegate;
+        private volatile boolean released;
+
+        TrackedTabListRegistration(PluginResourceTracker owner, TabListRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public java.util.UUID viewerId() {
+            return delegate.viewerId();
+        }
+
+        @Override
+        public java.util.UUID entryId() {
+            return delegate.entryId();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void update(io.fand.api.tablist.TabListEntry entry) {
+            if (released) {
+                throw new IllegalStateException("Tab-list entry is closed");
+            }
+            delegate.update(entry);
+        }
+
+        @Override
+        public void remove() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.remove();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void removeFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.remove();
+            }
+        }
+    }
+
+    static final class TrackedTabListVisibility {
+
+        private final PluginResourceTracker owner;
+        private final UUID viewerId;
+        private final UUID targetId;
+        private final Runnable restore;
+        private volatile boolean released;
+
+        TrackedTabListVisibility(PluginResourceTracker owner, UUID viewerId, UUID targetId, Runnable restore) {
+            this.owner = owner;
+            this.viewerId = java.util.Objects.requireNonNull(viewerId, "viewerId");
+            this.targetId = java.util.Objects.requireNonNull(targetId, "targetId");
+            this.restore = java.util.Objects.requireNonNull(restore, "restore");
+        }
+
+        boolean matches(UUID viewerId, UUID targetId) {
+            return this.viewerId.equals(viewerId) && this.targetId.equals(targetId);
+        }
+
+        void restore() {
+            if (!released) {
+                released = true;
+                try {
+                    restore.run();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void restoreFromTracker() {
+            if (!released) {
+                released = true;
+                restore.run();
+            }
+        }
+
+        void release() {
+            if (!released) {
+                released = true;
+                owner.release(this);
+            }
+        }
+    }
+
     static final class TrackedPacketRegistration implements PacketRegistration {
 
         private final PluginResourceTracker owner;
@@ -792,6 +1197,47 @@ final class PluginResourceTracker {
         TrackedPacketRegistration(PluginResourceTracker owner, PacketRegistration delegate) {
             this.owner = owner;
             this.delegate = delegate;
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void unregister() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.unregister();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void unregisterFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.unregister();
+            }
+        }
+    }
+
+    static final class TrackedPlaceholderRegistration implements PlaceholderRegistration {
+
+        private final PluginResourceTracker owner;
+        private final PlaceholderRegistration delegate;
+        private volatile boolean released;
+
+        TrackedPlaceholderRegistration(PluginResourceTracker owner, PlaceholderRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public String namespace() {
+            return delegate.namespace();
         }
 
         @Override

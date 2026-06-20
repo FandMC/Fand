@@ -1,6 +1,7 @@
 package io.fand.server.plugin;
 
 import io.fand.api.advancement.AdvancementRegistry;
+import io.fand.api.bossbar.BossBarService;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.config.Configuration;
 import io.fand.api.config.ConfigurationService;
@@ -13,6 +14,7 @@ import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.packet.PacketRegistry;
+import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.plugin.PluginContext;
 import io.fand.api.plugin.PluginDescriptor;
@@ -21,6 +23,8 @@ import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.storage.PluginStorage;
 import io.fand.api.structure.StructureService;
+import io.fand.api.tablist.TabListService;
+import io.fand.api.text.MiniMessageService;
 import io.fand.server.config.FandConfigurationService;
 import io.fand.server.config.YamlConfiguration;
 import java.io.IOException;
@@ -47,6 +51,10 @@ public final class RuntimePluginContext implements PluginContext {
     private final EnchantmentRegistry enchantments;
     private final StructureService structures;
     private final MapService maps;
+    private final BossBarService bossBars;
+    private final TabListService tabLists;
+    private final PlaceholderService placeholders;
+    private final MiniMessageService miniMessages;
     private final ScoreboardService scoreboard;
     private final PacketRegistry packets;
     private final PluginMessaging pluginMessaging;
@@ -73,6 +81,10 @@ public final class RuntimePluginContext implements PluginContext {
             EnchantmentRegistry enchantments,
             StructureService structures,
             MapService maps,
+            BossBarService bossBars,
+            TabListService tabLists,
+            PlaceholderService placeholders,
+            MiniMessageService miniMessages,
             ScoreboardService scoreboard,
             PacketRegistry packets,
             PluginMessaging pluginMessaging,
@@ -95,6 +107,10 @@ public final class RuntimePluginContext implements PluginContext {
         this.enchantments = enchantments;
         this.structures = structures;
         this.maps = maps;
+        this.bossBars = bossBars;
+        this.tabLists = tabLists;
+        this.placeholders = placeholders;
+        this.miniMessages = miniMessages;
         this.scoreboard = scoreboard;
         this.packets = packets;
         this.pluginMessaging = pluginMessaging;
@@ -160,6 +176,26 @@ public final class RuntimePluginContext implements PluginContext {
     @Override
     public MapService maps() {
         return maps;
+    }
+
+    @Override
+    public BossBarService bossBars() {
+        return bossBars;
+    }
+
+    @Override
+    public TabListService tabLists() {
+        return tabLists;
+    }
+
+    @Override
+    public PlaceholderService placeholders() {
+        return placeholders;
+    }
+
+    @Override
+    public MiniMessageService miniMessages() {
+        return miniMessages;
     }
 
     @Override

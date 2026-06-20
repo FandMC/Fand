@@ -2,8 +2,9 @@ package io.fand.server;
 
 import io.fand.api.Fand;
 import io.fand.api.Server;
-import io.fand.api.command.CommandRegistry;
 import io.fand.api.advancement.AdvancementRegistry;
+import io.fand.api.bossbar.BossBarService;
+import io.fand.api.command.CommandRegistry;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.enchantment.EnchantmentRegistry;
@@ -23,6 +24,7 @@ import io.fand.api.lifecycle.ServerStartingEvent;
 import io.fand.api.lifecycle.ServerStoppingEvent;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.packet.PacketRegistry;
+import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.player.PlayerAccessService;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
@@ -30,6 +32,8 @@ import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.structure.StructureService;
 import io.fand.api.tag.TagRegistry;
+import io.fand.api.tablist.TabListService;
+import io.fand.api.text.MiniMessageService;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldCreateOptions;
 import io.fand.api.world.WorldTemplate;
@@ -37,6 +41,7 @@ import io.fand.api.world.generation.GenerationMode;
 import io.fand.api.world.generation.VanillaBiomeSource;
 import io.fand.server.block.FandCustomBlockRegistry;
 import io.fand.server.advancement.FandAdvancementRegistry;
+import io.fand.server.bossbar.FandBossBarService;
 import io.fand.server.command.BuiltinCommands;
 import io.fand.server.chunk.ChunkSendScheduler;
 import io.fand.server.chunk.ChunkTrackingMetrics;
@@ -56,6 +61,7 @@ import io.fand.server.map.FandMapService;
 import io.fand.server.messaging.FandPluginMessaging;
 import io.fand.server.network.ProxyForwardingSettings;
 import io.fand.server.network.packet.PacketRegistryImpl;
+import io.fand.server.placeholder.FandPlaceholderService;
 import io.fand.server.permission.PermissionManager;
 import io.fand.server.performance.ServerPerformanceTracker;
 import io.fand.server.player.FandPlayerAccessService;
@@ -66,6 +72,8 @@ import io.fand.server.scoreboard.FandScoreboardService;
 import io.fand.server.structure.FandStructureService;
 import io.fand.server.tag.FandTagRegistry;
 import io.fand.server.tag.FandTags;
+import io.fand.server.tablist.FandTabListService;
+import io.fand.server.text.FandMiniMessageService;
 import io.fand.server.world.WorldRegistry;
 import java.nio.file.Path;
 import java.util.Collection;
@@ -121,6 +129,10 @@ public final class FandServer implements Server, AutoCloseable {
     private final FandEnchantmentRegistry enchantments;
     private final FandStructureService structures;
     private final FandMapService maps;
+    private final FandBossBarService bossBars;
+    private final FandTabListService tabLists;
+    private final FandPlaceholderService placeholders;
+    private final FandMiniMessageService miniMessages;
     private final FandTagRegistry tags;
     private final PluginRuntime plugins;
     private final PlayerRegistry players;
@@ -159,8 +171,9 @@ public final class FandServer implements Server, AutoCloseable {
         this.chunks = new ChunkSendScheduler(initialConfig.chunks);
         this.recipes = new FandRecipeRegistry();
         this.scoreboard = new FandScoreboardService(minecraftServer::get);
+        this.tabLists = new FandTabListService(minecraftServer::get);
         this.packets = new PacketRegistryImpl();
-        this.players = new PlayerRegistry(permissions, scoreboard);
+        this.players = new PlayerRegistry(permissions, scoreboard, tabLists);
         this.pluginMessaging = new FandPluginMessaging(packets, players::snapshot);
         this.modProtocols = new ModProtocolCompatibility(pluginMessaging, events, initialConfig.compat.modProtocols);
         this.pluginChannelAdvertisement = events.subscribe(
@@ -175,6 +188,9 @@ public final class FandServer implements Server, AutoCloseable {
         this.enchantments = new FandEnchantmentRegistry(minecraftServer::get);
         this.structures = new FandStructureService(minecraftServer::get);
         this.maps = new FandMapService(minecraftServer::get);
+        this.bossBars = new FandBossBarService(minecraftServer::get, scheduler);
+        this.placeholders = new FandPlaceholderService();
+        this.miniMessages = new FandMiniMessageService(placeholders);
         this.tags = new FandTagRegistry();
         this.playerAccess = new FandPlayerAccessService(minecraftServer::get);
         this.performance = new ServerPerformanceTracker(() -> chunks.metrics().pendingJobs());
@@ -196,6 +212,9 @@ public final class FandServer implements Server, AutoCloseable {
                 enchantments,
                 structures,
                 maps,
+                bossBars,
+                tabLists,
+                placeholders,
                 customItems,
                 customBlocks,
                 guis,
@@ -434,6 +453,26 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
+    public BossBarService bossBars() {
+        return bossBars;
+    }
+
+    @Override
+    public TabListService tabLists() {
+        return tabLists;
+    }
+
+    @Override
+    public PlaceholderService placeholders() {
+        return placeholders;
+    }
+
+    @Override
+    public MiniMessageService miniMessages() {
+        return miniMessages;
+    }
+
+    @Override
     public TagRegistry tags() {
         return tags;
     }
@@ -445,6 +484,10 @@ public final class FandServer implements Server, AutoCloseable {
 
     public PacketRegistryImpl packetRegistry() {
         return packets;
+    }
+
+    public FandTabListService tabListService() {
+        return tabLists;
     }
 
     public void addPluginChannelConfigurationTask(java.util.Queue<net.minecraft.server.network.ConfigurationTask> tasks) {
@@ -775,6 +818,9 @@ public final class FandServer implements Server, AutoCloseable {
         pluginChannelAdvertisement.close();
         modProtocols.close();
         pluginMessaging.close();
+        bossBars.close();
+        tabLists.close();
+        placeholders.close();
         packets.close();
         guis.close();
         chunks.close();

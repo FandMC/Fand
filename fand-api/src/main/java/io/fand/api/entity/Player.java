@@ -48,6 +48,19 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     int ping();
 
     /**
+     * Sets the viewer-facing tab-list latency value for this player. This does
+     * not change the real keep-alive latency returned by {@link #ping()}.
+     */
+    default void setDisplayedPing(int ping) {
+        throw new UnsupportedOperationException("Displayed ping changes are not supported");
+    }
+
+    /** Restores this player's tab-list latency to the real vanilla value. */
+    default void resetDisplayedPing() {
+        throw new UnsupportedOperationException("Displayed ping changes are not supported");
+    }
+
+    /**
      * The client-side options this player last reported. Returns the
      * last-known settings once the player is
      * {@linkplain #online() offline}; defaults until the client sends its

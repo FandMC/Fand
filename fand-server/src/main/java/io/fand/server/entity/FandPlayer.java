@@ -38,12 +38,12 @@ import io.fand.server.player.PlayerProfiles;
 import io.fand.server.recipe.FandRecipes;
 import io.fand.server.scoreboard.FandPlayerScoreboard;
 import io.fand.server.scoreboard.FandScoreboardService;
+import io.fand.server.tablist.FandTabListService;
 import io.fand.server.util.ServerThreading;
 import io.fand.server.world.ParticleEffects;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.SoundEffects;
 import java.util.Collection;
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Optional;
@@ -89,11 +89,11 @@ public final class FandPlayer implements Player {
     private final PlayerRegistry registry;
     private final BossBarTracker bossBars;
     private final @Nullable FandPlayerScoreboard scoreboard;
-    private final Set<UUID> hiddenTabListTargets = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final @Nullable FandTabListService tabLists;
     private final Set<UUID> hiddenEntityTargets = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public FandPlayer(ServerPlayer handle, PermissionService permissions, PlayerRegistry registry) {
-        this(handle, permissions, registry, null);
+        this(handle, permissions, registry, null, null);
     }
 
     public FandPlayer(
@@ -102,11 +102,22 @@ public final class FandPlayer implements Player {
             PlayerRegistry registry,
             @Nullable FandScoreboardService scoreboards
     ) {
+        this(handle, permissions, registry, scoreboards, null);
+    }
+
+    public FandPlayer(
+            ServerPlayer handle,
+            PermissionService permissions,
+            PlayerRegistry registry,
+            @Nullable FandScoreboardService scoreboards,
+            @Nullable FandTabListService tabLists
+    ) {
         this.bound = new Bound(handle, new FandPlayerInventory(handle.getInventory()));
         this.permissions = permissions;
         this.registry = registry;
         this.bossBars = new BossBarTracker(handle);
         this.scoreboard = scoreboards == null ? null : scoreboards.registerPlayerScoreboard(this);
+        this.tabLists = tabLists;
     }
 
     public ServerPlayer handle() {
@@ -380,6 +391,22 @@ public final class FandPlayer implements Player {
     public int ping() {
         var connection = bound.handle.connection;
         return connection == null ? 0 : connection.latency();
+    }
+
+    @Override
+    public void setDisplayedPing(int ping) {
+        if (tabLists == null) {
+            throw new UnsupportedOperationException("Displayed ping changes are not supported");
+        }
+        tabLists.setDisplayedPing(uniqueId(), ping);
+    }
+
+    @Override
+    public void resetDisplayedPing() {
+        if (tabLists == null) {
+            throw new UnsupportedOperationException("Displayed ping changes are not supported");
+        }
+        tabLists.resetDisplayedPing(uniqueId());
     }
 
     @Override
@@ -1561,37 +1588,19 @@ public final class FandPlayer implements Player {
     @Override
     public boolean visibleInPlayerList(Player viewer) {
         Objects.requireNonNull(viewer, "viewer");
-        if (!(viewer instanceof FandPlayer fandViewer)) {
+        if (!(viewer instanceof FandPlayer fandViewer) || tabLists == null) {
             return true;
         }
-        return !fandViewer.hiddenTabListTargets.contains(uniqueId());
+        return tabLists.visibleInRealPlayerList(fandViewer.uniqueId(), uniqueId());
     }
 
     @Override
     public void setVisibleInPlayerList(Player viewer, boolean visible) {
         Objects.requireNonNull(viewer, "viewer");
-        if (!(viewer instanceof FandPlayer fandViewer)) {
+        if (!(viewer instanceof FandPlayer fandViewer) || tabLists == null) {
             return;
         }
-        runOnServerThread(() -> {
-            if (visible) {
-                if (fandViewer.hiddenTabListTargets.remove(uniqueId())) {
-                    fandViewer.bound.handle.connection.send(new ClientboundPlayerInfoUpdatePacket(
-                            EnumSet.of(
-                                    ClientboundPlayerInfoUpdatePacket.Action.ADD_PLAYER,
-                                    ClientboundPlayerInfoUpdatePacket.Action.INITIALIZE_CHAT,
-                                    ClientboundPlayerInfoUpdatePacket.Action.UPDATE_GAME_MODE,
-                                    ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LISTED,
-                                    ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY,
-                                    ClientboundPlayerInfoUpdatePacket.Action.UPDATE_DISPLAY_NAME,
-                                    ClientboundPlayerInfoUpdatePacket.Action.UPDATE_HAT,
-                                    ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LIST_ORDER),
-                            java.util.List.of(bound.handle)));
-                }
-            } else if (fandViewer.hiddenTabListTargets.add(uniqueId())) {
-                fandViewer.bound.handle.connection.send(new ClientboundPlayerInfoRemovePacket(java.util.List.of(uniqueId())));
-            }
-        });
+        tabLists.setRealEntryVisible(fandViewer.uniqueId(), uniqueId(), visible);
     }
 
     @Override
