@@ -13,6 +13,7 @@ import io.fand.api.performance.MetricStatistics;
 import io.fand.api.performance.ServerPerformance;
 import io.fand.api.performance.TickWindow;
 import io.fand.api.performance.TickWindowSnapshot;
+import io.fand.api.player.PlayerProfile;
 import io.fand.server.chunk.ChunkSendScheduler;
 import io.fand.server.chunk.ChunkTrackingSnapshot;
 import io.fand.server.FandServer;
@@ -42,6 +43,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.network.ConfigurationTask;
 import net.minecraft.server.network.ServerConfigurationPacketListenerImpl;
+import net.minecraft.server.network.ServerLoginPacketListenerImpl;
 import net.minecraft.server.network.ServerPlayerConnection;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.resources.ResourceKey;
@@ -644,7 +646,7 @@ public final class FandHooks {
             return packet;
         }
         try {
-            return packetRegistry.interceptInbound(listener, player(listener), remoteAddress, packet);
+            return packetRegistry.interceptInbound(listener, player(listener), profile(listener), remoteAddress, packet);
         } catch (RuntimeException failure) {
             LOGGER.warn("Fand inbound packet hook failed for {}", packet.type(), failure);
             return packet;
@@ -671,7 +673,7 @@ public final class FandHooks {
             var player = player(listener);
             var rewritten = tabLists.rewriteOutboundPacket(player, packet);
             return packetRegistry.hasRegistrations()
-                    ? packetRegistry.interceptOutbound(protocol, flow, player, remoteAddress, rewritten)
+                    ? packetRegistry.interceptOutbound(protocol, flow, player, profile(listener), remoteAddress, rewritten)
                     : rewritten;
         } catch (RuntimeException failure) {
             LOGGER.warn("Fand outbound packet hook failed for {}", packet.type(), failure);
@@ -755,6 +757,18 @@ public final class FandHooks {
     private static Optional<? extends Player> player(@Nullable PacketListener listener) {
         if (listener instanceof ServerPlayerConnection connection) {
             return Optional.ofNullable(findPlayer(connection.getPlayer().getUUID()));
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<PlayerProfile> profile(@Nullable PacketListener listener) {
+        var player = player(listener);
+        if (player.isPresent()) {
+            return Optional.of(player.get().profile());
+        }
+        if (listener instanceof ServerLoginPacketListenerImpl login) {
+            return Optional.ofNullable(login.fand$profile())
+                    .map(profile -> new PlayerProfile(profile.id(), profile.name()));
         }
         return Optional.empty();
     }

@@ -48,8 +48,16 @@ public final class PlayerPreLoginEvent implements Event {
         return result;
     }
 
+    public void setResult(Result result) {
+        this.result = Objects.requireNonNull(result, "result");
+    }
+
     public Component kickMessage() {
         return kickMessage;
+    }
+
+    public void setKickMessage(Component kickMessage) {
+        this.kickMessage = Objects.requireNonNull(kickMessage, "kickMessage");
     }
 
     public void allow() {

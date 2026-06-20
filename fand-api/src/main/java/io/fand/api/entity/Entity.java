@@ -1,6 +1,7 @@
 package io.fand.api.entity;
 
 import io.fand.api.component.DataComponentContainer;
+import io.fand.api.persistence.PersistentDataContainer;
 import io.fand.api.world.Location;
 import io.fand.api.world.Vector3;
 import io.fand.api.world.World;
@@ -163,4 +164,24 @@ public interface Entity {
      * wrapper recreation and dimension changes as long as the same UUID is used.
      */
     DataComponentContainer components();
+
+    /**
+     * Plugin-facing persistent JSON data attached to this entity UUID.
+     *
+     * <p>This is backed by the same entity save-data scope as
+     * {@link #components()} but exposes the simpler namespaced-key container
+     * used by item stacks.
+     */
+    default PersistentDataContainer persistentData() {
+        return new PersistentDataContainer(components().snapshot().toJson());
+    }
+
+    /** Replaces all plugin persistent JSON data attached to this entity UUID. */
+    default void setPersistentData(PersistentDataContainer data) {
+        java.util.Objects.requireNonNull(data, "data");
+        var components = components();
+        components.clear();
+        data.toJson().entrySet().forEach(entry ->
+                components.set(net.kyori.adventure.key.Key.key(entry.getKey()), entry.getValue()));
+    }
 }

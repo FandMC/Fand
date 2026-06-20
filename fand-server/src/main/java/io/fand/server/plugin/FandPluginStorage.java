@@ -61,6 +61,12 @@ public final class FandPluginStorage implements PluginStorage, AutoCloseable {
     }
 
     @Override
+    public ScopedStorage entity(UUID entityId) {
+        Objects.requireNonNull(entityId, "entityId");
+        return store("entity/" + entityId, root.resolve("entities").resolve(entityId + ".json"));
+    }
+
+    @Override
     public ScopedStorage world(Key world) {
         Objects.requireNonNull(world, "world");
         return store("world/" + world.asString(), root.resolve("worlds").resolve(fileName(world)).resolve("world.json"));

@@ -335,6 +335,11 @@ final class FandPluginMessagingTest {
         }
 
         @Override
+        public Optional<io.fand.api.player.PlayerProfile> profile() {
+            return Optional.empty();
+        }
+
+        @Override
         public Optional<java.net.SocketAddress> remoteAddress() {
             return Optional.empty();
         }

@@ -15,15 +15,31 @@ import org.jspecify.annotations.Nullable;
 public final class PlayerQuitEvent implements Event {
 
     private final Player player;
+    private final DisconnectReason reason;
+    private final Component disconnectMessage;
     private @Nullable Component message;
 
     public PlayerQuitEvent(Player player, @Nullable Component message) {
+        this(player, DisconnectReason.UNKNOWN, Component.empty(), message);
+    }
+
+    public PlayerQuitEvent(Player player, DisconnectReason reason, Component disconnectMessage, @Nullable Component message) {
         this.player = player;
+        this.reason = java.util.Objects.requireNonNull(reason, "reason");
+        this.disconnectMessage = java.util.Objects.requireNonNull(disconnectMessage, "disconnectMessage");
         this.message = message;
     }
 
     public Player player() {
         return player;
+    }
+
+    public DisconnectReason reason() {
+        return reason;
+    }
+
+    public Component disconnectMessage() {
+        return disconnectMessage;
     }
 
     public @Nullable Component message() {

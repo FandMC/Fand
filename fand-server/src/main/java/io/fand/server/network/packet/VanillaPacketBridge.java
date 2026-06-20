@@ -6,6 +6,7 @@ import io.fand.api.packet.PacketDirection;
 import io.fand.api.packet.PacketProtocol;
 import io.fand.api.packet.PacketType;
 import io.fand.api.packet.PacketView;
+import io.fand.api.player.PlayerProfile;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -55,6 +56,7 @@ final class VanillaPacketBridge {
             ConnectionProtocol vanillaProtocol,
             PacketDirection direction,
             Optional<? extends Player> player,
+            Optional<PlayerProfile> profile,
             @Nullable SocketAddress remoteAddress,
             Packet<?> packet
     ) {
@@ -63,9 +65,9 @@ final class VanillaPacketBridge {
             return packet;
         }
 
-        var result = interceptVanilla(type, type.protocol(), direction, player, remoteAddress, packet);
+        var result = interceptVanilla(type, type.protocol(), direction, player, profile, remoteAddress, packet);
         if (result != null && direction == PacketDirection.SERVERBOUND) {
-            dispatchCustomPayload(type.protocol(), direction, player, remoteAddress, result);
+            dispatchCustomPayload(type.protocol(), direction, player, profile, remoteAddress, result);
         }
         return result;
     }
@@ -103,6 +105,7 @@ final class VanillaPacketBridge {
             PacketProtocol protocol,
             PacketDirection direction,
             Optional<? extends Player> player,
+            Optional<PlayerProfile> profile,
             @Nullable SocketAddress remoteAddress,
             Packet<?> packet
     ) {
@@ -120,7 +123,7 @@ final class VanillaPacketBridge {
             return packet;
         }
 
-        var context = new PacketContextImpl(protocol, direction, player, remoteAddress);
+        var context = new PacketContextImpl(protocol, direction, player, profile, remoteAddress);
         boolean replaced = false;
         for (var registration : registrations) {
             if (!registration.active()) {
@@ -158,6 +161,7 @@ final class VanillaPacketBridge {
             PacketProtocol protocol,
             PacketDirection direction,
             Optional<? extends Player> player,
+            Optional<PlayerProfile> profile,
             @Nullable SocketAddress remoteAddress,
             Packet<?> packet
     ) {
@@ -170,7 +174,7 @@ final class VanillaPacketBridge {
         if (handler == null) {
             return;
         }
-        var context = new PacketContextImpl(protocol, direction, player, remoteAddress);
+        var context = new PacketContextImpl(protocol, direction, player, profile, remoteAddress);
         try {
             handler.handle(context, new CustomPacket(channel, payload.payload()));
         } catch (RuntimeException failure) {

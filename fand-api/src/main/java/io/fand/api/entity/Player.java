@@ -162,6 +162,16 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     /** The player's main inventory + hotbar. */
     io.fand.api.inventory.PlayerInventory inventory();
 
+    /** The player's ender chest inventory. */
+    default Inventory enderChest() {
+        throw new UnsupportedOperationException("Ender chest access is not supported");
+    }
+
+    /** Saves this online player's data to disk. */
+    default CompletableFuture<Boolean> save() {
+        return CompletableFuture.completedFuture(false);
+    }
+
     /** The player's current game mode. */
     GameMode gameMode();
 

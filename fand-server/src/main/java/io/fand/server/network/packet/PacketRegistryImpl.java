@@ -10,6 +10,7 @@ import io.fand.api.packet.PacketRegistry;
 import io.fand.api.packet.PacketType;
 import io.fand.api.packet.PacketView;
 import io.fand.api.entity.Player;
+import io.fand.api.player.PlayerProfile;
 import java.net.SocketAddress;
 import java.util.Collection;
 import java.util.List;
@@ -113,27 +114,31 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
     public @Nullable Packet<?> interceptInbound(
             PacketListener listener,
             Optional<? extends Player> player,
+            Optional<PlayerProfile> profile,
             @Nullable SocketAddress remoteAddress,
             Packet<?> packet
     ) {
         Objects.requireNonNull(listener, "listener");
         Objects.requireNonNull(player, "player");
+        Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(packet, "packet");
-        return bridge.intercept(listener.protocol(), direction(listener.flow()), player, remoteAddress, packet);
+        return bridge.intercept(listener.protocol(), direction(listener.flow()), player, profile, remoteAddress, packet);
     }
 
     public @Nullable Packet<?> interceptOutbound(
             ConnectionProtocol protocol,
             PacketFlow flow,
             Optional<? extends Player> player,
+            Optional<PlayerProfile> profile,
             @Nullable SocketAddress remoteAddress,
             Packet<?> packet
     ) {
         Objects.requireNonNull(protocol, "protocol");
         Objects.requireNonNull(flow, "flow");
         Objects.requireNonNull(player, "player");
+        Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(packet, "packet");
-        return bridge.intercept(protocol, direction(flow), player, remoteAddress, packet);
+        return bridge.intercept(protocol, direction(flow), player, profile, remoteAddress, packet);
     }
 
     boolean hasCustomChannel(CustomPacketDefinition definition) {

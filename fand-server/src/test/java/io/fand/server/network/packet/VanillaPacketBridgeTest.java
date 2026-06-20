@@ -12,6 +12,7 @@ import io.fand.api.packet.view.ClientboundBlockChangedAckPacketView;
 import io.netty.buffer.Unpooled;
 import java.net.InetSocketAddress;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import net.kyori.adventure.key.Key;
 import net.minecraft.network.ConnectionProtocol;
@@ -47,6 +48,7 @@ final class VanillaPacketBridgeTest {
                 ConnectionProtocol.PLAY,
                 PacketFlow.CLIENTBOUND,
                 Optional.empty(),
+                Optional.empty(),
                 null,
                 new ClientboundBlockChangedAckPacket(1));
 
@@ -62,6 +64,7 @@ final class VanillaPacketBridgeTest {
         var intercepted = registry.interceptOutbound(
                 ConnectionProtocol.PLAY,
                 PacketFlow.CLIENTBOUND,
+                Optional.empty(),
                 Optional.empty(),
                 null,
                 new ClientboundBlockChangedAckPacket(1));
@@ -82,6 +85,7 @@ final class VanillaPacketBridgeTest {
                 ConnectionProtocol.PLAY,
                 PacketFlow.CLIENTBOUND,
                 Optional.empty(),
+                Optional.empty(),
                 null,
                 original);
 
@@ -100,12 +104,34 @@ final class VanillaPacketBridgeTest {
         var intercepted = registry.interceptInbound(
                 new StubPacketListener(ConnectionProtocol.PLAY, PacketFlow.SERVERBOUND),
                 Optional.empty(),
+                Optional.empty(),
                 null,
                 vanillaPacket);
 
         assertThat(intercepted).isSameAs(vanillaPacket);
         assertThat(seen.get()).isNotNull();
         assertThat(seen.get().direction()).isEqualTo(PacketDirection.SERVERBOUND);
+    }
+
+    @Test
+    void loginProfileIsExposedBeforePlayerExists() {
+        var registry = new PacketRegistryImpl();
+        var seen = new AtomicReference<PacketContext>();
+        var profile = new io.fand.api.player.PlayerProfile(UUID.randomUUID(), "PreLogin");
+        registry.intercept(PacketType.LOGIN_SERVERBOUND_HELLO, packet -> seen.set(packet.context()));
+
+        var vanillaPacket = new net.minecraft.network.protocol.login.ServerboundHelloPacket("PreLogin", profile.uniqueId());
+        var intercepted = registry.interceptInbound(
+                new StubPacketListener(ConnectionProtocol.LOGIN, PacketFlow.SERVERBOUND),
+                Optional.empty(),
+                Optional.of(profile),
+                null,
+                vanillaPacket);
+
+        assertThat(intercepted).isSameAs(vanillaPacket);
+        assertThat(seen.get()).isNotNull();
+        assertThat(seen.get().player()).isEmpty();
+        assertThat(seen.get().profile()).contains(profile);
     }
 
     @Test
@@ -138,6 +164,7 @@ final class VanillaPacketBridgeTest {
 
         var intercepted = registry.interceptInbound(
                 new StubPacketListener(ConnectionProtocol.PLAY, PacketFlow.SERVERBOUND),
+                Optional.empty(),
                 Optional.empty(),
                 remoteAddress,
                 vanillaPacket);

@@ -15,6 +15,13 @@ public interface PluginStorage {
 
     ScopedStorage player(java.util.UUID playerId);
 
+    ScopedStorage entity(java.util.UUID entityId);
+
+    default ScopedStorage entity(io.fand.api.entity.Entity entity) {
+        java.util.Objects.requireNonNull(entity, "entity");
+        return entity(entity.uniqueId());
+    }
+
     ScopedStorage world(net.kyori.adventure.key.Key world);
 
     ScopedStorage chunk(net.kyori.adventure.key.Key world, int chunkX, int chunkZ);

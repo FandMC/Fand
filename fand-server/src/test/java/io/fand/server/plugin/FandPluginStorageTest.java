@@ -20,6 +20,7 @@ class FandPluginStorageTest {
         var storage = new FandPluginStorage(tempDir);
         storage.global().setString("version", "1");
         storage.player(UUID.fromString("00000000-0000-0000-0000-000000000123")).setInt("research", 7);
+        storage.entity(UUID.fromString("00000000-0000-0000-0000-000000000456")).setString("quest", "active");
         storage.chunk(Key.key("minecraft:overworld"), 1, -2).set("energy", new JsonPrimitive(42));
         storage.flush();
 
@@ -27,6 +28,7 @@ class FandPluginStorageTest {
 
         assertThat(reloaded.global().getString("version")).contains("1");
         assertThat(reloaded.player(UUID.fromString("00000000-0000-0000-0000-000000000123")).getInt("research")).contains(7);
+        assertThat(reloaded.entity(UUID.fromString("00000000-0000-0000-0000-000000000456")).getString("quest")).contains("active");
         assertThat(reloaded.chunk(Key.key("minecraft:overworld"), 1, -2).getInt("energy")).contains(42);
     }
 

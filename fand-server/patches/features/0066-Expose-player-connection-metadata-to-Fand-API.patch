@@ -1,0 +1,110 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 20 Jun 2026 18:23:31 +0800
+Subject: [PATCH] Expose player connection metadata to Fand API
+
+
+diff --git a/net/minecraft/server/network/ServerCommonPacketListenerImpl.java b/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+index 0eed222b397a6ca71501f78e6ff107dea461b0da..4ccbcad52beb704b469bddd3f5fbd249efc45e09 100644
+--- a/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+@@ -196,6 +196,10 @@ public abstract class ServerCommonPacketListenerImpl implements ServerCommonPack
+         this.server.executeBlocking(this.connection::handleDisconnection);
+     }
+ 
++    public @Nullable DisconnectionDetails fand$disconnectionDetails() {
++        return this.connection.getDisconnectionDetails();
++    }
++
+     protected boolean isSingleplayerOwner() {
+         return this.server.isSingleplayerOwner(new NameAndId(this.playerProfile()));
+     }
+diff --git a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+index 07c6b9c2e849bd9d3014285619b256cc8a43771b..5b157a9a64a7c04369885acf1489b45d6b4e79da 100644
+--- a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+@@ -129,6 +129,13 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+         return this.requestedUsername != null ? this.requestedUsername + " (" + loggableAddress + ")" : loggableAddress;
+     }
+ 
++    public @Nullable GameProfile fand$profile() {
++        if (this.authenticatedProfile != null) {
++            return this.authenticatedProfile;
++        }
++        return this.requestedUsername == null ? null : UUIDUtil.createOfflineProfile(this.requestedUsername);
++    }
++
+     @Override
+     public void handleHello(final ServerboundHelloPacket packet) {
+         Validate.validState(this.state == ServerLoginPacketListenerImpl.State.HELLO, "Unexpected hello packet");
+diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
+index f7f10b81372811f1fc0adb56688903fd5b7e4c01..de455026dc6bdd1ff31c862195d54245820dd732 100644
+--- a/net/minecraft/server/players/PlayerList.java
++++ b/net/minecraft/server/players/PlayerList.java
+@@ -27,12 +27,14 @@ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.LayeredRegistryAccess;
+ import net.minecraft.nbt.CompoundTag;
+ import net.minecraft.network.Connection;
++import net.minecraft.network.DisconnectionDetails;
+ import net.minecraft.network.RegistryFriendlyByteBuf;
+ import net.minecraft.network.chat.ChatType;
+ import net.minecraft.network.chat.Component;
+ import net.minecraft.network.chat.MutableComponent;
+ import net.minecraft.network.chat.OutgoingChatMessage;
+ import net.minecraft.network.chat.PlayerChatMessage;
++import net.minecraft.network.chat.contents.TranslatableContents;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket;
+ import net.minecraft.network.protocol.game.ClientboundChangeDifficultyPacket;
+@@ -314,7 +316,7 @@ public abstract class PlayerList {
+         return this.playerIo.save(saveTarget, this.server, writer);
+     }
+ 
+-    protected void save(final ServerPlayer player) {
++    public void save(final ServerPlayer player) {
+         this.playerIo.save(player);
+         ServerStatsCounter stats = this.stats.get(player.getUUID());
+         if (stats != null) {
+@@ -331,8 +333,14 @@ public abstract class PlayerList {
+         ServerLevel level = player.level();
+         var fandPlayerForQuit = io.fand.server.hooks.FandHooks.players().detach(player.getUUID()).orElse(null);
+         if (fandPlayerForQuit != null) {
++            DisconnectionDetails details = player.connection.fand$disconnectionDetails();
++            Component disconnectMessage = details == null ? Component.empty() : details.reason();
+             var fandQuitEvent = io.fand.server.hooks.FandHooks.fireOrLog(
+-                    new io.fand.api.event.player.PlayerQuitEvent(fandPlayerForQuit, null),
++                    new io.fand.api.event.player.PlayerQuitEvent(
++                            fandPlayerForQuit,
++                            fandDisconnectReason(disconnectMessage),
++                            io.fand.server.command.AdventureBridge.fromVanilla(disconnectMessage, player.registryAccess()),
++                            null),
+                     "PlayerQuitEvent");
+             var fandFinalQuitMessage = fandQuitEvent.message();
+             if (fandFinalQuitMessage != null) {
+@@ -376,6 +384,26 @@ public abstract class PlayerList {
+         this.broadcastAll(new ClientboundPlayerInfoRemovePacket(List.of(player.getUUID())));
+     }
+ 
++    private static io.fand.api.event.player.DisconnectReason fandDisconnectReason(final Component reason) {
++        String key = reason.getContents() instanceof TranslatableContents translatable
++                ? translatable.getKey()
++                : "";
++        return switch (key) {
++            case "disconnect.timeout" -> io.fand.api.event.player.DisconnectReason.TIMEOUT;
++            case "disconnect.endOfStream" -> io.fand.api.event.player.DisconnectReason.END_OF_STREAM;
++            case "multiplayer.disconnect.server_shutdown" -> io.fand.api.event.player.DisconnectReason.SERVER_SHUTDOWN;
++            case "multiplayer.disconnect.duplicate_login" -> io.fand.api.event.player.DisconnectReason.DUPLICATE_LOGIN;
++            case "multiplayer.disconnect.flying" -> io.fand.api.event.player.DisconnectReason.FLYING;
++            case "multiplayer.disconnect.idling" -> io.fand.api.event.player.DisconnectReason.IDLING;
++            case "multiplayer.disconnect.invalid_packet" -> io.fand.api.event.player.DisconnectReason.INVALID_PACKET;
++            case "multiplayer.disconnect.invalid_player_movement",
++                    "multiplayer.disconnect.invalid_vehicle_movement" -> io.fand.api.event.player.DisconnectReason.INVALID_MOVEMENT;
++            case "multiplayer.disconnect.chat_validation_failed" -> io.fand.api.event.player.DisconnectReason.CHAT_VALIDATION_FAILED;
++            case "disconnect.spam" -> io.fand.api.event.player.DisconnectReason.SPAM;
++            default -> io.fand.api.event.player.DisconnectReason.UNKNOWN;
++        };
++    }
++
+     public io.fand.server.event.ServerEvents.LoginResult canPlayerLogin(final SocketAddress address, final GameProfile profile) {
+         NameAndId nameAndId = new NameAndId(profile);
+         Component reason;

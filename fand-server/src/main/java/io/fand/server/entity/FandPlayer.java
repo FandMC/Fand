@@ -1084,6 +1084,25 @@ public final class FandPlayer implements Player {
     }
 
     @Override
+    public io.fand.api.inventory.Inventory enderChest() {
+        return new io.fand.server.inventory.FandContainerInventory(
+                bound.handle.getEnderChestInventory(),
+                io.fand.api.inventory.InventoryType.CHEST);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> save() {
+        return runOnServerThreadFuture(() -> {
+            var server = bound.handle.level().getServer();
+            if (server == null || !online()) {
+                return false;
+            }
+            server.getPlayerList().save(bound.handle);
+            return true;
+        });
+    }
+
+    @Override
     public GameMode gameMode() {
         return GameModes.toApi(bound.handle.gameMode.getGameModeForPlayer());
     }
