@@ -24,6 +24,21 @@ final class WorldBlockBatchApiTest {
 
         assertThat(world.setBlocks(List.of()).join()).isEqualTo(BlockBatchResult.empty());
         assertThat(world.setBlocks(List.of(BlockBatchChange.of(0, 64, 0, STONE))).isCompletedExceptionally()).isTrue();
+        assertThat(world.scanBlocks(
+                        new BlockRegion(0, 0, 0, 0, 0, 0),
+                        block -> null,
+                        BlockScanOptions.defaults()))
+                .isCompletedExceptionally();
+        assertThat(world.replaceConnectedBlocks(world.at(0, 64, 0), type -> true, AIR, 8))
+                .isCompletedExceptionally();
+    }
+
+    @Test
+    void defaultConnectedReplaceRejectsNegativeDistance() {
+        var world = new TestWorld();
+
+        assertThat(world.replaceConnectedBlocks(world.at(0, 64, 0), type -> true, AIR, -1))
+                .isCompletedExceptionally();
     }
 
     @Test

@@ -26,6 +26,7 @@ import io.fand.api.event.block.LeavesDecayEvent;
 import io.fand.api.event.block.PortalCreateEvent;
 import io.fand.api.event.block.SignChangeEvent;
 import io.fand.api.event.block.SpongeAbsorbEvent;
+import io.fand.api.event.player.PlayerInteractEvent;
 import io.fand.api.event.world.StructureGrowEvent;
 import io.fand.api.component.DataComponentMap;
 import io.fand.api.world.Location;
@@ -395,7 +396,9 @@ public final class BlockEvents {
             BlockPos pos,
             ServerPlayer player,
             BlockState placedState,
-            BlockState replacedState
+            BlockState replacedState,
+            net.minecraft.world.InteractionHand hand,
+            net.minecraft.world.item.ItemStack itemStack
     ) {
         var bus = FandHooks.events();
         if (!bus.hasListeners(BlockPlaceEvent.class)) {
@@ -410,7 +413,9 @@ public final class BlockEvents {
                 fandPlayer,
                 block(world, pos),
                 FandBlockType.of(placedState.getBlock()),
-                FandBlockType.of(replacedState.getBlock()));
+                FandBlockType.of(replacedState.getBlock()),
+                hand(hand),
+                FandItemStacks.fromVanilla(itemStack));
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {
@@ -426,6 +431,8 @@ public final class BlockEvents {
             ServerPlayer player,
             BlockState placedState,
             BlockState replacedState,
+            net.minecraft.world.InteractionHand hand,
+            net.minecraft.world.item.ItemStack itemStack,
             List<BlockPos> positions
     ) {
         var bus = FandHooks.events();
@@ -442,6 +449,8 @@ public final class BlockEvents {
                 block(world, primaryPos),
                 FandBlockType.of(placedState.getBlock()),
                 FandBlockType.of(replacedState.getBlock()),
+                hand(hand),
+                FandItemStacks.fromVanilla(itemStack),
                 positions.stream()
                         .map(pos -> block(world, pos))
                         .map(io.fand.api.block.Block.class::cast)
@@ -453,6 +462,12 @@ public final class BlockEvents {
             return true;
         }
         return !event.cancelled();
+    }
+
+    private static PlayerInteractEvent.Hand hand(net.minecraft.world.InteractionHand hand) {
+        return hand == net.minecraft.world.InteractionHand.OFF_HAND
+                ? PlayerInteractEvent.Hand.OFF_HAND
+                : PlayerInteractEvent.Hand.MAIN_HAND;
     }
 
     public static boolean firePhysics(ServerLevel level, BlockPos pos, Block sourceBlock) {

@@ -132,6 +132,8 @@ public final class FandHooks {
     private static volatile boolean deepPassengerIteration = true;
     private static volatile boolean entityTypeLookupFastPath = true;
     private static volatile boolean randomTickPositionMask = true;
+    private static volatile boolean fluidTickContainerQueue = true;
+    private static volatile boolean flowingFluidSpreadArray = true;
     private static volatile boolean chunkGenerationTaskPlanCache = true;
     private static volatile boolean chunkTaskDispatcherBatchLoop = true;
     private static volatile boolean chunkStorageRegionScanFastPath = true;
@@ -188,6 +190,8 @@ public final class FandHooks {
         deepPassengerIteration = performance.deepPassengerIteration;
         entityTypeLookupFastPath = performance.entityTypeLookupFastPath;
         randomTickPositionMask = performance.randomTickPositionMask;
+        fluidTickContainerQueue = performance.fluidTickContainerQueue;
+        flowingFluidSpreadArray = performance.flowingFluidSpreadArray;
         chunkGenerationTaskPlanCache = performance.chunkGenerationTaskPlanCache;
         chunkTaskDispatcherBatchLoop = performance.chunkTaskDispatcherBatchLoop;
         chunkStorageRegionScanFastPath = performance.chunkStorageRegionScanFastPath;
@@ -310,6 +314,14 @@ public final class FandHooks {
 
     public static boolean randomTickPositionMaskEnabled() {
         return randomTickPositionMask;
+    }
+
+    public static boolean fluidTickContainerQueueEnabled() {
+        return fluidTickContainerQueue;
+    }
+
+    public static boolean flowingFluidSpreadArrayEnabled() {
+        return flowingFluidSpreadArray;
     }
 
     public static boolean chunkGenerationTaskPlanCacheEnabled() {

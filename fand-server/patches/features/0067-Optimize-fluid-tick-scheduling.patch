@@ -1,0 +1,369 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 21 Jun 2026 01:49:22 +0800
+Subject: [PATCH] Optimize fluid tick scheduling
+
+Add a Fand-gated fluid tick container priority queue so fluid ticks do not scan every loaded tick container each server tick.
+
+Keep vanilla tick execution and ordering intact while retrying blocked chunks on the next tick instead of requeueing them into the same due set, preventing watchdog spins when tickCheck is false.
+
+Add a fixed-array FlowingFluid spread path to avoid per-tick EnumMap allocation, and pass block placement item context into Fand placement events.
+
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index 75e9c2d4c6174545e825d730f599f10df0109f52..4ab7b4f5409fad2fc8b2bdb28d927bbbd1a06749 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -206,7 +206,10 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     private int emptyTime;
+     private final PortalForcer portalForcer;
+     private final LevelTicks<Block> blockTicks = new LevelTicks<>(this::isPositionTickingWithEntitiesLoaded);
+-    private final LevelTicks<Fluid> fluidTicks = new LevelTicks<>(this::isPositionTickingWithEntitiesLoaded);
++    private final LevelTicks<Fluid> fluidTicks = new LevelTicks<>(
++        this::isPositionTickingWithEntitiesLoaded,
++        io.fand.server.hooks.FandHooks::fluidTickContainerQueueEnabled
++    );
+     private final PathTypeCache pathTypesByPosCache = new PathTypeCache();
+     private final Set<Mob> navigatingMobs = new ObjectOpenHashSet<>();
+     private volatile boolean isUpdatingNavigations;
+diff --git a/net/minecraft/world/item/BlockItem.java b/net/minecraft/world/item/BlockItem.java
+index 26d2a18056a4827dfe804fe8d35c4617db73b065..f2461bb909e300289604c7a0e1959ff9282c12ae 100644
+--- a/net/minecraft/world/item/BlockItem.java
++++ b/net/minecraft/world/item/BlockItem.java
+@@ -101,8 +101,8 @@ public class BlockItem extends Item {
+                 if (trackPlacement && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+                     List<BlockPos> changedPositions = changedPlacementPositions(level, beforeStates);
+                     boolean allowed = changedPositions.size() > 1
+-                        ? io.fand.server.event.BlockEvents.fireMultiPlace(serverLevel, pos, serverPlayer, placedState, replacedState, changedPositions)
+-                        : io.fand.server.event.BlockEvents.firePlace(serverLevel, pos, serverPlayer, placedState, replacedState);
++                        ? io.fand.server.event.BlockEvents.fireMultiPlace(serverLevel, pos, serverPlayer, placedState, replacedState, updatedPlaceContext.getHand(), itemStack, changedPositions)
++                        : io.fand.server.event.BlockEvents.firePlace(serverLevel, pos, serverPlayer, placedState, replacedState, updatedPlaceContext.getHand(), itemStack);
+                     if (!allowed) {
+                         restorePlacement(serverLevel, beforeStates, beforeComponents, serverPlayer);
+                         if (!replacedComponents.isEmpty()) {
+diff --git a/net/minecraft/world/level/material/FlowingFluid.java b/net/minecraft/world/level/material/FlowingFluid.java
+index f7b83ebdfa5def889b1191d2254a4dfe6664db0e..9c7c44bc173ec2f947cb9b3f6aade8e603426c51 100644
+--- a/net/minecraft/world/level/material/FlowingFluid.java
++++ b/net/minecraft/world/level/material/FlowingFluid.java
+@@ -44,6 +44,7 @@ public abstract class FlowingFluid extends Fluid {
+         map.defaultReturnValue((byte)127);
+         return map;
+     });
++    private static final ThreadLocal<FlowingFluid.SpreadTargets> SPREAD_TARGETS = ThreadLocal.withInitial(FlowingFluid.SpreadTargets::new);
+     private final Map<FluidState, VoxelShape> shapes = Maps.newIdentityHashMap();
+ 
+     @Override
+@@ -142,6 +143,10 @@ public abstract class FlowingFluid extends Fluid {
+         }
+ 
+         if (neighbor > 0) {
++            if (io.fand.server.hooks.FandHooks.flowingFluidSpreadArrayEnabled()) {
++                this.spreadToSidesArray(level, pos, state);
++                return;
++            }
+             Map<Direction, FluidState> spreads = this.getSpread(level, pos, state);
+ 
+             for (Entry<Direction, FluidState> entry : spreads.entrySet()) {
+@@ -153,6 +158,20 @@ public abstract class FlowingFluid extends Fluid {
+         }
+     }
+ 
++    private void spreadToSidesArray(final ServerLevel level, final BlockPos pos, final BlockState state) {
++        FlowingFluid.SpreadTargets targets = SPREAD_TARGETS.get();
++        int count = this.getSpreadArray(level, pos, state, targets.directions, targets.fluids);
++        try {
++            for (int i = 0; i < count; i++) {
++                Direction spread = targets.directions[i];
++                BlockPos neighborPos = pos.relative(spread);
++                this.spreadTo(level, neighborPos, level.getBlockState(neighborPos), spread, targets.fluids[i]);
++            }
++        } finally {
++            targets.clear(count);
++        }
++    }
++
+     protected FluidState getNewLiquid(final ServerLevel level, final BlockPos pos, final BlockState state) {
+         int highestNeighbor = 0;
+         int neighbourSources = 0;
+@@ -411,6 +430,55 @@ public abstract class FlowingFluid extends Fluid {
+         return result;
+     }
+ 
++    private int getSpreadArray(
++        final ServerLevel level,
++        final BlockPos pos,
++        final BlockState state,
++        final Direction[] directions,
++        final FluidState[] fluids
++    ) {
++        int lowest = 1000;
++        int count = 0;
++        FlowingFluid.SpreadContext context = null;
++
++        for (Direction direction : Direction.Plane.HORIZONTAL) {
++            BlockPos testPos = pos.relative(direction);
++            BlockState testState = level.getBlockState(testPos);
++            FluidState testFluidState = testState.getFluidState();
++            if (this.canMaybePassThrough(level, pos, state, direction, testPos, testState, testFluidState)) {
++                FluidState newFluid = this.getNewLiquid(level, testPos, testState);
++                if (canHoldSpecificFluid(level, testPos, testState, newFluid.getType())) {
++                    if (context == null) {
++                        context = new FlowingFluid.SpreadContext(level, pos);
++                    }
++
++                    int distance;
++                    if (context.isHole(testPos)) {
++                        distance = 0;
++                    } else {
++                        distance = this.getSlopeDistance(level, testPos, 1, direction.getOpposite(), testState, context);
++                    }
++
++                    if (distance < lowest) {
++                        count = 0;
++                    }
++
++                    if (distance <= lowest) {
++                        if (testFluidState.canBeReplacedWith(level, testPos, newFluid.getType(), direction)) {
++                            directions[count] = direction;
++                            fluids[count] = newFluid;
++                            count++;
++                        }
++
++                        lowest = distance;
++                    }
++                }
++            }
++        }
++
++        return count;
++    }
++
+     private static boolean canHoldAnyFluid(final BlockState state) {
+         Block block = state.getBlock();
+         return block instanceof LiquidBlockContainer
+@@ -505,6 +573,18 @@ public abstract class FlowingFluid extends Fluid {
+         }
+     }
+ 
++    private static final class SpreadTargets {
++        private final Direction[] directions = new Direction[4];
++        private final FluidState[] fluids = new FluidState[4];
++
++        private void clear(final int count) {
++            for (int i = 0; i < count; i++) {
++                this.directions[i] = null;
++                this.fluids[i] = null;
++            }
++        }
++    }
++
+     protected class SpreadContext {
+         private final BlockGetter level;
+         private final BlockPos origin;
+diff --git a/net/minecraft/world/ticks/LevelTicks.java b/net/minecraft/world/ticks/LevelTicks.java
+index 7bf9e93692debcef511bfa316aeef32ae8a7d3b7..1200a6562b904f6468d581516983741f86217307 100644
+--- a/net/minecraft/world/ticks/LevelTicks.java
++++ b/net/minecraft/world/ticks/LevelTicks.java
+@@ -19,6 +19,7 @@ import java.util.Set;
+ import java.util.function.BiConsumer;
+ import java.util.function.LongPredicate;
+ import java.util.function.Predicate;
++import java.util.function.BooleanSupplier;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.SectionPos;
+ import net.minecraft.core.Vec3i;
+@@ -29,14 +30,21 @@ import net.minecraft.world.level.ChunkPos;
+ import net.minecraft.world.level.levelgen.structure.BoundingBox;
+ 
+ public class LevelTicks<T> implements LevelTickAccess<T> {
++    private static final int QUEUED_SCHEDULE_REBUILD_FACTOR = 4;
++    private static final int QUEUED_SCHEDULE_REBUILD_EXTRA = 1024;
+     private static final Comparator<LevelChunkTicks<?>> CONTAINER_DRAIN_ORDER = (o1, o2) -> ScheduledTick.INTRA_TICK_DRAIN_ORDER.compare(o1.peek(), o2.peek());
+     private final LongPredicate tickCheck;
++    private final BooleanSupplier containerQueueEnabled;
+     private final Long2ObjectMap<LevelChunkTicks<T>> allContainers = new Long2ObjectOpenHashMap<>();
+     private final Long2LongMap nextTickForContainer = Util.make(new Long2LongOpenHashMap(), m -> m.defaultReturnValue(Long.MAX_VALUE));
++    private final Long2LongMap queuedTickForContainer = Util.make(new Long2LongOpenHashMap(), m -> m.defaultReturnValue(Long.MAX_VALUE));
++    private final Queue<ContainerSchedule> containersByNextTick = new PriorityQueue<>(ContainerSchedule.ORDER);
+     private final Queue<LevelChunkTicks<T>> containersToTick = new PriorityQueue<>(CONTAINER_DRAIN_ORDER);
+     private final Queue<ScheduledTick<T>> toRunThisTick = new ArrayDeque<>();
+     private final List<ScheduledTick<T>> alreadyRunThisTick = new ArrayList<>();
+     private final Set<ScheduledTick<?>> toRunThisTickSet = new ObjectOpenCustomHashSet<>(ScheduledTick.UNIQUE_TICK_HASH);
++    private boolean containerQueueActive;
++    private int staleQueuedSchedules;
+     private final BiConsumer<LevelChunkTicks<T>, ScheduledTick<T>> chunkScheduleUpdater = (container, newTick) -> {
+         if (newTick.equals(container.peek())) {
+             this.updateContainerScheduling(newTick);
+@@ -44,7 +52,12 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+     };
+ 
+     public LevelTicks(final LongPredicate tickCheck) {
++        this(tickCheck, () -> false);
++    }
++
++    public LevelTicks(final LongPredicate tickCheck, final BooleanSupplier containerQueueEnabled) {
+         this.tickCheck = tickCheck;
++        this.containerQueueEnabled = containerQueueEnabled;
+     }
+ 
+     public void addContainer(final ChunkPos pos, final LevelChunkTicks<T> container) {
+@@ -52,7 +65,7 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+         this.allContainers.put(posKey, container);
+         ScheduledTick<T> nextTick = container.peek();
+         if (nextTick != null) {
+-            this.nextTickForContainer.put(posKey, nextTick.triggerTick());
++            this.updateContainerScheduling(nextTick);
+         }
+ 
+         container.setOnTickAdded(this.chunkScheduleUpdater);
+@@ -62,6 +75,7 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+         long chunkKey = pos.pack();
+         LevelChunkTicks<T> removedContainer = this.allContainers.remove(chunkKey);
+         this.nextTickForContainer.remove(chunkKey);
++        this.queuedTickForContainer.remove(chunkKey);
+         if (removedContainer != null) {
+             removedContainer.setOnTickAdded(null);
+         }
+@@ -98,6 +112,12 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+     }
+ 
+     private void sortContainersToTick(final long currentTick) {
++        if (this.containerQueueEnabled.getAsBoolean()) {
++            this.syncContainerQueueMode();
++            this.sortContainersToTickQueued(currentTick);
++            return;
++        }
++        this.syncContainerQueueMode();
+         ObjectIterator<Entry> it = Long2LongMaps.fastIterator(this.nextTickForContainer);
+ 
+         while (it.hasNext()) {
+@@ -123,6 +143,59 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+         }
+     }
+ 
++    private void syncContainerQueueMode() {
++        boolean enabled = this.containerQueueEnabled.getAsBoolean();
++        if (enabled == this.containerQueueActive) {
++            return;
++        }
++        this.containerQueueActive = enabled;
++        this.containersByNextTick.clear();
++        this.queuedTickForContainer.clear();
++        this.staleQueuedSchedules = 0;
++        if (enabled) {
++            ObjectIterator<Entry> it = Long2LongMaps.fastIterator(this.nextTickForContainer);
++            while (it.hasNext()) {
++                Entry entry = it.next();
++                this.queueContainerSchedule(entry.getLongKey(), entry.getLongValue());
++            }
++        }
++    }
++
++    private void sortContainersToTickQueued(final long currentTick) {
++        this.rebuildContainerQueueIfNeeded();
++        ContainerSchedule entry;
++        while ((entry = this.containersByNextTick.peek()) != null && entry.queueTick <= currentTick) {
++            this.containersByNextTick.poll();
++            if (this.queuedTickForContainer.get(entry.chunkPos) == entry.triggerTick) {
++                this.queuedTickForContainer.remove(entry.chunkPos);
++            }
++            long scheduledTick = this.nextTickForContainer.get(entry.chunkPos);
++            if (scheduledTick != entry.triggerTick) {
++                this.staleQueuedSchedules++;
++                continue;
++            }
++            LevelChunkTicks<T> candidateContainer = this.allContainers.get(entry.chunkPos);
++            if (candidateContainer == null) {
++                this.nextTickForContainer.remove(entry.chunkPos);
++                continue;
++            }
++            ScheduledTick<T> scheduledTickEntry = candidateContainer.peek();
++            if (scheduledTickEntry == null) {
++                this.nextTickForContainer.remove(entry.chunkPos);
++                this.queuedTickForContainer.remove(entry.chunkPos);
++            } else if (scheduledTickEntry.triggerTick() > currentTick) {
++                this.updateContainerScheduling(scheduledTickEntry);
++            } else if (this.tickCheck.test(entry.chunkPos)) {
++                this.nextTickForContainer.remove(entry.chunkPos);
++                this.queuedTickForContainer.remove(entry.chunkPos);
++                this.containersToTick.add(candidateContainer);
++            } else {
++                this.queueContainerSchedule(entry.chunkPos, scheduledTickEntry.triggerTick(), currentTick + 1L);
++            }
++        }
++        this.rebuildContainerQueueIfNeeded();
++    }
++
+     private void drainContainers(final long currentTick, final int maxTicksToProcess) {
+         LevelChunkTicks<T> topContainer;
+         while (this.canScheduleMoreTicks(maxTicksToProcess) && (topContainer = this.containersToTick.poll()) != null) {
+@@ -147,7 +220,46 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+     }
+ 
+     private void updateContainerScheduling(final ScheduledTick<T> nextTick) {
+-        this.nextTickForContainer.put(ChunkPos.pack(nextTick.pos()), nextTick.triggerTick());
++        long chunkPos = ChunkPos.pack(nextTick.pos());
++        this.nextTickForContainer.put(chunkPos, nextTick.triggerTick());
++        if (this.containerQueueEnabled.getAsBoolean()) {
++            this.queueContainerSchedule(chunkPos, nextTick.triggerTick());
++        }
++    }
++
++    private void queueContainerSchedule(final long chunkPos, final long triggerTick) {
++        this.queueContainerSchedule(chunkPos, triggerTick, triggerTick);
++    }
++
++    private void queueContainerSchedule(final long chunkPos, final long triggerTick, final long queueTick) {
++        if (this.queuedTickForContainer.get(chunkPos) == triggerTick) {
++            return;
++        }
++        this.queuedTickForContainer.put(chunkPos, triggerTick);
++        this.containersByNextTick.add(new ContainerSchedule(chunkPos, triggerTick, queueTick));
++    }
++
++    private void rebuildContainerQueueIfNeeded() {
++        int liveSchedules = this.nextTickForContainer.size();
++        long rebuildAt = (long) liveSchedules * QUEUED_SCHEDULE_REBUILD_FACTOR + QUEUED_SCHEDULE_REBUILD_EXTRA;
++        if (this.containersByNextTick.size() <= rebuildAt && this.staleQueuedSchedules <= liveSchedules + QUEUED_SCHEDULE_REBUILD_EXTRA) {
++            return;
++        }
++        this.rebuildContainerQueue();
++    }
++
++    private void rebuildContainerQueue() {
++        this.containersByNextTick.clear();
++        this.queuedTickForContainer.clear();
++        this.staleQueuedSchedules = 0;
++        ObjectIterator<Entry> it = Long2LongMaps.fastIterator(this.nextTickForContainer);
++        while (it.hasNext()) {
++            Entry entry = it.next();
++            long chunkPos = entry.getLongKey();
++            long triggerTick = entry.getLongValue();
++            this.queuedTickForContainer.put(chunkPos, triggerTick);
++            this.containersByNextTick.add(new ContainerSchedule(chunkPos, triggerTick, triggerTick));
++        }
+     }
+ 
+     private void drainFromCurrentContainer(
+@@ -198,6 +310,14 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+         this.toRunThisTickSet.clear();
+     }
+ 
++    private record ContainerSchedule(long chunkPos, long triggerTick, long queueTick) {
++
++        private static final Comparator<ContainerSchedule> ORDER = Comparator
++            .comparingLong((ContainerSchedule entry) -> entry.queueTick)
++            .thenComparingLong(entry -> entry.triggerTick)
++            .thenComparingLong(entry -> entry.chunkPos);
++    }
++
+     @Override
+     public boolean hasScheduledTick(final BlockPos pos, final T block) {
+         LevelChunkTicks<T> tickContainer = this.allContainers.get(ChunkPos.pack(pos));
+@@ -244,6 +364,7 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+                     this.updateContainerScheduling(newTop);
+                 } else {
+                     this.nextTickForContainer.remove(pos);
++                    this.queuedTickForContainer.remove(pos);
+                 }
+             }
+         });

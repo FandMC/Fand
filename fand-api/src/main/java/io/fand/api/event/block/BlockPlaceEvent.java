@@ -5,6 +5,8 @@ import io.fand.api.block.BlockType;
 import io.fand.api.entity.Player;
 import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
+import io.fand.api.event.player.PlayerInteractEvent;
+import io.fand.api.item.ItemStack;
 import java.util.Objects;
 
 /**
@@ -19,13 +21,28 @@ public class BlockPlaceEvent implements Event, Cancellable {
     private final Block block;
     private final BlockType placedType;
     private final BlockType replacedType;
+    private final PlayerInteractEvent.Hand hand;
+    private final ItemStack item;
     private boolean cancelled;
 
     public BlockPlaceEvent(Player player, Block block, BlockType placedType, BlockType replacedType) {
+        this(player, block, placedType, replacedType, PlayerInteractEvent.Hand.MAIN_HAND, ItemStack.EMPTY);
+    }
+
+    public BlockPlaceEvent(
+            Player player,
+            Block block,
+            BlockType placedType,
+            BlockType replacedType,
+            PlayerInteractEvent.Hand hand,
+            ItemStack item
+    ) {
         this.player = Objects.requireNonNull(player, "player");
         this.block = Objects.requireNonNull(block, "block");
         this.placedType = Objects.requireNonNull(placedType, "placedType");
         this.replacedType = Objects.requireNonNull(replacedType, "replacedType");
+        this.hand = Objects.requireNonNull(hand, "hand");
+        this.item = Objects.requireNonNull(item, "item");
     }
 
     public Player player() {
@@ -44,6 +61,16 @@ public class BlockPlaceEvent implements Event, Cancellable {
     /** Block type the placement is overwriting (often air or a replaceable block). */
     public BlockType replacedType() {
         return replacedType;
+    }
+
+    /** Hand that performed the placement. */
+    public PlayerInteractEvent.Hand hand() {
+        return hand;
+    }
+
+    /** Item stack used for the placement. */
+    public ItemStack item() {
+        return item;
     }
 
     @Override

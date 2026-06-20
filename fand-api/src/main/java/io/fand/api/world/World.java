@@ -20,6 +20,7 @@ import io.fand.api.world.sound.SoundEffect;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Predicate;
 import java.util.function.Consumer;
 import net.kyori.adventure.audience.ForwardingAudience;
 import net.kyori.adventure.key.Key;
@@ -682,6 +683,71 @@ public interface World extends ForwardingAudience {
             changes.add(block.offset(originX, originY, originZ));
         }
         return setBlocks(changes, options);
+    }
+
+    /**
+     * Scans an inclusive cuboid over multiple ticks and applies changes returned
+     * by {@code transform}. Implementations backed by a live world should keep
+     * both scanning and mutation on the server thread.
+     */
+    default CompletableFuture<BlockScanResult> scanBlocks(
+            BlockRegion region,
+            BlockTransform transform,
+            BlockScanOptions options
+    ) {
+        java.util.Objects.requireNonNull(region, "region");
+        java.util.Objects.requireNonNull(transform, "transform");
+        java.util.Objects.requireNonNull(options, "options");
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Block scanning is not supported"));
+    }
+
+    /** Replaces matching blocks in {@code region} over multiple ticks. */
+    default CompletableFuture<BlockScanResult> replaceBlocks(
+            BlockRegion region,
+            Predicate<BlockType> matcher,
+            BlockType replacement
+    ) {
+        return replaceBlocks(region, matcher, replacement, BlockScanOptions.defaults());
+    }
+
+    /** Replaces matching blocks in {@code region} over multiple ticks. */
+    default CompletableFuture<BlockScanResult> replaceBlocks(
+            BlockRegion region,
+            Predicate<BlockType> matcher,
+            BlockType replacement,
+            BlockScanOptions options
+    ) {
+        java.util.Objects.requireNonNull(matcher, "matcher");
+        java.util.Objects.requireNonNull(replacement, "replacement");
+        return scanBlocks(region, BlockTransform.replaceMatching(matcher, replacement), options);
+    }
+
+    /** Replaces the matching block component connected to {@code origin}. */
+    default CompletableFuture<BlockScanResult> replaceConnectedBlocks(
+            Location origin,
+            Predicate<BlockType> matcher,
+            BlockType replacement,
+            int maxDistance
+    ) {
+        return replaceConnectedBlocks(origin, matcher, replacement, maxDistance, BlockScanOptions.defaults());
+    }
+
+    /** Replaces the matching block component connected to {@code origin}. */
+    default CompletableFuture<BlockScanResult> replaceConnectedBlocks(
+            Location origin,
+            Predicate<BlockType> matcher,
+            BlockType replacement,
+            int maxDistance,
+            BlockScanOptions options
+    ) {
+        requireSameWorld(origin, this, "origin");
+        java.util.Objects.requireNonNull(matcher, "matcher");
+        java.util.Objects.requireNonNull(replacement, "replacement");
+        java.util.Objects.requireNonNull(options, "options");
+        if (maxDistance < 0) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("maxDistance must not be negative"));
+        }
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Connected block replacement is not supported"));
     }
 
     /** Builds a {@link Location} in this world. */

@@ -60,6 +60,16 @@ final class DemoBlockEvents implements Listener {
             event.setCancelled(true);
             event.player().sendMessage(Component.text("test-plugin cancelled TNT placement.", NamedTextColor.RED));
         }
+        if (context.config().getBoolean("features.log-block-detail-events", false)) {
+            logger.info("{} placed block {} with hand={} item={} at {},{},{}",
+                    event.player().name(),
+                    blockName(event.placedType()),
+                    event.hand(),
+                    stackName(event.item()),
+                    event.block().x(),
+                    event.block().y(),
+                    event.block().z());
+        }
     }
 
     @Subscribe
@@ -79,9 +89,11 @@ final class DemoBlockEvents implements Listener {
     @Subscribe
     public void onBlockMultiPlace(BlockMultiPlaceEvent event) {
         if (context.config().getBoolean("features.log-block-detail-events", false)) {
-            logger.info("{} placed multi-block {} at {},{},{} blocks={}",
+            logger.info("{} placed multi-block {} with hand={} item={} at {},{},{} blocks={}",
                     event.player().name(),
                     blockName(event.placedType()),
+                    event.hand(),
+                    stackName(event.item()),
                     event.block().x(),
                     event.block().y(),
                     event.block().z(),

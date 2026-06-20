@@ -1404,7 +1404,14 @@ final class EventPayloadTest {
 
         var canBuild = new BlockCanBuildEvent(player, block, placedType, source, false);
         canBuild.setBuildable(true);
-        var multiPlace = new BlockMultiPlaceEvent(player, block, placedType, replacedType, List.of(block, otherBlock));
+        var multiPlace = new BlockMultiPlaceEvent(
+                player,
+                block,
+                placedType,
+                replacedType,
+                PlayerInteractEvent.Hand.OFF_HAND,
+                source,
+                List.of(block, otherBlock));
         multiPlace.setCancelled(true);
         var cook = new BlockCookEvent(block, inventory, source, result);
         cook.setResult(replacement);
@@ -1427,6 +1434,8 @@ final class EventPayloadTest {
         assertThat(multiPlace.blocks()).containsExactly(block, otherBlock);
         assertThat(multiPlace.placedType()).isSameAs(placedType);
         assertThat(multiPlace.replacedType()).isSameAs(replacedType);
+        assertThat(multiPlace.hand()).isEqualTo(PlayerInteractEvent.Hand.OFF_HAND);
+        assertThat(multiPlace.item()).isSameAs(source);
         assertThat(multiPlace.cancelled()).isTrue();
         assertThat(cook.result()).isSameAs(replacement);
         assertThat(cook.cancelled()).isTrue();

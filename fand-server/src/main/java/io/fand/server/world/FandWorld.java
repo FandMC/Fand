@@ -14,7 +14,11 @@ import io.fand.api.world.BlockBatchChange;
 import io.fand.api.world.BlockBatchOptions;
 import io.fand.api.world.BlockBatchResult;
 import io.fand.api.world.BlockClipboard;
+import io.fand.api.world.BlockRegion;
 import io.fand.api.world.BlockRayTraceResult;
+import io.fand.api.world.BlockScanOptions;
+import io.fand.api.world.BlockScanResult;
+import io.fand.api.world.BlockTransform;
 import io.fand.api.world.Chunk;
 import io.fand.api.world.ChunkSnapshot;
 import io.fand.api.world.Difficulty;
@@ -39,6 +43,8 @@ import io.fand.server.item.FandItemStacks;
 import io.fand.server.scheduler.TaskScheduler;
 import io.fand.server.scoreboard.FandScoreboardService;
 import io.fand.server.util.ServerThreading;
+import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
@@ -53,6 +59,7 @@ import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.key.Key;
 import net.minecraft.core.Direction;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
@@ -62,6 +69,8 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.storage.LevelData;
@@ -805,6 +814,73 @@ public final class FandWorld implements World {
     }
 
     @Override
+    public CompletableFuture<BlockScanResult> scanBlocks(
+            BlockRegion region,
+            BlockTransform transform,
+            BlockScanOptions options
+    ) {
+        Objects.requireNonNull(region, "region");
+        Objects.requireNonNull(transform, "transform");
+        Objects.requireNonNull(options, "options");
+        var clamped = clampToBuildHeight(region);
+        if (clamped.isEmpty()) {
+            return CompletableFuture.completedFuture(BlockScanResult.empty());
+        }
+        var future = new CompletableFuture<BlockScanResult>();
+        var runner = new BlockScanRunner(clamped, transform, options, future);
+        try {
+            if (scheduler != null) {
+                scheduler.runMain(runner);
+            } else {
+                runOnServerThread(runner);
+            }
+        } catch (RejectedExecutionException failure) {
+            future.completeExceptionally(failure);
+        }
+        return future;
+    }
+
+    @Override
+    public CompletableFuture<BlockScanResult> replaceConnectedBlocks(
+            Location origin,
+            Predicate<io.fand.api.block.BlockType> matcher,
+            io.fand.api.block.BlockType replacement,
+            int maxDistance,
+            BlockScanOptions options
+    ) {
+        var checkedOrigin = requireThisWorld(origin);
+        Objects.requireNonNull(matcher, "matcher");
+        Objects.requireNonNull(replacement, "replacement");
+        Objects.requireNonNull(options, "options");
+        if (maxDistance < 0) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("maxDistance must not be negative"));
+        }
+        if (checkedOrigin.blockY() < handle.getMinY() || checkedOrigin.blockY() > handle.getMaxY()) {
+            return CompletableFuture.completedFuture(BlockScanResult.empty());
+        }
+        var future = new CompletableFuture<BlockScanResult>();
+        var runner = new ConnectedBlockReplaceRunner(
+                checkedOrigin.blockX(),
+                checkedOrigin.blockY(),
+                checkedOrigin.blockZ(),
+                matcher,
+                replacement,
+                maxDistance,
+                options,
+                future);
+        try {
+            if (scheduler != null) {
+                scheduler.runMain(runner);
+            } else {
+                runOnServerThread(runner);
+            }
+        } catch (RejectedExecutionException failure) {
+            future.completeExceptionally(failure);
+        }
+        return future;
+    }
+
+    @Override
     public Block blockAt(int x, int y, int z) {
         return new FandBlock(this, x, y, z);
     }
@@ -893,6 +969,12 @@ public final class FandWorld implements World {
             case CLIENTS_ONLY -> net.minecraft.world.level.block.Block.UPDATE_CLIENTS;
             case SILENT -> net.minecraft.world.level.block.Block.UPDATE_NONE;
         };
+    }
+
+    private ScanRegion clampToBuildHeight(BlockRegion region) {
+        int minY = Math.max(region.minY(), handle.getMinY());
+        int maxY = Math.min(region.maxY(), handle.getMaxY());
+        return new ScanRegion(region.minX(), minY, region.minZ(), region.maxX(), maxY, region.maxZ());
     }
 
     static long volume(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
@@ -1325,6 +1407,490 @@ public final class FandWorld implements World {
     }
 
     private record RayHit(double x, double y, double z, double distanceSquared) {
+    }
+
+    private record ScanRegion(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+
+        private boolean isEmpty() {
+            return minY > maxY;
+        }
+    }
+
+    private final class BlockScanRunner implements Runnable {
+
+        private final ScanRegion region;
+        private final BlockTransform transform;
+        private final BlockScanOptions options;
+        private final CompletableFuture<BlockScanResult> future;
+        private final int minChunkX;
+        private final int maxChunkX;
+        private final int minChunkZ;
+        private final int maxChunkZ;
+        private final int minSectionY;
+        private final int maxSectionY;
+        private int chunkX;
+        private int chunkZ;
+        private int sectionY;
+        private int minX;
+        private int minY;
+        private int minZ;
+        private int maxX;
+        private int maxY;
+        private int maxZ;
+        private int x;
+        private int y;
+        private int z;
+        private LevelChunkSection currentSection;
+        private boolean sectionReady;
+        private boolean done;
+        private long scanned;
+        private long matched;
+        private long changed;
+        private long skipped;
+        private long failed;
+
+        private BlockScanRunner(
+                ScanRegion region,
+                BlockTransform transform,
+                BlockScanOptions options,
+                CompletableFuture<BlockScanResult> future
+        ) {
+            this.region = region;
+            this.transform = transform;
+            this.options = options;
+            this.future = future;
+            this.minChunkX = Math.floorDiv(region.minX, 16);
+            this.maxChunkX = Math.floorDiv(region.maxX, 16);
+            this.minChunkZ = Math.floorDiv(region.minZ, 16);
+            this.maxChunkZ = Math.floorDiv(region.maxZ, 16);
+            this.minSectionY = SectionPos.blockToSectionCoord(region.minY);
+            this.maxSectionY = SectionPos.blockToSectionCoord(region.maxY);
+            this.chunkX = minChunkX;
+            this.chunkZ = minChunkZ;
+            this.sectionY = minSectionY;
+        }
+
+        @Override
+        public void run() {
+            if (future.isDone()) {
+                return;
+            }
+            try {
+                scanSlice();
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+                return;
+            }
+            if (done) {
+                future.complete(new BlockScanResult(scanned, matched, changed, skipped, failed));
+                return;
+            }
+            scheduleNextSlice();
+        }
+
+        private void scanSlice() {
+            int scanBudget = options.maxBlocksPerTick();
+            int changeBudget = Math.min(options.maxChangesPerBatch(), options.batchOptions().maxBlocksPerTick());
+            int structuralBudget = options.maxBlocksPerTick();
+            while (scanBudget > 0 && changeBudget > 0) {
+                if (!ensureSection(structuralBudget)) {
+                    return;
+                }
+                var state = currentState();
+                scanned++;
+                scanBudget--;
+                try {
+                    var type = FandBlockType.of(state.getBlock());
+                    if (transform.mayTransform(type)) {
+                        var change = transform.apply(new ScannedBlock(x, y, z, state));
+                        if (change != null) {
+                            matched++;
+                            changeBudget--;
+                            if (applyBlockChange(change, options.batchOptions())) {
+                                changed++;
+                            } else {
+                                skipped++;
+                            }
+                        }
+                    }
+                } catch (RuntimeException failure) {
+                    failed++;
+                }
+                advanceBlock();
+            }
+        }
+
+        private boolean ensureSection(int structuralBudget) {
+            int remainingStructuralChecks = structuralBudget;
+            while (!done && !sectionReady) {
+                if (remainingStructuralChecks-- <= 0) {
+                    return false;
+                }
+                var chunk = handle.getChunk(chunkX, chunkZ, ChunkStatus.FULL, !options.loadedChunksOnly());
+                if (chunk == null) {
+                    advanceChunk();
+                    continue;
+                }
+                prepareSectionBounds();
+                LevelChunkSection section = chunk.getSection(chunk.getSectionIndexFromSectionY(sectionY));
+                if (!section.maybeHas(this::mayTransform)) {
+                    scanned += sectionVolume();
+                    advanceSection();
+                    continue;
+                }
+                this.currentSection = section;
+                this.x = minX;
+                this.y = minY;
+                this.z = minZ;
+                this.sectionReady = true;
+            }
+            return !done;
+        }
+
+        private boolean mayTransform(BlockState state) {
+            return transform.mayTransform(FandBlockType.of(state.getBlock()));
+        }
+
+        private BlockState currentState() {
+            if (currentSection == null) {
+                throw new IllegalStateException("scan section is not prepared");
+            }
+            return currentSection.getBlockState(x & 15, y & 15, z & 15);
+        }
+
+        private void prepareSectionBounds() {
+            int chunkMinX = chunkX << 4;
+            int chunkMinZ = chunkZ << 4;
+            int sectionMinY = SectionPos.sectionToBlockCoord(sectionY);
+            this.minX = Math.max(region.minX, chunkMinX);
+            this.maxX = Math.min(region.maxX, chunkMinX + 15);
+            this.minY = Math.max(region.minY, sectionMinY);
+            this.maxY = Math.min(region.maxY, sectionMinY + 15);
+            this.minZ = Math.max(region.minZ, chunkMinZ);
+            this.maxZ = Math.min(region.maxZ, chunkMinZ + 15);
+        }
+
+        private int sectionVolume() {
+            return (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+        }
+
+        private void advanceBlock() {
+            if (x < maxX) {
+                x++;
+                return;
+            }
+            x = minX;
+            if (z < maxZ) {
+                z++;
+                return;
+            }
+            z = minZ;
+            if (y < maxY) {
+                y++;
+                return;
+            }
+            clearSection();
+            advanceSection();
+        }
+
+        private void advanceSection() {
+            if (sectionY < maxSectionY) {
+                sectionY++;
+                return;
+            }
+            sectionY = minSectionY;
+            if (chunkZ < maxChunkZ) {
+                chunkZ++;
+                return;
+            }
+            chunkZ = minChunkZ;
+            if (chunkX < maxChunkX) {
+                chunkX++;
+                return;
+            }
+            done = true;
+        }
+
+        private void advanceChunk() {
+            clearSection();
+            sectionY = minSectionY;
+            if (chunkZ < maxChunkZ) {
+                chunkZ++;
+                return;
+            }
+            chunkZ = minChunkZ;
+            if (chunkX < maxChunkX) {
+                chunkX++;
+                return;
+            }
+            done = true;
+        }
+
+        private void clearSection() {
+            sectionReady = false;
+            currentSection = null;
+        }
+
+        private void scheduleNextSlice() {
+            if (scheduler != null) {
+                try {
+                    scheduler.runMainAfterTicks(this, 0L);
+                } catch (RejectedExecutionException failure) {
+                    future.completeExceptionally(failure);
+                }
+                return;
+            }
+            runOnServerThread(this);
+        }
+    }
+
+    private final class ConnectedBlockReplaceRunner implements Runnable {
+
+        private final int originX;
+        private final int originY;
+        private final int originZ;
+        private final Predicate<io.fand.api.block.BlockType> matcher;
+        private final long maxDistanceSquared;
+        private final BlockScanOptions options;
+        private final CompletableFuture<BlockScanResult> future;
+        private final LongArrayFIFOQueue queue = new LongArrayFIFOQueue();
+        private final LongOpenHashSet visited = new LongOpenHashSet();
+        private final LongOpenHashSet loadedChunkCache = new LongOpenHashSet();
+        private final BlockState replacementState;
+        private final net.minecraft.world.level.block.Block replacementBlock;
+        private long scanned;
+        private long matched;
+        private long changed;
+        private long skipped;
+        private long failed;
+
+        private ConnectedBlockReplaceRunner(
+                int originX,
+                int originY,
+                int originZ,
+                Predicate<io.fand.api.block.BlockType> matcher,
+                io.fand.api.block.BlockType replacement,
+                int maxDistance,
+                BlockScanOptions options,
+                CompletableFuture<BlockScanResult> future
+        ) {
+            this.originX = originX;
+            this.originY = originY;
+            this.originZ = originZ;
+            this.matcher = matcher;
+            this.maxDistanceSquared = (long) maxDistance * maxDistance;
+            this.options = options;
+            this.future = future;
+            this.replacementBlock = FandBlockType.unwrap(replacement);
+            this.replacementState = replacementBlock.defaultBlockState();
+            var start = BlockPos.asLong(originX, originY, originZ);
+            this.queue.enqueue(start);
+            this.visited.add(start);
+        }
+
+        @Override
+        public void run() {
+            if (future.isDone()) {
+                return;
+            }
+            try {
+                scanSlice();
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+                return;
+            }
+            if (queue.isEmpty()) {
+                future.complete(new BlockScanResult(scanned, matched, changed, skipped, failed));
+                return;
+            }
+            scheduleNextSlice();
+        }
+
+        private void scanSlice() {
+            int scanBudget = options.maxBlocksPerTick();
+            int changeBudget = Math.min(options.maxChangesPerBatch(), options.batchOptions().maxBlocksPerTick());
+            while (scanBudget > 0 && changeBudget > 0 && !queue.isEmpty()) {
+                long packed = queue.dequeueLong();
+                int x = BlockPos.getX(packed);
+                int y = BlockPos.getY(packed);
+                int z = BlockPos.getZ(packed);
+                scanned++;
+                scanBudget--;
+                if (!withinDistance(x, y, z) || !isLoadedEnough(x, z)) {
+                    continue;
+                }
+                var pos = new BlockPos(x, y, z);
+                var state = handle.getBlockState(pos);
+                var type = FandBlockType.of(state.getBlock());
+                if (!matcher.test(type)) {
+                    continue;
+                }
+                matched++;
+                changeBudget--;
+                try {
+                    if (applyConnectedChange(pos, state)) {
+                        changed++;
+                    } else {
+                        skipped++;
+                    }
+                    enqueueNeighbors(x, y, z);
+                } catch (RuntimeException failure) {
+                    failed++;
+                }
+            }
+        }
+
+        private boolean applyConnectedChange(BlockPos pos, BlockState currentState) {
+            if (options.batchOptions().skipUnchanged()
+                    && currentState.getBlock() == replacementBlock
+                    && BlockComponentStorage.snapshot(handle, pos).equals(DataComponentMap.EMPTY)) {
+                return false;
+            }
+            if (!handle.setBlock(pos, replacementState, blockUpdateFlags(options.batchOptions()))) {
+                throw new IllegalStateException("Failed to set block at " + pos.toShortString());
+            }
+            BlockComponentStorage.clear(handle, pos);
+            return true;
+        }
+
+        private void enqueueNeighbors(int x, int y, int z) {
+            enqueue(x + 1, y, z);
+            enqueue(x - 1, y, z);
+            enqueue(x, y + 1, z);
+            enqueue(x, y - 1, z);
+            enqueue(x, y, z + 1);
+            enqueue(x, y, z - 1);
+        }
+
+        private void enqueue(int x, int y, int z) {
+            if (y < handle.getMinY() || y > handle.getMaxY() || !withinDistance(x, y, z)) {
+                return;
+            }
+            long packed = BlockPos.asLong(x, y, z);
+            if (visited.add(packed)) {
+                queue.enqueue(packed);
+            }
+        }
+
+        private boolean withinDistance(int x, int y, int z) {
+            long dx = (long) x - originX;
+            long dy = (long) y - originY;
+            long dz = (long) z - originZ;
+            return dx * dx + dy * dy + dz * dz <= maxDistanceSquared;
+        }
+
+        private boolean isLoadedEnough(int x, int z) {
+            if (!options.loadedChunksOnly()) {
+                return true;
+            }
+            int chunkX = Math.floorDiv(x, 16);
+            int chunkZ = Math.floorDiv(z, 16);
+            long packedChunk = ChunkPos.pack(chunkX, chunkZ);
+            if (loadedChunkCache.contains(packedChunk)) {
+                return true;
+            }
+            if (handle.getChunk(chunkX, chunkZ, ChunkStatus.FULL, false) == null) {
+                return false;
+            }
+            loadedChunkCache.add(packedChunk);
+            return true;
+        }
+
+        private void scheduleNextSlice() {
+            if (scheduler != null) {
+                try {
+                    scheduler.runMainAfterTicks(this, 0L);
+                } catch (RejectedExecutionException failure) {
+                    future.completeExceptionally(failure);
+                }
+                return;
+            }
+            runOnServerThread(this);
+        }
+    }
+
+    private final class ScannedBlock implements Block {
+
+        private final int x;
+        private final int y;
+        private final int z;
+        private final BlockState state;
+
+        private ScannedBlock(int x, int y, int z, BlockState state) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.state = state;
+        }
+
+        @Override
+        public World world() {
+            return FandWorld.this;
+        }
+
+        @Override
+        public int x() {
+            return x;
+        }
+
+        @Override
+        public int y() {
+            return y;
+        }
+
+        @Override
+        public int z() {
+            return z;
+        }
+
+        @Override
+        public io.fand.api.block.BlockType type() {
+            return FandBlockType.of(state.getBlock());
+        }
+
+        @Override
+        public boolean air() {
+            return state.isAir();
+        }
+
+        @Override
+        public java.util.Map<String, String> stateProperties() {
+            return delegate().stateProperties();
+        }
+
+        @Override
+        public Optional<String> stateProperty(String name) {
+            return delegate().stateProperty(name);
+        }
+
+        @Override
+        public boolean setStateProperty(String name, String value) {
+            return delegate().setStateProperty(name, value);
+        }
+
+        @Override
+        public Optional<? extends io.fand.api.block.BlockEntity> blockEntity() {
+            return delegate().blockEntity();
+        }
+
+        @Override
+        public boolean setType(io.fand.api.block.BlockType type) {
+            return delegate().setType(type);
+        }
+
+        @Override
+        public boolean setType(io.fand.api.block.BlockType type, DataComponentMap components) {
+            return delegate().setType(type, components);
+        }
+
+        @Override
+        public io.fand.api.component.DataComponentContainer components() {
+            return delegate().components();
+        }
+
+        private FandBlock delegate() {
+            return new FandBlock(FandWorld.this, x, y, z);
+        }
     }
 
     private final class BlockBatchRunner implements Runnable {

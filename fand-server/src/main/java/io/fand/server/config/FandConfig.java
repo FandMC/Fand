@@ -313,6 +313,24 @@ public final class FandConfig {
         public volatile boolean randomTickPositionMask = true;
 
         @ConfigComment({
+                "Maintain a trigger-time priority queue for fluid scheduled-tick",
+                "containers instead of scanning every loaded tick container each",
+                "server tick. All due fluid ticks are still collected, ordered,",
+                "and executed by vanilla's LevelTicks drain logic; this only",
+                "removes scheduler lookup overhead when many chunks have pending",
+                "fluid updates."
+        })
+        public volatile boolean fluidTickContainerQueue = true;
+
+        @ConfigComment({
+                "Collect horizontal fluid spread targets in fixed arrays instead",
+                "of allocating an EnumMap for every flowing-fluid tick. The same",
+                "directions are evaluated in vanilla order and the same targets",
+                "are applied; this only reduces allocation and map overhead."
+        })
+        public volatile boolean flowingFluidSpreadArray = true;
+
+        @ConfigComment({
                 "Cache immutable chunk-generation status lists, pyramid steps,",
                 "dependency radii, and loading dependency tables used by each",
                 "chunk generation task. This avoids rebuilding the same control",

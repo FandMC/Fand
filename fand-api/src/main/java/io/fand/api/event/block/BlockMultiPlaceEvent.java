@@ -3,6 +3,8 @@ package io.fand.api.event.block;
 import io.fand.api.block.Block;
 import io.fand.api.block.BlockType;
 import io.fand.api.entity.Player;
+import io.fand.api.event.player.PlayerInteractEvent;
+import io.fand.api.item.ItemStack;
 import java.util.List;
 import java.util.Objects;
 
@@ -20,6 +22,18 @@ public final class BlockMultiPlaceEvent extends BlockPlaceEvent {
             BlockType replacedType,
             List<? extends Block> blocks) {
         super(player, block, placedType, replacedType);
+        this.blocks = List.copyOf(Objects.requireNonNull(blocks, "blocks"));
+    }
+
+    public BlockMultiPlaceEvent(
+            Player player,
+            Block block,
+            BlockType placedType,
+            BlockType replacedType,
+            PlayerInteractEvent.Hand hand,
+            ItemStack item,
+            List<? extends Block> blocks) {
+        super(player, block, placedType, replacedType, hand, item);
         this.blocks = List.copyOf(Objects.requireNonNull(blocks, "blocks"));
     }
 
