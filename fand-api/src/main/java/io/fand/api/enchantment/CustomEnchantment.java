@@ -9,12 +9,21 @@ public record CustomEnchantment(
         Key key,
         Component description,
         EnchantmentDefinition definition,
-        JsonObject effects,
+        EnchantmentEffects effects,
         java.util.List<io.fand.api.registry.RegistryReference> exclusiveSet
 ) {
 
     public CustomEnchantment(Key key, Component description, int maxLevel) {
-        this(key, description, EnchantmentDefinition.allItems(maxLevel), new JsonObject(), java.util.List.of());
+        this(key, description, EnchantmentDefinition.allItems(maxLevel), EnchantmentEffects.empty(), java.util.List.of());
+    }
+
+    public CustomEnchantment(
+            Key key,
+            Component description,
+            EnchantmentDefinition definition,
+            JsonObject effects,
+            java.util.List<io.fand.api.registry.RegistryReference> exclusiveSet) {
+        this(key, description, definition, EnchantmentEffects.raw(effects), exclusiveSet);
     }
 
     public CustomEnchantment {
@@ -22,7 +31,6 @@ public record CustomEnchantment(
         Objects.requireNonNull(description, "description");
         Objects.requireNonNull(definition, "definition");
         Objects.requireNonNull(effects, "effects");
-        effects = effects.deepCopy();
         exclusiveSet = java.util.List.copyOf(exclusiveSet);
     }
 
@@ -31,7 +39,15 @@ public record CustomEnchantment(
     }
 
     public CustomEnchantment withEffects(JsonObject effects) {
+        return withEffects(EnchantmentEffects.raw(effects));
+    }
+
+    public CustomEnchantment withEffects(EnchantmentEffects effects) {
         return new CustomEnchantment(key, description, definition, effects, exclusiveSet);
+    }
+
+    public JsonObject effectsJson() {
+        return effects.toJson();
     }
 
     public CustomEnchantment withDefinition(EnchantmentDefinition definition) {

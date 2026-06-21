@@ -5,8 +5,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.google.gson.JsonObject;
 import io.fand.api.advancement.AdvancementCriterion;
 import io.fand.api.advancement.AdvancementDisplay;
+import io.fand.api.advancement.AdvancementEntityPredicate;
 import io.fand.api.advancement.AdvancementFrame;
+import io.fand.api.advancement.AdvancementItemPredicate;
+import io.fand.api.advancement.AdvancementLocationPredicate;
+import io.fand.api.advancement.AdvancementRange;
 import io.fand.api.advancement.AdvancementRewards;
+import io.fand.api.advancement.AdvancementTriggers;
 import io.fand.api.advancement.CustomAdvancement;
 import io.fand.api.item.ItemKey;
 import io.fand.api.item.ItemType;
@@ -92,6 +97,60 @@ final class FandAdvancementRegistryTest {
                 .isEqualTo("minecraft:inventory_changed");
         assertThat(json.getAsJsonObject("rewards").get("experience").getAsInt()).isEqualTo(25);
         assertThat(json.get("sends_telemetry_event").getAsBoolean()).isTrue();
+    }
+
+    @Test
+    void typedAdvancementTriggerDslBuildsInventoryChangedJson() {
+        var criterion = AdvancementCriterion.trigger("has_stone_tool", AdvancementTriggers.inventoryChanged(
+                AdvancementItemPredicate.builder()
+                        .tag(Key.key("minecraft:stone_tool_materials"))
+                        .count(AdvancementRange.atLeast(1))
+                        .build()));
+
+        var json = criterion.trigger();
+
+        assertThat(json.get("trigger").getAsString()).isEqualTo("minecraft:inventory_changed");
+        var item = json.getAsJsonObject("conditions").getAsJsonArray("items").get(0).getAsJsonObject();
+        assertThat(item.get("items").getAsString()).isEqualTo("#minecraft:stone_tool_materials");
+        assertThat(item.getAsJsonObject("count").get("min").getAsDouble()).isEqualTo(1.0);
+    }
+
+    @Test
+    void typedAdvancementTriggerDslBuildsEntityAndLocationJson() {
+        var location = AdvancementLocationPredicate.builder()
+                .biome(Key.key("minecraft:badlands"))
+                .canSeeSky(true)
+                .build();
+        var criterion = AdvancementCriterion.trigger("visit_badlands", AdvancementTriggers.location(location));
+
+        var json = criterion.trigger();
+
+        assertThat(json.get("trigger").getAsString()).isEqualTo("minecraft:location");
+        var playerCondition = json.getAsJsonObject("conditions").getAsJsonArray("player").get(0).getAsJsonObject();
+        assertThat(playerCondition.get("condition").getAsString()).isEqualTo("minecraft:entity_properties");
+        assertThat(playerCondition.get("entity").getAsString()).isEqualTo("this");
+        var predicate = playerCondition.getAsJsonObject("predicate");
+        assertThat(predicate.getAsJsonObject("minecraft:location").get("biomes").getAsString()).isEqualTo("minecraft:badlands");
+        assertThat(predicate.getAsJsonObject("minecraft:location").get("can_see_sky").getAsBoolean()).isTrue();
+    }
+
+    @Test
+    void typedAdvancementTriggerDslBuildsDamageAndVictimJson() {
+        var criterion = AdvancementCriterion.trigger("hurt_zombie", AdvancementTriggers.playerHurtEntity(
+                io.fand.api.advancement.AdvancementDamagePredicate.builder()
+                        .dealt(AdvancementRange.atLeast(4))
+                        .blocked(false)
+                        .build(),
+                AdvancementEntityPredicate.type(Key.key("minecraft:zombie"))));
+
+        var json = criterion.trigger();
+
+        assertThat(json.get("trigger").getAsString()).isEqualTo("minecraft:player_hurt_entity");
+        var conditions = json.getAsJsonObject("conditions");
+        assertThat(conditions.getAsJsonObject("damage").getAsJsonObject("dealt").get("min").getAsDouble()).isEqualTo(4.0);
+        assertThat(conditions.getAsJsonObject("damage").get("blocked").getAsBoolean()).isFalse();
+        var victim = conditions.getAsJsonArray("entity").get(0).getAsJsonObject();
+        assertThat(victim.getAsJsonObject("predicate").get("minecraft:entity_type").getAsString()).isEqualTo("minecraft:zombie");
     }
 
     private static ItemType testItem(ItemKey key) {

@@ -30,6 +30,7 @@ import net.minecraft.core.HolderSet;
 import net.minecraft.core.Vec3i;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.DoubleTag;
 import net.minecraft.nbt.IntTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
@@ -44,7 +45,6 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.templatesystem.BlockRotProcessor;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
@@ -353,7 +353,8 @@ public final class FandStructureService implements StructureService {
 
         var vanilla = newBaseTemplate(width, height, length);
         vanilla.put("palette", paletteList);
-        vanilla.put("blocks", indexedBlocks(width, height, length, states));
+        vanilla.put("blocks", indexedBlocks(width, height, length, states, blockEntitiesByIndex(schematic, width, height, length)));
+        copySchematicMetadata(schematic, vanilla);
         copyEntities(schematic, vanilla);
         return vanilla;
     }
@@ -366,6 +367,7 @@ public final class FandStructureService implements StructureService {
 
         var blocks = schematic.getByteArray("Blocks").orElseThrow(() -> new IOException("Legacy schematic missing Blocks"));
         var data = schematic.getByteArray("Data").orElse(new byte[blocks.length]);
+        var addBlocks = schematic.getByteArray("AddBlocks").orElse(null);
         if (blocks.length != width * height * length) {
             throw new IOException("Legacy schematic block array size mismatch");
         }
@@ -373,7 +375,7 @@ public final class FandStructureService implements StructureService {
         var indices = new int[blocks.length];
         var stateIds = new java.util.LinkedHashMap<String, Integer>();
         for (int i = 0; i < blocks.length; i++) {
-            int legacyId = blocks[i] & 0xFF;
+            int legacyId = legacyBlockId(blocks, addBlocks, i);
             int legacyData = i < data.length ? data[i] & 0x0F : 0;
             var state = Block.BLOCK_STATE_REGISTRY.byId((legacyId << 4) | legacyData);
             if (state == null) {
@@ -390,7 +392,8 @@ public final class FandStructureService implements StructureService {
 
         var vanilla = newBaseTemplate(width, height, length);
         vanilla.put("palette", palette);
-        vanilla.put("blocks", indexedBlocks(width, height, length, indices));
+        vanilla.put("blocks", indexedBlocks(width, height, length, indices, blockEntitiesByIndex(schematic, width, height, length)));
+        copySchematicMetadata(schematic, vanilla);
         copyEntities(schematic, vanilla);
         return vanilla;
     }
@@ -401,29 +404,58 @@ public final class FandStructureService implements StructureService {
         int width = size.getIntOr(0, 0);
         int height = size.getIntOr(1, 0);
         int length = size.getIntOr(2, 0);
+        int volume = Math.max(0, width * height * length);
         sponge.putInt("Version", 2);
-        sponge.putInt("DataVersion", vanilla.getIntOr("DataVersion", net.minecraft.SharedConstants.getCurrentVersion().dataVersion().version()));
+        sponge.putInt("DataVersion", vanilla.getIntOr("DataVersion", currentDataVersion()));
         sponge.putInt("Width", width);
         sponge.putInt("Height", height);
         sponge.putInt("Length", length);
 
         var palette = new CompoundTag();
-        var paletteList = vanilla.getListOrEmpty("palette");
+        var paletteList = vanillaPalette(vanilla);
+        int airPaletteIndex = findPaletteIndex(paletteList, "minecraft:air");
+        int airState = 0;
+        int[] remappedStates = new int[paletteList.size()];
+        palette.putInt("minecraft:air", airState);
+        if (airPaletteIndex >= 0) {
+            remappedStates[airPaletteIndex] = airState;
+        }
+        int nextState = 1;
         for (int i = 0; i < paletteList.size(); i++) {
-            palette.putInt(blockStateString(paletteList.getCompoundOrEmpty(i)), i);
+            if (i == airPaletteIndex) {
+                continue;
+            }
+            var state = blockStateString(paletteList.getCompoundOrEmpty(i));
+            remappedStates[i] = nextState;
+            palette.putInt(state, nextState++);
         }
         sponge.put("Palette", palette);
-        sponge.putInt("PaletteMax", paletteList.size());
+        sponge.putInt("PaletteMax", nextState);
 
-        var states = new int[Math.max(0, width * height * length)];
+        var states = new int[volume];
+        java.util.Arrays.fill(states, airState);
+        var blockEntities = new ListTag();
         vanilla.getListOrEmpty("blocks").compoundStream().forEach(block -> {
             var pos = block.getListOrEmpty("pos");
             int index = blockIndex(width, length, pos.getIntOr(0, 0), pos.getIntOr(1, 0), pos.getIntOr(2, 0));
             if (index >= 0 && index < states.length) {
-                states[index] = block.getIntOr("state", 0);
+                int vanillaState = block.getIntOr("state", 0);
+                states[index] = vanillaState >= 0 && vanillaState < remappedStates.length
+                        ? remappedStates[vanillaState]
+                        : airState;
+                block.getCompound("nbt").ifPresent(nbt -> blockEntities.add(spongeBlockEntity(nbt, pos)));
             }
         });
         sponge.putByteArray("BlockData", encodeVarInts(states));
+        if (!blockEntities.isEmpty()) {
+            sponge.put("BlockEntities", blockEntities);
+        }
+        var entities = spongeEntities(vanilla.getListOrEmpty("entities"));
+        if (!entities.isEmpty()) {
+            sponge.put("Entities", entities);
+        }
+        copySchematicMetadata(vanilla, sponge);
+        writeZeroOffsetDefaults(sponge);
         return sponge;
     }
 
@@ -483,7 +515,35 @@ public final class FandStructureService implements StructureService {
         return builder.toString();
     }
 
-    private static ListTag indexedBlocks(int width, int height, int length, int[] states) throws IOException {
+    private static ListTag vanillaPalette(CompoundTag vanilla) {
+        var palette = vanilla.getList("palette");
+        if (palette.isPresent()) {
+            return palette.get();
+        }
+        var palettes = vanilla.getListOrEmpty("palettes");
+        return palettes.getListOrEmpty(0);
+    }
+
+    private static int findPaletteIndex(ListTag palette, String stateName) {
+        for (int i = 0; i < palette.size(); i++) {
+            if (stateName.equals(blockStateString(palette.getCompoundOrEmpty(i)))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int legacyBlockId(byte[] blocks, byte[] addBlocks, int index) {
+        int id = blocks[index] & 0xFF;
+        if (addBlocks == null || (index >> 1) >= addBlocks.length) {
+            return id;
+        }
+        int packed = addBlocks[index >> 1] & 0xFF;
+        int extra = (index & 1) == 0 ? packed & 0x0F : (packed >> 4) & 0x0F;
+        return id | (extra << 8);
+    }
+
+    private static ListTag indexedBlocks(int width, int height, int length, int[] states, java.util.Map<Integer, CompoundTag> blockEntities) throws IOException {
         if (states.length != width * height * length) {
             throw new IOException("Block data length does not match schematic dimensions");
         }
@@ -491,13 +551,15 @@ public final class FandStructureService implements StructureService {
         for (int y = 0; y < height; y++) {
             for (int z = 0; z < length; z++) {
                 for (int x = 0; x < width; x++) {
-                    int state = states[blockIndex(width, length, x, y, z)];
-                    if (isAirState(state)) {
-                        continue;
-                    }
+                    int index = blockIndex(width, length, x, y, z);
+                    int state = states[index];
                     var block = new CompoundTag();
                     block.put("pos", intList(x, y, z));
                     block.putInt("state", state);
+                    var blockEntity = blockEntities.get(index);
+                    if (blockEntity != null) {
+                        block.put("nbt", blockEntity.copy());
+                    }
                     blocks.add(block);
                 }
             }
@@ -505,28 +567,191 @@ public final class FandStructureService implements StructureService {
         return blocks;
     }
 
-    private static boolean isAirState(int stateId) {
-        BlockState state = Block.BLOCK_STATE_REGISTRY.byId(stateId);
-        return state == null || state.isAir();
-    }
-
     private static int blockIndex(int width, int length, int x, int y, int z) {
         return (y * length + z) * width + x;
+    }
+
+    private static java.util.Map<Integer, CompoundTag> blockEntitiesByIndex(CompoundTag schematic, int width, int height, int length) {
+        var blockEntities = new java.util.HashMap<Integer, CompoundTag>();
+        copyBlockEntityList(schematic.getListOrEmpty("BlockEntities"), width, height, length, blockEntities);
+        copyBlockEntityList(schematic.getListOrEmpty("TileEntities"), width, height, length, blockEntities);
+        copyBlockEntityList(schematic.getListOrEmpty("block_entities"), width, height, length, blockEntities);
+        return blockEntities;
+    }
+
+    private static void copyBlockEntityList(ListTag source, int width, int height, int length, java.util.Map<Integer, CompoundTag> target) {
+        source.compoundStream().forEach(blockEntity -> {
+            int[] pos = blockEntityPosition(blockEntity);
+            if (!insideVolume(pos[0], pos[1], pos[2], width, height, length)) {
+                return;
+            }
+            target.put(blockIndex(width, length, pos[0], pos[1], pos[2]), normalizeBlockEntityNbt(blockEntity));
+        });
+    }
+
+    private static int[] blockEntityPosition(CompoundTag blockEntity) {
+        var array = blockEntity.getIntArray("Pos").orElse(null);
+        if (array != null && array.length >= 3) {
+            return new int[] { array[0], array[1], array[2] };
+        }
+        var pos = blockEntity.getList("Pos").or(() -> blockEntity.getList("pos")).orElse(null);
+        if (pos != null && pos.size() >= 3) {
+            return new int[] { pos.getIntOr(0, 0), pos.getIntOr(1, 0), pos.getIntOr(2, 0) };
+        }
+        return new int[] {
+                blockEntity.getIntOr("x", 0),
+                blockEntity.getIntOr("y", 0),
+                blockEntity.getIntOr("z", 0)
+        };
+    }
+
+    private static boolean insideVolume(int x, int y, int z, int width, int height, int length) {
+        return x >= 0 && x < width && y >= 0 && y < height && z >= 0 && z < length;
+    }
+
+    private static CompoundTag normalizeBlockEntityNbt(CompoundTag source) {
+        var nbt = source.copy();
+        if (!nbt.contains("id")) {
+            source.getString("Id").ifPresent(id -> nbt.putString("id", id));
+        }
+        return nbt;
+    }
+
+    private static CompoundTag spongeBlockEntity(CompoundTag vanillaNbt, ListTag pos) {
+        var blockEntity = vanillaNbt.copy();
+        blockEntity.putIntArray("Pos", new int[] {
+                pos.getIntOr(0, 0),
+                pos.getIntOr(1, 0),
+                pos.getIntOr(2, 0)
+        });
+        if (!blockEntity.contains("Id")) {
+            vanillaNbt.getString("id").ifPresent(id -> blockEntity.putString("Id", id));
+        }
+        return blockEntity;
     }
 
     private static CompoundTag newBaseTemplate(int width, int height, int length) {
         var tag = new CompoundTag();
         tag.put("size", intList(width, height, length));
         tag.put("entities", new ListTag());
-        tag.putInt("DataVersion", net.minecraft.SharedConstants.getCurrentVersion().dataVersion().version());
+        tag.putInt("DataVersion", currentDataVersion());
         return tag;
     }
 
+    private static int currentDataVersion() {
+        try {
+            return net.minecraft.SharedConstants.getCurrentVersion().dataVersion().version();
+        } catch (IllegalStateException ignored) {
+            return 0;
+        }
+    }
+
     private static void copyEntities(CompoundTag source, CompoundTag target) {
-        var entities = source.getList("entities")
-                .or(() -> source.getList("Entities"))
-                .orElseGet(ListTag::new);
-        target.put("entities", entities.copy());
+        var entities = new ListTag();
+        source.getListOrEmpty("entities").compoundStream()
+                .map(FandStructureService::vanillaEntity)
+                .forEach(entities::add);
+        source.getListOrEmpty("Entities").compoundStream()
+                .map(FandStructureService::vanillaEntity)
+                .forEach(entities::add);
+        target.put("entities", entities);
+    }
+
+    private static CompoundTag vanillaEntity(CompoundTag source) {
+        if (source.contains("nbt")) {
+            var entity = source.copy();
+            var pos = entityPosition(entity);
+            if (!entity.contains("pos")) {
+                entity.put("pos", doubleList(pos[0], pos[1], pos[2]));
+            }
+            if (!entity.contains("blockPos")) {
+                entity.put("blockPos", intList((int) Math.floor(pos[0]), (int) Math.floor(pos[1]), (int) Math.floor(pos[2])));
+            }
+            return entity;
+        }
+
+        var pos = entityPosition(source);
+        var entity = new CompoundTag();
+        entity.put("pos", doubleList(pos[0], pos[1], pos[2]));
+        entity.put("blockPos", intList(
+                source.getIntOr("TileX", (int) Math.floor(pos[0])),
+                source.getIntOr("TileY", (int) Math.floor(pos[1])),
+                source.getIntOr("TileZ", (int) Math.floor(pos[2]))));
+        entity.put("nbt", normalizeEntityNbt(source));
+        return entity;
+    }
+
+    private static CompoundTag normalizeEntityNbt(CompoundTag source) {
+        var nbt = source.copy();
+        if (!nbt.contains("id")) {
+            source.getString("Id").ifPresent(id -> nbt.putString("id", id));
+        }
+        return nbt;
+    }
+
+    private static double[] entityPosition(CompoundTag entity) {
+        var pos = entity.getList("pos").or(() -> entity.getList("Pos")).orElse(null);
+        if (pos != null && pos.size() >= 3) {
+            return new double[] {
+                    pos.getDoubleOr(0, 0.0),
+                    pos.getDoubleOr(1, 0.0),
+                    pos.getDoubleOr(2, 0.0)
+            };
+        }
+        return new double[] {
+                entity.getDoubleOr("x", 0.0),
+                entity.getDoubleOr("y", 0.0),
+                entity.getDoubleOr("z", 0.0)
+        };
+    }
+
+    private static ListTag spongeEntities(ListTag vanillaEntities) {
+        var entities = new ListTag();
+        vanillaEntities.compoundStream().forEach(entity -> entity.getCompound("nbt").ifPresent(nbt -> {
+            var spongeEntity = nbt.copy();
+            var pos = entityPosition(entity);
+            if (!spongeEntity.contains("Pos")) {
+                spongeEntity.put("Pos", doubleList(pos[0], pos[1], pos[2]));
+            }
+            if (!spongeEntity.contains("Id")) {
+                nbt.getString("id").ifPresent(id -> spongeEntity.putString("Id", id));
+            }
+            entities.add(spongeEntity);
+        }));
+        return entities;
+    }
+
+    private static void copySchematicMetadata(CompoundTag source, CompoundTag target) {
+        for (var key : List.of(
+                "Metadata",
+                "metadata",
+                "Offset",
+                "WEOffsetX",
+                "WEOffsetY",
+                "WEOffsetZ",
+                "WEOriginX",
+                "WEOriginY",
+                "WEOriginZ")) {
+            copyTag(source, target, key);
+        }
+    }
+
+    private static void writeZeroOffsetDefaults(CompoundTag sponge) {
+        if (!sponge.contains("Offset")) {
+            sponge.putIntArray("Offset", new int[] { 0, 0, 0 });
+        }
+        for (var key : List.of("WEOffsetX", "WEOffsetY", "WEOffsetZ", "WEOriginX", "WEOriginY", "WEOriginZ")) {
+            if (!sponge.contains(key)) {
+                sponge.putInt(key, 0);
+            }
+        }
+    }
+
+    private static void copyTag(CompoundTag source, CompoundTag target, String key) {
+        var tag = source.get(key);
+        if (tag != null) {
+            target.put(key, tag.copy());
+        }
     }
 
     private static void requirePositiveSize(int width, int height, int length) throws IOException {
@@ -573,6 +798,14 @@ public final class FandStructureService implements StructureService {
             output.write(remaining);
         }
         return output.toByteArray();
+    }
+
+    private static ListTag doubleList(double... values) {
+        var list = new ListTag();
+        for (double value : values) {
+            list.add(DoubleTag.valueOf(value));
+        }
+        return list;
     }
 
     private static ListTag intList(int... values) {

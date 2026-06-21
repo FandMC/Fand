@@ -91,4 +91,12 @@ public final class ReflectionFields {
             throw new IllegalStateException("Cannot call method " + method, failure);
         }
     }
+
+    public static <T> T call(Method method, Object instance, Class<T> returnType, Object... arguments) {
+        try {
+            return returnType.cast(method.invoke(instance, arguments));
+        } catch (ReflectiveOperationException failure) {
+            throw new IllegalStateException("Cannot call method " + method, failure);
+        }
+    }
 }

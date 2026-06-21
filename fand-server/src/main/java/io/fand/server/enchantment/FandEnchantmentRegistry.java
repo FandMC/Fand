@@ -5,6 +5,7 @@ import com.mojang.serialization.JsonOps;
 import io.fand.api.enchantment.CustomEnchantment;
 import io.fand.api.enchantment.EnchantmentCost;
 import io.fand.api.enchantment.EnchantmentDefinition;
+import io.fand.api.enchantment.EnchantmentEffects;
 import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.enchantment.EnchantmentRegistration;
 import io.fand.api.enchantment.EnchantmentSlotGroup;
@@ -188,7 +189,7 @@ public final class FandEnchantmentRegistry implements EnchantmentRegistry {
                 AdventureBridge.toVanilla(custom.description(), server.registryAccess()),
                 definition(server, custom.definition()),
                 enchantmentSet(server, custom.exclusiveSet()),
-                effects(server, custom.effects()));
+                effects(server, custom.effects().toJson()));
     }
 
     private static Enchantment.EnchantmentDefinition definition(MinecraftServer server, EnchantmentDefinition definition) {
@@ -280,10 +281,10 @@ public final class FandEnchantmentRegistry implements EnchantmentRegistry {
                 .getOrThrow(error -> new IllegalArgumentException("Invalid enchantment effects: " + error));
     }
 
-    private static com.google.gson.JsonObject encodeEffects(MinecraftServer server, Enchantment enchantment) {
+    private static EnchantmentEffects encodeEffects(MinecraftServer server, Enchantment enchantment) {
         var encoded = EnchantmentEffectComponents.CODEC.encodeStart(ops(server), enchantment.effects())
                 .getOrThrow(error -> new IllegalArgumentException("Could not encode enchantment effects: " + error));
-        return encoded.isJsonObject() ? encoded.getAsJsonObject() : new com.google.gson.JsonObject();
+        return EnchantmentEffects.raw(encoded.isJsonObject() ? encoded.getAsJsonObject() : new com.google.gson.JsonObject());
     }
 
     private static RegistryOps<JsonElement> ops(MinecraftServer server) {
@@ -292,8 +293,10 @@ public final class FandEnchantmentRegistry implements EnchantmentRegistry {
 
     private static EnchantmentDefinition fromVanillaDefinition(Enchantment.EnchantmentDefinition definition) {
         return new EnchantmentDefinition(
-                List.of(RegistryReference.all()),
-                null,
+                itemReferences(definition.supportedItems()),
+                definition.primaryItems()
+                        .map(FandEnchantmentRegistry::itemReferences)
+                        .orElse(null),
                 definition.weight(),
                 definition.maxLevel(),
                 new EnchantmentCost(definition.minCost().base(), definition.minCost().perLevelAboveFirst()),
@@ -301,6 +304,18 @@ public final class FandEnchantmentRegistry implements EnchantmentRegistry {
                 definition.anvilCost(),
                 definition.slots().stream()
                         .map(FandEnchantmentRegistry::slotGroup)
+                        .toList());
+    }
+
+    private static List<RegistryReference> itemReferences(HolderSet<Item> items) {
+        return items.unwrapKey()
+                .map(tag -> List.of(RegistryReference.tag(apiKey(tag.location()))))
+                .orElseGet(() -> items.stream()
+                        .map(Holder::unwrapKey)
+                        .flatMap(Optional::stream)
+                        .map(ResourceKey::identifier)
+                        .map(FandEnchantmentRegistry::apiKey)
+                        .map(RegistryReference::key)
                         .toList());
     }
 

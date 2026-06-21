@@ -7,7 +7,11 @@ import com.google.gson.JsonObject;
 import io.fand.api.enchantment.CustomEnchantment;
 import io.fand.api.enchantment.EnchantmentCost;
 import io.fand.api.enchantment.EnchantmentDefinition;
+import io.fand.api.enchantment.EnchantmentEffects;
+import io.fand.api.enchantment.EnchantmentLevelValue;
 import io.fand.api.enchantment.EnchantmentSlotGroup;
+import io.fand.api.enchantment.EnchantmentTarget;
+import io.fand.api.enchantment.EnchantmentValueEffect;
 import io.fand.api.registry.RegistryReference;
 import java.util.List;
 import net.kyori.adventure.key.Key;
@@ -78,8 +82,32 @@ final class FandEnchantmentRegistryTest {
 
         assertThat(registry.enchantment(KEY)).get().satisfies(view -> {
             assertThat(view.definition()).isEqualTo(definition);
-            assertThat(view.effects()).isEqualTo(effects);
+            assertThat(view.effectsJson()).isEqualTo(effects);
             assertThat(view.exclusiveSet()).containsExactly(RegistryReference.tag(Key.key("minecraft:exclusive_set/damage")));
+        });
+    }
+
+    @Test
+    void typedEffectsBuildVanillaComponentJson() {
+        var effects = EnchantmentEffects.builder()
+                .damage(EnchantmentValueEffect.add(EnchantmentLevelValue.linear(2.0F, 1.0F)))
+                .postAttack(
+                        EnchantmentTarget.ATTACKER,
+                        EnchantmentTarget.VICTIM,
+                        io.fand.api.enchantment.EnchantmentEntityEffect.ignite(EnchantmentLevelValue.constant(4.0F)))
+                .preventArmorChange()
+                .build();
+        var registry = new FandEnchantmentRegistry(() -> null);
+        registry.register(new CustomEnchantment(KEY, Component.text("Typed"), 1).withEffects(effects));
+
+        assertThat(registry.enchantment(KEY)).get().satisfies(view -> {
+            assertThat(view.effects()).isEqualTo(effects);
+            var json = view.effectsJson();
+            assertThat(json.getAsJsonArray("minecraft:damage")).hasSize(1);
+            assertThat(json.getAsJsonArray("minecraft:damage").get(0).getAsJsonObject()
+                    .getAsJsonObject("effect").get("type").getAsString()).isEqualTo("minecraft:add");
+            assertThat(json.getAsJsonArray("minecraft:post_attack")).hasSize(1);
+            assertThat(json.getAsJsonObject("minecraft:prevent_armor_change")).isNotNull();
         });
     }
 }

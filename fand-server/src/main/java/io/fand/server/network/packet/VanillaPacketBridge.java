@@ -9,6 +9,7 @@ import io.fand.api.packet.PacketView;
 import io.fand.api.player.PlayerProfile;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InaccessibleObjectException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.SocketAddress;
@@ -146,7 +147,7 @@ final class VanillaPacketBridge {
             return packet;
         }
         if (!shape.replaceable()) {
-            LOGGER.warn("Ignoring replacement for non-record packet {}", packet.getClass().getName());
+            LOGGER.warn("Ignoring replacement for unsupported packet {}", packet.getClass().getName());
             return packet;
         }
         try {
@@ -228,7 +229,8 @@ final class VanillaPacketBridge {
     private record PacketShape(
             List<FieldReader> readers,
             @Nullable Constructor<?> canonicalConstructor,
-            List<String> recordComponentNames
+            List<String> recordComponentNames,
+            @Nullable ClassRebuilder classRebuilder
     ) {
 
         static PacketShape of(Class<?> packetClass) {
@@ -239,7 +241,7 @@ final class VanillaPacketBridge {
         }
 
         boolean replaceable() {
-            return canonicalConstructor != null;
+            return canonicalConstructor != null || classRebuilder != null;
         }
 
         Map<String, Object> read(Packet<?> packet) {
@@ -251,18 +253,21 @@ final class VanillaPacketBridge {
         }
 
         Packet<?> rebuild(PacketView view) {
-            if (canonicalConstructor == null) {
-                throw new IllegalStateException("Packet is not replaceable");
+            if (canonicalConstructor != null) {
+                var arguments = new Object[recordComponentNames.size()];
+                for (int i = 0; i < recordComponentNames.size(); i++) {
+                    arguments[i] = view.value(recordComponentNames.get(i));
+                }
+                try {
+                    return (Packet<?>) canonicalConstructor.newInstance(arguments);
+                } catch (ReflectiveOperationException failure) {
+                    throw new IllegalStateException("Failed to call packet record constructor", failure);
+                }
             }
-            var arguments = new Object[recordComponentNames.size()];
-            for (int i = 0; i < recordComponentNames.size(); i++) {
-                arguments[i] = view.value(recordComponentNames.get(i));
+            if (classRebuilder != null) {
+                return classRebuilder.rebuild(view);
             }
-            try {
-                return (Packet<?>) canonicalConstructor.newInstance(arguments);
-            } catch (ReflectiveOperationException failure) {
-                throw new IllegalStateException("Failed to call packet record constructor", failure);
-            }
+            throw new IllegalStateException("Packet is not replaceable");
         }
 
         private static PacketShape recordShape(Class<?> packetClass) {
@@ -279,7 +284,7 @@ final class VanillaPacketBridge {
             try {
                 var constructor = packetClass.getDeclaredConstructor(constructorTypes);
                 constructor.setAccessible(true);
-                return new PacketShape(List.copyOf(readers), constructor, List.copyOf(names));
+                return new PacketShape(List.copyOf(readers), constructor, List.copyOf(names), null);
             } catch (ReflectiveOperationException failure) {
                 throw new IllegalStateException("Missing canonical record constructor for " + packetClass.getName(), failure);
             }
@@ -287,11 +292,13 @@ final class VanillaPacketBridge {
 
         private static PacketShape classShape(Class<?> packetClass) {
             var readers = new LinkedHashMap<String, FieldReader>();
+            var writers = new LinkedHashMap<String, FieldWriter>();
             for (Class<?> current = packetClass; current != null && current != Object.class; current = current.getSuperclass()) {
                 collectGetterReaders(current, readers);
-                collectPrivateFieldReaders(current, readers);
+                collectPrivateFieldReaders(current, readers, writers);
             }
-            return new PacketShape(List.copyOf(readers.values()), null, List.of());
+            var rebuilder = writers.isEmpty() ? null : new ClassRebuilder(packetClass, List.copyOf(writers.values()));
+            return new PacketShape(List.copyOf(readers.values()), null, List.of(), rebuilder);
         }
 
         private static void collectGetterReaders(Class<?> packetClass, Map<String, FieldReader> readers) {
@@ -307,13 +314,18 @@ final class VanillaPacketBridge {
             }
         }
 
-        private static void collectPrivateFieldReaders(Class<?> packetClass, Map<String, FieldReader> readers) {
+        private static void collectPrivateFieldReaders(
+                Class<?> packetClass,
+                Map<String, FieldReader> readers,
+                Map<String, FieldWriter> writers
+        ) {
             for (var field : packetClass.getDeclaredFields()) {
                 var modifiers = field.getModifiers();
-                if (!Modifier.isPrivate(modifiers) || Modifier.isStatic(modifiers)) {
+                if (!Modifier.isPrivate(modifiers) || Modifier.isStatic(modifiers) || field.isSynthetic()) {
                     continue;
                 }
                 readers.putIfAbsent(field.getName(), new ReflectiveFieldReader(field.getName(), field));
+                writers.putIfAbsent(field.getName(), new ReflectiveFieldWriter(field.getName(), field));
             }
         }
 
@@ -331,11 +343,31 @@ final class VanillaPacketBridge {
         }
     }
 
+    private record ClassRebuilder(Class<?> packetClass, List<FieldWriter> writers) {
+
+        Packet<?> rebuild(PacketView view) {
+            var instance = allocate(packetClass);
+            for (var writer : writers) {
+                if (view.has(writer.name())) {
+                    writer.write(instance, view.value(writer.name()));
+                }
+            }
+            return (Packet<?>) instance;
+        }
+    }
+
     private interface FieldReader {
 
         String name();
 
         Object read(Packet<?> packet);
+    }
+
+    private interface FieldWriter {
+
+        String name();
+
+        void write(Object packet, Object value);
     }
 
     private record MethodFieldReader(String name, Method method) implements FieldReader {
@@ -366,6 +398,50 @@ final class VanillaPacketBridge {
                 return field.get(packet);
             } catch (IllegalAccessException failure) {
                 throw new IllegalStateException("Failed to read packet field " + field.getName(), failure);
+            }
+        }
+    }
+
+    private record ReflectiveFieldWriter(String name, Field field) implements FieldWriter {
+
+        ReflectiveFieldWriter {
+            field.setAccessible(true);
+        }
+
+        @Override
+        public void write(Object packet, Object value) {
+            try {
+                field.set(packet, value);
+            } catch (IllegalAccessException | IllegalArgumentException failure) {
+                throw new IllegalStateException("Failed to write packet field " + field.getName(), failure);
+            }
+        }
+    }
+
+    private static Object allocate(Class<?> type) {
+        return UnsafeAllocator.INSTANCE.allocate(type);
+    }
+
+    private enum UnsafeAllocator {
+        INSTANCE;
+
+        private final sun.misc.Unsafe unsafe = unsafe();
+
+        Object allocate(Class<?> type) {
+            try {
+                return unsafe.allocateInstance(type);
+            } catch (InstantiationException failure) {
+                throw new IllegalStateException("Failed to allocate packet " + type.getName(), failure);
+            }
+        }
+
+        private static sun.misc.Unsafe unsafe() {
+            try {
+                var field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+                field.setAccessible(true);
+                return (sun.misc.Unsafe) field.get(null);
+            } catch (ReflectiveOperationException | InaccessibleObjectException failure) {
+                throw new IllegalStateException("Cannot access Unsafe for packet replacement", failure);
             }
         }
     }

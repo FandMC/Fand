@@ -23,4 +23,8 @@ public record AdvancementCriterion(String name, JsonObject trigger) {
     public static AdvancementCriterion vanilla(String name, JsonObject trigger) {
         return new AdvancementCriterion(name, trigger);
     }
+
+    public static AdvancementCriterion trigger(String name, AdvancementTrigger trigger) {
+        return new AdvancementCriterion(name, Objects.requireNonNull(trigger, "trigger").toVanillaJson());
+    }
 }

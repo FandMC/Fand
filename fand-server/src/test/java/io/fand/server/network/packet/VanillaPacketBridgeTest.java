@@ -9,8 +9,11 @@ import io.fand.api.packet.PacketDirection;
 import io.fand.api.packet.PacketProtocol;
 import io.fand.api.packet.PacketType;
 import io.fand.api.packet.view.ClientboundBlockChangedAckPacketView;
+import io.fand.server.tablist.FandTabListPackets;
 import io.netty.buffer.Unpooled;
 import java.net.InetSocketAddress;
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -24,7 +27,9 @@ import net.minecraft.network.protocol.common.ClientboundKeepAlivePacket;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
 import net.minecraft.network.protocol.common.custom.DiscardedPayload;
 import net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.GameType;
 import org.junit.jupiter.api.Test;
 
 final class VanillaPacketBridgeTest {
@@ -73,7 +78,7 @@ final class VanillaPacketBridgeTest {
     }
 
     @Test
-    void nonRecordPacketReplacementIsIgnored() {
+    void nonRecordPacketReplacementRebuildsPacket() {
         var registry = new PacketRegistryImpl();
         var original = new ClientboundKeepAlivePacket(1L);
         registry.intercept(PacketType.PLAY_CLIENTBOUND_KEEP_ALIVE, packet -> {
@@ -89,8 +94,56 @@ final class VanillaPacketBridgeTest {
                 null,
                 original);
 
-        assertThat(intercepted).isSameAs(original);
-        assertThat(((ClientboundKeepAlivePacket) intercepted).getId()).isEqualTo(1L);
+        assertThat(intercepted).isInstanceOf(ClientboundKeepAlivePacket.class);
+        assertThat(intercepted).isNotSameAs(original);
+        assertThat(((ClientboundKeepAlivePacket) intercepted).getId()).isEqualTo(2L);
+    }
+
+    @Test
+    void playerInfoPacketCanBeReplacedThroughGenericFields() {
+        var registry = new PacketRegistryImpl();
+        var entryId = UUID.randomUUID();
+        var original = FandTabListPackets.packet(
+                EnumSet.of(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY),
+                List.of(new ClientboundPlayerInfoUpdatePacket.Entry(
+                        entryId,
+                        null,
+                        true,
+                        42,
+                        GameType.DEFAULT_MODE,
+                        null,
+                        true,
+                        0,
+                        null)));
+        var replacementEntries = List.of(new ClientboundPlayerInfoUpdatePacket.Entry(
+                entryId,
+                null,
+                true,
+                99,
+                GameType.DEFAULT_MODE,
+                null,
+                true,
+                0,
+                null));
+        registry.intercept(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE, packet -> {
+            assertThat(packet.view().value("entries", List.class)).hasSize(1);
+            packet.replace(packet.view().with("entries", replacementEntries));
+        });
+
+        var intercepted = registry.interceptOutbound(
+                ConnectionProtocol.PLAY,
+                PacketFlow.CLIENTBOUND,
+                Optional.empty(),
+                Optional.empty(),
+                null,
+                original);
+
+        assertThat(intercepted).isInstanceOf(ClientboundPlayerInfoUpdatePacket.class);
+        assertThat(intercepted).isNotSameAs(original);
+        var info = (ClientboundPlayerInfoUpdatePacket) intercepted;
+        assertThat(info.actions()).containsExactly(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY);
+        assertThat(info.entries()).containsExactlyElementsOf(replacementEntries);
+        assertThat(info.entries().getFirst().latency()).isEqualTo(99);
     }
 
     @Test
