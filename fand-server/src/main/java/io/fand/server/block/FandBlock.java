@@ -2,24 +2,39 @@ package io.fand.server.block;
 
 import io.fand.api.block.Block;
 import io.fand.api.block.BlockEntity;
+import io.fand.api.block.BlockPhysics;
 import io.fand.api.block.BlockType;
+import io.fand.api.block.FluidState;
+import io.fand.api.block.FluidType;
+import io.fand.api.block.FluidTypes;
 import io.fand.api.component.DataComponentContainer;
 import io.fand.api.component.DataComponentMap;
+import io.fand.api.item.ItemStack;
+import io.fand.api.world.Vector3;
 import io.fand.api.world.World;
 import io.fand.server.component.BlockComponentStorage;
+import io.fand.server.item.FandItemStacks;
 import io.fand.server.world.FandWorld;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
+import net.kyori.adventure.key.Key;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LiquidBlockContainer;
 import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.world.level.material.FlowingFluid;
+import net.minecraft.world.level.material.Fluids;
 
 public final class FandBlock implements Block {
 
@@ -63,6 +78,26 @@ public final class FandBlock implements Block {
     public BlockType type() {
         ServerLevel level = world.handle();
         return callOnServerThread(() -> FandBlockType.of(level.getBlockState(pos).getBlock()));
+    }
+
+    @Override
+    public FluidType fluid() {
+        return fluidState().type();
+    }
+
+    @Override
+    public FluidState fluidState() {
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> {
+            var state = level.getFluidState(pos);
+            return fluidState(level, pos, state);
+        });
+    }
+
+    @Override
+    public BlockPhysics physics() {
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> physics(level, pos, level.getBlockState(pos)));
     }
 
     @Override
@@ -139,6 +174,83 @@ public final class FandBlock implements Block {
             }
             return true;
         });
+    }
+
+    @Override
+    public boolean setFluid(FluidType fluid, boolean source) {
+        Objects.requireNonNull(fluid, "fluid");
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> {
+            var vanilla = vanillaFluid(fluid, source);
+            if (vanilla == null || vanilla == Fluids.EMPTY) {
+                return clearFluid(level, pos);
+            }
+            var fluidState = vanilla.defaultFluidState();
+            var blockState = level.getBlockState(pos);
+            if (blockState.getBlock() instanceof LiquidBlockContainer container
+                    && container.canPlaceLiquid(null, level, pos, blockState, fluidState.getType())
+                    && container.placeLiquid(level, pos, blockState, fluidState)) {
+                return true;
+            }
+            return level.setBlockAndUpdate(pos, fluidState.createLegacyBlock());
+        });
+    }
+
+    @Override
+    public boolean setFluid(FluidState state) {
+        Objects.requireNonNull(state, "state");
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> {
+            var vanilla = vanillaFluidState(state);
+            if (vanilla == null || vanilla.isEmpty()) {
+                return clearFluid(level, pos);
+            }
+            var blockState = level.getBlockState(pos);
+            if (blockState.getBlock() instanceof LiquidBlockContainer container
+                    && container.canPlaceLiquid(null, level, pos, blockState, vanilla.getType())
+                    && container.placeLiquid(level, pos, blockState, vanilla)) {
+                return true;
+            }
+            return level.setBlockAndUpdate(pos, vanilla.createLegacyBlock());
+        });
+    }
+
+    @Override
+    public boolean clearFluid() {
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> clearFluid(level, pos));
+    }
+
+    @Override
+    public List<ItemStack> drops(ItemStack tool) {
+        Objects.requireNonNull(tool, "tool");
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> {
+            var state = level.getBlockState(pos);
+            var blockEntity = state.hasBlockEntity() ? level.getBlockEntity(pos) : null;
+            return net.minecraft.world.level.block.Block.getDrops(
+                            state,
+                            level,
+                            pos,
+                            blockEntity,
+                            null,
+                            FandItemStacks.toVanilla(tool))
+                    .stream()
+                    .map(FandItemStacks::fromVanilla)
+                    .toList();
+        });
+    }
+
+    @Override
+    public boolean breakNaturally(boolean dropItems) {
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> level.destroyBlock(pos, dropItems));
+    }
+
+    @Override
+    public void applyPhysics() {
+        ServerLevel level = world.handle();
+        runOnServerThread(() -> level.updateNeighborsAt(pos, level.getBlockState(pos).getBlock()));
     }
 
     @Override
@@ -236,6 +348,90 @@ public final class FandBlock implements Block {
             return new FandContainerBlockEntity(this, entity, container);
         }
         return new FandBlockEntity(this, entity);
+    }
+
+    private static BlockPhysics physics(ServerLevel level, BlockPos pos, BlockState state) {
+        var block = state.getBlock();
+        return new BlockPhysics(
+                state.getDestroySpeed(level, pos),
+                block.getExplosionResistance(),
+                state.getLightEmission(),
+                state.getLightDampening(),
+                block.getFriction(),
+                block.getSpeedFactor(),
+                block.getJumpFactor(),
+                state.isSolid(),
+                state.liquid(),
+                state.canBeReplaced(),
+                state.ignitedByLava(),
+                state.isAir(),
+                state.requiresCorrectToolForDrops(),
+                state.hasBlockEntity(),
+                state.canSurvive(level, pos),
+                state.isRedstoneConductor(level, pos));
+    }
+
+    private static FluidState fluidState(
+            ServerLevel level,
+            BlockPos pos,
+            net.minecraft.world.level.material.FluidState state
+    ) {
+        if (state.isEmpty()) {
+            return FluidState.none();
+        }
+        var id = BuiltInRegistries.FLUID.getKey(state.getType());
+        var flow = state.getFlow(level, pos);
+        var falling = state.hasProperty(FlowingFluid.FALLING) && state.getValue(FlowingFluid.FALLING);
+        return new FluidState(
+                FluidTypes.of(Key.key(id.getNamespace(), id.getPath())),
+                state.isSource(),
+                state.isFull(),
+                falling,
+                state.getAmount(),
+                state.getHeight(level, pos),
+                state.getOwnHeight(),
+                state.getExplosionResistance(),
+                new Vector3(flow.x, flow.y, flow.z));
+    }
+
+    private static net.minecraft.world.level.material.FluidState vanillaFluidState(FluidState state) {
+        var fluid = vanillaFluid(state.type(), state.source());
+        if (fluid == null || fluid == Fluids.EMPTY) {
+            return Fluids.EMPTY.defaultFluidState();
+        }
+        if (fluid instanceof FlowingFluid flowing) {
+            if (state.source()) {
+                return flowing.getSource(state.falling());
+            }
+            var amount = Math.max(1, Math.min(net.minecraft.world.level.material.FluidState.AMOUNT_FULL, state.amount()));
+            return flowing.getFlowing(amount, state.falling());
+        }
+        return fluid.defaultFluidState();
+    }
+
+    private static net.minecraft.world.level.material.Fluid vanillaFluid(FluidType fluid, boolean source) {
+        if (fluid.empty()) {
+            return Fluids.EMPTY;
+        }
+        if (fluid.water()) {
+            return source ? Fluids.WATER : Fluids.FLOWING_WATER;
+        }
+        if (fluid.lava()) {
+            return source ? Fluids.LAVA : Fluids.FLOWING_LAVA;
+        }
+        var id = net.minecraft.resources.Identifier.fromNamespaceAndPath(fluid.key().namespace(), fluid.key().value());
+        return BuiltInRegistries.FLUID.getOptional(id).orElse(null);
+    }
+
+    private static boolean clearFluid(ServerLevel level, BlockPos pos) {
+        var state = level.getBlockState(pos);
+        if (state.hasProperty(BlockStateProperties.WATERLOGGED) && state.getValue(BlockStateProperties.WATERLOGGED)) {
+            return level.setBlockAndUpdate(pos, state.setValue(BlockStateProperties.WATERLOGGED, false));
+        }
+        if (!state.getFluidState().isEmpty()) {
+            return level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+        }
+        return false;
     }
 
     private static Optional<Property<?>> findProperty(BlockState state, String name) {

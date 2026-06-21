@@ -110,6 +110,16 @@ public final class FandConfig {
         })
         @ConfigRange(min = 0, max = 1024)
         public int asyncThreads = 0;
+
+        @ConfigComment({
+                "Number of region scheduler worker lanes.",
+                "Tasks in the same 8x8 chunk region run serially; different",
+                "regions may run in parallel. Set to 0 to derive the value",
+                "from available processors. Existing schedulers need a restart",
+                "to replace their region lanes."
+        })
+        @ConfigRange(min = 0, max = 1024)
+        public int regionThreads = 0;
     }
 
     public static final class Compat {
@@ -364,6 +374,34 @@ public final class FandConfig {
                 "lookups are avoided."
         })
         public volatile boolean worldgenSeaLevelCache = true;
+
+        @ConfigComment({
+                "Use a direct entity-section scan for item entity merging instead",
+                "of allocating a nearby-item list before attempting merges.",
+                "Merge rules and events are unchanged."
+        })
+        public volatile boolean itemEntityMergeFastPath = true;
+
+        @ConfigComment({
+                "Use direct loops and an entity-section scan for area effect cloud",
+                "application instead of stream checks and a temporary nearby-entity",
+                "list. AreaEffectCloudApplyEvent still receives the affected list."
+        })
+        public volatile boolean areaEffectCloudFastPath = true;
+
+        @ConfigComment({
+                "Find nearest AI targets while scanning entity sections instead of",
+                "materializing a candidate list first. TargetingConditions and",
+                "selection rules are unchanged."
+        })
+        public volatile boolean aiNearestTargetFastPath = true;
+
+        @ConfigComment({
+                "Replace hot AI goal stream/list post-processing with direct loops.",
+                "This keeps the same selected entities while reducing per-goal",
+                "allocation in dense mob scenes."
+        })
+        public volatile boolean aiGoalStreamFastPath = true;
     }
 
     public static final class Technical {

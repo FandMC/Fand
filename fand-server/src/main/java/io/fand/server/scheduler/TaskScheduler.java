@@ -1,5 +1,6 @@
 package io.fand.server.scheduler;
 
+import io.fand.api.scheduler.RegionScheduler;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scheduler.Task;
 import java.time.Duration;
@@ -17,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
+import net.kyori.adventure.key.Key;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,23 +41,39 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
     // Reused across ticks; tick() only runs on the server thread.
     private final ArrayList<MainTask> readyMainTasks = new ArrayList<>();
     private final ScheduledExecutorService asyncExecutor;
+    private final RegionScheduler regionScheduler = new SchedulerRegionScheduler();
     private final LongSupplier nanoTime;
     private final AtomicLong sequence = new AtomicLong();
     private final AtomicLong currentTick = new AtomicLong();
     private final AtomicLong cancelledMainTasks = new AtomicLong();
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private volatile RegionWorkerSet regionWorkers;
 
     public TaskScheduler() {
-        this(0);
+        this(0, 0);
     }
 
     public TaskScheduler(int configuredAsyncThreads) {
-        this(System::nanoTime, createAsyncExecutor(configuredAsyncThreads));
+        this(configuredAsyncThreads, 0);
+    }
+
+    public TaskScheduler(int configuredAsyncThreads, int configuredRegionThreads) {
+        this(System::nanoTime, createAsyncExecutor(configuredAsyncThreads), RegionWorkerSet.create(configuredRegionThreads));
     }
 
     TaskScheduler(LongSupplier nanoTime, ScheduledExecutorService asyncExecutor) {
+        this(nanoTime, asyncExecutor, RegionWorkerSet.create(1));
+    }
+
+    TaskScheduler(LongSupplier nanoTime, ScheduledExecutorService asyncExecutor, RegionWorkerSet regionWorkers) {
         this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
         this.asyncExecutor = Objects.requireNonNull(asyncExecutor, "asyncExecutor");
+        this.regionWorkers = Objects.requireNonNull(regionWorkers, "regionWorkers");
+    }
+
+    @Override
+    public RegionScheduler region() {
+        return regionScheduler;
     }
 
     @Override
@@ -159,6 +177,7 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
             cancelledMainTasks.set(0L);
         }
         asyncExecutor.shutdownNow();
+        regionWorkers.shutdownNow();
     }
 
     private Task scheduleMain(Runnable runnable, Duration delay, long periodNanos) {
@@ -212,6 +231,29 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
         }, delayNanos, TimeUnit.NANOSECONDS);
         task.bind(future);
         return task;
+    }
+
+    private Task scheduleRegion(Key world, int chunkX, int chunkZ, Runnable runnable, Duration delay, long periodNanos) {
+        Objects.requireNonNull(world, "world");
+        Objects.requireNonNull(runnable, "task");
+        var delayNanos = durationNanos(delay, "delay");
+        ensureOpen();
+        var task = new AsyncTask();
+        while (true) {
+            var workers = regionWorkers;
+            try {
+                task.bind(workers.schedule(world, chunkX, chunkZ, () -> {
+                    if (!task.cancelled()) {
+                        runSafely(runnable);
+                    }
+                }, delayNanos, periodNanos));
+                return task;
+            } catch (RejectedExecutionException rejected) {
+                if (closed.get() || workers == regionWorkers) {
+                    throw rejected;
+                }
+            }
+        }
     }
 
     private void enqueue(MainTask task) {
@@ -312,6 +354,16 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
         return configuredAsyncThreads == 0 ? Math.max(2, Runtime.getRuntime().availableProcessors() / 2) : configuredAsyncThreads;
     }
 
+    static int regionThreadCount(int configuredRegionThreads) {
+        if (configuredRegionThreads < 0) {
+            throw new IllegalArgumentException("configuredRegionThreads must not be negative");
+        }
+        if (configuredRegionThreads > 0) {
+            return configuredRegionThreads;
+        }
+        return Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
+    }
+
     private static ScheduledThreadPoolExecutor createAsyncExecutor(int configuredAsyncThreads) {
         var executor = new ScheduledThreadPoolExecutor(asyncThreadCount(configuredAsyncThreads), asyncThreadFactory());
         executor.setRemoveOnCancelPolicy(true);
@@ -324,6 +376,91 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
         var threadId = new AtomicLong();
         return task -> {
             var thread = new Thread(task, "Fand Scheduler Async-" + threadId.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
+    }
+
+    private final class SchedulerRegionScheduler implements RegionScheduler {
+
+        @Override
+        public Task run(Key world, int chunkX, int chunkZ, Runnable task) {
+            return scheduleRegion(world, chunkX, chunkZ, task, Duration.ZERO, 0L);
+        }
+
+        @Override
+        public Task runAfter(Key world, int chunkX, int chunkZ, Runnable task, Duration delay) {
+            return scheduleRegion(world, chunkX, chunkZ, task, delay, 0L);
+        }
+
+        @Override
+        public Task runRepeating(
+                Key world,
+                int chunkX,
+                int chunkZ,
+                Runnable task,
+                Duration initialDelay,
+                Duration period
+        ) {
+            var periodNanos = durationNanos(period, "period");
+            if (periodNanos <= 0L) {
+                throw new IllegalArgumentException("period must be positive");
+            }
+            return scheduleRegion(world, chunkX, chunkZ, task, initialDelay, periodNanos);
+        }
+    }
+
+    record RegionWorkerSet(ScheduledThreadPoolExecutor[] workers) {
+
+        RegionWorkerSet {
+            Objects.requireNonNull(workers, "workers");
+        }
+
+        private static RegionWorkerSet create(int configuredRegionThreads) {
+            var workerCount = regionThreadCount(configuredRegionThreads);
+            var workers = new ScheduledThreadPoolExecutor[workerCount];
+            var threadFactory = regionThreadFactory();
+            for (int index = 0; index < workers.length; index++) {
+                workers[index] = new ScheduledThreadPoolExecutor(1, threadFactory);
+                workers[index].setRemoveOnCancelPolicy(true);
+                workers[index].setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+                workers[index].setContinueExistingPeriodicTasksAfterShutdownPolicy(false);
+            }
+            return new RegionWorkerSet(workers);
+        }
+
+        private ScheduledFuture<?> schedule(
+                Key world,
+                int chunkX,
+                int chunkZ,
+                Runnable task,
+                long delayNanos,
+                long periodNanos
+        ) {
+            var executor = workers[workerIndex(world, chunkX, chunkZ)];
+            if (periodNanos > 0L) {
+                return executor.scheduleWithFixedDelay(task, delayNanos, periodNanos, TimeUnit.NANOSECONDS);
+            }
+            return executor.schedule(task, delayNanos, TimeUnit.NANOSECONDS);
+        }
+
+        private int workerIndex(Key world, int chunkX, int chunkZ) {
+            var regionX = Math.floorDiv(chunkX, RegionScheduler.REGION_SIZE_CHUNKS);
+            var regionZ = Math.floorDiv(chunkZ, RegionScheduler.REGION_SIZE_CHUNKS);
+            return Math.floorMod(Objects.hash(world, regionX, regionZ), workers.length);
+        }
+
+        private void shutdownNow() {
+            for (var worker : workers) {
+                worker.shutdownNow();
+            }
+        }
+    }
+
+    private static ThreadFactory regionThreadFactory() {
+        var threadId = new AtomicLong();
+        return task -> {
+            var thread = new Thread(task, "Fand Scheduler Region-" + threadId.incrementAndGet());
             thread.setDaemon(true);
             return thread;
         };

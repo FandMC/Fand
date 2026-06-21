@@ -27,6 +27,7 @@ final class FandConfigTest {
         assertThat(config.players.speedCheck).isTrue();
         assertThat(config.players.logCommands).isTrue();
         assertThat(config.scheduler.asyncThreads).isZero();
+        assertThat(config.scheduler.regionThreads).isZero();
         assertThat(config.chunks.workerThreads).isZero();
         assertThat(config.chunks.trackingDiffApplyBudget).isEqualTo(256);
         assertThat(config.chunks.worldgenParallelism).isZero();
@@ -93,6 +94,7 @@ final class FandConfigTest {
                 .contains("logCommands: true")
                 .contains("scheduler:")
                 .contains("asyncThreads: 0")
+                .contains("regionThreads: 0")
                 .contains("chunks:")
                 .contains("workerThreads: 0")
                 .contains("trackingDiffApplyBudget: 256")
@@ -176,6 +178,7 @@ final class FandConfigTest {
 
                 scheduler:
                   asyncThreads: 6
+                  regionThreads: 4
 
                 chunks:
                   workerThreads: 3
@@ -256,6 +259,7 @@ final class FandConfigTest {
         assertThat(config.players.speedCheck).isFalse();
         assertThat(config.players.logCommands).isFalse();
         assertThat(config.scheduler.asyncThreads).isEqualTo(6);
+        assertThat(config.scheduler.regionThreads).isEqualTo(4);
         assertThat(config.chunks.workerThreads).isEqualTo(3);
         assertThat(config.chunks.trackingDiffApplyBudget).isEqualTo(64);
         assertThat(config.chunks.worldgenParallelism).isEqualTo(6);
@@ -336,6 +340,19 @@ final class FandConfigTest {
         assertThatThrownBy(() -> FandConfig.load(path))
                 .isInstanceOf(ConfigException.class)
                 .hasMessageContaining("scheduler.asyncThreads");
+    }
+
+    @Test
+    void rejectsOutOfRangeRegionThreads() throws Exception {
+        var path = tempDir.resolve("fand.yml");
+        Files.writeString(path, """
+                scheduler:
+                  regionThreads: -1
+                """);
+
+        assertThatThrownBy(() -> FandConfig.load(path))
+                .isInstanceOf(ConfigException.class)
+                .hasMessageContaining("scheduler.regionThreads");
     }
 
     @Test

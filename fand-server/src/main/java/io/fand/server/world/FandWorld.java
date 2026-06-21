@@ -60,6 +60,7 @@ import net.kyori.adventure.key.Key;
 import net.minecraft.core.Direction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
+import net.minecraft.util.AbortableIterationConsumer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
@@ -784,9 +785,15 @@ public final class FandWorld implements World {
         if (requested > Integer.MAX_VALUE) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("batch contains too many blocks: " + requested));
         }
-        return runBlockBatch(
-                (int) requested,
-                new FillBlockIterator(minX, minY, minZ, maxX, maxY, maxZ, type, components),
+        return runFillBlockBatch(
+                minX,
+                minY,
+                minZ,
+                maxX,
+                maxY,
+                maxZ,
+                type,
+                components,
                 options);
     }
 
@@ -919,6 +926,44 @@ public final class FandWorld implements World {
         return future;
     }
 
+    private CompletableFuture<BlockBatchResult> runFillBlockBatch(
+            int minX,
+            int minY,
+            int minZ,
+            int maxX,
+            int maxY,
+            int maxZ,
+            io.fand.api.block.BlockType type,
+            DataComponentMap components,
+            BlockBatchOptions options
+    ) {
+        var block = FandBlockType.unwrap(type);
+        var requested = (int) volume(minX, minY, minZ, maxX, maxY, maxZ);
+        var runner = new FillBlockRunner(
+                requested,
+                minX,
+                minY,
+                minZ,
+                maxX,
+                maxY,
+                maxZ,
+                block.defaultBlockState(),
+                block,
+                components,
+                options);
+        if (scheduler == null) {
+            return runOnServerThreadFuture(runner::applyInline);
+        }
+        var future = new CompletableFuture<BlockBatchResult>();
+        runner.future = future;
+        try {
+            scheduler.runMain(runner);
+        } catch (RejectedExecutionException failure) {
+            future.completeExceptionally(failure);
+        }
+        return future;
+    }
+
     private BlockBatchResult applyBlockBatchInline(
             int requested,
             Iterator<BlockBatchChange> changes,
@@ -945,20 +990,29 @@ public final class FandWorld implements World {
         Objects.requireNonNull(change, "change");
         var block = FandBlockType.unwrap(change.type());
         var state = block.defaultBlockState();
-        var pos = new BlockPos(change.x(), change.y(), change.z());
+        return applyBlockChangeAt(new BlockPos(change.x(), change.y(), change.z()), state, block, change.components(), options);
+    }
+
+    private boolean applyBlockChangeAt(
+            BlockPos pos,
+            BlockState state,
+            net.minecraft.world.level.block.Block block,
+            DataComponentMap components,
+            BlockBatchOptions options
+    ) {
         if (options.skipUnchanged()) {
             var currentState = handle.getBlockState(pos);
-            if (currentState.getBlock() == block && BlockComponentStorage.snapshot(handle, pos).equals(change.components())) {
+            if (currentState.getBlock() == block && BlockComponentStorage.snapshot(handle, pos).equals(components)) {
                 return false;
             }
         }
         if (!handle.setBlock(pos, state, blockUpdateFlags(options))) {
             throw new IllegalStateException("Failed to set block at " + pos.toShortString());
         }
-        if (change.components().isEmpty()) {
+        if (components.isEmpty()) {
             BlockComponentStorage.clear(handle, pos);
         } else {
-            BlockComponentStorage.put(handle, pos, change.components());
+            BlockComponentStorage.put(handle, pos, components);
         }
         return true;
     }
@@ -1081,32 +1135,36 @@ public final class FandWorld implements World {
             AABB box,
             Predicate<net.minecraft.world.entity.Entity> filter
     ) {
-        var candidates = new java.util.ArrayList<net.minecraft.world.entity.Entity>();
-        collectEntitiesInBox(box, filter, candidates);
-        return streamEntities(candidates);
+        var snapshot = new java.util.ArrayList<Entity>();
+        forEachVanillaEntityInBox(box, filter, entity -> {
+            snapshot.add(wrapEntity(entity));
+            return AbortableIterationConsumer.Continuation.CONTINUE;
+        });
+        return java.util.Collections.unmodifiableList(snapshot);
     }
 
     private int countEntitiesInBox(
             AABB box,
             Predicate<net.minecraft.world.entity.Entity> filter
     ) {
-        var candidates = new java.util.ArrayList<net.minecraft.world.entity.Entity>();
-        collectEntitiesInBox(box, filter, candidates);
-        return candidates.size();
+        var count = new int[1];
+        forEachVanillaEntityInBox(box, filter, entity -> {
+            count[0]++;
+            return AbortableIterationConsumer.Continuation.CONTINUE;
+        });
+        return count[0];
     }
 
     private Optional<? extends Entity> firstEntityInBox(
             AABB box,
             Predicate<net.minecraft.world.entity.Entity> filter
     ) {
-        var candidates = new java.util.ArrayList<net.minecraft.world.entity.Entity>(1);
-        handle.getEntities(
-                ALL_ENTITY_TYPE,
-                box,
-                entity -> !entity.isRemoved() && filter.test(entity),
-                candidates,
-                1);
-        return candidates.isEmpty() ? Optional.empty() : Optional.of(wrapEntity(candidates.getFirst()));
+        var first = new net.minecraft.world.entity.Entity[1];
+        forEachVanillaEntityInBox(box, filter, entity -> {
+            first[0] = entity;
+            return AbortableIterationConsumer.Continuation.ABORT;
+        });
+        return Optional.ofNullable(first[0]).map(this::wrapEntity);
     }
 
     private void forEachEntityInBox(
@@ -1114,11 +1172,10 @@ public final class FandWorld implements World {
             Predicate<net.minecraft.world.entity.Entity> filter,
             Consumer<? super Entity> action
     ) {
-        var candidates = new java.util.ArrayList<net.minecraft.world.entity.Entity>();
-        collectEntitiesInBox(box, filter, candidates);
-        for (var entity : candidates) {
+        forEachVanillaEntityInBox(box, filter, entity -> {
             action.accept(wrapEntity(entity));
-        }
+            return AbortableIterationConsumer.Continuation.CONTINUE;
+        });
     }
 
     private void collectEntitiesInBox(
@@ -1167,17 +1224,29 @@ public final class FandWorld implements World {
                 checkedCenter.z() + checkedRadius);
         double radiusSquared = checkedRadius * checkedRadius;
         double nearestDistanceSquared = Double.MAX_VALUE;
-        net.minecraft.world.entity.Entity nearest = null;
-        var candidates = new java.util.ArrayList<net.minecraft.world.entity.Entity>(32);
-        collectEntitiesInBox(box, filter, candidates);
-        for (var entity : candidates) {
+        var nearest = new net.minecraft.world.entity.Entity[1];
+        var nearestDistance = new double[] {nearestDistanceSquared};
+        forEachVanillaEntityInBox(box, filter, entity -> {
             double distanceSquared = distanceSquared(checkedCenter, entity);
-            if (distanceSquared <= radiusSquared && distanceSquared < nearestDistanceSquared) {
-                nearestDistanceSquared = distanceSquared;
-                nearest = entity;
+            if (distanceSquared <= radiusSquared && distanceSquared < nearestDistance[0]) {
+                nearestDistance[0] = distanceSquared;
+                nearest[0] = entity;
             }
-        }
-        return Optional.ofNullable(nearest).map(this::wrapEntity);
+            return AbortableIterationConsumer.Continuation.CONTINUE;
+        });
+        return Optional.ofNullable(nearest[0]).map(this::wrapEntity);
+    }
+
+    private void forEachVanillaEntityInBox(
+            AABB box,
+            Predicate<net.minecraft.world.entity.Entity> filter,
+            AbortableIterationConsumer<net.minecraft.world.entity.Entity> action
+    ) {
+        handle.forEachEntity(
+                ALL_ENTITY_TYPE,
+                box,
+                entity -> !entity.isRemoved() && filter.test(entity),
+                action);
     }
 
     private Optional<EntityRayTraceResult> rayTraceEntity(
@@ -1963,57 +2032,120 @@ public final class FandWorld implements World {
         }
     }
 
-    private static final class FillBlockIterator implements Iterator<BlockBatchChange> {
+    private final class FillBlockRunner implements Runnable {
 
+        private final int requested;
         private final int minX;
         private final int minY;
         private final int minZ;
         private final int maxX;
         private final int maxY;
         private final int maxZ;
-        private final io.fand.api.block.BlockType type;
+        private final BlockState state;
+        private final net.minecraft.world.level.block.Block block;
         private final DataComponentMap components;
+        private final BlockBatchOptions options;
+        private @Nullable CompletableFuture<BlockBatchResult> future;
         private int x;
         private int y;
         private int z;
         private boolean hasNext = true;
+        private int changed;
+        private int skipped;
+        private int failed;
 
-        private FillBlockIterator(
+        private FillBlockRunner(
+                int requested,
                 int minX,
                 int minY,
                 int minZ,
                 int maxX,
                 int maxY,
                 int maxZ,
-                io.fand.api.block.BlockType type,
-                DataComponentMap components
+                BlockState state,
+                net.minecraft.world.level.block.Block block,
+                DataComponentMap components,
+                BlockBatchOptions options
         ) {
+            this.requested = requested;
             this.minX = minX;
             this.minY = minY;
             this.minZ = minZ;
             this.maxX = maxX;
             this.maxY = maxY;
             this.maxZ = maxZ;
-            this.type = type;
+            this.state = state;
+            this.block = block;
             this.components = components;
+            this.options = options;
             this.x = minX;
             this.y = minY;
             this.z = minZ;
         }
 
         @Override
-        public boolean hasNext() {
-            return hasNext;
+        public void run() {
+            var activeFuture = future;
+            if (activeFuture == null || activeFuture.isDone()) {
+                return;
+            }
+            try {
+                applySlice();
+            } catch (Throwable failure) {
+                activeFuture.completeExceptionally(failure);
+                return;
+            }
+            if (!hasNext) {
+                activeFuture.complete(result());
+                return;
+            }
+            scheduleNextSlice();
         }
 
-        @Override
-        public BlockBatchChange next() {
-            if (!hasNext) {
-                throw new java.util.NoSuchElementException();
+        private BlockBatchResult applyInline() {
+            while (hasNext) {
+                applyOne();
             }
-            var change = BlockBatchChange.of(x, y, z, type, components);
+            return result();
+        }
+
+        private void applySlice() {
+            int remaining = options.maxBlocksPerTick();
+            while (remaining > 0 && hasNext) {
+                applyOne();
+                remaining--;
+            }
+        }
+
+        private void applyOne() {
+            try {
+                if (applyBlockChangeAt(new BlockPos(x, y, z), state, block, components, options)) {
+                    changed++;
+                } else {
+                    skipped++;
+                }
+            } catch (RuntimeException failure) {
+                failed++;
+            }
             advance();
-            return change;
+        }
+
+        private BlockBatchResult result() {
+            return new BlockBatchResult(requested, changed, skipped, failed);
+        }
+
+        private void scheduleNextSlice() {
+            if (scheduler != null) {
+                try {
+                    scheduler.runMainAfterTicks(this, 0L);
+                } catch (RejectedExecutionException failure) {
+                    if (future != null) {
+                        future.completeExceptionally(failure);
+                    }
+                }
+                return;
+            }
+            runOnServerThread(this);
         }
 
         private void advance() {

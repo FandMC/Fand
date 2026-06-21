@@ -7,9 +7,12 @@ import io.fand.api.command.CommandArgumentType;
 import io.fand.api.event.entity.DamageCause;
 import io.fand.api.event.entity.DamageModifier;
 import io.fand.api.event.entity.EntityDamageEvent;
+import io.fand.api.block.FluidState;
+import io.fand.api.block.FluidTypes;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
 import io.fand.api.persistence.PersistentDataContainer;
+import io.fand.api.world.Vector3;
 import java.util.List;
 import java.util.Map;
 import net.kyori.adventure.key.Key;
@@ -76,6 +79,38 @@ class ApiGapModelsTest {
         assertThat(event.modifier(DamageModifier.ARMOR)).isEqualTo(-2.0);
         assertThat(event.modifier(DamageModifier.RESISTANCE)).isEqualTo(-1.0);
         assertThat(event.modifier(DamageModifier.ABSORPTION)).isEqualTo(-1.0);
+    }
+
+    @Test
+    void fluidStateExposesFriendlyPredicates() {
+        var water = new FluidState(
+                FluidTypes.WATER,
+                true,
+                true,
+                false,
+                8,
+                1.0F,
+                1.0F,
+                100.0F,
+                Vector3.ZERO);
+        var lava = new FluidState(
+                FluidTypes.FLOWING_LAVA,
+                false,
+                false,
+                true,
+                4,
+                0.5F,
+                0.5F,
+                100.0F,
+                new Vector3(1.0, 0.0, 0.0));
+
+        assertThat(water.water()).isTrue();
+        assertThat(water.source()).isTrue();
+        assertThat(water.flowing()).isFalse();
+        assertThat(lava.lava()).isTrue();
+        assertThat(lava.flowing()).isTrue();
+        assertThat(lava.falling()).isTrue();
+        assertThat(FluidState.none().empty()).isTrue();
     }
 
     private record TestItemType(Key key, int maxStackSize) implements ItemType {

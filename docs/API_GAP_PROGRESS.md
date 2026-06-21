@@ -48,3 +48,18 @@
 - Verified: `./gradlew --no-parallel --max-workers=2 :fand-api:compileJava :fand-server:compileJava`.
 - Verified: `./gradlew --no-parallel --max-workers=2 :fand-server:test --tests io.fand.server.text.FandMiniMessageServiceTest`.
 - Verified: `./gradlew --no-parallel --max-workers=2 :fand-server:test --tests io.fand.server.world.ApiSurfaceSourceTest`.
+
+## 2026-06-21
+
+- Current focus: block API surface and scheduler region lanes.
+- Implemented: added `BlockPhysics`, `FluidType`, and `FluidTypes` API surfaces.
+- Implemented: exposed block physical flags and values through `BlockType#physics()` and live-position `Block#physics()`.
+- Implemented: added `Block#fluid()`, `relative(...)`, `drops(...)`, `breakNaturally(...)`, and `applyPhysics()`.
+- Implemented: added `Scheduler#region()` with an independent region worker scheduler: tasks in the same 8x8 chunk region are serialized, while different regions can run on different lanes.
+- Implemented: added `scheduler.regionThreads` startup config and plugin lifecycle tracking for region tasks.
+- Verified: `./gradlew.bat --no-daemon --max-workers=1 :fand-server:test --tests io.fand.server.scheduler.TaskSchedulerTest --tests io.fand.server.config.FandConfigTest --tests io.fand.server.ConfigReloadResultTest --tests io.fand.server.plugin.PluginCleanupTest`.
+- Current focus: fluid-friendly block API.
+- Implemented: added `FluidState` snapshots with source/full/falling/amount/height/blast-resistance/flow-vector data and water/lava/flowing predicates.
+- Implemented: added `Block#fluidState()`, fluid convenience checks, `setFluid(...)`, and `clearFluid()`.
+- Implemented: server-side fluid placement uses vanilla waterlogging containers when possible, otherwise places the fluid's legacy block state; clearing waterlogged blocks preserves the host block.
+- Verified: `./gradlew.bat --no-daemon --max-workers=1 :fand-api:test --tests io.fand.api.ApiGapModelsTest :fand-server:compileJava`.

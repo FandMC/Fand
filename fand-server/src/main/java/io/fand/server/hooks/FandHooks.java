@@ -138,6 +138,10 @@ public final class FandHooks {
     private static volatile boolean chunkTaskDispatcherBatchLoop = true;
     private static volatile boolean chunkStorageRegionScanFastPath = true;
     private static volatile boolean worldgenSeaLevelCache = true;
+    private static volatile boolean itemEntityMergeFastPath = true;
+    private static volatile boolean areaEffectCloudFastPath = true;
+    private static volatile boolean aiNearestTargetFastPath = true;
+    private static volatile boolean aiGoalStreamFastPath = true;
     private static volatile int chunkWorldgenParallelism = 0;
     private static volatile boolean chunkDedicatedLightThread = true;
     private static volatile boolean chunkLightTaskQueueFastPath = true;
@@ -196,6 +200,10 @@ public final class FandHooks {
         chunkTaskDispatcherBatchLoop = performance.chunkTaskDispatcherBatchLoop;
         chunkStorageRegionScanFastPath = performance.chunkStorageRegionScanFastPath;
         worldgenSeaLevelCache = performance.worldgenSeaLevelCache;
+        itemEntityMergeFastPath = performance.itemEntityMergeFastPath;
+        areaEffectCloudFastPath = performance.areaEffectCloudFastPath;
+        aiNearestTargetFastPath = performance.aiNearestTargetFastPath;
+        aiGoalStreamFastPath = performance.aiGoalStreamFastPath;
     }
 
     public static void applyPlayerConfig(io.fand.server.config.FandConfig.Players players) {
@@ -338,6 +346,22 @@ public final class FandHooks {
 
     public static boolean worldgenSeaLevelCacheEnabled() {
         return worldgenSeaLevelCache;
+    }
+
+    public static boolean itemEntityMergeFastPathEnabled() {
+        return itemEntityMergeFastPath;
+    }
+
+    public static boolean areaEffectCloudFastPathEnabled() {
+        return areaEffectCloudFastPath;
+    }
+
+    public static boolean aiNearestTargetFastPathEnabled() {
+        return aiNearestTargetFastPath;
+    }
+
+    public static boolean aiGoalStreamFastPathEnabled() {
+        return aiGoalStreamFastPath;
     }
 
     public static int chunkWorldgenParallelism() {

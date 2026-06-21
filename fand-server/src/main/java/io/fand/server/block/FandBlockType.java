@@ -1,8 +1,11 @@
 package io.fand.server.block;
 
+import io.fand.api.block.BlockPhysics;
 import io.fand.api.block.BlockType;
 import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.key.Key;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.block.Block;
 
 public final class FandBlockType implements BlockType {
@@ -25,6 +28,28 @@ public final class FandBlockType implements BlockType {
 
     public Block handle() {
         return handle;
+    }
+
+    @Override
+    public BlockPhysics physics() {
+        var state = handle.defaultBlockState();
+        return new BlockPhysics(
+                state.getDestroySpeed(EmptyBlockGetter.INSTANCE, BlockPos.ZERO),
+                handle.getExplosionResistance(),
+                state.getLightEmission(),
+                state.getLightDampening(),
+                handle.getFriction(),
+                handle.getSpeedFactor(),
+                handle.getJumpFactor(),
+                state.isSolid(),
+                state.liquid(),
+                state.canBeReplaced(),
+                state.ignitedByLava(),
+                state.isAir(),
+                state.requiresCorrectToolForDrops(),
+                state.hasBlockEntity(),
+                true,
+                state.isRedstoneConductor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO));
     }
 
     public static Block unwrap(BlockType type) {

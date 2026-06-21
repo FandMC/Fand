@@ -91,7 +91,15 @@ public final class ConfigReloader {
                     (FandConfig.Performance config) -> config.chunkTaskDispatcherBatchLoop),
             field("performance.chunkStorageRegionScanFastPath",
                     (FandConfig.Performance config) -> config.chunkStorageRegionScanFastPath),
-            field("performance.worldgenSeaLevelCache", (FandConfig.Performance config) -> config.worldgenSeaLevelCache)
+            field("performance.worldgenSeaLevelCache", (FandConfig.Performance config) -> config.worldgenSeaLevelCache),
+            field("performance.itemEntityMergeFastPath",
+                    (FandConfig.Performance config) -> config.itemEntityMergeFastPath),
+            field("performance.areaEffectCloudFastPath",
+                    (FandConfig.Performance config) -> config.areaEffectCloudFastPath),
+            field("performance.aiNearestTargetFastPath",
+                    (FandConfig.Performance config) -> config.aiNearestTargetFastPath),
+            field("performance.aiGoalStreamFastPath",
+                    (FandConfig.Performance config) -> config.aiGoalStreamFastPath)
     );
     private static final List<ReloadField<FandConfig.Technical, ?>> HOT_TECHNICAL_FIELDS = List.of(
             field("technical.zeroTickPlants", (FandConfig.Technical config) -> config.zeroTickPlants),
@@ -176,6 +184,7 @@ public final class ConfigReloader {
             changes.hot("scheduler.asyncThreads");
             apply("scheduler.asyncThreads", () -> scheduler.reconfigureAsyncThreads(reloaded.scheduler.asyncThreads));
         }
+        changes.restart("scheduler.regionThreads", previous.scheduler.regionThreads, reloaded.scheduler.regionThreads);
         if (markHot(changes, HOT_CHUNK_FIELDS, previous.chunks, reloaded.chunks)) {
             apply("chunks", () -> chunks.reconfigure(reloaded.chunks));
         }

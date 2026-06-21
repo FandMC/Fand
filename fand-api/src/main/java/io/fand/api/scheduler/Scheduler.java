@@ -13,6 +13,10 @@ import java.time.Duration;
  */
 public interface Scheduler {
 
+    default RegionScheduler region() {
+        return RegionScheduler.unsupported();
+    }
+
     Task runMain(Runnable task);
 
     Task runMainAfter(Runnable task, Duration delay);

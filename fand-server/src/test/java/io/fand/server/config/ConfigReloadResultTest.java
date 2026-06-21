@@ -32,6 +32,7 @@ final class ConfigReloadResultTest {
 
                 scheduler:
                   asyncThreads: 0
+                  regionThreads: 0
 
                 chunks:
                   workerThreads: 0
@@ -71,6 +72,7 @@ final class ConfigReloadResultTest {
 
                 scheduler:
                   asyncThreads: 8
+                  regionThreads: 4
 
                 chunks:
                   workerThreads: 2
@@ -107,6 +109,7 @@ final class ConfigReloadResultTest {
         );
         assertThat(result.requiresRestart()).containsExactlyInAnyOrder(
                 "plugins.directory",
+                "scheduler.regionThreads",
                 "chunks.worldgenParallelism",
                 "chunks.dedicatedLightThread",
                 "chunks.lightTaskQueueFastPath",

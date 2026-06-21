@@ -1,8 +1,10 @@
 package io.fand.server.plugin;
 
+import io.fand.api.scheduler.RegionScheduler;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scheduler.Task;
 import java.time.Duration;
+import net.kyori.adventure.key.Key;
 
 public final class PluginScheduler implements Scheduler {
 
@@ -12,6 +14,11 @@ public final class PluginScheduler implements Scheduler {
     public PluginScheduler(Scheduler delegate, PluginResourceTracker tracker) {
         this.delegate = delegate;
         this.tracker = tracker;
+    }
+
+    @Override
+    public RegionScheduler region() {
+        return new TrackedRegionScheduler(delegate.region());
     }
 
     @Override
@@ -47,5 +54,29 @@ public final class PluginScheduler implements Scheduler {
     @Override
     public Task runAsyncAfter(Runnable task, Duration delay) {
         return tracker.track(delegate.runAsyncAfter(task, delay));
+    }
+
+    private final class TrackedRegionScheduler implements RegionScheduler {
+
+        private final RegionScheduler delegate;
+
+        private TrackedRegionScheduler(RegionScheduler delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public Task run(Key world, int chunkX, int chunkZ, Runnable task) {
+            return tracker.track(delegate.run(world, chunkX, chunkZ, task));
+        }
+
+        @Override
+        public Task runAfter(Key world, int chunkX, int chunkZ, Runnable task, Duration delay) {
+            return tracker.track(delegate.runAfter(world, chunkX, chunkZ, task, delay));
+        }
+
+        @Override
+        public Task runRepeating(Key world, int chunkX, int chunkZ, Runnable task, Duration initialDelay, Duration period) {
+            return tracker.track(delegate.runRepeating(world, chunkX, chunkZ, task, initialDelay, period));
+        }
     }
 }

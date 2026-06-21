@@ -167,7 +167,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.permissions = new PermissionManager(events);
         this.commands = new CommandManager(permissions);
         registerBuiltinCommands();
-        this.scheduler = new TaskScheduler(initialConfig.scheduler.asyncThreads);
+        this.scheduler = new TaskScheduler(initialConfig.scheduler.asyncThreads, initialConfig.scheduler.regionThreads);
         this.chunks = new ChunkSendScheduler(initialConfig.chunks);
         this.recipes = new FandRecipeRegistry();
         this.scoreboard = new FandScoreboardService(minecraftServer::get);

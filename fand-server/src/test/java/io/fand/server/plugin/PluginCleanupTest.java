@@ -114,12 +114,20 @@ final class PluginCleanupTest {
                 import java.nio.file.Path;
                 import java.nio.file.StandardOpenOption;
                 import java.time.Duration;
+                import net.kyori.adventure.key.Key;
 
                 public final class CleanupPlugin implements Plugin {
                     @Override
                     public void onEnable(PluginContext context) {
                         context.events().subscribe(CleanupTestEvent.class, event -> log("event"));
                         context.scheduler().runMainRepeating(() -> log("task"), Duration.ZERO, Duration.ofDays(1));
+                        context.scheduler().region().runAfter(
+                                Key.key("minecraft:overworld"),
+                                0,
+                                0,
+                                () -> log("region-task"),
+                                Duration.ofSeconds(5)
+                        );
                     }
 
                     @Override
