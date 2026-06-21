@@ -42,6 +42,25 @@ final class AnnotatedCommandsTest {
                 .hasMessageContaining("@CommandSpec");
     }
 
+    @Test
+    void registersBuiltinPluginCommandsWithExpectedAliases() {
+        var manager = new CommandManager(new io.fand.server.permission.PermissionManager());
+
+        AnnotatedCommands.register(manager, new PluginsCommand(null));
+        AnnotatedCommands.register(manager, new PluginCommand(null));
+
+        var plugins = manager.lookup("plugins").orElseThrow().descriptor();
+        assertThat(plugins.namespace()).isEqualTo("fand");
+        assertThat(plugins.aliases()).containsExactly("pl");
+        assertThat(plugins.permission()).isEqualTo("fand.command.plugins");
+        assertThat(manager.lookup("pl")).isPresent();
+
+        var plugin = manager.lookup("plugin").orElseThrow().descriptor();
+        assertThat(plugin.namespace()).isEqualTo("fand");
+        assertThat(plugin.aliases()).isEmpty();
+        assertThat(plugin.permission()).isNull();
+    }
+
     @CommandSpec(label = "hello", subcommands = {"world"}, arguments = {"target"}, permission = "demo.hello")
     private static final class DemoCommand implements CommandExecutor {
         @Override

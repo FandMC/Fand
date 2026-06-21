@@ -738,6 +738,164 @@ final class PluginRuntimeTest {
         }
     }
 
+    @Test
+    void runtimeLoadEnablesPluginAndRuntimeUnloadClosesResources() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        var commands = new CommandManager(new PermissionManager());
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                commands,
+                new EventDispatcher(),
+                new PermissionManager(),
+                new TaskScheduler()
+        );
+        try {
+            manager.loadPlugins();
+            manager.enablePlugins();
+            PluginRuntimeTestSupport.createPluginJar(
+                    tempDir,
+                    pluginsDir.resolve("hot.jar"),
+                    PluginRuntimeTestSupport.descriptorJson("hot", "testplugins.hot.HotPlugin", List.of()),
+                    Map.of("testplugins/hot/HotPlugin.java", runtimeCommandPluginSource("hot.admin")),
+                    List.of()
+            );
+
+            var load = manager.loadPlugin("hot");
+            assertThat(load.success()).isTrue();
+            assertThat(manager.isEnabled("hot")).isTrue();
+            assertThat(commands.lookup("hot:runtime")).isPresent();
+            assertThat(manager.pluginStatus("hot").orElseThrow().commands()).hasSize(1);
+            assertThat(manager.pluginStatus("hot").orElseThrow().permissions())
+                    .extracting(io.fand.api.permission.PermissionDescriptor::node)
+                    .contains("hot.admin");
+
+            var unload = manager.unloadPlugin("hot", false);
+            assertThat(unload.success()).isTrue();
+            assertThat(manager.byId("hot")).isEmpty();
+            assertThat(commands.lookup("hot:runtime")).isEmpty();
+            assertThat(manager.pluginStatus("hot").orElseThrow().lifecycle())
+                    .isEqualTo(PluginRuntime.PluginLifecycle.AVAILABLE);
+        } finally {
+            manager.close();
+        }
+    }
+
+    @Test
+    void runtimeUnloadRefusesLoadedDependentsUnlessCascadeIsRequested() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new CommandManager(),
+                new EventDispatcher(),
+                new PermissionManager(),
+                new TaskScheduler()
+        );
+        try {
+            manager.loadPlugins();
+            manager.enablePlugins();
+            var baseJar = PluginRuntimeTestSupport.createPluginJar(
+                    tempDir,
+                    pluginsDir.resolve("base.jar"),
+                    PluginRuntimeTestSupport.descriptorJson("base", "testplugins.base.BasePlugin", List.of()),
+                    Map.of("testplugins/base/BasePlugin.java", pluginSource("testplugins.base", "BasePlugin", null, null, null)),
+                    List.of()
+            );
+            PluginRuntimeTestSupport.createPluginJar(
+                    tempDir,
+                    pluginsDir.resolve("dependent.jar"),
+                    PluginRuntimeTestSupport.descriptorJson("dependent", "testplugins.dependent.DependentPlugin", List.of("base")),
+                    Map.of("testplugins/dependent/DependentPlugin.java", pluginSource("testplugins.dependent", "DependentPlugin", null, null, null)),
+                    List.of(baseJar)
+            );
+
+            assertThat(manager.loadPlugin("base").success()).isTrue();
+            assertThat(manager.loadPlugin("dependent").success()).isTrue();
+
+            var refused = manager.unloadPlugin("base", false);
+            assertThat(refused.success()).isFalse();
+            assertThat(manager.byId("base")).isPresent();
+            assertThat(manager.byId("dependent")).isPresent();
+
+            var cascaded = manager.unloadPlugin("base", true);
+            assertThat(cascaded.success()).isTrue();
+            assertThat(manager.byId("base")).isEmpty();
+            assertThat(manager.byId("dependent")).isEmpty();
+        } finally {
+            manager.close();
+        }
+    }
+
+    @Test
+    void runtimeDisableAndEnableRoundTripsPlugin() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        var commands = new CommandManager(new PermissionManager());
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                commands,
+                new EventDispatcher(),
+                new PermissionManager(),
+                new TaskScheduler()
+        );
+        try {
+            manager.loadPlugins();
+            manager.enablePlugins();
+            PluginRuntimeTestSupport.createPluginJar(
+                    tempDir,
+                    pluginsDir.resolve("hot.jar"),
+                    PluginRuntimeTestSupport.descriptorJson("hot", "testplugins.hot.HotPlugin", List.of()),
+                    Map.of("testplugins/hot/HotPlugin.java", runtimeCommandPluginSource("hot.admin")),
+                    List.of()
+            );
+
+            assertThat(manager.loadPlugin("hot").success()).isTrue();
+            assertThat(manager.disablePlugin("hot", false).success()).isTrue();
+            assertThat(manager.byId("hot")).isEmpty();
+            assertThat(commands.lookup("hot:runtime")).isEmpty();
+            assertThat(manager.pluginStatus("hot").orElseThrow().lifecycle())
+                    .isEqualTo(PluginRuntime.PluginLifecycle.DISABLED);
+
+            assertThat(manager.enablePlugin("hot").success()).isTrue();
+            assertThat(manager.isEnabled("hot")).isTrue();
+            assertThat(commands.lookup("hot:runtime")).isPresent();
+        } finally {
+            manager.close();
+        }
+    }
+
+    private static String runtimeCommandPluginSource(String permission) {
+        return """
+                package testplugins.hot;
+
+                import io.fand.api.command.CommandDescriptor;
+                import io.fand.api.permission.PermissionDefault;
+                import io.fand.api.permission.PermissionDescriptor;
+                import io.fand.api.plugin.Plugin;
+                import io.fand.api.plugin.PluginContext;
+                import java.util.List;
+
+                public final class HotPlugin implements Plugin {
+                    @Override
+                    public void onEnable(PluginContext context) {
+                        context.permissions().register(new PermissionDescriptor("%s", PermissionDefault.FALSE));
+                        context.commands().register(
+                                new CommandDescriptor("ignored", "runtime", List.of(), List.of(), null),
+                                (sender, label, args) -> {},
+                                (sender, label, args) -> List.of("ok")
+                        );
+                    }
+                }
+                """.formatted(permission);
+    }
+
     private static String pluginSource(String packageName, String className, String loadLine, String enableLine, String disableLine) {
         var lines = new java.util.LinkedHashMap<String, String>();
         if (loadLine != null) {

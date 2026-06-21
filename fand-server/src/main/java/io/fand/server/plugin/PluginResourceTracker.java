@@ -3,6 +3,7 @@ package io.fand.server.plugin;
 import io.fand.api.advancement.AdvancementRegistration;
 import io.fand.api.bossbar.BossBarHandle;
 import io.fand.api.bossbar.BossBarRegistration;
+import io.fand.api.command.CommandDescriptor;
 import io.fand.api.command.CommandRegistration;
 import io.fand.api.customblock.CustomBlockItemBinding;
 import io.fand.api.customblock.CustomBlockRegistration;
@@ -17,6 +18,7 @@ import io.fand.api.messaging.PluginMessageRegistration;
 import io.fand.api.packet.PacketRegistration;
 import io.fand.api.placeholder.PlaceholderRegistration;
 import io.fand.api.permission.PermissionAttachment;
+import io.fand.api.permission.PermissionDescriptor;
 import io.fand.api.recipe.RecipeRegistration;
 import io.fand.api.scheduler.Task;
 import io.fand.api.scoreboard.ScoreboardRegistration;
@@ -38,6 +40,7 @@ final class PluginResourceTracker {
     private final Set<TrackedRecipeRegistration> recipeRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedLootTableRegistration> lootTableRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPermissionAttachment> permissionAttachments = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final List<PermissionDescriptor> permissionDescriptors = new ArrayList<>();
     private final Set<TrackedBossBarHandle> bossBarHandles = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedBossBarRegistration> bossBarRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedTabListRegistration> tabListRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -73,7 +76,11 @@ final class PluginResourceTracker {
     }
 
     TrackedCommandRegistration track(CommandRegistration delegate) {
-        var tracked = new TrackedCommandRegistration(this, delegate);
+        return track(delegate, null);
+    }
+
+    TrackedCommandRegistration track(CommandRegistration delegate, CommandDescriptor descriptor) {
+        var tracked = new TrackedCommandRegistration(this, delegate, descriptor);
         var dispose = false;
         synchronized (lock) {
             if (closed) {
@@ -178,6 +185,14 @@ final class PluginResourceTracker {
             tracked.unregisterFromTracker();
         }
         return tracked;
+    }
+
+    void trackPermission(PermissionDescriptor descriptor) {
+        synchronized (lock) {
+            if (!closed) {
+                permissionDescriptors.add(descriptor);
+            }
+        }
     }
 
     TrackedBossBarHandle track(BossBarHandle delegate) {
@@ -554,6 +569,21 @@ final class PluginResourceTracker {
         }
     }
 
+    List<CommandDescriptor> commandDescriptors() {
+        synchronized (lock) {
+            return commandRegistrations.stream()
+                    .map(TrackedCommandRegistration::descriptor)
+                    .flatMap(Optional::stream)
+                    .toList();
+        }
+    }
+
+    List<PermissionDescriptor> permissionDescriptors() {
+        synchronized (lock) {
+            return List.copyOf(permissionDescriptors);
+        }
+    }
+
     void close() {
         List<TrackedSubscription> subscriptionsToClose;
         List<TrackedCommandRegistration> commandRegistrationsToClose;
@@ -607,6 +637,7 @@ final class PluginResourceTracker {
             recipeRegistrations.clear();
             lootTableRegistrations.clear();
             permissionAttachments.clear();
+            permissionDescriptors.clear();
             bossBarHandles.clear();
             bossBarRegistrations.clear();
             tabListRegistrations.clear();
@@ -729,11 +760,17 @@ final class PluginResourceTracker {
 
         private final PluginResourceTracker owner;
         private final CommandRegistration delegate;
+        private final CommandDescriptor descriptor;
         private volatile boolean released;
 
-        TrackedCommandRegistration(PluginResourceTracker owner, CommandRegistration delegate) {
+        TrackedCommandRegistration(PluginResourceTracker owner, CommandRegistration delegate, CommandDescriptor descriptor) {
             this.owner = owner;
             this.delegate = delegate;
+            this.descriptor = descriptor;
+        }
+
+        Optional<CommandDescriptor> descriptor() {
+            return Optional.ofNullable(descriptor);
         }
 
         @Override

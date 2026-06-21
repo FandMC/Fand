@@ -374,6 +374,10 @@ public final class FandServer implements Server, AutoCloseable {
         return plugins;
     }
 
+    public PluginRuntime pluginRuntime() {
+        return plugins;
+    }
+
     @Override
     public EventBus events() {
         return events;

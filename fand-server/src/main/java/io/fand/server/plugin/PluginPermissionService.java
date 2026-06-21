@@ -26,6 +26,7 @@ final class PluginPermissionService implements PermissionService {
             PluginRuntime.validatePluginPermissionNode(pluginId, child);
         }
         delegate.register(descriptor);
+        tracker.trackPermission(descriptor);
     }
 
     @Override

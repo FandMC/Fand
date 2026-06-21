@@ -45,7 +45,7 @@ public final class PluginCommandRegistry implements CommandRegistry {
                 descriptor.aliases(),
                 descriptor.permission()
         );
-        return tracker.track(delegate.register(scoped, executor, completer));
+        return tracker.track(delegate.register(scoped, executor, completer), scoped);
     }
 
     @Override

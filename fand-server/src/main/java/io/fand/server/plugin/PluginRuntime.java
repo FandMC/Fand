@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import io.fand.api.advancement.AdvancementRegistry;
 import io.fand.api.bossbar.BossBarService;
+import io.fand.api.command.CommandDescriptor;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
@@ -47,11 +48,15 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.jar.JarFile;
@@ -91,7 +96,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final boolean closeGuiService;
     private final Scheduler scheduler;
     private volatile Options options;
+    private final Object lifecycleLock = new Object();
     private final ConcurrentHashMap<String, LoadedPlugin> loadedPlugins = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, StatusEntry> statusEntries = new ConcurrentHashMap<>();
+    private final Set<String> disabledPlugins = ConcurrentHashMap.newKeySet();
     private final CopyOnWriteArrayList<String> loadOrder = new CopyOnWriteArrayList<>();
     private volatile boolean loaded;
     private volatile boolean enabled;
@@ -529,150 +537,115 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     }
 
     public void loadPlugins() {
-        ensureOpen();
-        if (loaded) {
-            throw new IllegalStateException("Plugins are already loaded");
-        }
-        try {
-            Files.createDirectories(pluginsDirectory);
-            Files.createDirectories(dataDirectoryRoot);
-            var discovered = discoverArtifacts();
-            var sorted = sortArtifacts(discovered.artifacts());
-            var ordered = sorted.artifacts();
-            var skipped = discovered.skipped() + sorted.skipped();
-            for (var artifact : ordered) {
-                var unavailableDependency = firstUnavailableDependency(artifact.descriptor.depends());
-                if (unavailableDependency != null) {
-                    if (!options.continueOnLoadFailure()) {
-                        close();
-                        throw new PluginLoadException("Plugin '" + artifact.descriptor.id() + "' depends on unavailable plugin '" + unavailableDependency + "'");
-                    }
-                    skipped++;
-                    LOGGER.warn("Skipping plugin {} because dependency {} is unavailable", artifact.descriptor.id(), unavailableDependency);
-                    continue;
-                }
-
-                var dependencies = dependencyClassLoaders(artifact.descriptor.depends());
-                var classLoader = new PluginClassLoader(toJarUrl(artifact.jarPath), parentClassLoader, dependencies);
-                var resources = new PluginResourceTracker();
-                var pluginPlaceholders = new PluginPlaceholderService(
-                        placeholderService,
-                        resources,
-                        artifact.descriptor.id());
-                var context = new RuntimePluginContext(
-                        artifact.descriptor,
-                        LoggerFactory.getLogger(artifact.descriptor.id()),
-                        new PluginEventBus(eventBus, resources, artifact.descriptor.id()),
-                        permissions,
-                        new PluginCommandRegistry(commandRegistry, resources, artifact.descriptor.id()),
-                        new PluginRecipeRegistry(recipeRegistry, resources, artifact.descriptor.id()),
-                        new PluginLootTableService(lootTableService, resources, artifact.descriptor.id()),
-                        new PluginAdvancementRegistry(advancementRegistry, resources, artifact.descriptor.id()),
-                        new PluginEnchantmentRegistry(enchantmentRegistry, resources, artifact.descriptor.id()),
-                        new PluginStructureService(structureService, artifact.descriptor.id()),
-                        new PluginMapService(mapService, resources),
-                        new PluginBossBarService(bossBarService, resources, artifact.descriptor.id()),
-                        new PluginTabListService(tabListService, resources),
-                        pluginPlaceholders,
-                        new FandMiniMessageService(pluginPlaceholders),
-                        new PluginScoreboardService(scoreboardService, resources, artifact.descriptor.id()),
-                        new PluginPacketRegistry(packetRegistry, resources),
-                        new PluginPluginMessaging(pluginMessaging, resources),
-                        new PluginCustomItemRegistry(customItemRegistry, resources, artifact.descriptor.id()),
-                        new PluginCustomBlockRegistry(customBlockRegistry, resources, artifact.descriptor.id()),
-                        new PluginGuiService(guiService, resources),
-                        new PluginScheduler(scheduler, resources),
-                        dataDirectoryRoot.resolve(artifact.descriptor.id()),
-                        resources,
-                        classLoader
-                );
-                try {
-                    registerDeclaredPermissions(artifact.descriptor);
-                    var plugin = instantiatePlugin(artifact.descriptor, classLoader);
-                    plugin.onLoad(context);
-                    loadedPlugins.put(artifact.descriptor.id(), new LoadedPlugin(artifact.descriptor, plugin, context, classLoader));
-                    loadOrder.add(artifact.descriptor.id());
-                } catch (Throwable failure) {
-                    context.close();
-                    closeQuietly(classLoader, artifact.descriptor.id());
-                    if (!options.continueOnLoadFailure()) {
-                        close();
-                        throw new PluginLoadException("Failed to load plugin '" + artifact.descriptor.id() + "'", failure);
-                    }
-                    skipped++;
-                    LOGGER.warn("Skipping plugin {} after load failure", artifact.descriptor.id(), failure);
-                }
+        synchronized (lifecycleLock) {
+            ensureOpen();
+            if (loaded) {
+                throw new IllegalStateException("Plugins are already loaded");
             }
-            loaded = true;
-            if (options.logSummary()) {
-                LOGGER.info(
-                        "Plugin load summary: discovered={}, loaded={}, skipped={}",
-                        discovered.artifacts().size() + discovered.skipped(),
-                        loadedPlugins.size(),
-                        skipped
-                );
+            try {
+                Files.createDirectories(pluginsDirectory);
+                Files.createDirectories(dataDirectoryRoot);
+                var discovered = discoverArtifacts();
+                var sorted = sortArtifacts(discovered.artifacts());
+                var ordered = sorted.artifacts();
+                var skipped = discovered.skipped() + sorted.skipped();
+                for (var artifact : ordered) {
+                    var unavailableDependency = firstUnavailableDependency(artifact.descriptor.depends());
+                    if (unavailableDependency != null) {
+                        if (!options.continueOnLoadFailure()) {
+                            close();
+                            throw new PluginLoadException("Plugin '" + artifact.descriptor.id() + "' depends on unavailable plugin '" + unavailableDependency + "'");
+                        }
+                        skipped++;
+                        recordDependencyError(artifact, unavailableDependency, "load");
+                        LOGGER.warn("Skipping plugin {} because dependency {} is unavailable", artifact.descriptor.id(), unavailableDependency);
+                        continue;
+                    }
+                    try {
+                        loadArtifact(artifact);
+                    } catch (Throwable failure) {
+                        if (!options.continueOnLoadFailure()) {
+                            close();
+                            throw new PluginLoadException("Failed to load plugin '" + artifact.descriptor.id() + "'", failure);
+                        }
+                        skipped++;
+                        recordError(artifact.descriptor.id(), artifact.descriptor, artifact.jarPath, PluginLifecycle.ERROR, "load", failure);
+                        LOGGER.warn("Skipping plugin {} after load failure", artifact.descriptor.id(), failure);
+                    }
+                }
+                loaded = true;
+                if (options.logSummary()) {
+                    LOGGER.info(
+                            "Plugin load summary: discovered={}, loaded={}, skipped={}",
+                            discovered.artifacts().size() + discovered.skipped(),
+                            loadedPlugins.size(),
+                            skipped
+                    );
+                }
+            } catch (IOException failure) {
+                close();
+                throw new PluginLoadException("Failed to scan plugins directory", failure);
+            } catch (RuntimeException failure) {
+                close();
+                throw failure;
+            } catch (Error failure) {
+                close();
+                throw failure;
             }
-        } catch (IOException failure) {
-            close();
-            throw new PluginLoadException("Failed to scan plugins directory", failure);
-        } catch (RuntimeException failure) {
-            close();
-            throw failure;
-        } catch (Error failure) {
-            close();
-            throw failure;
         }
     }
 
     public void enablePlugins() {
-        ensureOpen();
-        if (!loaded) {
-            throw new IllegalStateException("Plugins must be loaded before enabling");
-        }
-        if (enabled) {
-            throw new IllegalStateException("Plugins are already enabled");
-        }
-        var enabledThisRun = new ArrayDeque<LoadedPlugin>();
-        var skipped = 0;
-        try {
-            for (var pluginId : loadOrder) {
-                var loadedPlugin = loadedPlugins.get(pluginId);
-                if (loadedPlugin == null) {
-                    continue;
-                }
-                var unavailableDependency = firstDisabledDependency(loadedPlugin.descriptor.depends());
-                if (unavailableDependency != null) {
-                    if (!options.continueOnEnableFailure()) {
-                        throw new PluginLoadException("Plugin '" + loadedPlugin.descriptor.id() + "' depends on disabled plugin '" + unavailableDependency + "'");
+        synchronized (lifecycleLock) {
+            ensureOpen();
+            if (!loaded) {
+                throw new IllegalStateException("Plugins must be loaded before enabling");
+            }
+            if (enabled) {
+                throw new IllegalStateException("Plugins are already enabled");
+            }
+            var enabledThisRun = new ArrayDeque<LoadedPlugin>();
+            var skipped = 0;
+            try {
+                for (var pluginId : loadOrder) {
+                    var loadedPlugin = loadedPlugins.get(pluginId);
+                    if (loadedPlugin == null || loadedPlugin.enabled || disabledPlugins.contains(pluginId)) {
+                        continue;
                     }
-                    skipped++;
-                    LOGGER.warn("Skipping plugin {} because dependency {} is disabled", loadedPlugin.descriptor.id(), unavailableDependency);
-                    discardLoadedPlugin(loadedPlugin);
-                    continue;
-                }
-                try {
-                    loadedPlugin.plugin.onEnable(loadedPlugin.context);
-                    loadedPlugin.enabled = true;
-                    firePluginEnableEvent(loadedPlugin.descriptor);
-                    enabledThisRun.push(loadedPlugin);
-                } catch (Throwable failure) {
-                    discardLoadedPlugin(loadedPlugin);
-                    if (!options.continueOnEnableFailure()) {
-                        throw new PluginLoadException("Failed to enable plugin '" + loadedPlugin.descriptor.id() + "'", failure);
+                    var unavailableDependency = firstDisabledDependency(loadedPlugin.descriptor.depends());
+                    if (unavailableDependency != null) {
+                        if (!options.continueOnEnableFailure()) {
+                            throw new PluginLoadException("Plugin '" + loadedPlugin.descriptor.id() + "' depends on disabled plugin '" + unavailableDependency + "'");
+                        }
+                        skipped++;
+                        recordDependencyError(new PluginArtifact(loadedPlugin.jarPath, loadedPlugin.descriptor), unavailableDependency, "enable");
+                        LOGGER.warn("Skipping plugin {} because dependency {} is disabled", loadedPlugin.descriptor.id(), unavailableDependency);
+                        discardLoadedPlugin(loadedPlugin);
+                        continue;
                     }
-                    skipped++;
-                    LOGGER.warn("Skipping plugin {} after enable failure", loadedPlugin.descriptor.id(), failure);
+                    try {
+                        enableLoadedPlugin(loadedPlugin);
+                        enabledThisRun.push(loadedPlugin);
+                    } catch (Throwable failure) {
+                        discardLoadedPlugin(loadedPlugin);
+                        if (!options.continueOnEnableFailure()) {
+                            throw new PluginLoadException("Failed to enable plugin '" + loadedPlugin.descriptor.id() + "'", failure);
+                        }
+                        skipped++;
+                        recordError(loadedPlugin.descriptor.id(), loadedPlugin.descriptor, loadedPlugin.jarPath, PluginLifecycle.ERROR, "enable", failure);
+                        LOGGER.warn("Skipping plugin {} after enable failure", loadedPlugin.descriptor.id(), failure);
+                    }
                 }
+                enabled = true;
+                if (options.logSummary()) {
+                    LOGGER.info("Plugin enable summary: loaded={}, enabled={}, skipped={}", loadedPlugins.size(), enabledThisRun.size(), skipped);
+                }
+            } catch (Throwable failure) {
+                while (!enabledThisRun.isEmpty()) {
+                    disablePlugin(enabledThisRun.pop());
+                }
+                throw failure;
             }
-            enabled = true;
-            if (options.logSummary()) {
-                LOGGER.info("Plugin enable summary: loaded={}, enabled={}, skipped={}", loadedPlugins.size(), enabledThisRun.size(), skipped);
-            }
-        } catch (Throwable failure) {
-            while (!enabledThisRun.isEmpty()) {
-                disablePlugin(enabledThisRun.pop());
-            }
-            throw failure;
         }
     }
 
@@ -713,6 +686,216 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         return loadedPlugin != null && loadedPlugin.enabled;
     }
 
+    public Path pluginsDirectory() {
+        return pluginsDirectory;
+    }
+
+    public List<PluginStatus> pluginStatuses(boolean includeAvailable) {
+        if (includeAvailable) {
+            refreshAvailableStatuses();
+        }
+        var dependents = dependentsById();
+        var orderedIds = new LinkedHashSet<String>();
+        orderedIds.addAll(loadOrder);
+        statusEntries.keySet().stream().sorted().forEach(orderedIds::add);
+        var statuses = new ArrayList<PluginStatus>();
+        for (var id : orderedIds) {
+            var status = pluginStatus(id, dependents.getOrDefault(id, List.of()));
+            if (status.isPresent() && (includeAvailable || status.get().lifecycle() != PluginLifecycle.AVAILABLE)) {
+                statuses.add(status.get());
+            }
+        }
+        return List.copyOf(statuses);
+    }
+
+    public Optional<PluginStatus> pluginStatus(String id) {
+        refreshAvailableStatuses();
+        return pluginStatus(id, dependentsById().getOrDefault(id, List.of()));
+    }
+
+    public List<String> pluginIdSuggestions() {
+        refreshAvailableStatuses();
+        var ids = new LinkedHashSet<String>();
+        ids.addAll(loadOrder);
+        statusEntries.keySet().stream().sorted().forEach(ids::add);
+        return List.copyOf(ids);
+    }
+
+    public List<String> loadSuggestions() {
+        var suggestions = new LinkedHashSet<String>();
+        try {
+            for (var artifact : scanArtifacts()) {
+                if (!loadedPlugins.containsKey(artifact.descriptor.id())) {
+                    suggestions.add(artifact.descriptor.id());
+                    suggestions.add(artifact.jarPath.getFileName().toString());
+                }
+            }
+        } catch (IOException failure) {
+            LOGGER.warn("Failed to scan plugin load suggestions", failure);
+        }
+        return List.copyOf(suggestions);
+    }
+
+    public PluginOperationResult loadPlugin(String target) {
+        synchronized (lifecycleLock) {
+            ensureOpen();
+            try {
+                Files.createDirectories(pluginsDirectory);
+                Files.createDirectories(dataDirectoryRoot);
+                var artifact = resolveArtifact(target);
+                var id = artifact.descriptor.id();
+                if (loadedPlugins.containsKey(id)) {
+                    return PluginOperationResult.failure("Plugin '" + id + "' is already loaded");
+                }
+                var unavailableDependency = firstUnavailableDependency(artifact.descriptor.depends());
+                if (unavailableDependency != null) {
+                    var message = "Plugin '" + id + "' depends on unavailable plugin '" + unavailableDependency + "'";
+                    recordDependencyError(artifact, unavailableDependency, "load");
+                    return PluginOperationResult.failure(message);
+                }
+                if (enabled) {
+                    var disabledDependency = firstDisabledDependency(artifact.descriptor.depends());
+                    if (disabledDependency != null) {
+                        var message = "Plugin '" + id + "' depends on disabled plugin '" + disabledDependency + "'";
+                        recordDependencyError(artifact, disabledDependency, "enable");
+                        return PluginOperationResult.failure(message);
+                    }
+                }
+                var loadedPlugin = loadArtifact(artifact);
+                disabledPlugins.remove(id);
+                if (enabled) {
+                    enableLoadedPlugin(loadedPlugin);
+                }
+                return PluginOperationResult.success("Loaded plugin '" + id + "'");
+            } catch (Throwable failure) {
+                return failureResult("load", target, failure);
+            }
+        }
+    }
+
+    public PluginOperationResult unloadPlugin(String id, boolean cascade) {
+        synchronized (lifecycleLock) {
+            ensureOpen();
+            var normalized = normalizePluginId(id);
+            var loadedPlugin = loadedPlugins.get(normalized);
+            if (loadedPlugin == null) {
+                return PluginOperationResult.failure("Plugin '" + normalized + "' is not loaded");
+            }
+            var dependents = loadedDependentsRecursive(normalized);
+            if (!dependents.isEmpty() && !cascade) {
+                return PluginOperationResult.failure("Plugin '" + normalized + "' is required by " + String.join(", ", dependents));
+            }
+            for (var dependent : reverseLoadOrder(dependents)) {
+                var dependentPlugin = loadedPlugins.get(dependent);
+                if (dependentPlugin != null) {
+                    unloadLoadedPlugin(dependentPlugin, false, "unload");
+                }
+            }
+            unloadLoadedPlugin(loadedPlugin, false, "unload");
+            return PluginOperationResult.success("Unloaded plugin '" + normalized + "'");
+        }
+    }
+
+    public PluginOperationResult disablePlugin(String id, boolean cascade) {
+        synchronized (lifecycleLock) {
+            ensureOpen();
+            var normalized = normalizePluginId(id);
+            var loadedPlugin = loadedPlugins.get(normalized);
+            if (loadedPlugin == null) {
+                disabledPlugins.add(normalized);
+                var entry = statusEntries.get(normalized);
+                if (entry != null) {
+                    entry.lifecycle = PluginLifecycle.DISABLED;
+                    entry.disabledAtMillis = System.currentTimeMillis();
+                }
+                return PluginOperationResult.success("Disabled plugin '" + normalized + "'");
+            }
+            var dependents = loadedDependentsRecursive(normalized);
+            if (!dependents.isEmpty() && !cascade) {
+                return PluginOperationResult.failure("Plugin '" + normalized + "' is required by " + String.join(", ", dependents));
+            }
+            for (var dependent : reverseLoadOrder(dependents)) {
+                var dependentPlugin = loadedPlugins.get(dependent);
+                if (dependentPlugin != null) {
+                    disabledPlugins.add(dependent);
+                    unloadLoadedPlugin(dependentPlugin, true, "disable");
+                }
+            }
+            disabledPlugins.add(normalized);
+            unloadLoadedPlugin(loadedPlugin, true, "disable");
+            return PluginOperationResult.success("Disabled plugin '" + normalized + "'");
+        }
+    }
+
+    public PluginOperationResult enablePlugin(String id) {
+        synchronized (lifecycleLock) {
+            ensureOpen();
+            var normalized = normalizePluginId(id);
+            disabledPlugins.remove(normalized);
+            var loadedPlugin = loadedPlugins.get(normalized);
+            if (loadedPlugin != null) {
+                if (loadedPlugin.enabled) {
+                    return PluginOperationResult.success("Plugin '" + normalized + "' is already enabled");
+                }
+                try {
+                    enableLoadedPlugin(loadedPlugin);
+                    return PluginOperationResult.success("Enabled plugin '" + normalized + "'");
+                } catch (Throwable failure) {
+                    return failureResult("enable", normalized, failure);
+                }
+            }
+            return loadPlugin(normalized);
+        }
+    }
+
+    public PluginOperationResult reloadPlugin(String target, boolean cascade) {
+        synchronized (lifecycleLock) {
+            ensureOpen();
+            if ("all".equalsIgnoreCase(target)) {
+                return reloadAllPlugins();
+            }
+            var normalized = normalizePluginId(target);
+            if (loadedPlugins.containsKey(normalized)) {
+                var unload = unloadPlugin(normalized, cascade);
+                if (!unload.success()) {
+                    return unload;
+                }
+            }
+            return loadPlugin(target);
+        }
+    }
+
+    public PluginOperationResult reloadAllPlugins() {
+        synchronized (lifecycleLock) {
+            ensureOpen();
+            var disabledSnapshot = Set.copyOf(disabledPlugins);
+            for (int i = loadOrder.size() - 1; i >= 0; i--) {
+                var loadedPlugin = loadedPlugins.get(loadOrder.get(i));
+                if (loadedPlugin != null) {
+                    unloadLoadedPlugin(loadedPlugin, disabledSnapshot.contains(loadedPlugin.descriptor.id()), "reload");
+                }
+            }
+            loadedPlugins.clear();
+            loadOrder.clear();
+            loaded = false;
+            enabled = false;
+            try {
+                loadPlugins();
+                enablePlugins();
+                for (var disabledId : disabledSnapshot) {
+                    var loadedPlugin = loadedPlugins.get(disabledId);
+                    if (loadedPlugin != null) {
+                        disabledPlugins.add(disabledId);
+                        unloadLoadedPlugin(loadedPlugin, true, "disable");
+                    }
+                }
+                return PluginOperationResult.success("Reloaded all plugins");
+            } catch (Throwable failure) {
+                return failureResult("reload", "all", failure);
+            }
+        }
+    }
+
     @Override
     public void close() {
         if (closed) {
@@ -731,6 +914,8 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         }
         loadedPlugins.clear();
         loadOrder.clear();
+        statusEntries.clear();
+        disabledPlugins.clear();
         loaded = false;
         enabled = false;
         if (closeGuiService && guiService instanceof AutoCloseable closeable) {
@@ -740,6 +925,358 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 LOGGER.warn("Failed to close plugin runtime GUI service", failure);
             }
         }
+    }
+
+    private LoadedPlugin loadArtifact(PluginArtifact artifact) {
+        var id = artifact.descriptor.id();
+        if (loadedPlugins.containsKey(id)) {
+            throw new PluginLoadException("Plugin '" + id + "' is already loaded");
+        }
+        var dependencies = dependencyClassLoaders(artifact.descriptor.depends());
+        var classLoader = new PluginClassLoader(toJarUrl(artifact.jarPath), parentClassLoader, dependencies);
+        var resources = new PluginResourceTracker();
+        var pluginPlaceholders = new PluginPlaceholderService(placeholderService, resources, id);
+        var context = new RuntimePluginContext(
+                artifact.descriptor,
+                LoggerFactory.getLogger(id),
+                new PluginEventBus(eventBus, resources, id),
+                permissions,
+                new PluginCommandRegistry(commandRegistry, resources, id),
+                new PluginRecipeRegistry(recipeRegistry, resources, id),
+                new PluginLootTableService(lootTableService, resources, id),
+                new PluginAdvancementRegistry(advancementRegistry, resources, id),
+                new PluginEnchantmentRegistry(enchantmentRegistry, resources, id),
+                new PluginStructureService(structureService, id),
+                new PluginMapService(mapService, resources),
+                new PluginBossBarService(bossBarService, resources, id),
+                new PluginTabListService(tabListService, resources),
+                pluginPlaceholders,
+                new FandMiniMessageService(pluginPlaceholders),
+                new PluginScoreboardService(scoreboardService, resources, id),
+                new PluginPacketRegistry(packetRegistry, resources),
+                new PluginPluginMessaging(pluginMessaging, resources),
+                new PluginCustomItemRegistry(customItemRegistry, resources, id),
+                new PluginCustomBlockRegistry(customBlockRegistry, resources, id),
+                new PluginGuiService(guiService, resources),
+                new PluginScheduler(scheduler, resources),
+                dataDirectoryRoot.resolve(id),
+                resources,
+                classLoader
+        );
+        try {
+            registerDeclaredPermissions(artifact.descriptor, resources);
+            var plugin = instantiatePlugin(artifact.descriptor, classLoader);
+            plugin.onLoad(context);
+            var loadedPlugin = new LoadedPlugin(artifact.descriptor, artifact.jarPath, plugin, context, classLoader, resources);
+            loadedPlugins.put(id, loadedPlugin);
+            loadOrder.addIfAbsent(id);
+            recordState(id, artifact.descriptor, artifact.jarPath, PluginLifecycle.DISABLED, null);
+            var entry = statusEntries.get(id);
+            if (entry != null) {
+                entry.loadedAtMillis = System.currentTimeMillis();
+            }
+            return loadedPlugin;
+        } catch (Throwable failure) {
+            closeQuietly(context, id);
+            closeQuietly(classLoader, id);
+            throw failure;
+        }
+    }
+
+    private void enableLoadedPlugin(LoadedPlugin loadedPlugin) {
+        if (loadedPlugin.enabled) {
+            return;
+        }
+        loadedPlugin.plugin.onEnable(loadedPlugin.context);
+        loadedPlugin.enabled = true;
+        var now = System.currentTimeMillis();
+        var entry = recordState(loadedPlugin.descriptor.id(), loadedPlugin.descriptor, loadedPlugin.jarPath, PluginLifecycle.ENABLED, null);
+        entry.enabledAtMillis = now;
+        disabledPlugins.remove(loadedPlugin.descriptor.id());
+        firePluginEnableEvent(loadedPlugin.descriptor);
+    }
+
+    private void unloadLoadedPlugin(LoadedPlugin loadedPlugin, boolean keepDisabled, String phase) {
+        var id = loadedPlugin.descriptor.id();
+        boolean wasEnabled = loadedPlugin.enabled;
+        Throwable failure = null;
+        try {
+            if (wasEnabled) {
+                loadedPlugin.plugin.onDisable(loadedPlugin.context);
+            }
+        } catch (Throwable ex) {
+            failure = ex;
+            LOGGER.warn("Plugin {} failed during {}", id, phase, ex);
+        } finally {
+            if (wasEnabled) {
+                firePluginDisableEvent(loadedPlugin.descriptor);
+            }
+            loadedPlugin.enabled = false;
+            loadedPlugins.remove(id, loadedPlugin);
+            loadOrder.remove(id);
+            if (keepDisabled) {
+                disabledPlugins.add(id);
+            } else {
+                disabledPlugins.remove(id);
+            }
+            closeQuietly(loadedPlugin.context, id);
+            if (permissions instanceof io.fand.server.permission.PermissionManager manager) {
+                manager.unregisterNamespaces(new HashSet<>(permissionNamespaces(id)));
+            }
+            closeQuietly(loadedPlugin.classLoader, id);
+            var lifecycle = keepDisabled ? PluginLifecycle.DISABLED : PluginLifecycle.AVAILABLE;
+            var entry = failure == null
+                    ? recordState(id, loadedPlugin.descriptor, loadedPlugin.jarPath, lifecycle, null)
+                    : recordError(id, loadedPlugin.descriptor, loadedPlugin.jarPath, PluginLifecycle.ERROR, phase, failure);
+            entry.disabledAtMillis = System.currentTimeMillis();
+        }
+    }
+
+    private PluginArtifact resolveArtifact(String target) throws IOException {
+        var trimmed = Objects.requireNonNull(target, "target").trim();
+        if (trimmed.isEmpty()) {
+            throw new PluginLoadException("Plugin target is required");
+        }
+        if (trimmed.toLowerCase(Locale.ROOT).endsWith(".jar")) {
+            var jarPath = pluginsDirectory.resolve(trimmed).normalize();
+            var root = pluginsDirectory.toAbsolutePath().normalize();
+            if (!jarPath.toAbsolutePath().normalize().startsWith(root)) {
+                throw new PluginLoadException("Plugin jar must be inside the plugins directory");
+            }
+            if (!Files.isRegularFile(jarPath)) {
+                throw new PluginLoadException("Plugin jar not found: " + trimmed);
+            }
+            var descriptor = readDescriptor(jarPath);
+            return new PluginArtifact(jarPath, descriptor);
+        }
+        var id = normalizePluginId(trimmed);
+        PluginArtifact match = null;
+        for (var artifact : scanArtifacts()) {
+            if (!artifact.descriptor.id().equals(id)) {
+                continue;
+            }
+            if (match != null) {
+                throw new PluginLoadException("Duplicate plugin id '" + id + "' in " + match.jarPath + " and " + artifact.jarPath);
+            }
+            match = artifact;
+        }
+        if (match == null) {
+            throw new PluginLoadException("Plugin '" + id + "' was not found in " + pluginsDirectory);
+        }
+        return match;
+    }
+
+    private List<PluginArtifact> scanArtifacts() throws IOException {
+        Files.createDirectories(pluginsDirectory);
+        try (var stream = Files.list(pluginsDirectory)) {
+            var jars = stream
+                    .filter(path -> Files.isRegularFile(path) && path.getFileName().toString().endsWith(".jar"))
+                    .sorted(Comparator.comparing(path -> path.getFileName().toString().toLowerCase(Locale.ROOT)))
+                    .toList();
+            var artifacts = new ArrayList<PluginArtifact>(jars.size());
+            for (var jar : jars) {
+                try {
+                    artifacts.add(new PluginArtifact(jar, readDescriptor(jar)));
+                } catch (PluginLoadException failure) {
+                    recordError(fileStatusId(jar), null, jar, PluginLifecycle.ERROR, "descriptor", failure);
+                }
+            }
+            return artifacts;
+        }
+    }
+
+    private void refreshAvailableStatuses() {
+        try {
+            for (var artifact : scanArtifacts()) {
+                if (!loadedPlugins.containsKey(artifact.descriptor.id()) && !disabledPlugins.contains(artifact.descriptor.id())) {
+                    recordState(artifact.descriptor.id(), artifact.descriptor, artifact.jarPath, PluginLifecycle.AVAILABLE, null);
+                }
+            }
+        } catch (IOException failure) {
+            LOGGER.warn("Failed to refresh plugin status", failure);
+        }
+    }
+
+    private Optional<PluginStatus> pluginStatus(String id, List<String> dependents) {
+        var normalized = normalizePluginId(id);
+        var loadedPlugin = loadedPlugins.get(normalized);
+        if (loadedPlugin != null) {
+            var lifecycle = loadedPlugin.enabled ? PluginLifecycle.ENABLED : PluginLifecycle.DISABLED;
+            var entry = recordState(normalized, loadedPlugin.descriptor, loadedPlugin.jarPath, lifecycle, null);
+            return Optional.of(toStatus(entry, loadedPlugin, dependents));
+        }
+        var entry = statusEntries.get(normalized);
+        return entry == null ? Optional.empty() : Optional.of(toStatus(entry, null, dependents));
+    }
+
+    private PluginStatus toStatus(StatusEntry entry, LoadedPlugin loadedPlugin, List<String> dependents) {
+        var descriptor = loadedPlugin == null ? entry.descriptor : loadedPlugin.descriptor;
+        var dependencies = descriptor == null ? List.<String>of() : descriptor.depends();
+        var commands = loadedPlugin == null ? List.<CommandDescriptor>of() : loadedPlugin.resources.commandDescriptors();
+        var runtimePermissions = loadedPlugin == null ? List.<PermissionDescriptor>of() : loadedPlugin.resources.permissionDescriptors();
+        var declaredPermissions = descriptor == null ? List.<PermissionDescriptor>of() : descriptor.permissions();
+        var permissions = new ArrayList<PermissionDescriptor>(declaredPermissions.size() + runtimePermissions.size());
+        permissions.addAll(declaredPermissions);
+        permissions.addAll(runtimePermissions);
+        return new PluginStatus(
+                entry.id,
+                entry.lifecycle,
+                loadedPlugin != null && loadedPlugin.enabled,
+                descriptor,
+                loadedPlugin == null ? entry.jarPath : loadedPlugin.jarPath,
+                dataDirectoryRoot.resolve(entry.id),
+                dependencies,
+                dependents,
+                entry.lastError,
+                entry.loadedAtMillis,
+                entry.enabledAtMillis,
+                entry.disabledAtMillis,
+                commands,
+                permissions
+        );
+    }
+
+    private LinkedHashMap<String, List<String>> dependentsById() {
+        var dependents = new LinkedHashMap<String, List<String>>();
+        for (var entry : statusEntries.values()) {
+            if (entry.descriptor == null) {
+                continue;
+            }
+            for (var dependency : entry.descriptor.depends()) {
+                dependents.computeIfAbsent(dependency, ignored -> new ArrayList<>()).add(entry.descriptor.id());
+            }
+        }
+        for (var loadedPlugin : loadedPlugins.values()) {
+            for (var dependency : loadedPlugin.descriptor.depends()) {
+                dependents.computeIfAbsent(dependency, ignored -> new ArrayList<>()).add(loadedPlugin.descriptor.id());
+            }
+        }
+        dependents.replaceAll((ignored, values) -> values.stream().distinct().sorted().toList());
+        return dependents;
+    }
+
+    private List<String> loadedDependents(String pluginId) {
+        var dependents = new ArrayList<String>();
+        for (var loadedPlugin : loadedPlugins.values()) {
+            if (loadedPlugin.descriptor.depends().contains(pluginId)) {
+                dependents.add(loadedPlugin.descriptor.id());
+            }
+        }
+        dependents.sort(Comparator.naturalOrder());
+        return dependents;
+    }
+
+    private List<String> loadedDependentsRecursive(String pluginId) {
+        var dependents = new LinkedHashSet<String>();
+        collectLoadedDependents(pluginId, dependents);
+        return List.copyOf(dependents);
+    }
+
+    private void collectLoadedDependents(String pluginId, LinkedHashSet<String> dependents) {
+        for (var dependent : loadedDependents(pluginId)) {
+            if (dependents.add(dependent)) {
+                collectLoadedDependents(dependent, dependents);
+            }
+        }
+    }
+
+    private List<String> reverseLoadOrder(Collection<String> pluginIds) {
+        var wanted = new HashSet<>(pluginIds);
+        var ordered = new ArrayList<String>();
+        for (int i = loadOrder.size() - 1; i >= 0; i--) {
+            var id = loadOrder.get(i);
+            if (wanted.contains(id)) {
+                ordered.add(id);
+            }
+        }
+        return ordered;
+    }
+
+    private StatusEntry recordState(
+            String id,
+            PluginDescriptor descriptor,
+            Path jarPath,
+            PluginLifecycle lifecycle,
+            PluginError error
+    ) {
+        var normalized = normalizePluginId(id);
+        var entry = statusEntries.computeIfAbsent(normalized, StatusEntry::new);
+        entry.descriptor = descriptor == null ? entry.descriptor : descriptor;
+        entry.jarPath = jarPath == null ? entry.jarPath : jarPath;
+        entry.lifecycle = lifecycle;
+        if (error != null) {
+            entry.lastError = error;
+        } else if (lifecycle != PluginLifecycle.ERROR) {
+            entry.lastError = null;
+        }
+        return entry;
+    }
+
+    private StatusEntry recordError(
+            String id,
+            PluginDescriptor descriptor,
+            Path jarPath,
+            PluginLifecycle lifecycle,
+            String phase,
+            Throwable failure
+    ) {
+        return recordState(
+                id,
+                descriptor,
+                jarPath,
+                lifecycle,
+                new PluginError(phase, rootMessage(failure), System.currentTimeMillis())
+        );
+    }
+
+    private void recordDependencyError(PluginArtifact artifact, String dependency, String phase) {
+        recordError(
+                artifact.descriptor.id(),
+                artifact.descriptor,
+                artifact.jarPath,
+                PluginLifecycle.ERROR,
+                phase,
+                new PluginLoadException("Missing or disabled dependency '" + dependency + "'")
+        );
+    }
+
+    private PluginOperationResult failureResult(String phase, String target, Throwable failure) {
+        var message = rootMessage(failure);
+        try {
+            var entry = statusEntries.get(normalizePluginId(target));
+            if (entry != null) {
+                recordError(entry.id, entry.descriptor, entry.jarPath, PluginLifecycle.ERROR, phase, failure);
+            }
+        } catch (IllegalArgumentException ignored) {
+            // File-name targets are not necessarily plugin ids.
+        }
+        return PluginOperationResult.failure("Failed to " + phase + " plugin '" + target + "': " + message);
+    }
+
+    private static String rootMessage(Throwable failure) {
+        var cursor = failure;
+        while (cursor.getCause() != null) {
+            cursor = cursor.getCause();
+        }
+        return cursor.getMessage() == null ? cursor.getClass().getSimpleName() : cursor.getMessage();
+    }
+
+    private static String normalizePluginId(String id) {
+        var normalized = Objects.requireNonNull(id, "id").trim().toLowerCase(Locale.ROOT);
+        if (!PLUGIN_ID.matcher(normalized).matches()) {
+            throw new PluginLoadException("Invalid plugin id '" + id + "'");
+        }
+        return normalized;
+    }
+
+    private static String fileStatusId(Path jarPath) {
+        var name = jarPath.getFileName().toString().toLowerCase(Locale.ROOT);
+        var base = name.endsWith(".jar") ? name.substring(0, name.length() - 4) : name;
+        var normalized = base.replaceAll("[^a-z0-9-]+", "-").replaceAll("^-+|-+$", "");
+        if (normalized.isBlank() || !PLUGIN_ID.matcher(normalized).matches()) {
+            return "jar-" + Integer.toUnsignedString(name.hashCode(), 16);
+        }
+        return normalized;
     }
 
     private DiscoveryResult discoverArtifacts() throws IOException {
@@ -756,6 +1293,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 try {
                     descriptor = readDescriptor(jar);
                 } catch (PluginLoadException failure) {
+                    recordError(fileStatusId(jar), null, jar, PluginLifecycle.ERROR, "descriptor", failure);
                     if (!options.continueOnLoadFailure()) {
                         throw failure;
                     }
@@ -765,6 +1303,14 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 }
                 var existing = seenIds.putIfAbsent(descriptor.id(), jar);
                 if (existing != null) {
+                    recordError(
+                            descriptor.id(),
+                            descriptor,
+                            jar,
+                            PluginLifecycle.ERROR,
+                            "descriptor",
+                            new PluginLoadException("Duplicate plugin id '" + descriptor.id() + "' in " + existing + " and " + jar)
+                    );
                     if (!options.continueOnLoadFailure()) {
                         throw new PluginLoadException("Duplicate plugin id '" + descriptor.id() + "' in " + existing + " and " + jar);
                     }
@@ -772,6 +1318,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                     LOGGER.warn("Skipping duplicate plugin {} from {} because {} already provides it", descriptor.id(), jar, existing);
                     continue;
                 }
+                recordState(descriptor.id(), descriptor, jar, PluginLifecycle.AVAILABLE, null);
                 artifacts.add(new PluginArtifact(jar, descriptor));
             }
             return new DiscoveryResult(artifacts, skipped);
@@ -820,9 +1367,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         return descriptor;
     }
 
-    private void registerDeclaredPermissions(PluginDescriptor descriptor) {
+    private void registerDeclaredPermissions(PluginDescriptor descriptor, PluginResourceTracker resources) {
         for (var permission : descriptor.permissions()) {
             permissions.register(permission);
+            resources.trackPermission(permission);
         }
     }
 
@@ -919,6 +1467,14 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             for (var artifact : artifacts) {
                 if (!ordered.contains(artifact)) {
                     skipped++;
+                    recordError(
+                            artifact.descriptor.id(),
+                            artifact.descriptor,
+                            artifact.jarPath,
+                            PluginLifecycle.ERROR,
+                            "load",
+                            new PluginLoadException("Plugin dependency graph contains a cycle")
+                    );
                     LOGGER.warn("Skipping plugin {} because the dependency graph contains a cycle", artifact.descriptor.id());
                 }
             }
@@ -941,6 +1497,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 skipped++;
                 changed = true;
                 iterator.remove();
+                recordDependencyError(artifact, unavailableDependency, "load");
                 LOGGER.warn(
                         "Skipping plugin {} because dependency {} is unavailable",
                         artifact.descriptor.id(),
@@ -1111,21 +1668,87 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private static final class LoadedPlugin {
 
         private final PluginDescriptor descriptor;
+        private final Path jarPath;
         private final Plugin plugin;
         private final RuntimePluginContext context;
         private final PluginClassLoader classLoader;
+        private final PluginResourceTracker resources;
         private volatile boolean enabled;
 
         private LoadedPlugin(
                 PluginDescriptor descriptor,
+                Path jarPath,
                 Plugin plugin,
                 RuntimePluginContext context,
-                PluginClassLoader classLoader
+                PluginClassLoader classLoader,
+                PluginResourceTracker resources
         ) {
             this.descriptor = descriptor;
+            this.jarPath = jarPath;
             this.plugin = plugin;
             this.context = context;
             this.classLoader = classLoader;
+            this.resources = resources;
+        }
+    }
+
+    public enum PluginLifecycle {
+        ENABLED,
+        DISABLED,
+        AVAILABLE,
+        ERROR
+    }
+
+    public record PluginError(String phase, String message, long timestampMillis) {
+    }
+
+    public record PluginStatus(
+            String id,
+            PluginLifecycle lifecycle,
+            boolean enabled,
+            PluginDescriptor descriptor,
+            Path jarPath,
+            Path dataDirectory,
+            List<String> dependencies,
+            List<String> dependents,
+            PluginError lastError,
+            long loadedAtMillis,
+            long enabledAtMillis,
+            long disabledAtMillis,
+            List<CommandDescriptor> commands,
+            List<PermissionDescriptor> permissions
+    ) {
+        public PluginStatus {
+            dependencies = List.copyOf(dependencies);
+            dependents = List.copyOf(dependents);
+            commands = List.copyOf(commands);
+            permissions = List.copyOf(permissions);
+        }
+    }
+
+    public record PluginOperationResult(boolean success, String message) {
+        public static PluginOperationResult success(String message) {
+            return new PluginOperationResult(true, message);
+        }
+
+        public static PluginOperationResult failure(String message) {
+            return new PluginOperationResult(false, message);
+        }
+    }
+
+    private static final class StatusEntry {
+
+        private final String id;
+        private volatile PluginLifecycle lifecycle = PluginLifecycle.AVAILABLE;
+        private volatile PluginDescriptor descriptor;
+        private volatile Path jarPath;
+        private volatile PluginError lastError;
+        private volatile long loadedAtMillis;
+        private volatile long enabledAtMillis;
+        private volatile long disabledAtMillis;
+
+        private StatusEntry(String id) {
+            this.id = id;
         }
     }
 
