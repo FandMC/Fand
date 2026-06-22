@@ -7,6 +7,7 @@ import io.fand.api.world.WorldGenerator;
 import io.fand.api.world.generation.ChunkGenerationStage;
 import io.fand.api.world.generation.GeneratorContext;
 import io.fand.api.world.generation.WorldGeneratorSettings;
+import io.fand.server.structure.FandStructureService;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -47,6 +48,7 @@ public final class FandVanillaWorldGeneratorSource extends ChunkGenerator implem
     private final NoiseBasedChunkGenerator delegate;
     private final WorldGenerator generator;
     private final WorldGeneratorSettings settings;
+    private final FandStructureService structures;
 
     public FandVanillaWorldGeneratorSource(
             Key world,
@@ -55,7 +57,8 @@ public final class FandVanillaWorldGeneratorSource extends ChunkGenerator implem
             BiomeSource biomeSource,
             Holder<NoiseGeneratorSettings> noiseSettings,
             WorldGenerator generator,
-            WorldGeneratorSettings settings
+            WorldGeneratorSettings settings,
+            FandStructureService structures
     ) {
         super(biomeSource, FandWorldGeneratorSource.generationSettingsGetter(settings));
         this.world = Objects.requireNonNull(world, "world");
@@ -64,6 +67,7 @@ public final class FandVanillaWorldGeneratorSource extends ChunkGenerator implem
         this.delegate = new NoiseBasedChunkGenerator(biomeSource, Objects.requireNonNull(noiseSettings, "noiseSettings"));
         this.generator = Objects.requireNonNull(generator, "generator");
         this.settings = Objects.requireNonNull(settings, "settings");
+        this.structures = Objects.requireNonNull(structures, "structures");
     }
 
     @Override
@@ -89,7 +93,7 @@ public final class FandVanillaWorldGeneratorSource extends ChunkGenerator implem
                 randomState,
                 legacyLevelSeed,
                 biomeSource,
-                new FandWorldGeneratorSource.FilteredStructureSetLookup(structureSets, settings));
+                new FandWorldGeneratorSource.FilteredStructureSetLookup(structureSets, settings, structures));
     }
 
     @Override

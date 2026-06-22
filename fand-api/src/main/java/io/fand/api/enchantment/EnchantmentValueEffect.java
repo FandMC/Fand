@@ -17,8 +17,20 @@ public sealed interface EnchantmentValueEffect extends EnchantmentJsonValue
         return new Add(value);
     }
 
+    static EnchantmentValueEffect allOf(List<EnchantmentValueEffect> effects) {
+        return new AllOf(effects);
+    }
+
     static EnchantmentValueEffect multiply(EnchantmentLevelValue factor) {
         return new Multiply(factor);
+    }
+
+    static EnchantmentValueEffect removeBinomial(EnchantmentLevelValue chance) {
+        return new RemoveBinomial(chance);
+    }
+
+    static EnchantmentValueEffect scaleExponentially(EnchantmentLevelValue base, EnchantmentLevelValue exponent) {
+        return new ScaleExponentially(base, exponent);
     }
 
     static EnchantmentValueEffect set(EnchantmentLevelValue value) {

@@ -1,0 +1,249 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Mon, 22 Jun 2026 14:00:52 +0800
+Subject: [PATCH] Fand: add runtime template structures to worldgen
+
+
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index 5bd643c401a3d290343066d7f411cad61ab864a1..b1825e58d854e0b28263c1451d3cf9e0518fd677 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -139,7 +139,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     private final ThreadedLevelLightEngine lightEngine;
+     private final BlockableEventLoop<Runnable> mainThreadExecutor;
+     private final RandomState randomState;
+-    private final ChunkGeneratorStructureState chunkGeneratorState;
++    private volatile ChunkGeneratorStructureState chunkGeneratorState;
+     private final TicketStorage ticketStorage;
+     private final PoiManager poiManager;
+     private final LongSet toDrop = new LongOpenHashSet();
+@@ -256,6 +256,11 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         return this.chunkGeneratorState;
+     }
+ 
++    public void fand$refreshGeneratorState() {
++        RegistryAccess registryAccess = this.level.registryAccess();
++        this.chunkGeneratorState = this.generator().createState(registryAccess.lookupOrThrow(Registries.STRUCTURE_SET), this.randomState, this.level.getSeed());
++    }
++
+     protected RandomState randomState() {
+         return this.randomState;
+     }
+diff --git a/net/minecraft/server/level/ServerChunkCache.java b/net/minecraft/server/level/ServerChunkCache.java
+index 59eb2fda6df4fa9406aa99ee78ea5cc85f43acd6..c8cd4099e13c5591f20eed10137ab4ed2db80e65 100644
+--- a/net/minecraft/server/level/ServerChunkCache.java
++++ b/net/minecraft/server/level/ServerChunkCache.java
+@@ -452,6 +452,10 @@ public class ServerChunkCache extends ChunkSource {
+         return this.chunkMap.generatorState();
+     }
+ 
++    public void fand$refreshGeneratorState() {
++        this.chunkMap.fand$refreshGeneratorState();
++    }
++
+     public RandomState randomState() {
+         return this.chunkMap.randomState();
+     }
+diff --git a/net/minecraft/world/level/levelgen/structure/StructureType.java b/net/minecraft/world/level/levelgen/structure/StructureType.java
+index 324cff10d39901cd7ad2ab6e8516549ecfb23809..7c25cec6f7eb96f1e96673f98bb53b0608bb6f4d 100644
+--- a/net/minecraft/world/level/levelgen/structure/StructureType.java
++++ b/net/minecraft/world/level/levelgen/structure/StructureType.java
+@@ -6,6 +6,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
+ import net.minecraft.world.level.levelgen.structure.structures.BuriedTreasureStructure;
+ import net.minecraft.world.level.levelgen.structure.structures.DesertPyramidStructure;
+ import net.minecraft.world.level.levelgen.structure.structures.EndCityStructure;
++import net.minecraft.world.level.levelgen.structure.structures.FandTemplateStructure;
+ import net.minecraft.world.level.levelgen.structure.structures.IglooStructure;
+ import net.minecraft.world.level.levelgen.structure.structures.JigsawStructure;
+ import net.minecraft.world.level.levelgen.structure.structures.JungleTempleStructure;
+@@ -24,6 +25,7 @@ public interface StructureType<S extends Structure> {
+     StructureType<BuriedTreasureStructure> BURIED_TREASURE = register("buried_treasure", BuriedTreasureStructure.CODEC);
+     StructureType<DesertPyramidStructure> DESERT_PYRAMID = register("desert_pyramid", DesertPyramidStructure.CODEC);
+     StructureType<EndCityStructure> END_CITY = register("end_city", EndCityStructure.CODEC);
++    StructureType<FandTemplateStructure> FAND_TEMPLATE = register("fand:template", FandTemplateStructure.CODEC);
+     StructureType<NetherFortressStructure> FORTRESS = register("fortress", NetherFortressStructure.CODEC);
+     StructureType<IglooStructure> IGLOO = register("igloo", IglooStructure.CODEC);
+     StructureType<JigsawStructure> JIGSAW = register("jigsaw", JigsawStructure.CODEC);
+diff --git a/net/minecraft/world/level/levelgen/structure/pieces/StructurePieceType.java b/net/minecraft/world/level/levelgen/structure/pieces/StructurePieceType.java
+index 33646adc763dd97cd438bba3f4c0814b37810b8c..acfcbcd05cb8595827d89e75ffbb5f8d5de25361 100644
+--- a/net/minecraft/world/level/levelgen/structure/pieces/StructurePieceType.java
++++ b/net/minecraft/world/level/levelgen/structure/pieces/StructurePieceType.java
+@@ -9,6 +9,7 @@ import net.minecraft.world.level.levelgen.structure.StructurePiece;
+ import net.minecraft.world.level.levelgen.structure.structures.BuriedTreasurePieces;
+ import net.minecraft.world.level.levelgen.structure.structures.DesertPyramidPiece;
+ import net.minecraft.world.level.levelgen.structure.structures.EndCityPieces;
++import net.minecraft.world.level.levelgen.structure.structures.FandTemplateStructure;
+ import net.minecraft.world.level.levelgen.structure.structures.IglooPieces;
+ import net.minecraft.world.level.levelgen.structure.structures.JungleTemplePiece;
+ import net.minecraft.world.level.levelgen.structure.structures.MineshaftPieces;
+@@ -76,6 +77,7 @@ public interface StructurePieceType {
+     StructurePieceType OCEAN_MONUMENT_WING_ROOM = setPieceId(OceanMonumentPieces.OceanMonumentWingRoom::new, "OMWR");
+     StructurePieceType END_CITY_PIECE = setTemplatePieceId(EndCityPieces.EndCityPiece::new, "ECP");
+     StructurePieceType WOODLAND_MANSION_PIECE = setTemplatePieceId(WoodlandMansionPieces.WoodlandMansionPiece::new, "WMP");
++    StructurePieceType FAND_TEMPLATE = setTemplatePieceId(FandTemplateStructure.Piece::new, "fand:template");
+     StructurePieceType BURIED_TREASURE_PIECE = setPieceId(BuriedTreasurePieces.BuriedTreasurePiece::new, "BTP");
+     StructurePieceType SHIPWRECK_PIECE = setTemplatePieceId(ShipwreckPieces.ShipwreckPiece::new, "Shipwreck");
+     StructurePieceType NETHER_FOSSIL = setTemplatePieceId(NetherFossilPieces.NetherFossilPiece::new, "NeFos");
+diff --git a/net/minecraft/world/level/levelgen/structure/structures/FandTemplateStructure.java b/net/minecraft/world/level/levelgen/structure/structures/FandTemplateStructure.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..25cc314a46aa0c48cafc391337eea569e2b34c5f
+--- /dev/null
++++ b/net/minecraft/world/level/levelgen/structure/structures/FandTemplateStructure.java
+@@ -0,0 +1,157 @@
++package net.minecraft.world.level.levelgen.structure.structures;
++
++import com.mojang.serialization.Codec;
++import com.mojang.serialization.MapCodec;
++import com.mojang.serialization.codecs.RecordCodecBuilder;
++import java.util.Optional;
++import net.minecraft.core.BlockPos;
++import net.minecraft.nbt.CompoundTag;
++import net.minecraft.resources.Identifier;
++import net.minecraft.util.RandomSource;
++import net.minecraft.world.level.ChunkPos;
++import net.minecraft.world.level.ServerLevelAccessor;
++import net.minecraft.world.level.StructureManager;
++import net.minecraft.world.level.WorldGenLevel;
++import net.minecraft.world.level.block.Mirror;
++import net.minecraft.world.level.block.Rotation;
++import net.minecraft.world.level.chunk.ChunkGenerator;
++import net.minecraft.world.level.levelgen.Heightmap;
++import net.minecraft.world.level.levelgen.structure.BoundingBox;
++import net.minecraft.world.level.levelgen.structure.Structure;
++import net.minecraft.world.level.levelgen.structure.StructureType;
++import net.minecraft.world.level.levelgen.structure.TemplateStructurePiece;
++import net.minecraft.world.level.levelgen.structure.pieces.StructurePieceSerializationContext;
++import net.minecraft.world.level.levelgen.structure.pieces.StructurePieceType;
++import net.minecraft.world.level.levelgen.structure.templatesystem.BlockIgnoreProcessor;
++import net.minecraft.world.level.levelgen.structure.templatesystem.LiquidSettings;
++import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
++import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
++
++public final class FandTemplateStructure extends Structure {
++    public static final MapCodec<FandTemplateStructure> CODEC = RecordCodecBuilder.mapCodec(
++        i -> i.group(
++                settingsCodec(i),
++                Identifier.CODEC.fieldOf("template").forGetter(structure -> structure.template),
++                Codec.BOOL.optionalFieldOf("include_entities", true).forGetter(structure -> structure.includeEntities),
++                Heightmap.Types.CODEC.optionalFieldOf("heightmap", Heightmap.Types.WORLD_SURFACE_WG).forGetter(structure -> structure.heightmap),
++                Codec.INT.optionalFieldOf("y_offset", 0).forGetter(structure -> structure.yOffset)
++            )
++            .apply(i, FandTemplateStructure::new)
++    );
++
++    private final Identifier template;
++    private final boolean includeEntities;
++    private final Heightmap.Types heightmap;
++    private final int yOffset;
++
++    public FandTemplateStructure(
++        final Structure.StructureSettings settings,
++        final Identifier template,
++        final boolean includeEntities,
++        final Heightmap.Types heightmap,
++        final int yOffset
++    ) {
++        super(settings);
++        this.template = template;
++        this.includeEntities = includeEntities;
++        this.heightmap = heightmap;
++        this.yOffset = yOffset;
++    }
++
++    @Override
++    protected Optional<Structure.GenerationStub> findGenerationPoint(final Structure.GenerationContext context) {
++        ChunkPos chunkPos = context.chunkPos();
++        int x = chunkPos.getMiddleBlockX();
++        int z = chunkPos.getMiddleBlockZ();
++        int y = context.chunkGenerator().getFirstOccupiedHeight(x, z, this.heightmap, context.heightAccessor(), context.randomState()) + this.yOffset;
++        BlockPos position = new BlockPos(x, y, z);
++        return Optional.of(new Structure.GenerationStub(position, builder -> builder.addPiece(new FandTemplateStructure.Piece(
++            context.structureTemplateManager(),
++            this.template,
++            position,
++            Rotation.NONE,
++            this.includeEntities
++        ))));
++    }
++
++    @Override
++    public StructureType<?> type() {
++        return StructureType.FAND_TEMPLATE;
++    }
++
++    public static final class Piece extends TemplateStructurePiece {
++        private final boolean includeEntities;
++
++        public Piece(
++            final StructureTemplateManager structureTemplateManager,
++            final Identifier template,
++            final BlockPos position,
++            final Rotation rotation,
++            final boolean includeEntities
++        ) {
++            super(
++                StructurePieceType.FAND_TEMPLATE,
++                0,
++                structureTemplateManager,
++                template,
++                template.toString(),
++                makeSettings(rotation, includeEntities),
++                position
++            );
++            this.includeEntities = includeEntities;
++        }
++
++        public Piece(final StructureTemplateManager structureTemplateManager, final CompoundTag tag) {
++            super(
++                StructurePieceType.FAND_TEMPLATE,
++                tag,
++                structureTemplateManager,
++                location -> makeSettings(tag.read("Rot", Rotation.LEGACY_CODEC).orElse(Rotation.NONE), tag.getBooleanOr("IncludeEntities", true))
++            );
++            this.includeEntities = tag.getBooleanOr("IncludeEntities", true);
++        }
++
++        private static StructurePlaceSettings makeSettings(final Rotation rotation, final boolean includeEntities) {
++            return new StructurePlaceSettings()
++                .setRotation(rotation)
++                .setMirror(Mirror.NONE)
++                .setIgnoreEntities(!includeEntities)
++                .setKnownShape(true)
++                .setFinalizeEntities(includeEntities)
++                .setLiquidSettings(LiquidSettings.APPLY_WATERLOGGING)
++                .addProcessor(BlockIgnoreProcessor.STRUCTURE_BLOCK);
++        }
++
++        @Override
++        protected void addAdditionalSaveData(final StructurePieceSerializationContext context, final CompoundTag tag) {
++            super.addAdditionalSaveData(context, tag);
++            tag.store("Rot", Rotation.LEGACY_CODEC, this.placeSettings.getRotation());
++            tag.putBoolean("IncludeEntities", this.includeEntities);
++        }
++
++        @Override
++        protected void handleDataMarker(
++            final String markerId,
++            final BlockPos position,
++            final ServerLevelAccessor level,
++            final RandomSource random,
++            final BoundingBox chunkBB
++        ) {
++        }
++
++        @Override
++        public void postProcess(
++            final WorldGenLevel level,
++            final StructureManager structureManager,
++            final ChunkGenerator generator,
++            final RandomSource random,
++            final BoundingBox chunkBB,
++            final ChunkPos chunkPos,
++            final BlockPos referencePos
++        ) {
++            this.placeSettings.setIgnoreEntities(!this.includeEntities);
++            this.placeSettings.setFinalizeEntities(this.includeEntities);
++            super.postProcess(level, structureManager, generator, random, chunkBB, chunkPos, referencePos);
++        }
++    }
++}

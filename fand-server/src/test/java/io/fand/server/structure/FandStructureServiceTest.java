@@ -2,6 +2,10 @@ package io.fand.server.structure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.fand.api.registry.RegistryReference;
+import io.fand.api.structure.CustomStructure;
+import io.fand.api.structure.CustomStructureSet;
+import io.fand.api.structure.StructureGenerationPlacement;
 import io.fand.api.structure.StructurePlacement;
 import io.fand.api.structure.StructureVolume;
 import io.fand.api.world.Location;
@@ -44,6 +48,32 @@ final class FandStructureServiceTest {
         var service = new FandStructureService(() -> null);
 
         assertThat(service.locate(Key.key("minecraft:village_plains"), ORIGIN, -1)).isCompletedExceptionally();
+    }
+
+    @Test
+    void registersCustomStructuresAndStructureSetsWithoutAttachedServer() {
+        var service = new FandStructureService(() -> null);
+        var structure = CustomStructure.builder(Key.key("demo:hut"), Key.key("demo:hut_template"))
+                .biomes(List.of(RegistryReference.all()))
+                .build();
+        var set = new CustomStructureSet(
+                Key.key("demo:huts"),
+                structure.key(),
+                StructureGenerationPlacement.randomSpread(24, 8, 12345));
+
+        var structureRegistration = service.registerStructure(structure);
+        var setRegistration = service.registerStructureSet(set);
+
+        assertThat(service.registeredStructure(structure.key())).contains(structure);
+        assertThat(service.registeredStructureSet(set.key())).contains(set);
+        assertThat(structureRegistration.active()).isTrue();
+        assertThat(setRegistration.active()).isTrue();
+
+        setRegistration.close();
+        structureRegistration.close();
+
+        assertThat(service.registeredStructure(structure.key())).isEmpty();
+        assertThat(service.registeredStructureSet(set.key())).isEmpty();
     }
 
     @Test

@@ -34,6 +34,10 @@ public sealed interface EnchantmentEntityEffect extends EnchantmentLocationEffec
         return new ApplyExhaustion(amount);
     }
 
+    static EnchantmentEntityEffect allOf(List<EnchantmentEntityEffect> effects) {
+        return new AllOf(effects);
+    }
+
     static EnchantmentEntityEffect applyImpulse(Vec3d direction, Vec3d coordinateScale, EnchantmentLevelValue magnitude) {
         return new ApplyImpulse(direction, coordinateScale, magnitude);
     }

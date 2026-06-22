@@ -45,6 +45,14 @@ public final class PersistentComponentData extends SavedData {
                 DataFixTypes.SAVED_DATA_COMMAND_STORAGE);
     }
 
+    public static SavedDataType<PersistentComponentData> advancementType() {
+        return new SavedDataType<>(
+                Identifier.fromNamespaceAndPath("fand", "components/advancements"),
+                PersistentComponentData::new,
+                CODEC,
+                DataFixTypes.SAVED_DATA_COMMAND_STORAGE);
+    }
+
     private final Map<String, Map<String, String>> values;
     private final Map<String, Set<String>> componentIndex = new HashMap<>();
 

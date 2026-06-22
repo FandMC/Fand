@@ -6,6 +6,7 @@ import io.fand.api.inventory.InventoryType;
 import io.fand.api.item.ItemType;
 import io.fand.api.item.ItemStack;
 import io.fand.api.permission.PermissionSubject;
+import io.fand.api.persistence.PersistentDataContainer;
 import io.fand.api.player.ResourcePackRequest;
 import io.fand.api.player.RespawnLocation;
 import io.fand.api.player.PlayerProfile;
@@ -291,9 +292,19 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     /** Reads a vanilla custom statistic value. */
     int statistic(Key key);
 
+    /** Bukkit-style alias for {@link #statistic(Key)}. */
+    default int getStatistic(Key key) {
+        return statistic(key);
+    }
+
     /** Convenience overload for generated vanilla statistic keys. */
     default int statistic(StatisticKey key) {
         return statistic(key.key());
+    }
+
+    /** Bukkit-style alias for {@link #statistic(StatisticKey)}. */
+    default int getStatistic(StatisticKey key) {
+        return statistic(key);
     }
 
     /** Sets a vanilla custom statistic value and syncs it to the client. */
@@ -308,6 +319,11 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     default void incrementStatistic(Key key, int delta) {
         long value = (long) statistic(key) + delta;
         setStatistic(key, (int) Math.max(0L, Math.min(Integer.MAX_VALUE, value)));
+    }
+
+    /** Convenience overload for generated vanilla statistic keys. */
+    default void incrementStatistic(StatisticKey key, int delta) {
+        incrementStatistic(key.key(), delta);
     }
 
     /** Grants one or more recipes to this player's recipe book. */
@@ -362,6 +378,24 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
 
     default boolean revokeAdvancementCriterion(Key advancement, String criterion) {
         return false;
+    }
+
+    /**
+     * Persistent Fand data attached to this player's progress for one advancement.
+     *
+     * <p>This is separate from vanilla advancement progress and stores plugin
+     * JSON values under namespaced keys.
+     */
+    default PersistentDataContainer advancementData(Key advancement) {
+        java.util.Objects.requireNonNull(advancement, "advancement");
+        return PersistentDataContainer.EMPTY;
+    }
+
+    /** Replaces all Fand data attached to this player's progress for one advancement. */
+    default void setAdvancementData(Key advancement, PersistentDataContainer data) {
+        java.util.Objects.requireNonNull(advancement, "advancement");
+        java.util.Objects.requireNonNull(data, "data");
+        throw new UnsupportedOperationException("Advancement persistent data is not supported");
     }
 
     default boolean visibleInPlayerList(Player viewer) {

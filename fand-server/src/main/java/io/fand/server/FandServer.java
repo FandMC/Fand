@@ -311,6 +311,7 @@ public final class FandServer implements Server, AutoCloseable {
         recipes.bind(server);
         advancements.applyLoadedAdvancements();
         enchantments.applyLoadedEnchantments();
+        structures.applyLoadedStructures();
     }
 
     /**
@@ -867,7 +868,7 @@ public final class FandServer implements Server, AutoCloseable {
         return ResourceKey.create(Registries.LEVEL_STEM, identifier(template.key()));
     }
 
-    private static LevelStem levelStem(MinecraftServer server, Key worldKey, WorldCreateOptions options) {
+    private LevelStem levelStem(MinecraftServer server, Key worldKey, WorldCreateOptions options) {
         var template = templateKey(options.template());
         if (options.isVoidWorld()) {
             return server.fand$voidLevelStem(template);
@@ -885,6 +886,7 @@ public final class FandServer implements Server, AutoCloseable {
             return base;
         }
         var settings = options.generatorSettings();
+        io.fand.server.world.FandBiomeRegistry.applyCustomBiomes(server, settings);
         var biomes = server.registryAccess().lookupOrThrow(Registries.BIOME);
         Holder<DimensionType> dimensionType = base.type();
         var dimensionTypeOverride = settings.dimensionType();
@@ -911,7 +913,8 @@ public final class FandServer implements Server, AutoCloseable {
                             biomeSource,
                             noiseSettings(server, base, settings.noiseSettings().orElse(null)),
                             generator,
-                            settings));
+                            settings,
+                            structures));
         }
         return new LevelStem(
                 dimensionType,
@@ -920,7 +923,8 @@ public final class FandServer implements Server, AutoCloseable {
                         seed,
                         biomes,
                         generator,
-                        settings));
+                        settings,
+                        structures));
     }
 
     private static Holder<NoiseGeneratorSettings> noiseSettings(

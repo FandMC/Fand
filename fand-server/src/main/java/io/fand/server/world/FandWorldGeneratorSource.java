@@ -8,6 +8,7 @@ import io.fand.api.world.generation.DecorationStep;
 import io.fand.api.world.generation.GenerationMode;
 import io.fand.api.world.generation.GeneratorContext;
 import io.fand.api.world.generation.WorldGeneratorSettings;
+import io.fand.server.structure.FandStructureService;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -49,13 +50,15 @@ public final class FandWorldGeneratorSource extends ChunkGenerator {
     private final HolderLookup.RegistryLookup<Biome> biomes;
     private final WorldGenerator generator;
     private final WorldGeneratorSettings settings;
+    private final FandStructureService structures;
 
     public FandWorldGeneratorSource(
             Key world,
             long seed,
             HolderLookup.RegistryLookup<Biome> biomes,
             WorldGenerator generator,
-            WorldGeneratorSettings settings
+            WorldGeneratorSettings settings,
+            FandStructureService structures
     ) {
         super(
                 new FandBiomeSource(biomes, settings.biomeProvider(), biomes.getOrThrow(net.minecraft.world.level.biome.Biomes.PLAINS)),
@@ -65,6 +68,7 @@ public final class FandWorldGeneratorSource extends ChunkGenerator {
         this.biomes = Objects.requireNonNull(biomes, "biomes");
         this.generator = Objects.requireNonNull(generator, "generator");
         this.settings = Objects.requireNonNull(settings, "settings");
+        this.structures = Objects.requireNonNull(structures, "structures");
     }
 
     @Override
@@ -85,7 +89,7 @@ public final class FandWorldGeneratorSource extends ChunkGenerator {
                 randomState,
                 legacyLevelSeed,
                 biomeSource,
-                new FilteredStructureSetLookup(structureSets, settings));
+                new FilteredStructureSetLookup(structureSets, settings, structures));
     }
 
     @Override
@@ -249,10 +253,12 @@ public final class FandWorldGeneratorSource extends ChunkGenerator {
 
         private final HolderLookup<StructureSet> parent;
         private final WorldGeneratorSettings settings;
+        private final FandStructureService structures;
 
-        FilteredStructureSetLookup(HolderLookup<StructureSet> parent, WorldGeneratorSettings settings) {
+        FilteredStructureSetLookup(HolderLookup<StructureSet> parent, WorldGeneratorSettings settings, FandStructureService structures) {
             this.parent = Objects.requireNonNull(parent, "parent");
             this.settings = Objects.requireNonNull(settings, "settings");
+            this.structures = Objects.requireNonNull(structures, "structures");
         }
 
         @Override
@@ -267,12 +273,18 @@ public final class FandWorldGeneratorSource extends ChunkGenerator {
 
         @Override
         public java.util.Optional<Holder.Reference<StructureSet>> get(ResourceKey<StructureSet> id) {
-            return parent.get(id).filter(holder -> enabled(holder.key()));
+            return parent.get(id)
+                    .or(() -> structures.structureSetHolders().filter(holder -> holder.key().equals(id)).findFirst())
+                    .filter(this::enabled);
         }
 
         @Override
         public java.util.stream.Stream<Holder.Reference<StructureSet>> listElements() {
-            return parent.listElements().filter(holder -> enabled(holder.key()));
+            return java.util.stream.Stream.concat(
+                    parent.listElements()
+                            .filter(holder -> !structures.runtimeStructureSetOwned(apiKey(holder.key())))
+                            .filter(this::enabled),
+                    structures.structureSetHolders().filter(this::enabled));
         }
 
         @Override
@@ -285,9 +297,27 @@ public final class FandWorldGeneratorSource extends ChunkGenerator {
             return parent.listTags();
         }
 
-        private boolean enabled(ResourceKey<StructureSet> key) {
+        private boolean enabled(Holder.Reference<StructureSet> holder) {
+            var apiKey = apiKey(holder.key());
+            return settings.structureSetEnabled(apiKey)
+                    && structures.runtimeStructureSetActive(apiKey)
+                    && structureSetReferencesActive(holder);
+        }
+
+        private boolean structureSetReferencesActive(Holder.Reference<StructureSet> holder) {
+            if (!structures.runtimeStructureSetOwned(apiKey(holder.key()))) {
+                return true;
+            }
+            return holder.value().structures().stream()
+                    .allMatch(entry -> entry.structure().unwrapKey()
+                            .map(FandWorldGeneratorSource.FilteredStructureSetLookup::apiKey)
+                            .map(structures::runtimeStructureActive)
+                            .orElse(true));
+        }
+
+        private static Key apiKey(ResourceKey<?> key) {
             var identifier = key.identifier();
-            return settings.structureSetEnabled(Key.key(identifier.getNamespace(), identifier.getPath()));
+            return Key.key(identifier.getNamespace(), identifier.getPath());
         }
     }
 }

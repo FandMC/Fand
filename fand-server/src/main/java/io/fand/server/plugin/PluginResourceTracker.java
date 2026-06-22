@@ -23,6 +23,7 @@ import io.fand.api.permission.PermissionDescriptor;
 import io.fand.api.recipe.RecipeRegistration;
 import io.fand.api.scheduler.Task;
 import io.fand.api.scoreboard.ScoreboardRegistration;
+import io.fand.api.structure.StructureRegistration;
 import io.fand.api.tablist.TabListRegistration;
 import io.fand.server.map.FandMapService;
 import java.util.ArrayList;
@@ -53,6 +54,7 @@ final class PluginResourceTracker {
     private final Set<TrackedGameRuleRegistration> gameRuleRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedAdvancementRegistration> advancementRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedEnchantmentRegistration> enchantmentRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedStructureRegistration> structureRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<MapRendererBinding> mapRendererBindings = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCustomItemRegistration> customItemRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCustomBlockRegistration> customBlockRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -354,6 +356,22 @@ final class PluginResourceTracker {
         return tracked;
     }
 
+    TrackedStructureRegistration track(StructureRegistration delegate) {
+        var tracked = new TrackedStructureRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                structureRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.unregisterFromTracker();
+        }
+        return tracked;
+    }
+
     void track(MapRendererBinding binding) {
         var dispose = false;
         MapRendererBinding stale = null;
@@ -550,6 +568,12 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedStructureRegistration registration) {
+        synchronized (lock) {
+            structureRegistrations.remove(registration);
+        }
+    }
+
     void release(TrackedCustomItemRegistration registration) {
         synchronized (lock) {
             customItemRegistrations.remove(registration);
@@ -625,6 +649,7 @@ final class PluginResourceTracker {
         List<TrackedGameRuleRegistration> gameRuleRegistrationsToClose;
         List<TrackedAdvancementRegistration> advancementRegistrationsToClose;
         List<TrackedEnchantmentRegistration> enchantmentRegistrationsToClose;
+        List<TrackedStructureRegistration> structureRegistrationsToClose;
         List<MapRendererBinding> mapRendererBindingsToClose;
         List<TrackedCustomItemRegistration> customItemRegistrationsToClose;
         List<TrackedCustomBlockRegistration> customBlockRegistrationsToClose;
@@ -652,6 +677,7 @@ final class PluginResourceTracker {
             gameRuleRegistrationsToClose = new ArrayList<>(gameRuleRegistrations);
             advancementRegistrationsToClose = new ArrayList<>(advancementRegistrations);
             enchantmentRegistrationsToClose = new ArrayList<>(enchantmentRegistrations);
+            structureRegistrationsToClose = new ArrayList<>(structureRegistrations);
             mapRendererBindingsToClose = new ArrayList<>(mapRendererBindings);
             customItemRegistrationsToClose = new ArrayList<>(customItemRegistrations);
             customBlockRegistrationsToClose = new ArrayList<>(customBlockRegistrations);
@@ -675,6 +701,7 @@ final class PluginResourceTracker {
             gameRuleRegistrations.clear();
             advancementRegistrations.clear();
             enchantmentRegistrations.clear();
+            structureRegistrations.clear();
             mapRendererBindings.clear();
             customItemRegistrations.clear();
             customBlockRegistrations.clear();
@@ -729,6 +756,9 @@ final class PluginResourceTracker {
         }
         for (var registration : enchantmentRegistrationsToClose) {
             registration.closeFromTracker();
+        }
+        for (var registration : structureRegistrationsToClose) {
+            registration.unregisterFromTracker();
         }
         for (var binding : mapRendererBindingsToClose) {
             binding.closeFromTracker();
@@ -1482,6 +1512,47 @@ final class PluginResourceTracker {
             if (!released) {
                 released = true;
                 delegate.close();
+            }
+        }
+    }
+
+    static final class TrackedStructureRegistration implements StructureRegistration {
+
+        private final PluginResourceTracker owner;
+        private final StructureRegistration delegate;
+        private volatile boolean released;
+
+        TrackedStructureRegistration(PluginResourceTracker owner, StructureRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public net.kyori.adventure.key.Key key() {
+            return delegate.key();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void unregister() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.unregister();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void unregisterFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.unregister();
             }
         }
     }

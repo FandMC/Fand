@@ -62,20 +62,40 @@ public record EnchantmentEffects(JsonObject value) {
             return addConditional("minecraft:damage_immunity", EnchantmentEffectEntry.of(new UnitEffect()));
         }
 
+        public Builder damageImmunity(EnchantmentCondition requirements) {
+            return addConditional("minecraft:damage_immunity", EnchantmentEffectEntry.of(new UnitEffect(), requirements));
+        }
+
         public Builder damage(EnchantmentValueEffect effect) {
             return addConditional("minecraft:damage", EnchantmentEffectEntry.of(effect));
+        }
+
+        public Builder damage(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:damage", effect);
         }
 
         public Builder smashDamagePerFallenBlock(EnchantmentValueEffect effect) {
             return addConditional("minecraft:smash_damage_per_fallen_block", EnchantmentEffectEntry.of(effect));
         }
 
+        public Builder smashDamagePerFallenBlock(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:smash_damage_per_fallen_block", effect);
+        }
+
         public Builder knockback(EnchantmentValueEffect effect) {
             return addConditional("minecraft:knockback", EnchantmentEffectEntry.of(effect));
         }
 
+        public Builder knockback(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:knockback", effect);
+        }
+
         public Builder armorEffectiveness(EnchantmentValueEffect effect) {
             return addConditional("minecraft:armor_effectiveness", EnchantmentEffectEntry.of(effect));
+        }
+
+        public Builder armorEffectiveness(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:armor_effectiveness", effect);
         }
 
         public Builder postAttack(EnchantmentTarget enchanted, EnchantmentTarget affected, EnchantmentEntityEffect effect) {
@@ -90,12 +110,24 @@ public record EnchantmentEffects(JsonObject value) {
             return addConditional("minecraft:post_piercing_attack", EnchantmentEffectEntry.of(effect));
         }
 
+        public Builder postPiercingAttack(EnchantmentEffectEntry<EnchantmentEntityEffect> effect) {
+            return addConditional("minecraft:post_piercing_attack", effect);
+        }
+
         public Builder hitBlock(EnchantmentEntityEffect effect) {
             return addConditional("minecraft:hit_block", EnchantmentEffectEntry.of(effect));
         }
 
+        public Builder hitBlock(EnchantmentEffectEntry<EnchantmentEntityEffect> effect) {
+            return addConditional("minecraft:hit_block", effect);
+        }
+
         public Builder itemDamage(EnchantmentValueEffect effect) {
             return addConditional("minecraft:item_damage", EnchantmentEffectEntry.of(effect));
+        }
+
+        public Builder itemDamage(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:item_damage", effect);
         }
 
         public Builder equipmentDrops(EnchantmentTarget enchanted, EnchantmentValueEffect effect) {
@@ -117,52 +149,104 @@ public record EnchantmentEffects(JsonObject value) {
             return addConditional("minecraft:location_changed", EnchantmentEffectEntry.of(effect));
         }
 
+        public Builder locationChanged(EnchantmentEffectEntry<EnchantmentLocationEffect> effect) {
+            return addConditional("minecraft:location_changed", effect);
+        }
+
         public Builder tick(EnchantmentEntityEffect effect) {
             return addConditional("minecraft:tick", EnchantmentEffectEntry.of(effect));
+        }
+
+        public Builder tick(EnchantmentEffectEntry<EnchantmentEntityEffect> effect) {
+            return addConditional("minecraft:tick", effect);
         }
 
         public Builder ammoUse(EnchantmentValueEffect effect) {
             return addConditional("minecraft:ammo_use", EnchantmentEffectEntry.of(effect));
         }
 
+        public Builder ammoUse(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:ammo_use", effect);
+        }
+
         public Builder projectilePiercing(EnchantmentValueEffect effect) {
             return addConditional("minecraft:projectile_piercing", EnchantmentEffectEntry.of(effect));
+        }
+
+        public Builder projectilePiercing(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:projectile_piercing", effect);
         }
 
         public Builder projectileSpawned(EnchantmentEntityEffect effect) {
             return addConditional("minecraft:projectile_spawned", EnchantmentEffectEntry.of(effect));
         }
 
+        public Builder projectileSpawned(EnchantmentEffectEntry<EnchantmentEntityEffect> effect) {
+            return addConditional("minecraft:projectile_spawned", effect);
+        }
+
         public Builder projectileSpread(EnchantmentValueEffect effect) {
             return addConditional("minecraft:projectile_spread", EnchantmentEffectEntry.of(effect));
+        }
+
+        public Builder projectileSpread(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:projectile_spread", effect);
         }
 
         public Builder projectileCount(EnchantmentValueEffect effect) {
             return addConditional("minecraft:projectile_count", EnchantmentEffectEntry.of(effect));
         }
 
+        public Builder projectileCount(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:projectile_count", effect);
+        }
+
         public Builder tridentReturnAcceleration(EnchantmentValueEffect effect) {
             return addConditional("minecraft:trident_return_acceleration", EnchantmentEffectEntry.of(effect));
+        }
+
+        public Builder tridentReturnAcceleration(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:trident_return_acceleration", effect);
         }
 
         public Builder fishingTimeReduction(EnchantmentValueEffect effect) {
             return addConditional("minecraft:fishing_time_reduction", EnchantmentEffectEntry.of(effect));
         }
 
+        public Builder fishingTimeReduction(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:fishing_time_reduction", effect);
+        }
+
         public Builder fishingLuckBonus(EnchantmentValueEffect effect) {
             return addConditional("minecraft:fishing_luck_bonus", EnchantmentEffectEntry.of(effect));
+        }
+
+        public Builder fishingLuckBonus(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:fishing_luck_bonus", effect);
         }
 
         public Builder blockExperience(EnchantmentValueEffect effect) {
             return addConditional("minecraft:block_experience", EnchantmentEffectEntry.of(effect));
         }
 
+        public Builder blockExperience(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:block_experience", effect);
+        }
+
         public Builder mobExperience(EnchantmentValueEffect effect) {
             return addConditional("minecraft:mob_experience", EnchantmentEffectEntry.of(effect));
         }
 
+        public Builder mobExperience(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:mob_experience", effect);
+        }
+
         public Builder repairWithXp(EnchantmentValueEffect effect) {
             return addConditional("minecraft:repair_with_xp", EnchantmentEffectEntry.of(effect));
+        }
+
+        public Builder repairWithXp(EnchantmentEffectEntry<EnchantmentValueEffect> effect) {
+            return addConditional("minecraft:repair_with_xp", effect);
         }
 
         public Builder attribute(Key id, Key attribute, EnchantmentLevelValue amount, EnchantmentAttributeOperation operation) {

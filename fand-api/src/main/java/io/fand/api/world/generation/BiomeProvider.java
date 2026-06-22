@@ -25,6 +25,10 @@ public interface BiomeProvider {
         return List.of(BiomeKey.PLAINS.key());
     }
 
+    default List<CustomBiomeDefinition> customBiomes() {
+        return List.of();
+    }
+
     static BiomeProvider fixed(VanillaKey biome) {
         Objects.requireNonNull(biome, "biome");
         return fixed(biome.key());

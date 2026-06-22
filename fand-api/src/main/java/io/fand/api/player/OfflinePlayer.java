@@ -21,6 +21,18 @@ public interface OfflinePlayer {
 
     int statistic(Key key);
 
+    default int getStatistic(Key key) {
+        return statistic(key);
+    }
+
+    default int statistic(StatisticKey key) {
+        return statistic(key.key());
+    }
+
+    default int getStatistic(StatisticKey key) {
+        return statistic(key);
+    }
+
     Optional<PlayerInventory> inventory();
 
     CompletableFuture<Boolean> save();

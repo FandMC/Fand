@@ -1,10 +1,12 @@
 package io.fand.api.recipe;
 
 import io.fand.api.item.ItemKey;
+import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Predicate;
 import net.kyori.adventure.key.Key;
 import org.jspecify.annotations.Nullable;
 
@@ -15,10 +17,16 @@ public final class RecipeIngredient {
 
     private final @Nullable Key tag;
     private final List<Key> items;
+    private final @Nullable Predicate<ItemStack> matcher;
 
     public RecipeIngredient(@Nullable Key tag, List<Key> items) {
+        this(tag, items, null);
+    }
+
+    private RecipeIngredient(@Nullable Key tag, List<Key> items, @Nullable Predicate<ItemStack> matcher) {
         this.tag = tag;
         this.items = List.copyOf(Objects.requireNonNull(items, "items"));
+        this.matcher = matcher;
         if (tag != null && !items.isEmpty()) {
             throw new IllegalArgumentException("RecipeIngredient must contain either a tag or items, not both");
         }
@@ -67,6 +75,20 @@ public final class RecipeIngredient {
         return new RecipeIngredient(null, items);
     }
 
+    /**
+     * Runtime-only ingredient with a plugin predicate.
+     *
+     * <p>The {@code displayFallback} is still used for vanilla recipe-book and
+     * JEI/REI display sync. The predicate itself is code and is therefore not
+     * serializable to datapack JSON; it is honoured only while this recipe is
+     * registered at runtime.
+     */
+    public static RecipeIngredient matching(RecipeIngredient displayFallback, Predicate<ItemStack> matcher) {
+        Objects.requireNonNull(displayFallback, "displayFallback");
+        Objects.requireNonNull(matcher, "matcher");
+        return new RecipeIngredient(displayFallback.tag, displayFallback.items, matcher);
+    }
+
     public Optional<Key> tag() {
         return Optional.ofNullable(tag);
     }
@@ -79,6 +101,15 @@ public final class RecipeIngredient {
         return tag != null;
     }
 
+    public boolean runtimeMatched() {
+        return matcher != null;
+    }
+
+    public boolean matches(ItemStack stack) {
+        Objects.requireNonNull(stack, "stack");
+        return matcher == null || matcher.test(stack);
+    }
+
     @Override
     public boolean equals(@Nullable Object other) {
         if (this == other) {
@@ -87,16 +118,16 @@ public final class RecipeIngredient {
         if (!(other instanceof RecipeIngredient that)) {
             return false;
         }
-        return Objects.equals(tag, that.tag) && items.equals(that.items);
+        return Objects.equals(tag, that.tag) && items.equals(that.items) && matcher == that.matcher;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(tag, items);
+        return Objects.hash(tag, items, System.identityHashCode(matcher));
     }
 
     @Override
     public String toString() {
-        return "RecipeIngredient[tag=" + tag() + ", items=" + items + "]";
+        return "RecipeIngredient[tag=" + tag() + ", items=" + items + ", runtimeMatched=" + runtimeMatched() + "]";
     }
 }

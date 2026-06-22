@@ -15,6 +15,7 @@ import io.fand.api.item.ItemType;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.component.ItemEquipmentSlot;
 import io.fand.api.permission.PermissionService;
+import io.fand.api.persistence.PersistentDataContainer;
 import io.fand.api.player.PlayerProfile;
 import io.fand.api.player.PlayerSkin;
 import io.fand.api.player.ResourcePackRequest;
@@ -31,6 +32,7 @@ import io.fand.server.audience.BossBarTracker;
 import io.fand.server.block.FandBlockType;
 import io.fand.server.audience.PacketAudience;
 import io.fand.server.command.AdventureBridge;
+import io.fand.server.component.AdvancementDataStorage;
 import io.fand.server.component.EntityComponentStorage;
 import io.fand.server.inventory.FandPlayerInventory;
 import io.fand.server.item.FandItemStacks;
@@ -1602,6 +1604,27 @@ public final class FandPlayer implements Player {
             bound.handle.getAdvancements().flushDirty(bound.handle, true);
             return changed;
         });
+    }
+
+    @Override
+    public PersistentDataContainer advancementData(Key advancement) {
+        Objects.requireNonNull(advancement, "advancement");
+        var server = bound.handle.level().getServer();
+        if (server == null) {
+            return PersistentDataContainer.EMPTY;
+        }
+        return AdvancementDataStorage.get(server, uniqueId(), advancement);
+    }
+
+    @Override
+    public void setAdvancementData(Key advancement, PersistentDataContainer data) {
+        Objects.requireNonNull(advancement, "advancement");
+        Objects.requireNonNull(data, "data");
+        var server = bound.handle.level().getServer();
+        if (server == null) {
+            throw new IllegalStateException("Player is not attached to a server");
+        }
+        AdvancementDataStorage.set(server, uniqueId(), advancement, data);
     }
 
     @Override

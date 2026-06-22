@@ -952,7 +952,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new PluginLootTableService(lootTableService, resources, artifact.descriptor.id()),
                 new PluginAdvancementRegistry(advancementRegistry, resources, id),
                 new PluginEnchantmentRegistry(enchantmentRegistry, resources, id),
-                new PluginStructureService(structureService, artifact.descriptor.id()),
+                new PluginStructureService(structureService, resources, artifact.descriptor.id()),
                 new PluginMapService(mapService, resources),
                 new PluginBossBarService(bossBarService, resources, id),
                 new PluginTabListService(tabListService, resources),

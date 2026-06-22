@@ -15,6 +15,14 @@ public sealed interface EnchantmentLocationEffect extends EnchantmentJsonValue
         return new Raw(value);
     }
 
+    static EnchantmentLocationEffect allOf(List<EnchantmentLocationEffect> effects) {
+        return new AllOf(effects);
+    }
+
+    static EnchantmentLocationEffect attribute(Key id, Key attribute, EnchantmentLevelValue amount, EnchantmentAttributeOperation operation) {
+        return new Attribute(id, attribute, amount, operation);
+    }
+
     record AllOf(List<EnchantmentLocationEffect> effects) implements EnchantmentLocationEffect {
         public AllOf {
             effects = List.copyOf(effects);

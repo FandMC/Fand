@@ -1,15 +1,26 @@
 package io.fand.server.structure;
 
 import com.mojang.datafixers.util.Pair;
+import io.fand.api.registry.RegistryReference;
+import io.fand.api.structure.CustomStructure;
+import io.fand.api.structure.CustomStructureSet;
 import io.fand.api.structure.StructureFormat;
+import io.fand.api.structure.StructureGenerationPlacement;
+import io.fand.api.structure.StructureHeightPlacement;
+import io.fand.api.structure.StructureHeightmap;
 import io.fand.api.structure.StructureMirror;
 import io.fand.api.structure.StructurePlacement;
 import io.fand.api.structure.StructureProjection;
+import io.fand.api.structure.StructureRegistration;
 import io.fand.api.structure.StructureRotation;
 import io.fand.api.structure.StructureService;
+import io.fand.api.structure.StructureSetEntry;
+import io.fand.api.structure.StructureSpreadType;
+import io.fand.api.structure.StructureTerrainAdjustment;
 import io.fand.api.structure.StructureTemplate;
 import io.fand.api.structure.StructureVolume;
 import io.fand.api.world.Location;
+import io.fand.api.world.generation.DecorationStep;
 import io.fand.server.world.FandWorld;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -17,16 +28,23 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import net.kyori.adventure.key.Key;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
+import net.minecraft.core.MappedRegistry;
+import net.minecraft.core.RegistrationInfo;
 import net.minecraft.core.Vec3i;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
@@ -41,11 +59,20 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.levelgen.GenerationStep;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.structure.Structure;
+import net.minecraft.world.level.levelgen.structure.StructureSet;
+import net.minecraft.world.level.levelgen.structure.TerrainAdjustment;
+import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStructurePlacement;
+import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadType;
+import net.minecraft.world.level.levelgen.structure.structures.FandTemplateStructure;
 import net.minecraft.world.level.levelgen.structure.templatesystem.BlockRotProcessor;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
 import net.minecraft.world.level.levelgen.structure.templatesystem.BlockIgnoreProcessor;
@@ -53,9 +80,115 @@ import net.minecraft.world.level.levelgen.structure.templatesystem.BlockIgnorePr
 public final class FandStructureService implements StructureService {
 
     private final Supplier<MinecraftServer> server;
+    private final Object lock = new Object();
+    private final LinkedHashMap<Key, RegisteredStructure> structures = new LinkedHashMap<>();
+    private final LinkedHashMap<Key, RegisteredStructureSet> structureSets = new LinkedHashMap<>();
+    private final java.util.Set<Key> runtimeStructureKeys = new HashSet<>();
+    private final java.util.Set<Key> runtimeStructureSetKeys = new HashSet<>();
+    private final AtomicLong sequence = new AtomicLong();
 
     public FandStructureService(Supplier<MinecraftServer> server) {
         this.server = Objects.requireNonNull(server, "server");
+    }
+
+    @Override
+    public Collection<CustomStructure> registeredStructures() {
+        synchronized (lock) {
+            return structures.values().stream()
+                    .map(RegisteredStructure::definition)
+                    .toList();
+        }
+    }
+
+    @Override
+    public Optional<CustomStructure> registeredStructure(Key key) {
+        Objects.requireNonNull(key, "key");
+        synchronized (lock) {
+            return Optional.ofNullable(structures.get(key)).map(RegisteredStructure::definition);
+        }
+    }
+
+    @Override
+    public StructureRegistration registerStructure(CustomStructure structure) {
+        Objects.requireNonNull(structure, "structure");
+        long token = sequence.incrementAndGet();
+        synchronized (lock) {
+            runtimeStructureKeys.add(structure.key());
+            structures.put(structure.key(), new RegisteredStructure(structure, token));
+        }
+        applyStructure(structure);
+        return new Registration(this, structure.key(), token, RegistrationKind.STRUCTURE);
+    }
+
+    @Override
+    public Collection<CustomStructureSet> registeredStructureSets() {
+        synchronized (lock) {
+            return structureSets.values().stream()
+                    .map(RegisteredStructureSet::definition)
+                    .toList();
+        }
+    }
+
+    @Override
+    public Optional<CustomStructureSet> registeredStructureSet(Key key) {
+        Objects.requireNonNull(key, "key");
+        synchronized (lock) {
+            return Optional.ofNullable(structureSets.get(key)).map(RegisteredStructureSet::definition);
+        }
+    }
+
+    @Override
+    public StructureRegistration registerStructureSet(CustomStructureSet structureSet) {
+        Objects.requireNonNull(structureSet, "structureSet");
+        long token = sequence.incrementAndGet();
+        synchronized (lock) {
+            runtimeStructureSetKeys.add(structureSet.key());
+            structureSets.put(structureSet.key(), new RegisteredStructureSet(structureSet, token));
+        }
+        applyStructureSet(structureSet);
+        return new Registration(this, structureSet.key(), token, RegistrationKind.STRUCTURE_SET);
+    }
+
+    public void applyLoadedStructures() {
+        var current = server.get();
+        if (current == null) {
+            return;
+        }
+        registeredStructures().forEach(structure -> registerVanillaStructure(current, structure));
+        registeredStructureSets().forEach(structureSet -> registerVanillaStructureSet(current, structureSet));
+        refreshStructureStates(current);
+    }
+
+    public java.util.stream.Stream<Holder.Reference<StructureSet>> structureSetHolders() {
+        var current = server.get();
+        if (current == null) {
+            return java.util.stream.Stream.empty();
+        }
+        var registry = current.registryAccess().lookupOrThrow(Registries.STRUCTURE_SET);
+        return registeredStructureSets().stream()
+                .map(CustomStructureSet::key)
+                .map(key -> registry.get(ResourceKey.create(Registries.STRUCTURE_SET, identifier(key))))
+                .flatMap(Optional::stream);
+    }
+
+    public boolean runtimeStructureSetActive(Key key) {
+        Objects.requireNonNull(key, "key");
+        synchronized (lock) {
+            return !runtimeStructureSetKeys.contains(key) || structureSets.containsKey(key);
+        }
+    }
+
+    public boolean runtimeStructureSetOwned(Key key) {
+        Objects.requireNonNull(key, "key");
+        synchronized (lock) {
+            return runtimeStructureSetKeys.contains(key);
+        }
+    }
+
+    public boolean runtimeStructureActive(Key key) {
+        synchronized (lock) {
+            return !runtimeStructureKeys.contains(key) || structures.containsKey(key);
+        }
     }
 
     @Override
@@ -244,6 +377,9 @@ public final class FandStructureService implements StructureService {
     }
 
     private Optional<Location> locateOnServerThread(Key structure, Location origin, int radius) {
+        if (!runtimeStructureActive(structure)) {
+            return Optional.empty();
+        }
         var level = level(origin.world());
         var registry = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
         var holder = registry.get(ResourceKey.create(Registries.STRUCTURE, identifier(structure))).orElse(null);
@@ -264,6 +400,168 @@ public final class FandStructureService implements StructureService {
         }
         var pos = nearest.getFirst();
         return Optional.of(new Location(origin.world(), pos.getX(), pos.getY(), pos.getZ(), origin.yaw(), origin.pitch()));
+    }
+
+    private void applyStructure(CustomStructure structure) {
+        var current = server.get();
+        if (current == null) {
+            return;
+        }
+        callOnServerThread(current, () -> {
+            registerVanillaStructure(current, structure);
+            refreshStructureStates(current);
+            return null;
+        });
+    }
+
+    private void applyStructureSet(CustomStructureSet structureSet) {
+        var current = server.get();
+        if (current == null) {
+            return;
+        }
+        callOnServerThread(current, () -> {
+            registerVanillaStructureSet(current, structureSet);
+            refreshStructureStates(current);
+            return null;
+        });
+    }
+
+    private static void refreshStructureStates(MinecraftServer server) {
+        for (var level : server.getAllLevels()) {
+            level.getChunkSource().fand$refreshGeneratorState();
+        }
+    }
+
+    private static void registerVanillaStructure(MinecraftServer server, CustomStructure structure) {
+        var registry = server.registryAccess().lookupOrThrow(Registries.STRUCTURE);
+        if (!(registry instanceof MappedRegistry<Structure> mapped)) {
+            throw new IllegalStateException("Structure registry is not writable: " + registry);
+        }
+        mapped.fand$registerRuntime(
+                ResourceKey.create(Registries.STRUCTURE, identifier(structure.key())),
+                vanillaStructure(server, structure),
+                RegistrationInfo.BUILT_IN);
+    }
+
+    private static void registerVanillaStructureSet(MinecraftServer server, CustomStructureSet structureSet) {
+        var registry = server.registryAccess().lookupOrThrow(Registries.STRUCTURE_SET);
+        if (!(registry instanceof MappedRegistry<StructureSet> mapped)) {
+            throw new IllegalStateException("Structure set registry is not writable: " + registry);
+        }
+        mapped.fand$registerRuntime(
+                ResourceKey.create(Registries.STRUCTURE_SET, identifier(structureSet.key())),
+                vanillaStructureSet(server, structureSet),
+                RegistrationInfo.BUILT_IN);
+    }
+
+    private static Structure vanillaStructure(MinecraftServer server, CustomStructure structure) {
+        return new FandTemplateStructure(
+                new Structure.StructureSettings.Builder(biomeSet(server, structure.biomes()))
+                        .generationStep(step(structure.step()))
+                        .terrainAdapation(terrainAdjustment(structure.terrainAdjustment()))
+                        .build(),
+                identifier(structure.template()),
+                structure.includeEntities(),
+                heightmap(structure.heightPlacement()),
+                structure.heightPlacement().offset());
+    }
+
+    private static StructureSet vanillaStructureSet(MinecraftServer server, CustomStructureSet structureSet) {
+        var structures = server.registryAccess().lookupOrThrow(Registries.STRUCTURE);
+        var entries = structureSet.structures().stream()
+                .map(entry -> StructureSet.entry(structureHolder(structures, entry), entry.weight()))
+                .toList();
+        return new StructureSet(entries, placement(structureSet.placement()));
+    }
+
+    private static Holder<Structure> structureHolder(net.minecraft.core.Registry<Structure> registry, StructureSetEntry entry) {
+        return registry.get(ResourceKey.create(Registries.STRUCTURE, identifier(entry.structure())))
+                .orElseThrow(() -> new IllegalArgumentException("Unknown structure: " + entry.structure().asString()));
+    }
+
+    private static HolderSet<Biome> biomeSet(MinecraftServer server, List<RegistryReference> references) {
+        var biomes = server.registryAccess().lookupOrThrow(Registries.BIOME);
+        var holders = new LinkedHashMap<Identifier, Holder<Biome>>();
+        for (var reference : references) {
+            if (reference.tag() && reference.key().equals(Key.key("fand:all"))) {
+                biomes.listElements().forEach(holder -> holders.put(holder.key().identifier(), holder));
+                continue;
+            }
+            if (reference.tag()) {
+                var tag = TagKey.create(Registries.BIOME, identifier(reference.key()));
+                var named = biomes.get(tag)
+                        .orElseThrow(() -> new IllegalArgumentException("Unknown biome tag: " + reference.asString()));
+                named.stream().forEach(holder -> holders.put(holder.unwrapKey().orElseThrow().identifier(), holder));
+            } else {
+                var holder = biomes.get(ResourceKey.create(Registries.BIOME, identifier(reference.key())))
+                        .orElseThrow(() -> new IllegalArgumentException("Unknown biome: " + reference.asString()));
+                holders.put(holder.key().identifier(), holder);
+            }
+        }
+        if (holders.isEmpty()) {
+            throw new IllegalArgumentException("Structure biome set resolved to empty: " + references);
+        }
+        return HolderSet.direct(holders.values().stream().toList());
+    }
+
+    private static net.minecraft.world.level.levelgen.structure.placement.StructurePlacement placement(StructureGenerationPlacement placement) {
+        return new RandomSpreadStructurePlacement(
+                Vec3i.ZERO,
+                net.minecraft.world.level.levelgen.structure.placement.StructurePlacement.FrequencyReductionMethod.DEFAULT,
+                placement.frequency(),
+                placement.salt(),
+                Optional.empty(),
+                placement.spacing(),
+                placement.separation(),
+                spreadType(placement.spreadType()));
+    }
+
+    private static RandomSpreadType spreadType(StructureSpreadType spreadType) {
+        return switch (spreadType) {
+            case LINEAR -> RandomSpreadType.LINEAR;
+            case TRIANGULAR -> RandomSpreadType.TRIANGULAR;
+        };
+    }
+
+    private static GenerationStep.Decoration step(DecorationStep step) {
+        return switch (step) {
+            case RAW_GENERATION -> GenerationStep.Decoration.RAW_GENERATION;
+            case LAKES -> GenerationStep.Decoration.LAKES;
+            case LOCAL_MODIFICATIONS -> GenerationStep.Decoration.LOCAL_MODIFICATIONS;
+            case UNDERGROUND_STRUCTURES -> GenerationStep.Decoration.UNDERGROUND_STRUCTURES;
+            case SURFACE_STRUCTURES -> GenerationStep.Decoration.SURFACE_STRUCTURES;
+            case STRONGHOLDS -> GenerationStep.Decoration.STRONGHOLDS;
+            case UNDERGROUND_ORES -> GenerationStep.Decoration.UNDERGROUND_ORES;
+            case UNDERGROUND_DECORATION -> GenerationStep.Decoration.UNDERGROUND_DECORATION;
+            case FLUID_SPRINGS -> GenerationStep.Decoration.FLUID_SPRINGS;
+            case VEGETAL_DECORATION -> GenerationStep.Decoration.VEGETAL_DECORATION;
+            case TOP_LAYER_MODIFICATION -> GenerationStep.Decoration.TOP_LAYER_MODIFICATION;
+        };
+    }
+
+    private static TerrainAdjustment terrainAdjustment(StructureTerrainAdjustment adjustment) {
+        return switch (adjustment) {
+            case NONE -> TerrainAdjustment.NONE;
+            case BURY -> TerrainAdjustment.BURY;
+            case BEARD_THIN -> TerrainAdjustment.BEARD_THIN;
+            case BEARD_BOX -> TerrainAdjustment.BEARD_BOX;
+            case ENCAPSULATE -> TerrainAdjustment.ENCAPSULATE;
+        };
+    }
+
+    private static Heightmap.Types heightmap(StructureHeightPlacement placement) {
+        return heightmap(placement.heightmap());
+    }
+
+    private static Heightmap.Types heightmap(StructureHeightmap heightmap) {
+        return switch (heightmap) {
+            case WORLD_SURFACE_WG -> Heightmap.Types.WORLD_SURFACE_WG;
+            case WORLD_SURFACE -> Heightmap.Types.WORLD_SURFACE;
+            case OCEAN_FLOOR_WG -> Heightmap.Types.OCEAN_FLOOR_WG;
+            case OCEAN_FLOOR -> Heightmap.Types.OCEAN_FLOOR;
+            case MOTION_BLOCKING -> Heightmap.Types.MOTION_BLOCKING;
+            case MOTION_BLOCKING_NO_LEAVES -> Heightmap.Types.MOTION_BLOCKING_NO_LEAVES;
+        };
     }
 
     private static StructureTemplate view(Key key, net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate template) {
@@ -860,5 +1158,95 @@ public final class FandStructureService implements StructureService {
 
     private static Identifier identifier(Key key) {
         return Identifier.fromNamespaceAndPath(key.namespace(), key.value());
+    }
+
+    private boolean active(Key key, long token, RegistrationKind kind) {
+        synchronized (lock) {
+            return switch (kind) {
+                case STRUCTURE -> {
+                    var current = structures.get(key);
+                    yield current != null && current.token() == token;
+                }
+                case STRUCTURE_SET -> {
+                    var current = structureSets.get(key);
+                    yield current != null && current.token() == token;
+                }
+            };
+        }
+    }
+
+    private boolean unregister(Key key, long token, RegistrationKind kind) {
+        synchronized (lock) {
+            return switch (kind) {
+                case STRUCTURE -> {
+                    var current = structures.get(key);
+                    if (current == null || current.token() != token) {
+                        yield false;
+                    }
+                    structures.remove(key);
+                    yield true;
+                }
+                case STRUCTURE_SET -> {
+                    var current = structureSets.get(key);
+                    if (current == null || current.token() != token) {
+                        yield false;
+                    }
+                    structureSets.remove(key);
+                    yield true;
+                }
+            };
+        }
+    }
+
+    private record RegisteredStructure(CustomStructure definition, long token) {
+    }
+
+    private record RegisteredStructureSet(CustomStructureSet definition, long token) {
+    }
+
+    private enum RegistrationKind {
+        STRUCTURE,
+        STRUCTURE_SET
+    }
+
+    private static final class Registration implements StructureRegistration {
+
+        private final FandStructureService owner;
+        private final Key key;
+        private final long token;
+        private final RegistrationKind kind;
+        private final AtomicBoolean active = new AtomicBoolean(true);
+
+        private Registration(FandStructureService owner, Key key, long token, RegistrationKind kind) {
+            this.owner = owner;
+            this.key = key;
+            this.token = token;
+            this.kind = kind;
+        }
+
+        @Override
+        public Key key() {
+            return key;
+        }
+
+        @Override
+        public boolean active() {
+            return active.get() && owner.active(key, token, kind);
+        }
+
+        @Override
+        public void unregister() {
+            if (active.compareAndSet(true, false)) {
+                if (owner.unregister(key, token, kind)) {
+                    var current = owner.server.get();
+                    if (current != null) {
+                        callOnServerThread(current, () -> {
+                            refreshStructureStates(current);
+                            return null;
+                        });
+                    }
+                }
+            }
+        }
     }
 }

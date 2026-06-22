@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.fand.api.world.BiomeKey;
+import java.util.List;
 import java.util.EnumSet;
 import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
@@ -145,5 +146,35 @@ final class WorldGeneratorSettingsTest {
         assertThat(settings.biomeProvider().biomeAt(-1, 0, 0)).isEqualTo(BiomeKey.DESERT.key());
         assertThat(settings.biomeProvider().possibleBiomes())
                 .containsExactly(BiomeKey.DESERT.key(), BiomeKey.PLAINS.key());
+    }
+
+    @Test
+    void biomeProviderCanDeclareCustomBiomeDefinitions() {
+        var biome = CustomBiomeDefinition.builder(Key.key("demo:violet_grove"))
+                .temperature(0.7F)
+                .downfall(0.9F)
+                .colors(new BiomeColors(0x334455, 0x2255AA, 0x112244, 0x77AAFF, 0x55AA55, 0x66BB66))
+                .addFeature(DecorationStep.VEGETAL_DECORATION, Key.key("demo:violet_tree"))
+                .build();
+        BiomeProvider provider = new BiomeProvider() {
+            @Override
+            public Key biomeAt(int quartX, int quartY, int quartZ) {
+                return biome.key();
+            }
+
+            @Override
+            public List<Key> possibleBiomes() {
+                return List.of(biome.key());
+            }
+
+            @Override
+            public List<CustomBiomeDefinition> customBiomes() {
+                return List.of(biome);
+            }
+        };
+
+        assertThat(provider.customBiomes()).containsExactly(biome);
+        assertThat(provider.customBiomes().getFirst().features())
+                .containsExactly(new BiomeFeatureReference(DecorationStep.VEGETAL_DECORATION, Key.key("demo:violet_tree")));
     }
 }

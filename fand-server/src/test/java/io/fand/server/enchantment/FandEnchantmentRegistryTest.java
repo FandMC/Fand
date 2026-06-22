@@ -6,8 +6,10 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.fand.api.enchantment.CustomEnchantment;
 import io.fand.api.enchantment.EnchantmentCost;
+import io.fand.api.enchantment.EnchantmentCondition;
 import io.fand.api.enchantment.EnchantmentDefinition;
 import io.fand.api.enchantment.EnchantmentEffects;
+import io.fand.api.enchantment.EnchantmentEffectEntry;
 import io.fand.api.enchantment.EnchantmentLevelValue;
 import io.fand.api.enchantment.EnchantmentSlotGroup;
 import io.fand.api.enchantment.EnchantmentTarget;
@@ -109,5 +111,27 @@ final class FandEnchantmentRegistryTest {
             assertThat(json.getAsJsonArray("minecraft:post_attack")).hasSize(1);
             assertThat(json.getAsJsonObject("minecraft:prevent_armor_change")).isNotNull();
         });
+    }
+
+    @Test
+    void typedEffectsSupportConditionalMaceAndValueBuilders() {
+        var requirement = EnchantmentCondition.raw(new JsonObject());
+        var effects = EnchantmentEffects.builder()
+                .smashDamagePerFallenBlock(EnchantmentEffectEntry.of(
+                        EnchantmentValueEffect.scaleExponentially(
+                                EnchantmentLevelValue.constant(1.2F),
+                                EnchantmentLevelValue.linear(1.0F, 0.25F)),
+                        requirement))
+                .damageImmunity(requirement)
+                .build();
+
+        var json = effects.toJson();
+        assertThat(json.getAsJsonArray("minecraft:smash_damage_per_fallen_block")).hasSize(1);
+        assertThat(json.getAsJsonArray("minecraft:smash_damage_per_fallen_block").get(0).getAsJsonObject())
+                .containsKey("requirements");
+        assertThat(json.getAsJsonArray("minecraft:smash_damage_per_fallen_block").get(0).getAsJsonObject()
+                .getAsJsonObject("effect").get("type").getAsString()).isEqualTo("minecraft:exponential");
+        assertThat(json.getAsJsonArray("minecraft:damage_immunity").get(0).getAsJsonObject())
+                .containsKey("requirements");
     }
 }

@@ -83,18 +83,26 @@ public final class FandRecipes {
         return ResourceKey.create(Registries.RECIPE, id(key));
     }
 
-    private static net.minecraft.world.item.crafting.ShapedRecipe shaped(
+    private static net.minecraft.world.item.crafting.CraftingRecipe shaped(
             io.fand.api.recipe.ShapedRecipe recipe,
             HolderLookup.Provider registries
     ) {
         var ingredients = new LinkedHashMap<Character, Ingredient>();
         recipe.ingredients().forEach((symbol, ingredient) -> ingredients.put(symbol, ingredient(ingredient, registries)));
+        var bookInfo = new net.minecraft.world.item.crafting.CraftingRecipe.CraftingBookInfo(
+                craftingCategory(recipe.category()),
+                recipe.group().orElse("")
+        );
+        if (FandRuntimeCraftingRecipes.hasRuntimeIngredient(recipe)) {
+            return FandRuntimeCraftingRecipes.shaped(
+                    recipe,
+                    ingredients,
+                    result(recipe.result()),
+                    bookInfo);
+        }
         return new net.minecraft.world.item.crafting.ShapedRecipe(
                 new net.minecraft.world.item.crafting.Recipe.CommonInfo(recipe.showNotification()),
-                new net.minecraft.world.item.crafting.CraftingRecipe.CraftingBookInfo(
-                        craftingCategory(recipe.category()),
-                        recipe.group().orElse("")
-                ),
+                bookInfo,
                 ShapedRecipePattern.of(ingredients, recipe.pattern()),
                 result(recipe.result())
         );
@@ -128,18 +136,27 @@ public final class FandRecipes {
         );
     }
 
-    private static net.minecraft.world.item.crafting.ShapelessRecipe shapeless(
+    private static net.minecraft.world.item.crafting.CraftingRecipe shapeless(
             io.fand.api.recipe.ShapelessRecipe recipe,
             HolderLookup.Provider registries
     ) {
+        var ingredients = recipe.ingredients().stream().map(ingredient -> ingredient(ingredient, registries)).toList();
+        var bookInfo = new net.minecraft.world.item.crafting.CraftingRecipe.CraftingBookInfo(
+                craftingCategory(recipe.category()),
+                recipe.group().orElse("")
+        );
+        if (FandRuntimeCraftingRecipes.hasRuntimeIngredient(recipe)) {
+            return FandRuntimeCraftingRecipes.shapeless(
+                    recipe,
+                    ingredients,
+                    result(recipe.result()),
+                    bookInfo);
+        }
         return new net.minecraft.world.item.crafting.ShapelessRecipe(
                 new net.minecraft.world.item.crafting.Recipe.CommonInfo(recipe.showNotification()),
-                new net.minecraft.world.item.crafting.CraftingRecipe.CraftingBookInfo(
-                        craftingCategory(recipe.category()),
-                        recipe.group().orElse("")
-                ),
+                bookInfo,
                 result(recipe.result()),
-                recipe.ingredients().stream().map(ingredient -> ingredient(ingredient, registries)).toList()
+                ingredients
         );
     }
 

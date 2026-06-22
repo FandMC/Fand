@@ -1,12 +1,37 @@
 package io.fand.api.structure;
 
 import io.fand.api.world.Location;
+import java.util.Collection;
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.key.Key;
 
 public interface StructureService {
+
+    default Collection<CustomStructure> registeredStructures() {
+        return java.util.List.of();
+    }
+
+    default Optional<CustomStructure> registeredStructure(Key key) {
+        return Optional.empty();
+    }
+
+    default StructureRegistration registerStructure(CustomStructure structure) {
+        throw new UnsupportedOperationException("Custom structures are not supported");
+    }
+
+    default Collection<CustomStructureSet> registeredStructureSets() {
+        return java.util.List.of();
+    }
+
+    default Optional<CustomStructureSet> registeredStructureSet(Key key) {
+        return Optional.empty();
+    }
+
+    default StructureRegistration registerStructureSet(CustomStructureSet structureSet) {
+        throw new UnsupportedOperationException("Custom structure sets are not supported");
+    }
 
     Optional<StructureTemplate> template(Key key);
 

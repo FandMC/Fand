@@ -7,6 +7,7 @@ import io.fand.api.world.WorldGenerator;
 import io.fand.api.world.generation.ChunkGenerationStage;
 import io.fand.api.world.generation.GeneratorContext;
 import io.fand.api.world.generation.WorldGeneratorSettings;
+import io.fand.server.structure.FandStructureService;
 import java.util.concurrent.atomic.AtomicReference;
 import net.kyori.adventure.key.Key;
 import net.minecraft.SharedConstants;
@@ -42,7 +43,8 @@ final class FandWorldGeneratorSourceTest {
                 123L,
                 VanillaRegistries.createLookup().lookupOrThrow(Registries.BIOME),
                 generator,
-                WorldGeneratorSettings.builder().spawnOriginalMobs(false).build());
+                WorldGeneratorSettings.builder().spawnOriginalMobs(false).build(),
+                new FandStructureService(() -> null));
 
         source.spawnOriginalMobs(null);
 

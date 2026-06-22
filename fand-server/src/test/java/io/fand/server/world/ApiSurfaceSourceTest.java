@@ -233,10 +233,20 @@ final class ApiSurfaceSourceTest {
         var runtime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
         var pluginStructures = read("src/main/java/io/fand/server/plugin/PluginStructureService.java");
         var serverStructures = read("src/main/java/io/fand/server/structure/FandStructureService.java");
+        var source = read("src/main/java/io/fand/server/world/FandWorldGeneratorSource.java");
+        var chunkMap = read("src/minecraft/java/net/minecraft/server/level/ChunkMap.java");
+        var chunkCache = read("src/minecraft/java/net/minecraft/server/level/ServerChunkCache.java");
+        var nmsStructure = read("src/minecraft/java/net/minecraft/world/level/levelgen/structure/structures/FandTemplateStructure.java");
+        var nmsStructureTypes = read("src/minecraft/java/net/minecraft/world/level/levelgen/structure/StructureType.java");
+        var nmsPieceTypes = read("src/minecraft/java/net/minecraft/world/level/levelgen/structure/pieces/StructurePieceType.java");
 
-        assertThat(runtime).contains("new PluginStructureService(structureService, artifact.descriptor.id())");
+        assertThat(runtime).contains("new PluginStructureService(structureService, resources, artifact.descriptor.id())");
         assertThat(pluginStructures).contains(
                 "public final class PluginStructureService implements StructureService",
+                "public StructureRegistration registerStructure(CustomStructure structure)",
+                "return tracker.track(delegate.registerStructure(new CustomStructure(",
+                "public StructureRegistration registerStructureSet(CustomStructureSet structureSet)",
+                "return tracker.track(delegate.registerStructureSet(new CustomStructureSet(",
                 "return delegate.template(scopedKey(key)).filter(this::ownedByThisPlugin)",
                 "return delegate.save(scopedKey(key), volume)",
                 "exportTemplate(Key key, StructureFormat format)",
@@ -247,6 +257,15 @@ final class ApiSurfaceSourceTest {
                 "return delegate.place(scopedKey(key), origin, placement)",
                 "return delegate.locate(structure, origin, radius)");
         assertThat(serverStructures).contains(
+                "registerStructure(CustomStructure structure)",
+                "registerStructureSet(CustomStructureSet structureSet)",
+                "applyLoadedStructures()",
+                "structureSetHolders()",
+                "refreshStructureStates(current)",
+                "level.getChunkSource().fand$refreshGeneratorState()",
+                "registerVanillaStructure(MinecraftServer server, CustomStructure structure)",
+                "registerVanillaStructureSet(MinecraftServer server, CustomStructureSet structureSet)",
+                "new FandTemplateStructure(",
                 "template(Key key)",
                 "save(Key key, StructureVolume volume)",
                 "exportTemplate(Key key, StructureFormat format)",
@@ -262,6 +281,103 @@ final class ApiSurfaceSourceTest {
                 "BlockIgnoreProcessor.STRUCTURE_BLOCK",
                 "place(Key key, Location origin, StructurePlacement placement)",
                 "locate(Key structure, Location origin, int radius)");
+        assertThat(source).contains(
+                "new FilteredStructureSetLookup(structureSets, settings, structures)",
+                "structures.structureSetHolders().filter(this::enabled)",
+                "structures.runtimeStructureSetOwned(apiKey(holder.key()))",
+                "structureSetReferencesActive(holder)",
+                "structures.runtimeStructureActive");
+        assertThat(chunkMap).contains(
+                "private volatile ChunkGeneratorStructureState chunkGeneratorState",
+                "public void fand$refreshGeneratorState()",
+                "this.generator().createState(registryAccess.lookupOrThrow(Registries.STRUCTURE_SET), this.randomState, this.level.getSeed())");
+        assertThat(chunkCache).contains("public void fand$refreshGeneratorState()");
+        assertThat(nmsStructure).contains(
+                "public final class FandTemplateStructure extends Structure",
+                "public static final MapCodec<FandTemplateStructure> CODEC",
+                "return StructureType.FAND_TEMPLATE",
+                "StructurePieceType.FAND_TEMPLATE",
+                "setIgnoreEntities(!includeEntities)");
+        assertThat(nmsStructureTypes).contains("StructureType<FandTemplateStructure> FAND_TEMPLATE = register(\"fand:template\", FandTemplateStructure.CODEC)");
+        assertThat(nmsPieceTypes).contains("StructurePieceType FAND_TEMPLATE = setTemplatePieceId(FandTemplateStructure.Piece::new, \"fand:template\")");
+    }
+
+    @Test
+    void customBiomeDefinitionsAreRegisteredBeforeWorldgenUsesBiomeLookup() throws IOException {
+        var api = read("../fand-api/src/main/java/io/fand/api/world/generation/BiomeProvider.java");
+        var registry = read("src/main/java/io/fand/server/world/FandBiomeRegistry.java");
+        var server = read("src/main/java/io/fand/server/FandServer.java");
+        var source = read("src/main/java/io/fand/server/world/FandBiomeSource.java");
+
+        assertThat(api).contains("default List<CustomBiomeDefinition> customBiomes()");
+        assertThat(registry).contains(
+                "public final class FandBiomeRegistry",
+                "settings.biomeProvider().customBiomes()",
+                "ResourceKey.create(Registries.BIOME, identifier(definition.key()))",
+                "new Biome.BiomeBuilder()",
+                "definition.features()",
+                "Registries.PLACED_FEATURE");
+        assertThat(server).contains("FandBiomeRegistry.applyCustomBiomes(server, settings)");
+        assertThat(source).contains(
+                "for (var definition : provider.customBiomes())",
+                "holders.add(resolve(definition.key()))",
+                "return biomes.get(resourceKey).map(holder -> (Holder<Biome>) holder).orElse(fallback)");
+    }
+
+    @Test
+    void fandDataEventsAndRuntimeRecipePredicatesStayWired() throws IOException {
+        var playerApi = read("../fand-api/src/main/java/io/fand/api/entity/Player.java");
+        var offlinePlayerApi = read("../fand-api/src/main/java/io/fand/api/player/OfflinePlayer.java");
+        var recipeIngredient = read("../fand-api/src/main/java/io/fand/api/recipe/RecipeIngredient.java");
+        var player = read("src/main/java/io/fand/server/entity/FandPlayer.java");
+        var advancementStorage = read("src/main/java/io/fand/server/component/AdvancementDataStorage.java");
+        var persistentData = read("src/main/java/io/fand/server/component/PersistentComponentData.java");
+        var stats = read("src/minecraft/java/net/minecraft/stats/ServerStatsCounter.java");
+        var playerEvents = read("src/main/java/io/fand/server/event/PlayerEvents.java");
+        var recipes = read("src/main/java/io/fand/server/recipe/FandRecipes.java");
+        var runtimeRecipes = read("src/main/java/io/fand/server/recipe/FandRuntimeCraftingRecipes.java");
+
+        assertThat(playerApi).contains(
+                "PersistentDataContainer advancementData(Key advancement)",
+                "void setAdvancementData(Key advancement, PersistentDataContainer data)",
+                "default int getStatistic(Key key)",
+                "default int getStatistic(StatisticKey key)",
+                "default void incrementStatistic(StatisticKey key, int delta)");
+        assertThat(offlinePlayerApi).contains(
+                "default int getStatistic(Key key)",
+                "default int statistic(StatisticKey key)",
+                "default int getStatistic(StatisticKey key)");
+        assertThat(recipeIngredient).contains(
+                "static RecipeIngredient matching",
+                "Predicate<ItemStack>",
+                "runtimeMatched()",
+                "matches(ItemStack stack)");
+        assertThat(player).contains(
+                "public PersistentDataContainer advancementData(Key advancement)",
+                "AdvancementDataStorage.get(server, uniqueId(), advancement)",
+                "public void setAdvancementData(Key advancement, PersistentDataContainer data)",
+                "AdvancementDataStorage.set(server, uniqueId(), advancement, data)");
+        assertThat(advancementStorage).contains(
+                "public final class AdvancementDataStorage",
+                "PersistentComponentData.advancementType()",
+                "playerId + \"/\" + Identifier.fromNamespaceAndPath");
+        assertThat(persistentData).contains("SavedDataType<PersistentComponentData> advancementType()");
+        assertThat(stats).contains(
+                "PlayerEvents.fireStatisticIncrement(serverPlayer, stat, previousValue, count)",
+                "if (fandValue == null)",
+                "super.setValue(player, stat, nextValue)");
+        assertThat(playerEvents).contains(
+                "new PlayerStatisticIncrementEvent(fandPlayer, statisticKey(stat), previousValue, newValue)",
+                "event.cancelled() ? null : event.newValue()");
+        assertThat(recipes).contains(
+                "FandRuntimeCraftingRecipes.hasRuntimeIngredient(recipe)",
+                "FandRuntimeCraftingRecipes.shaped(",
+                "FandRuntimeCraftingRecipes.shapeless(");
+        assertThat(runtimeRecipes).contains(
+                "final class FandRuntimeCraftingRecipes",
+                "RuntimeShapedRecipe extends net.minecraft.world.item.crafting.ShapedRecipe",
+                "RuntimeShapelessRecipe extends net.minecraft.world.item.crafting.ShapelessRecipe",
+                "fallback.test(stack) && FandRuntimeCraftingRecipes.matches(api, stack)");
     }
 
     @Test

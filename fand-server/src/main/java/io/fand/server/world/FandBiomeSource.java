@@ -30,6 +30,9 @@ public final class FandBiomeSource extends BiomeSource {
         for (var key : provider.possibleBiomes()) {
             holders.add(resolve(key));
         }
+        for (var definition : provider.customBiomes()) {
+            holders.add(resolve(definition.key()));
+        }
         if (holders.isEmpty()) {
             holders.add(fallback);
         }
