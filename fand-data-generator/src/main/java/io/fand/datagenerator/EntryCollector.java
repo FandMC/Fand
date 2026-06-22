@@ -10,10 +10,15 @@ import java.util.Set;
 
 final class EntryCollector {
 
+    private static final String VANILLA_NAMESPACE = "minecraft:";
+
     private final Map<String, String> entries = new LinkedHashMap<>();
     private final Set<String> keys = new LinkedHashSet<>();
 
     void add(String requestedName, String key) {
+        if (!key.startsWith(VANILLA_NAMESPACE)) {
+            return;
+        }
         if (!keys.add(key)) {
             return;
         }

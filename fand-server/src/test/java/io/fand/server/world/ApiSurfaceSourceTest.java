@@ -286,7 +286,7 @@ final class ApiSurfaceSourceTest {
                 "structures.structureSetHolders().filter(this::enabled)",
                 "structures.runtimeStructureSetOwned(apiKey(holder.key()))",
                 "structureSetReferencesActive(holder)",
-                "structures.runtimeStructureActive");
+                "structures::runtimeStructureActive");
         assertThat(chunkMap).contains(
                 "private volatile ChunkGeneratorStructureState chunkGeneratorState",
                 "public void fand$refreshGeneratorState()",

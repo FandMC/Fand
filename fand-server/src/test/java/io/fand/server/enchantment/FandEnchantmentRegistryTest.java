@@ -126,12 +126,12 @@ final class FandEnchantmentRegistryTest {
                 .build();
 
         var json = effects.toJson();
+        var smashDamage = json.getAsJsonArray("minecraft:smash_damage_per_fallen_block").get(0).getAsJsonObject();
         assertThat(json.getAsJsonArray("minecraft:smash_damage_per_fallen_block")).hasSize(1);
-        assertThat(json.getAsJsonArray("minecraft:smash_damage_per_fallen_block").get(0).getAsJsonObject())
-                .containsKey("requirements");
+        assertThat(smashDamage.has("requirements")).isTrue();
         assertThat(json.getAsJsonArray("minecraft:smash_damage_per_fallen_block").get(0).getAsJsonObject()
                 .getAsJsonObject("effect").get("type").getAsString()).isEqualTo("minecraft:exponential");
-        assertThat(json.getAsJsonArray("minecraft:damage_immunity").get(0).getAsJsonObject())
-                .containsKey("requirements");
+        assertThat(json.getAsJsonArray("minecraft:damage_immunity").get(0).getAsJsonObject().has("requirements"))
+                .isTrue();
     }
 }
