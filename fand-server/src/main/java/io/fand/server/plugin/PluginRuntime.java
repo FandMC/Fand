@@ -22,6 +22,7 @@ import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
 import io.fand.api.permission.PermissionService;
+import io.fand.api.player.SimulatedPlayerService;
 import io.fand.api.plugin.Plugin;
 import io.fand.api.plugin.PluginDescriptor;
 import io.fand.api.plugin.PluginManager;
@@ -87,6 +88,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final MapService mapService;
     private final BossBarService bossBarService;
     private final TabListService tabListService;
+    private final SimulatedPlayerService simulatedPlayerService;
     private final PlaceholderService placeholderService;
     private final ScoreboardService scoreboardService;
     private final PacketRegistry packetRegistry;
@@ -156,6 +158,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 BossBarService.empty(),
                 TabListService.empty(),
                 PlaceholderService.empty(),
+                SimulatedPlayerService.empty(),
                 customServices.items(),
                 customServices.blocks(),
                 new FandGuiService(eventBus),
@@ -225,6 +228,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 BossBarService.empty(),
                 TabListService.empty(),
                 PlaceholderService.empty(),
+                SimulatedPlayerService.empty(),
                 customServices.items(),
                 customServices.blocks(),
                 new FandGuiService(eventBus),
@@ -273,6 +277,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 BossBarService.empty(),
                 TabListService.empty(),
                 PlaceholderService.empty(),
+                SimulatedPlayerService.empty(),
                 customItemRegistry,
                 customBlockRegistry,
                 guiService,
@@ -322,6 +327,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 BossBarService.empty(),
                 TabListService.empty(),
                 PlaceholderService.empty(),
+                SimulatedPlayerService.empty(),
                 customItemRegistry,
                 customBlockRegistry,
                 guiService,
@@ -349,6 +355,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             BossBarService bossBarService,
             TabListService tabListService,
             PlaceholderService placeholderService,
+            SimulatedPlayerService simulatedPlayerService,
             CustomItemRegistry customItemRegistry,
             CustomBlockRegistry customBlockRegistry,
             GuiService guiService,
@@ -374,6 +381,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 bossBarService,
                 tabListService,
                 placeholderService,
+                simulatedPlayerService,
                 customItemRegistry,
                 customBlockRegistry,
                 guiService,
@@ -426,6 +434,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 bossBarService,
                 tabListService,
                 PlaceholderService.empty(),
+                SimulatedPlayerService.empty(),
                 customItemRegistry,
                 customBlockRegistry,
                 guiService,
@@ -474,6 +483,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 BossBarService.empty(),
                 TabListService.empty(),
                 PlaceholderService.empty(),
+                SimulatedPlayerService.empty(),
                 customItemRegistry,
                 customBlockRegistry,
                 guiService,
@@ -502,6 +512,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             BossBarService bossBarService,
             TabListService tabListService,
             PlaceholderService placeholderService,
+            SimulatedPlayerService simulatedPlayerService,
             CustomItemRegistry customItemRegistry,
             CustomBlockRegistry customBlockRegistry,
             GuiService guiService,
@@ -522,6 +533,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.mapService = mapService;
         this.bossBarService = bossBarService;
         this.tabListService = tabListService;
+        this.simulatedPlayerService = simulatedPlayerService;
         this.placeholderService = placeholderService;
         this.scoreboardService = scoreboardService;
         this.packetRegistry = packetRegistry;
@@ -956,6 +968,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new PluginMapService(mapService, resources),
                 new PluginBossBarService(bossBarService, resources, id),
                 new PluginTabListService(tabListService, resources),
+                new PluginSimulatedPlayerService(simulatedPlayerService, resources),
                 pluginPlaceholders,
                 new FandMiniMessageService(pluginPlaceholders),
                 new PluginScoreboardService(scoreboardService, resources, id),

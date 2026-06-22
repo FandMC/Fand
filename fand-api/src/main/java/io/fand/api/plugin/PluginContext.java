@@ -17,6 +17,7 @@ import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.permission.PermissionService;
+import io.fand.api.player.SimulatedPlayerService;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
@@ -82,6 +83,11 @@ public interface PluginContext {
     /** Per-viewer tab-list entry service scoped to this plugin's lifecycle. */
     default TabListService tabLists() {
         return TabListService.empty();
+    }
+
+    /** Real server-side simulated players scoped to this plugin's lifecycle. */
+    default SimulatedPlayerService simulatedPlayers() {
+        return SimulatedPlayerService.empty();
     }
 
     /** Placeholder provider registry scoped to this plugin's lifecycle and namespace. */

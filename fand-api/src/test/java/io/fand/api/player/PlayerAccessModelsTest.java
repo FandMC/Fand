@@ -3,10 +3,12 @@ package io.fand.api.player;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.fand.api.entity.GameMode;
 import io.fand.api.world.WorldCreateOptions;
 import io.fand.api.world.WorldTemplate;
 import io.fand.api.world.generation.GenerationMode;
 import io.fand.api.world.generation.WorldGeneratorSettings;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.UUID;
 import net.kyori.adventure.text.Component;
@@ -79,6 +81,39 @@ final class PlayerAccessModelsTest {
         assertThatThrownBy(() -> PlayerSkin.unsigned(" "))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("value cannot be blank");
+    }
+
+    @Test
+    void playerProfileRejectsNamesTooLongForVanillaProtocol() {
+        assertThatThrownBy(() -> new PlayerProfile(UUID.randomUUID(), "a".repeat(PlayerProfile.MAX_NAME_LENGTH + 1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("name length");
+    }
+
+    @Test
+    void simulatedPlayerNameFactoryUsesVanillaOfflineUuid() {
+        var profile = SimulatedPlayerService.offlineProfile("Steve");
+
+        assertThat(profile.uniqueId()).isEqualTo(UUID.nameUUIDFromBytes(
+                "OfflinePlayer:Steve".getBytes(StandardCharsets.UTF_8)));
+        assertThat(profile.name()).isEqualTo("Steve");
+    }
+
+    @Test
+    void simulatedPlayerOptionsKeepSavedGameModeUnlessExplicitlyOverridden() {
+        var defaults = SimulatedPlayerOptions.defaults();
+        var explicit = SimulatedPlayerOptions.builder()
+                .gameMode(GameMode.CREATIVE)
+                .build();
+        var keepSaved = SimulatedPlayerOptions.builder()
+                .gameMode(GameMode.CREATIVE)
+                .keepSavedGameMode()
+                .build();
+
+        assertThat(defaults.gameMode()).isEmpty();
+        assertThat(defaults.saveData()).isTrue();
+        assertThat(explicit.gameMode()).contains(GameMode.CREATIVE);
+        assertThat(keepSaved.gameMode()).isEmpty();
     }
 
     @Test

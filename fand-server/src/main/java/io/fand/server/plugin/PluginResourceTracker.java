@@ -20,6 +20,7 @@ import io.fand.api.packet.PacketRegistration;
 import io.fand.api.placeholder.PlaceholderRegistration;
 import io.fand.api.permission.PermissionAttachment;
 import io.fand.api.permission.PermissionDescriptor;
+import io.fand.api.player.SimulatedPlayerService;
 import io.fand.api.recipe.RecipeRegistration;
 import io.fand.api.scheduler.Task;
 import io.fand.api.scoreboard.ScoreboardRegistration;
@@ -47,6 +48,7 @@ final class PluginResourceTracker {
     private final Set<TrackedBossBarRegistration> bossBarRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedTabListRegistration> tabListRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedTabListVisibility> tabListVisibilities = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedSimulatedPlayer> simulatedPlayers = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedScoreboardRegistration> scoreboardRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPacketRegistration> packetRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPlaceholderRegistration> placeholderRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -273,6 +275,33 @@ final class PluginResourceTracker {
         }
         for (var visibility : matches) {
             visibility.release();
+        }
+    }
+
+    void trackSimulatedPlayer(UUID uniqueId, SimulatedPlayerService service) {
+        var tracked = new TrackedSimulatedPlayer(this, uniqueId, service);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                simulatedPlayers.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.closeFromTracker();
+        }
+    }
+
+    void releaseSimulatedPlayer(UUID uniqueId) {
+        List<TrackedSimulatedPlayer> matches;
+        synchronized (lock) {
+            matches = simulatedPlayers.stream()
+                    .filter(player -> player.uniqueId().equals(uniqueId))
+                    .toList();
+        }
+        for (var match : matches) {
+            match.release();
         }
     }
 
@@ -526,6 +555,12 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedSimulatedPlayer player) {
+        synchronized (lock) {
+            simulatedPlayers.remove(player);
+        }
+    }
+
     void release(TrackedScoreboardRegistration registration) {
         synchronized (lock) {
             scoreboardRegistrations.remove(registration);
@@ -642,6 +677,7 @@ final class PluginResourceTracker {
         List<TrackedBossBarRegistration> bossBarRegistrationsToClose;
         List<TrackedTabListRegistration> tabListRegistrationsToClose;
         List<TrackedTabListVisibility> tabListVisibilitiesToClose;
+        List<TrackedSimulatedPlayer> simulatedPlayersToClose;
         List<TrackedScoreboardRegistration> scoreboardRegistrationsToClose;
         List<TrackedPacketRegistration> packetRegistrationsToClose;
         List<TrackedPlaceholderRegistration> placeholderRegistrationsToClose;
@@ -670,6 +706,7 @@ final class PluginResourceTracker {
             bossBarRegistrationsToClose = new ArrayList<>(bossBarRegistrations);
             tabListRegistrationsToClose = new ArrayList<>(tabListRegistrations);
             tabListVisibilitiesToClose = new ArrayList<>(tabListVisibilities);
+            simulatedPlayersToClose = new ArrayList<>(simulatedPlayers);
             scoreboardRegistrationsToClose = new ArrayList<>(scoreboardRegistrations);
             packetRegistrationsToClose = new ArrayList<>(packetRegistrations);
             placeholderRegistrationsToClose = new ArrayList<>(placeholderRegistrations);
@@ -694,6 +731,7 @@ final class PluginResourceTracker {
             bossBarRegistrations.clear();
             tabListRegistrations.clear();
             tabListVisibilities.clear();
+            simulatedPlayers.clear();
             scoreboardRegistrations.clear();
             packetRegistrations.clear();
             placeholderRegistrations.clear();
@@ -735,6 +773,9 @@ final class PluginResourceTracker {
         }
         for (var visibility : tabListVisibilitiesToClose) {
             visibility.restoreFromTracker();
+        }
+        for (var player : simulatedPlayersToClose) {
+            player.closeFromTracker();
         }
         for (var registration : scoreboardRegistrationsToClose) {
             registration.unregisterFromTracker();
@@ -1274,6 +1315,38 @@ final class PluginResourceTracker {
             if (!released) {
                 released = true;
                 restore.run();
+            }
+        }
+
+        void release() {
+            if (!released) {
+                released = true;
+                owner.release(this);
+            }
+        }
+    }
+
+    static final class TrackedSimulatedPlayer {
+
+        private final PluginResourceTracker owner;
+        private final UUID uniqueId;
+        private final SimulatedPlayerService service;
+        private volatile boolean released;
+
+        TrackedSimulatedPlayer(PluginResourceTracker owner, UUID uniqueId, SimulatedPlayerService service) {
+            this.owner = owner;
+            this.uniqueId = java.util.Objects.requireNonNull(uniqueId, "uniqueId");
+            this.service = java.util.Objects.requireNonNull(service, "service");
+        }
+
+        UUID uniqueId() {
+            return uniqueId;
+        }
+
+        void closeFromTracker() {
+            if (!released) {
+                released = true;
+                service.remove(uniqueId).join();
             }
         }
 

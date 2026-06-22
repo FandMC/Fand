@@ -11,6 +11,8 @@ import org.jspecify.annotations.Nullable;
  */
 public final class PlayerProfile {
 
+    public static final int MAX_NAME_LENGTH = 16;
+
     private final UUID uniqueId;
     private final String name;
     private final @Nullable PlayerSkin skin;
@@ -25,6 +27,9 @@ public final class PlayerProfile {
         this.skin = skin;
         if (this.name.isEmpty()) {
             throw new IllegalArgumentException("name cannot be blank");
+        }
+        if (this.name.length() > MAX_NAME_LENGTH) {
+            throw new IllegalArgumentException("name length cannot exceed " + MAX_NAME_LENGTH + " characters");
         }
     }
 

@@ -17,6 +17,7 @@ import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.permission.PermissionService;
+import io.fand.api.player.SimulatedPlayerService;
 import io.fand.api.plugin.PluginContext;
 import io.fand.api.plugin.PluginDescriptor;
 import io.fand.api.recipe.RecipeRegistry;
@@ -54,6 +55,7 @@ public final class RuntimePluginContext implements PluginContext {
     private final MapService maps;
     private final BossBarService bossBars;
     private final TabListService tabLists;
+    private final SimulatedPlayerService simulatedPlayers;
     private final PlaceholderService placeholders;
     private final MiniMessageService miniMessages;
     private final ScoreboardService scoreboard;
@@ -85,6 +87,7 @@ public final class RuntimePluginContext implements PluginContext {
             MapService maps,
             BossBarService bossBars,
             TabListService tabLists,
+            SimulatedPlayerService simulatedPlayers,
             PlaceholderService placeholders,
             MiniMessageService miniMessages,
             ScoreboardService scoreboard,
@@ -112,6 +115,7 @@ public final class RuntimePluginContext implements PluginContext {
         this.maps = maps;
         this.bossBars = bossBars;
         this.tabLists = tabLists;
+        this.simulatedPlayers = simulatedPlayers;
         this.placeholders = placeholders;
         this.miniMessages = miniMessages;
         this.scoreboard = scoreboard;
@@ -190,6 +194,11 @@ public final class RuntimePluginContext implements PluginContext {
     @Override
     public TabListService tabLists() {
         return tabLists;
+    }
+
+    @Override
+    public SimulatedPlayerService simulatedPlayers() {
+        return simulatedPlayers;
     }
 
     @Override

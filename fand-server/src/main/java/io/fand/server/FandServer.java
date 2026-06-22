@@ -12,6 +12,7 @@ import io.fand.api.event.EventBus;
 import io.fand.api.event.EventPriority;
 import io.fand.api.event.EventSubscription;
 import io.fand.api.event.player.PlayerJoinEvent;
+import io.fand.api.event.player.PlayerQuitEvent;
 import io.fand.api.event.world.WorldLoadEvent;
 import io.fand.api.event.world.WorldUnloadEvent;
 import io.fand.api.gamerule.GameRuleService;
@@ -27,6 +28,7 @@ import io.fand.api.permission.PermissionService;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.player.PlayerAccessService;
+import io.fand.api.player.SimulatedPlayerService;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
@@ -67,6 +69,7 @@ import io.fand.server.placeholder.FandPlaceholderService;
 import io.fand.server.permission.PermissionManager;
 import io.fand.server.performance.ServerPerformanceTracker;
 import io.fand.server.player.FandPlayerAccessService;
+import io.fand.server.player.FandSimulatedPlayerService;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.recipe.FandRecipeRegistry;
 import io.fand.server.scheduler.TaskScheduler;
@@ -124,6 +127,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final FandGameRuleService gameRules;
     private final ModProtocolCompatibility modProtocols;
     private final EventSubscription pluginChannelAdvertisement;
+    private final EventSubscription simulatedPlayerCleanup;
     private final FandCustomItemRegistry customItems;
     private final FandCustomBlockRegistry customBlocks;
     private final FandGuiService guis;
@@ -140,6 +144,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final PluginRuntime plugins;
     private final PlayerRegistry players;
     private final FandPlayerAccessService playerAccess;
+    private final FandSimulatedPlayerService simulatedPlayers;
     private final ServerPerformanceTracker performance;
     private final ConfigReloader configReloader;
     private final ProxyForwardingSettings proxyForwarding;
@@ -197,6 +202,11 @@ public final class FandServer implements Server, AutoCloseable {
         this.miniMessages = new FandMiniMessageService(placeholders);
         this.tags = new FandTagRegistry();
         this.playerAccess = new FandPlayerAccessService(minecraftServer::get);
+        this.simulatedPlayers = new FandSimulatedPlayerService(minecraftServer::get, players, events);
+        this.simulatedPlayerCleanup = events.subscribe(
+                PlayerQuitEvent.class,
+                EventPriority.OBSERVER,
+                event -> this.simulatedPlayers.forgetIfSimulated(event.player().uniqueId()));
         this.performance = new ServerPerformanceTracker(() -> chunks.metrics().pendingJobs());
         var pluginDirectory = Path.of(initialConfig.plugins.directory);
         this.plugins = new PluginRuntime(
@@ -219,6 +229,7 @@ public final class FandServer implements Server, AutoCloseable {
                 bossBars,
                 tabLists,
                 placeholders,
+                simulatedPlayers,
                 customItems,
                 customBlocks,
                 guis,
@@ -592,6 +603,11 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
+    public SimulatedPlayerService simulatedPlayers() {
+        return simulatedPlayers;
+    }
+
+    @Override
     public Iterable<? extends net.kyori.adventure.audience.Audience> audiences() {
         return players.snapshot();
     }
@@ -831,10 +847,12 @@ public final class FandServer implements Server, AutoCloseable {
         plugins.disablePlugins();
         plugins.close();
         pluginChannelAdvertisement.close();
+        simulatedPlayerCleanup.close();
         modProtocols.close();
         pluginMessaging.close();
         bossBars.close();
         tabLists.close();
+        simulatedPlayers.close();
         placeholders.close();
         packets.close();
         guis.close();

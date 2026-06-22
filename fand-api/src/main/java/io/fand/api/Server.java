@@ -24,6 +24,7 @@ import io.fand.api.packet.PacketRegistry;
 import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.player.PlayerAccessService;
+import io.fand.api.player.SimulatedPlayerService;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
@@ -123,6 +124,10 @@ public interface Server extends ForwardingAudience {
 
     default TabListService tabLists() {
         return TabListService.empty();
+    }
+
+    default SimulatedPlayerService simulatedPlayers() {
+        return SimulatedPlayerService.empty();
     }
 
     default PlaceholderService placeholders() {
