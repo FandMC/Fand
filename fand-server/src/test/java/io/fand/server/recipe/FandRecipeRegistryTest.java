@@ -1,14 +1,17 @@
 package io.fand.server.recipe;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
-import io.fand.api.recipe.Recipe;
+import io.fand.api.recipe.ComplexRecipe;
 import io.fand.api.recipe.CraftingRecipeCategory;
+import io.fand.api.recipe.Recipe;
 import io.fand.api.recipe.RecipeIngredient;
 import io.fand.api.recipe.RecipeType;
 import io.fand.api.recipe.ShapelessRecipe;
+import io.fand.api.recipe.UnknownRecipe;
 import java.util.List;
 import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
@@ -68,6 +71,21 @@ final class FandRecipeRegistryTest {
         assertThat(registry.remove(key)).isTrue();
         assertThat(registry.remove(key)).isFalse();
         assertThat(registry.find(key)).isEmpty();
+    }
+
+    @Test
+    void rejectsReadOnlyAndUnknownRecipes() {
+        var registry = new FandRecipeRegistry();
+
+        assertThatThrownBy(() -> registry.register(new ComplexRecipe(
+                Key.key("minecraft:firework_rocket"),
+                Key.key("minecraft:firework_rocket"),
+                ItemStack.EMPTY)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cannot be registered");
+        assertThatThrownBy(() -> registry.register(new UnknownRecipe(Key.key("fand:unknown"), ItemStack.EMPTY, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cannot be registered");
     }
 
     private static ShapelessRecipe recipe(Key key, int amount) {

@@ -14,6 +14,7 @@ import io.fand.api.event.EventSubscription;
 import io.fand.api.event.player.PlayerJoinEvent;
 import io.fand.api.event.world.WorldLoadEvent;
 import io.fand.api.event.world.WorldUnloadEvent;
+import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
@@ -54,6 +55,7 @@ import io.fand.server.entity.EntityRegistry;
 import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.enchantment.FandEnchantmentRegistry;
 import io.fand.server.event.EventDispatcher;
+import io.fand.server.gamerule.FandGameRuleService;
 import io.fand.server.gui.FandGuiService;
 import io.fand.server.item.FandCustomItemRegistry;
 import io.fand.server.loot.FandLootTableService;
@@ -119,6 +121,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final FandScoreboardService scoreboard;
     private final PacketRegistryImpl packets;
     private final FandPluginMessaging pluginMessaging;
+    private final FandGameRuleService gameRules;
     private final ModProtocolCompatibility modProtocols;
     private final EventSubscription pluginChannelAdvertisement;
     private final FandCustomItemRegistry customItems;
@@ -175,6 +178,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.packets = new PacketRegistryImpl();
         this.players = new PlayerRegistry(permissions, scoreboard, tabLists);
         this.pluginMessaging = new FandPluginMessaging(packets, players::snapshot);
+        this.gameRules = new FandGameRuleService();
         this.modProtocols = new ModProtocolCompatibility(pluginMessaging, events, initialConfig.compat.modProtocols);
         this.pluginChannelAdvertisement = events.subscribe(
                 PlayerJoinEvent.class,
@@ -220,6 +224,7 @@ public final class FandServer implements Server, AutoCloseable {
                 guis,
                 ConfigReloader.toPluginOptions(initialConfig)
         );
+        this.plugins.gameRuleService(gameRules);
         this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, chunks, guiThemes);
         io.fand.server.hooks.FandHooks.applyPlayerConfig(initialConfig.players);
         io.fand.server.hooks.FandHooks.applyChunkConfig(initialConfig.chunks);
@@ -297,7 +302,7 @@ public final class FandServer implements Server, AutoCloseable {
         if (!minecraftServer.compareAndSet(null, server)) {
             throw new IllegalStateException("Minecraft server is already attached");
         }
-        var registry = new WorldRegistry(server, players, scheduler);
+        var registry = new WorldRegistry(server, players, scheduler, gameRules);
         worlds.set(registry);
         entities.set(registry.entityRegistry());
         players.bindWorldRegistry(registry);
@@ -415,6 +420,11 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public PluginMessaging pluginMessaging() {
         return pluginMessaging;
+    }
+
+    @Override
+    public GameRuleService gameRules() {
+        return gameRules;
     }
 
     @Override

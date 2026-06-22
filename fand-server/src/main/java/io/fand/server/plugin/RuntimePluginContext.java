@@ -9,6 +9,7 @@ import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
+import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
@@ -58,6 +59,7 @@ public final class RuntimePluginContext implements PluginContext {
     private final ScoreboardService scoreboard;
     private final PacketRegistry packets;
     private final PluginMessaging pluginMessaging;
+    private final GameRuleService gameRules;
     private final CustomItemRegistry customItems;
     private final CustomBlockRegistry customBlocks;
     private final GuiService guis;
@@ -88,6 +90,7 @@ public final class RuntimePluginContext implements PluginContext {
             ScoreboardService scoreboard,
             PacketRegistry packets,
             PluginMessaging pluginMessaging,
+            GameRuleService gameRules,
             CustomItemRegistry customItems,
             CustomBlockRegistry customBlocks,
             GuiService guis,
@@ -114,6 +117,7 @@ public final class RuntimePluginContext implements PluginContext {
         this.scoreboard = scoreboard;
         this.packets = packets;
         this.pluginMessaging = pluginMessaging;
+        this.gameRules = gameRules;
         this.customItems = customItems;
         this.customBlocks = customBlocks;
         this.guis = guis;
@@ -211,6 +215,11 @@ public final class RuntimePluginContext implements PluginContext {
     @Override
     public PluginMessaging pluginMessaging() {
         return pluginMessaging;
+    }
+
+    @Override
+    public GameRuleService gameRules() {
+        return gameRules;
     }
 
     @Override

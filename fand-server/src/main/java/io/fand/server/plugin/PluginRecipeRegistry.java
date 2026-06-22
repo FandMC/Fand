@@ -7,6 +7,8 @@ import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.recipe.RecipeType;
 import io.fand.api.recipe.ShapedRecipe;
 import io.fand.api.recipe.ShapelessRecipe;
+import io.fand.api.recipe.SmithingTransformRecipe;
+import io.fand.api.recipe.SmithingTrimRecipe;
 import io.fand.api.recipe.StonecuttingRecipe;
 import java.util.Collection;
 import java.util.Objects;
@@ -94,6 +96,22 @@ public final class PluginRecipeRegistry implements RecipeRegistry {
                     stonecutting.result(),
                     stonecutting.groupName(),
                     stonecutting.showNotification()
+            );
+            case SmithingTransformRecipe smithing -> new SmithingTransformRecipe(
+                    scopedKey(smithing.key()),
+                    smithing.template(),
+                    smithing.base(),
+                    smithing.addition(),
+                    smithing.result(),
+                    smithing.showNotification()
+            );
+            case SmithingTrimRecipe smithing -> new SmithingTrimRecipe(
+                    scopedKey(smithing.key()),
+                    smithing.templateIngredient(),
+                    smithing.base(),
+                    smithing.additionIngredient(),
+                    smithing.pattern(),
+                    smithing.showNotification()
             );
             default -> throw new IllegalArgumentException("Recipe type cannot be registered: " + recipe.type());
         };

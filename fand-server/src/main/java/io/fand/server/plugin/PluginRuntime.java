@@ -10,6 +10,7 @@ import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
+import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
 import io.fand.api.lifecycle.PluginDisableEvent;
 import io.fand.api.lifecycle.PluginEnableEvent;
@@ -90,6 +91,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final ScoreboardService scoreboardService;
     private final PacketRegistry packetRegistry;
     private final PluginMessaging pluginMessaging;
+    private volatile GameRuleService gameRuleService = GameRuleService.empty();
     private final CustomItemRegistry customItemRegistry;
     private final CustomBlockRegistry customBlockRegistry;
     private final GuiService guiService;
@@ -536,6 +538,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.options = options;
     }
 
+    public void gameRuleService(GameRuleService service) {
+        this.gameRuleService = Objects.requireNonNull(service, "service");
+    }
+
     public void loadPlugins() {
         synchronized (lifecycleLock) {
             ensureOpen();
@@ -943,10 +949,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 permissions,
                 new PluginCommandRegistry(commandRegistry, resources, id),
                 new PluginRecipeRegistry(recipeRegistry, resources, id),
-                new PluginLootTableService(lootTableService, resources, id),
+                new PluginLootTableService(lootTableService, resources, artifact.descriptor.id()),
                 new PluginAdvancementRegistry(advancementRegistry, resources, id),
                 new PluginEnchantmentRegistry(enchantmentRegistry, resources, id),
-                new PluginStructureService(structureService, id),
+                new PluginStructureService(structureService, artifact.descriptor.id()),
                 new PluginMapService(mapService, resources),
                 new PluginBossBarService(bossBarService, resources, id),
                 new PluginTabListService(tabListService, resources),
@@ -955,6 +961,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new PluginScoreboardService(scoreboardService, resources, id),
                 new PluginPacketRegistry(packetRegistry, resources),
                 new PluginPluginMessaging(pluginMessaging, resources),
+                new PluginGameRuleService(gameRuleService, resources, id),
                 new PluginCustomItemRegistry(customItemRegistry, resources, id),
                 new PluginCustomBlockRegistry(customBlockRegistry, resources, id),
                 new PluginGuiService(guiService, resources),

@@ -11,6 +11,7 @@ import io.fand.api.entity.EntityKey;
 import io.fand.api.entity.EntityTypeTagKey;
 import io.fand.api.entity.Player;
 import io.fand.api.event.EventBus;
+import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
 import io.fand.api.item.ItemTagKey;
 import io.fand.api.item.ItemType;
@@ -134,6 +135,10 @@ public interface Server extends ForwardingAudience {
 
     default PluginMessaging pluginMessaging() {
         return PluginMessaging.empty();
+    }
+
+    default GameRuleService gameRules() {
+        return GameRuleService.empty();
     }
 
     /** Lightweight GUI routing service. */

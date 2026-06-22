@@ -39,6 +39,7 @@ import io.fand.server.component.BlockComponentStorage;
 import io.fand.server.entity.EntitySpawnOptionsApplier;
 import io.fand.server.entity.FandEntityType;
 import io.fand.server.entity.PlayerRegistry;
+import io.fand.server.gamerule.FandGameRuleService;
 import io.fand.server.item.FandItemStacks;
 import io.fand.server.scheduler.TaskScheduler;
 import io.fand.server.scoreboard.FandScoreboardService;
@@ -56,6 +57,7 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import net.kyori.adventure.audience.Audience;
+import net.kyori.adventure.key.InvalidKeyException;
 import net.kyori.adventure.key.Key;
 import net.minecraft.core.Direction;
 import net.minecraft.core.BlockPos;
@@ -94,6 +96,7 @@ public final class FandWorld implements World {
     private final @Nullable PlayerRegistry players;
     private final @Nullable WorldRegistry worldRegistry;
     private final @Nullable TaskScheduler scheduler;
+    private final @Nullable FandGameRuleService gameRules;
     private final WorldBorder worldBorder;
 
     public FandWorld(ServerLevel handle) {
@@ -114,10 +117,21 @@ public final class FandWorld implements World {
             @Nullable WorldRegistry worldRegistry,
             @Nullable TaskScheduler scheduler
     ) {
+        this(handle, players, worldRegistry, scheduler, null);
+    }
+
+    public FandWorld(
+            ServerLevel handle,
+            @Nullable PlayerRegistry players,
+            @Nullable WorldRegistry worldRegistry,
+            @Nullable TaskScheduler scheduler,
+            @Nullable FandGameRuleService gameRules
+    ) {
         this.handle = handle;
         this.players = players;
         this.worldRegistry = worldRegistry;
         this.scheduler = scheduler;
+        this.gameRules = gameRules;
         this.worldBorder = new FandWorldBorder(handle);
         var identifier = handle.dimension().identifier();
         this.key = Key.key(identifier.getNamespace(), identifier.getPath());
@@ -259,13 +273,19 @@ public final class FandWorld implements World {
     @Override
     public Optional<String> gameRule(String name) {
         Objects.requireNonNull(name, "name");
-        return callOnServerThread(() -> gameRuleByName(name).map(rule -> handle.getGameRules().getAsString(rule)));
+        return customGameRuleKey(name)
+                .flatMap(rule -> gameRules == null ? Optional.empty() : gameRules.value(key, rule))
+                .or(() -> callOnServerThread(() -> gameRuleByName(name).map(rule -> handle.getGameRules().getAsString(rule))));
     }
 
     @Override
     public CompletableFuture<Boolean> setGameRule(String name, String value) {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(value, "value");
+        var customRule = customGameRuleKey(name);
+        if (customRule.isPresent() && gameRules != null) {
+            return CompletableFuture.completedFuture(gameRules.setValue(key, customRule.get(), value));
+        }
         return runOnServerThreadFuture(() -> gameRuleByName(name)
                 .map(rule -> setGameRuleValue(rule, value))
                 .orElse(false));
@@ -2230,6 +2250,17 @@ public final class FandWorld implements World {
         }
         var vanilla = Identifier.withDefaultNamespace(name);
         return BuiltInRegistries.GAME_RULE.getOptional(vanilla);
+    }
+
+    private static Optional<Key> customGameRuleKey(String name) {
+        if (name.indexOf(':') < 0) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Key.key(name));
+        } catch (InvalidKeyException ex) {
+            return Optional.empty();
+        }
     }
 
     private <T> boolean setGameRuleValue(net.minecraft.world.level.gamerules.GameRule<T> rule, String value) {

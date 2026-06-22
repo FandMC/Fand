@@ -9,6 +9,7 @@ import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
 import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
+import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
@@ -102,6 +103,11 @@ public interface PluginContext {
     /** Standard plugin messaging channels scoped to this plugin's lifecycle. */
     default PluginMessaging pluginMessaging() {
         return PluginMessaging.empty();
+    }
+
+    /** Custom game rules scoped to this plugin's namespace. */
+    default GameRuleService gameRules() {
+        return GameRuleService.empty();
     }
 
     /** Custom item registry scoped to this plugin's lifecycle and namespace. */

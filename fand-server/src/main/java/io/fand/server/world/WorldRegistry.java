@@ -3,6 +3,7 @@ package io.fand.server.world;
 import io.fand.api.world.World;
 import io.fand.server.entity.EntityRegistry;
 import io.fand.server.entity.PlayerRegistry;
+import io.fand.server.gamerule.FandGameRuleService;
 import io.fand.server.scheduler.TaskScheduler;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -22,14 +23,25 @@ public final class WorldRegistry {
     private final MinecraftServer server;
     private final PlayerRegistry players;
     private final TaskScheduler scheduler;
+    private final FandGameRuleService gameRules;
     private final EntityRegistry entities;
     private final ConcurrentHashMap<ServerLevel, FandWorld> byLevel = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Key, FandWorld> byKey = new ConcurrentHashMap<>();
 
     public WorldRegistry(MinecraftServer server, PlayerRegistry players, TaskScheduler scheduler) {
+        this(server, players, scheduler, null);
+    }
+
+    public WorldRegistry(
+            MinecraftServer server,
+            PlayerRegistry players,
+            TaskScheduler scheduler,
+            @org.jspecify.annotations.Nullable FandGameRuleService gameRules
+    ) {
         this.server = server;
         this.players = players;
         this.scheduler = scheduler;
+        this.gameRules = gameRules;
         this.entities = new EntityRegistry(this, players);
     }
 
@@ -75,7 +87,7 @@ public final class WorldRegistry {
             return existing;
         }
         return byLevel.computeIfAbsent(level, current -> {
-            var world = new FandWorld(current, players, this, scheduler);
+            var world = new FandWorld(current, players, this, scheduler, gameRules);
             byKey.put(world.key(), world);
             return world;
         });

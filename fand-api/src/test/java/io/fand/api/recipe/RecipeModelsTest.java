@@ -118,6 +118,69 @@ final class RecipeModelsTest {
     }
 
     @Test
+    void validatesSmithingTransformRecipes() {
+        var recipe = new SmithingTransformRecipe(
+                Key.key("fand:upgrade"),
+                RecipeIngredient.of("minecraft:netherite_upgrade_smithing_template"),
+                RecipeIngredient.of("minecraft:diamond_sword"),
+                RecipeIngredient.of("minecraft:netherite_ingot"),
+                RESULT);
+
+        assertThat(recipe.type()).isEqualTo(RecipeType.SMITHING);
+        assertThat(recipe.type().smithing()).isTrue();
+        assertThat(recipe.template()).contains(RecipeIngredient.of("minecraft:netherite_upgrade_smithing_template"));
+        assertThat(recipe.base()).isEqualTo(RecipeIngredient.of("minecraft:diamond_sword"));
+        assertThat(recipe.addition()).contains(RecipeIngredient.of("minecraft:netherite_ingot"));
+        assertThat(recipe.result()).isEqualTo(RESULT);
+    }
+
+    @Test
+    void smithingTransformSupportsOptionalTemplateAndAddition() {
+        var recipe = new SmithingTransformRecipe(
+                Key.key("fand:template_free"),
+                Optional.empty(),
+                STONE,
+                Optional.empty(),
+                RESULT,
+                false);
+
+        assertThat(recipe.template()).isEmpty();
+        assertThat(recipe.addition()).isEmpty();
+        assertThat(recipe.showNotification()).isFalse();
+    }
+
+    @Test
+    void validatesSmithingTrimRecipes() {
+        var recipe = new SmithingTrimRecipe(
+                Key.key("fand:trim"),
+                RecipeIngredient.of("minecraft:spire_armor_trim_smithing_template"),
+                RecipeIngredient.of("minecraft:iron_chestplate"),
+                RecipeIngredient.of("minecraft:amethyst_shard"),
+                Key.key("minecraft:spire"),
+                false);
+
+        assertThat(recipe.type()).isEqualTo(RecipeType.SMITHING);
+        assertThat(recipe.template()).contains(RecipeIngredient.of("minecraft:spire_armor_trim_smithing_template"));
+        assertThat(recipe.addition()).contains(RecipeIngredient.of("minecraft:amethyst_shard"));
+        assertThat(recipe.pattern()).isEqualTo(Key.key("minecraft:spire"));
+        assertThat(recipe.result()).isEqualTo(ItemStack.EMPTY);
+        assertThat(recipe.showNotification()).isFalse();
+    }
+
+    @Test
+    void validatesComplexRecipes() {
+        var recipe = new ComplexRecipe(
+                Key.key("minecraft:firework_rocket"),
+                Key.key("minecraft:firework_rocket"),
+                ItemStack.EMPTY,
+                "specials");
+
+        assertThat(recipe.type()).isEqualTo(RecipeType.COMPLEX);
+        assertThat(recipe.serializer()).isEqualTo(Key.key("minecraft:firework_rocket"));
+        assertThat(recipe.group()).contains("specials");
+    }
+
+    @Test
     void validatesIngredients() {
         assertThat(RecipeIngredient.tag(Key.key("minecraft:planks")).isTag()).isTrue();
         assertThat(RecipeIngredient.ofKeys(List.of(Key.key("minecraft:stone"), Key.key("minecraft:cobblestone"))).items())

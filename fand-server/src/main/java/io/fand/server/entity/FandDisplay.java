@@ -1,10 +1,26 @@
 package io.fand.server.entity;
 
+import com.mojang.math.Transformation;
+import io.fand.api.entity.DisplayTransformation;
 import io.fand.api.entity.Display;
+import io.fand.api.entity.Quaternion;
+import io.fand.api.world.Vector3;
+import io.fand.server.util.ReflectionFields;
 import io.fand.server.world.WorldRegistry;
+import java.lang.reflect.Method;
 import java.util.Objects;
+import net.minecraft.network.syncher.SynchedEntityData;
+import org.joml.Quaternionf;
+import org.joml.Quaternionfc;
+import org.joml.Vector3f;
+import org.joml.Vector3fc;
 
 public class FandDisplay extends FandEntity implements Display {
+
+    private static final Method CREATE_TRANSFORMATION = ReflectionFields.method(
+            net.minecraft.world.entity.Display.class, "createTransformation", SynchedEntityData.class);
+    private static final Method SET_TRANSFORMATION = ReflectionFields.method(
+            net.minecraft.world.entity.Display.class, "setTransformation", Transformation.class);
 
     public FandDisplay(net.minecraft.world.entity.Display handle, WorldRegistry worldRegistry) {
         super(handle, worldRegistry);
@@ -13,6 +29,22 @@ public class FandDisplay extends FandEntity implements Display {
     @Override
     public net.minecraft.world.entity.Display handle() {
         return (net.minecraft.world.entity.Display) handle;
+    }
+
+    @Override
+    public DisplayTransformation transformation() {
+        var transformation = ReflectionFields.call(
+                CREATE_TRANSFORMATION,
+                null,
+                Transformation.class,
+                handle().getEntityData());
+        return fromVanilla(transformation);
+    }
+
+    @Override
+    public void setTransformation(DisplayTransformation transformation) {
+        Objects.requireNonNull(transformation, "transformation");
+        runOnServerThread(() -> ReflectionFields.invoke(SET_TRANSFORMATION, handle(), toVanilla(transformation)));
     }
 
     @Override
@@ -163,5 +195,37 @@ public class FandDisplay extends FandEntity implements Display {
             case HORIZONTAL -> net.minecraft.world.entity.Display.BillboardConstraints.HORIZONTAL;
             case CENTER -> net.minecraft.world.entity.Display.BillboardConstraints.CENTER;
         };
+    }
+
+    private static DisplayTransformation fromVanilla(Transformation transformation) {
+        return new DisplayTransformation(
+                vector(transformation.translation()),
+                quaternion(transformation.leftRotation()),
+                vector(transformation.scale()),
+                quaternion(transformation.rightRotation()));
+    }
+
+    private static Transformation toVanilla(DisplayTransformation transformation) {
+        return new Transformation(
+                vector(transformation.translation()),
+                quaternion(transformation.leftRotation()),
+                vector(transformation.scale()),
+                quaternion(transformation.rightRotation()));
+    }
+
+    private static Vector3 vector(Vector3fc vector) {
+        return new Vector3(vector.x(), vector.y(), vector.z());
+    }
+
+    private static Vector3f vector(Vector3 vector) {
+        return new Vector3f((float) vector.x(), (float) vector.y(), (float) vector.z());
+    }
+
+    private static Quaternion quaternion(Quaternionfc quaternion) {
+        return new Quaternion(quaternion.x(), quaternion.y(), quaternion.z(), quaternion.w());
+    }
+
+    private static Quaternionf quaternion(Quaternion quaternion) {
+        return new Quaternionf(quaternion.x(), quaternion.y(), quaternion.z(), quaternion.w());
     }
 }

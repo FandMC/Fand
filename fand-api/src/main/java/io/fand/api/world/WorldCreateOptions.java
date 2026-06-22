@@ -3,6 +3,7 @@ package io.fand.api.world;
 import io.fand.api.world.generation.WorldGeneratorSettings;
 import java.util.Objects;
 import java.util.Optional;
+import net.kyori.adventure.key.Key;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -40,6 +41,18 @@ public final class WorldCreateOptions {
 
     public static WorldCreateOptions generated(WorldGenerator generator) {
         return generated(generator, WorldGeneratorSettings.custom());
+    }
+
+    public static WorldCreateOptions customWorld(WorldGenerator generator) {
+        return generated(generator);
+    }
+
+    public static WorldCreateOptions customWorld(WorldGenerator generator, Key dimensionType) {
+        return generated(
+                generator,
+                WorldGeneratorSettings.custom().toBuilder()
+                        .dimensionType(Objects.requireNonNull(dimensionType, "dimensionType"))
+                        .build());
     }
 
     public static WorldCreateOptions vanillaGenerated(WorldGenerator generator) {

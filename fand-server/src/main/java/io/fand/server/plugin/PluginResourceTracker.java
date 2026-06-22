@@ -10,6 +10,7 @@ import io.fand.api.customblock.CustomBlockRegistration;
 import io.fand.api.customitem.CustomItemRegistration;
 import io.fand.api.enchantment.EnchantmentRegistration;
 import io.fand.api.event.EventSubscription;
+import io.fand.api.gamerule.GameRuleRegistration;
 import io.fand.api.gui.GuiView;
 import io.fand.api.loot.LootTableRegistration;
 import io.fand.api.map.MapRenderer;
@@ -49,6 +50,7 @@ final class PluginResourceTracker {
     private final Set<TrackedPacketRegistration> packetRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPlaceholderRegistration> placeholderRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPluginMessageRegistration> pluginMessageRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedGameRuleRegistration> gameRuleRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedAdvancementRegistration> advancementRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedEnchantmentRegistration> enchantmentRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<MapRendererBinding> mapRendererBindings = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -288,6 +290,22 @@ final class PluginResourceTracker {
         return tracked;
     }
 
+    TrackedGameRuleRegistration track(GameRuleRegistration delegate) {
+        var tracked = new TrackedGameRuleRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                gameRuleRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.unregisterFromTracker();
+        }
+        return tracked;
+    }
+
     TrackedScoreboardRegistration track(ScoreboardRegistration delegate) {
         var tracked = new TrackedScoreboardRegistration(this, delegate);
         var dispose = false;
@@ -514,6 +532,12 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedGameRuleRegistration registration) {
+        synchronized (lock) {
+            gameRuleRegistrations.remove(registration);
+        }
+    }
+
     void release(TrackedAdvancementRegistration registration) {
         synchronized (lock) {
             advancementRegistrations.remove(registration);
@@ -598,6 +622,7 @@ final class PluginResourceTracker {
         List<TrackedPacketRegistration> packetRegistrationsToClose;
         List<TrackedPlaceholderRegistration> placeholderRegistrationsToClose;
         List<TrackedPluginMessageRegistration> pluginMessageRegistrationsToClose;
+        List<TrackedGameRuleRegistration> gameRuleRegistrationsToClose;
         List<TrackedAdvancementRegistration> advancementRegistrationsToClose;
         List<TrackedEnchantmentRegistration> enchantmentRegistrationsToClose;
         List<MapRendererBinding> mapRendererBindingsToClose;
@@ -624,6 +649,7 @@ final class PluginResourceTracker {
             packetRegistrationsToClose = new ArrayList<>(packetRegistrations);
             placeholderRegistrationsToClose = new ArrayList<>(placeholderRegistrations);
             pluginMessageRegistrationsToClose = new ArrayList<>(pluginMessageRegistrations);
+            gameRuleRegistrationsToClose = new ArrayList<>(gameRuleRegistrations);
             advancementRegistrationsToClose = new ArrayList<>(advancementRegistrations);
             enchantmentRegistrationsToClose = new ArrayList<>(enchantmentRegistrations);
             mapRendererBindingsToClose = new ArrayList<>(mapRendererBindings);
@@ -646,6 +672,7 @@ final class PluginResourceTracker {
             packetRegistrations.clear();
             placeholderRegistrations.clear();
             pluginMessageRegistrations.clear();
+            gameRuleRegistrations.clear();
             advancementRegistrations.clear();
             enchantmentRegistrations.clear();
             mapRendererBindings.clear();
@@ -693,6 +720,9 @@ final class PluginResourceTracker {
         }
         for (var registration : pluginMessageRegistrationsToClose) {
             registration.closeFromTracker();
+        }
+        for (var registration : gameRuleRegistrationsToClose) {
+            registration.unregisterFromTracker();
         }
         for (var registration : advancementRegistrationsToClose) {
             registration.closeFromTracker();
@@ -1329,6 +1359,47 @@ final class PluginResourceTracker {
             if (!released) {
                 released = true;
                 delegate.close();
+            }
+        }
+    }
+
+    static final class TrackedGameRuleRegistration implements GameRuleRegistration {
+
+        private final PluginResourceTracker owner;
+        private final GameRuleRegistration delegate;
+        private volatile boolean released;
+
+        TrackedGameRuleRegistration(PluginResourceTracker owner, GameRuleRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public net.kyori.adventure.key.Key key() {
+            return delegate.key();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void unregister() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.unregister();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void unregisterFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.unregister();
             }
         }
     }

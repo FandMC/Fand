@@ -3,10 +3,15 @@ package io.fand.server.recipe;
 import io.fand.api.item.ItemStack;
 import io.fand.api.recipe.CookingRecipeCategory;
 import io.fand.api.recipe.CraftingRecipeCategory;
+import io.fand.api.recipe.ComplexRecipe;
 import io.fand.api.recipe.RecipeIngredient;
 import io.fand.api.recipe.RecipeType;
+import io.fand.api.recipe.SmithingTransformRecipe;
+import io.fand.api.recipe.SmithingTrimRecipe;
 import io.fand.api.recipe.UnknownRecipe;
 import io.fand.server.item.FandItemStacks;
+import io.fand.server.util.ReflectionFields;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -22,6 +27,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStackTemplate;
+import net.minecraft.world.item.crafting.CustomRecipe;
 import net.minecraft.world.item.crafting.AbstractCookingRecipe;
 import net.minecraft.world.item.crafting.BlastingRecipe;
 import net.minecraft.world.item.crafting.CampfireCookingRecipe;
@@ -33,8 +39,14 @@ import net.minecraft.world.item.crafting.ShapedRecipePattern;
 import net.minecraft.world.item.crafting.SmeltingRecipe;
 import net.minecraft.world.item.crafting.SmokingRecipe;
 import net.minecraft.world.item.crafting.StonecutterRecipe;
+import net.minecraft.world.item.equipment.trim.TrimPattern;
 
 public final class FandRecipes {
+
+    private static final Field SMITHING_TRANSFORM_RESULT = ReflectionFields.field(
+            net.minecraft.world.item.crafting.SmithingTransformRecipe.class, "result");
+    private static final Field SMITHING_TRIM_PATTERN = ReflectionFields.field(
+            net.minecraft.world.item.crafting.SmithingTrimRecipe.class, "pattern");
 
     private FandRecipes() {
     }
@@ -46,6 +58,8 @@ public final class FandRecipes {
             case io.fand.api.recipe.ShapelessRecipe shapeless -> new RecipeHolder<>(key, shapeless(shapeless, registries));
             case io.fand.api.recipe.CookingRecipe cooking -> new RecipeHolder<>(key, cooking(cooking, registries));
             case io.fand.api.recipe.StonecuttingRecipe stonecutting -> new RecipeHolder<>(key, stonecutting(stonecutting, registries));
+            case SmithingTransformRecipe smithing -> new RecipeHolder<>(key, smithingTransform(smithing, registries));
+            case SmithingTrimRecipe smithing -> new RecipeHolder<>(key, smithingTrim(smithing, registries));
             default -> throw new IllegalArgumentException("Recipe type cannot be registered: " + recipe.type());
         };
     }
@@ -58,6 +72,9 @@ public final class FandRecipes {
             case net.minecraft.world.item.crafting.ShapelessRecipe shapeless -> shapeless(key, shapeless);
             case AbstractCookingRecipe cooking -> cooking(key, cooking);
             case StonecutterRecipe stonecutting -> stonecutting(key, stonecutting);
+            case net.minecraft.world.item.crafting.SmithingTransformRecipe smithing -> smithingTransform(key, smithing);
+            case net.minecraft.world.item.crafting.SmithingTrimRecipe smithing -> smithingTrim(key, smithing);
+            case CustomRecipe custom -> complex(key, custom);
             default -> new UnknownRecipe(key, assembledResult(recipe), recipe.group());
         };
     }
@@ -83,6 +100,34 @@ public final class FandRecipes {
         );
     }
 
+    private static net.minecraft.world.item.crafting.SmithingTransformRecipe smithingTransform(
+            SmithingTransformRecipe recipe,
+            HolderLookup.Provider registries
+    ) {
+        return new net.minecraft.world.item.crafting.SmithingTransformRecipe(
+                new net.minecraft.world.item.crafting.Recipe.CommonInfo(recipe.showNotification()),
+                recipe.template().map(value -> ingredient(value, registries)),
+                ingredient(recipe.base(), registries),
+                recipe.addition().map(value -> ingredient(value, registries)),
+                result(recipe.result())
+        );
+    }
+
+    private static net.minecraft.world.item.crafting.SmithingTrimRecipe smithingTrim(
+            SmithingTrimRecipe recipe,
+            HolderLookup.Provider registries
+    ) {
+        var pattern = registries.lookupOrThrow(Registries.TRIM_PATTERN)
+                .getOrThrow(ResourceKey.create(Registries.TRIM_PATTERN, id(recipe.pattern())));
+        return new net.minecraft.world.item.crafting.SmithingTrimRecipe(
+                new net.minecraft.world.item.crafting.Recipe.CommonInfo(recipe.showNotification()),
+                ingredient(recipe.templateIngredient(), registries),
+                ingredient(recipe.base(), registries),
+                ingredient(recipe.additionIngredient(), registries),
+                pattern
+        );
+    }
+
     private static net.minecraft.world.item.crafting.ShapelessRecipe shapeless(
             io.fand.api.recipe.ShapelessRecipe recipe,
             HolderLookup.Provider registries
@@ -96,6 +141,42 @@ public final class FandRecipes {
                 result(recipe.result()),
                 recipe.ingredients().stream().map(ingredient -> ingredient(ingredient, registries)).toList()
         );
+    }
+
+    private static SmithingTransformRecipe smithingTransform(
+            Key key,
+            net.minecraft.world.item.crafting.SmithingTransformRecipe recipe
+    ) {
+        var result = ((ItemStackTemplate) ReflectionFields.value(SMITHING_TRANSFORM_RESULT, recipe)).create();
+        return new SmithingTransformRecipe(
+                key,
+                recipe.templateIngredient().map(FandRecipes::ingredient),
+                ingredient(recipe.baseIngredient()),
+                recipe.additionIngredient().map(FandRecipes::ingredient),
+                FandItemStacks.fromVanilla(result),
+                recipe.showNotification()
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private static SmithingTrimRecipe smithingTrim(Key key, net.minecraft.world.item.crafting.SmithingTrimRecipe recipe) {
+        var pattern = (Holder<TrimPattern>) ReflectionFields.value(SMITHING_TRIM_PATTERN, recipe);
+        var patternKey = pattern.unwrapKey()
+                .map(ResourceKey::identifier)
+                .map(FandRecipes::key)
+                .orElseGet(() -> key(pattern.value().assetId()));
+        return new SmithingTrimRecipe(
+                key,
+                ingredient(recipe.templateIngredient().orElseThrow()),
+                ingredient(recipe.baseIngredient()),
+                ingredient(recipe.additionIngredient().orElseThrow()),
+                patternKey,
+                recipe.showNotification()
+        );
+    }
+
+    private static ComplexRecipe complex(Key key, CustomRecipe recipe) {
+        return new ComplexRecipe(key, serializerKey(recipe), assembledResult(recipe), recipe.group());
     }
 
     private static AbstractCookingRecipe cooking(
@@ -267,6 +348,11 @@ public final class FandRecipes {
     private static Item item(Key key) {
         return BuiltInRegistries.ITEM.getOptional(id(key))
                 .orElseThrow(() -> new IllegalArgumentException("Unknown item type: " + key.asString()));
+    }
+
+    private static Key serializerKey(net.minecraft.world.item.crafting.Recipe<?> recipe) {
+        var id = BuiltInRegistries.RECIPE_SERIALIZER.getKey(recipe.getSerializer());
+        return id == null ? Key.key("minecraft:unknown") : key(id);
     }
 
     private static RecipeType type(net.minecraft.world.item.crafting.RecipeType<?> type) {

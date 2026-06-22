@@ -7,6 +7,26 @@ import java.util.Locale;
  */
 public interface Display extends Entity {
 
+    DisplayTransformation transformation();
+
+    void setTransformation(DisplayTransformation transformation);
+
+    default void setTranslation(io.fand.api.world.Vector3 translation) {
+        setTransformation(transformation().withTranslation(translation));
+    }
+
+    default void setScale(io.fand.api.world.Vector3 scale) {
+        setTransformation(transformation().withScale(scale));
+    }
+
+    default void setLeftRotation(Quaternion rotation) {
+        setTransformation(transformation().withLeftRotation(rotation));
+    }
+
+    default void setRightRotation(Quaternion rotation) {
+        setTransformation(transformation().withRightRotation(rotation));
+    }
+
     int transformationInterpolationDuration();
 
     void setTransformationInterpolationDuration(int ticks);

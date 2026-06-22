@@ -83,6 +83,9 @@ public final class FandRecipeRegistry implements RecipeRegistry {
     @Override
     public RecipeRegistration register(Recipe recipe) {
         Objects.requireNonNull(recipe, "recipe");
+        if (!registerable(recipe.type())) {
+            throw new IllegalArgumentException("Recipe type cannot be registered: " + recipe.type());
+        }
         long token = sequence.incrementAndGet();
         runOnServerThread(() -> {
             boolean apply;
@@ -95,6 +98,13 @@ public final class FandRecipeRegistry implements RecipeRegistry {
             }
         });
         return new RegisteredRecipe(this, recipe.key(), token);
+    }
+
+    private static boolean registerable(RecipeType type) {
+        return switch (type) {
+            case SHAPED, SHAPELESS, SMELTING, BLASTING, SMOKING, CAMPFIRE_COOKING, STONECUTTING, SMITHING -> true;
+            case COMPLEX, UNKNOWN -> false;
+        };
     }
 
     @Override

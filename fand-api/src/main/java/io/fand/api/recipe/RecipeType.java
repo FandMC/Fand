@@ -11,6 +11,8 @@ public enum RecipeType {
     SMOKING,
     CAMPFIRE_COOKING,
     STONECUTTING,
+    SMITHING,
+    COMPLEX,
     UNKNOWN;
 
     public boolean cooking() {
@@ -18,5 +20,9 @@ public enum RecipeType {
             case SMELTING, BLASTING, SMOKING, CAMPFIRE_COOKING -> true;
             default -> false;
         };
+    }
+
+    public boolean smithing() {
+        return this == SMITHING;
     }
 }

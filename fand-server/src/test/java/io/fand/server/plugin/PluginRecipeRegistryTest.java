@@ -9,6 +9,8 @@ import io.fand.api.recipe.Recipe;
 import io.fand.api.recipe.RecipeIngredient;
 import io.fand.api.recipe.RecipeType;
 import io.fand.api.recipe.ShapelessRecipe;
+import io.fand.api.recipe.SmithingTransformRecipe;
+import io.fand.api.recipe.SmithingTrimRecipe;
 import io.fand.api.recipe.UnknownRecipe;
 import io.fand.server.recipe.FandRecipeRegistry;
 import java.util.List;
@@ -64,6 +66,32 @@ final class PluginRecipeRegistryTest {
         assertThat(registry.remove(Key.key("other:owned"))).isTrue();
         assertThat(delegate.find(Key.key("demo:owned"))).isEmpty();
         assertThat(delegate.find(Key.key("other:owned")).map(Recipe::key)).contains(other.key());
+    }
+
+    @Test
+    void scopesSmithingRecipesToPluginNamespace() {
+        var delegate = new FandRecipeRegistry();
+        var registry = new PluginRecipeRegistry(delegate, new PluginResourceTracker(), "demo");
+        var transform = new SmithingTransformRecipe(
+                Key.key("external:upgrade"),
+                RecipeIngredient.of("minecraft:netherite_upgrade_smithing_template"),
+                RecipeIngredient.of("minecraft:diamond_sword"),
+                RecipeIngredient.of("minecraft:netherite_ingot"),
+                new ItemStack(DIAMOND, 1));
+        var trim = new SmithingTrimRecipe(
+                Key.key("external:trim"),
+                RecipeIngredient.of("minecraft:spire_armor_trim_smithing_template"),
+                RecipeIngredient.of("minecraft:iron_chestplate"),
+                RecipeIngredient.of("minecraft:amethyst_shard"),
+                Key.key("minecraft:spire"));
+
+        registry.register(transform);
+        registry.register(trim);
+
+        assertThat(delegate.find(Key.key("demo:upgrade"))).isPresent();
+        assertThat(delegate.find(Key.key("demo:trim"))).isPresent();
+        assertThat(registry.byType(RecipeType.SMITHING).stream().map(Recipe::key))
+                .containsExactly(Key.key("demo:upgrade"), Key.key("demo:trim"));
     }
 
     @Test
