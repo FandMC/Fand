@@ -1,6 +1,10 @@
 package io.fand.server.structure;
 
 import com.mojang.datafixers.util.Pair;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.fand.api.registry.RegistryReference;
 import io.fand.api.structure.CustomStructure;
 import io.fand.api.structure.CustomStructureSet;
@@ -39,6 +43,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 import net.kyori.adventure.key.Key;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -577,6 +584,8 @@ public final class FandStructureService implements StructureService {
                 yield out.toByteArray();
             }
             case VANILLA_SNBT -> NbtUtils.structureToSnbt(tag.copy()).getBytes(StandardCharsets.UTF_8);
+            case BLU -> writeBlu(tag);
+            case LITEMATIC -> writeLitematic(tag);
         };
     }
 
@@ -585,6 +594,8 @@ public final class FandStructureService implements StructureService {
             case VANILLA_NBT -> NbtIo.readCompressed(new ByteArrayInputStream(data), NbtAccounter.unlimitedHeap());
             case VANILLA_SNBT -> snbtToStructure(data);
             case SPONGE_SCHEMATIC, WORLDEDIT_SCHEMATIC -> schematicToVanilla(NbtIo.readCompressed(new ByteArrayInputStream(data), NbtAccounter.unlimitedHeap()));
+            case BLU -> bluToVanilla(data);
+            case LITEMATIC -> litematicToVanilla(NbtIo.readCompressed(new ByteArrayInputStream(data), NbtAccounter.unlimitedHeap()));
             case AUTO -> readTag(data, detectFormat(data));
         };
     }
@@ -608,21 +619,668 @@ public final class FandStructureService implements StructureService {
         if (name.endsWith(".schematic")) {
             return StructureFormat.WORLDEDIT_SCHEMATIC;
         }
+        if (name.endsWith(".blu")) {
+            return StructureFormat.BLU;
+        }
+        if (name.endsWith(".litematic")) {
+            return StructureFormat.LITEMATIC;
+        }
         return StructureFormat.VANILLA_NBT;
     }
 
     private static StructureFormat detectFormat(byte[] data) {
+        if (isBlu(data)) {
+            return StructureFormat.BLU;
+        }
         if (data.length > 0 && (data[0] == '{' || data[0] == '[')) {
             return StructureFormat.VANILLA_SNBT;
         }
         try {
             var tag = NbtIo.readCompressed(new ByteArrayInputStream(data), NbtAccounter.unlimitedHeap());
+            if (isLitematic(tag)) {
+                return StructureFormat.LITEMATIC;
+            }
             if (tag.contains("Palette") || tag.contains("BlockData") || tag.contains("Blocks")) {
                 return tag.contains("Palette") ? StructureFormat.SPONGE_SCHEMATIC : StructureFormat.WORLDEDIT_SCHEMATIC;
             }
         } catch (IOException ignored) {
         }
         return StructureFormat.VANILLA_NBT;
+    }
+
+    private static byte[] writeBlu(CompoundTag tag) throws IOException {
+        var json = vanillaToBlu(tag);
+        var out = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(out, StandardCharsets.UTF_8)) {
+            zip.putNextEntry(new ZipEntry(json.get("name").getAsString()));
+            zip.write(json.toString().getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        return out.toByteArray();
+    }
+
+    private static CompoundTag bluToVanilla(byte[] data) throws IOException {
+        return bluJsonToVanilla(readBluJson(data));
+    }
+
+    private static boolean isBlu(byte[] data) {
+        if (data.length < 4 || data[0] != 'P' || data[1] != 'K') {
+            return false;
+        }
+        try {
+            try (var zip = new ZipInputStream(new ByteArrayInputStream(data), StandardCharsets.UTF_8)) {
+                ZipEntry entry;
+                while ((entry = zip.getNextEntry()) != null) {
+                    if (entry.isDirectory()) {
+                        zip.closeEntry();
+                        continue;
+                    }
+                    var text = new String(zip.readAllBytes(), StandardCharsets.UTF_8).trim();
+                    zip.closeEntry();
+                    if (text.startsWith("{")
+                            && text.contains("\"xSize\"")
+                            && text.contains("\"ySize\"")
+                            && text.contains("\"zSize\"")) {
+                        return true;
+                    }
+                }
+            }
+        } catch (IOException | RuntimeException ignored) {
+        }
+        return false;
+    }
+
+    private static JsonObject readBluJson(byte[] data) throws IOException {
+        try (var zip = new ZipInputStream(new ByteArrayInputStream(data), StandardCharsets.UTF_8)) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                if (entry.isDirectory()) {
+                    zip.closeEntry();
+                    continue;
+                }
+                var raw = new String(zip.readAllBytes(), StandardCharsets.UTF_8);
+                zip.closeEntry();
+                var json = parseJson(raw);
+                if (json.isPresent() && json.orElseThrow().isJsonObject()) {
+                    var object = json.orElseThrow().getAsJsonObject();
+                    if (object.has("xSize") && object.has("ySize") && object.has("zSize")) {
+                        return object;
+                    }
+                }
+            }
+        } catch (RuntimeException failure) {
+            throw new IOException("Invalid BLU blueprint JSON", failure);
+        }
+        throw new IOException("BLU archive does not contain a blueprint entry");
+    }
+
+    private static Optional<JsonElement> parseJson(String raw) {
+        try {
+            return Optional.of(JsonParser.parseString(raw));
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static CompoundTag bluJsonToVanilla(JsonObject json) throws IOException {
+        int width = bluInt(json, "xSize");
+        int height = bluInt(json, "ySize");
+        int length = bluInt(json, "zSize");
+        requirePositiveSize(width, height, length);
+
+        var rawBlocks = new java.util.ArrayList<BluBlock>();
+        addBluBlocks(json.get("blocks"), rawBlocks);
+        addBluBlocks(json.get("attached"), rawBlocks);
+        bluVector(json.get("bedrock")).ifPresent(pos -> rawBlocks.add(new BluBlock(pos[0], pos[1], pos[2], "minecraft:bedrock")));
+        if (rawBlocks.isEmpty()) {
+            rawBlocks.add(new BluBlock(width / 2, height / 2, length / 2, "minecraft:bedrock"));
+        }
+
+        boolean centered = rawBlocks.stream().anyMatch(block -> block.x() < 0 || block.y() < 0 || block.z() < 0);
+        var placedBlocks = new LinkedHashMap<String, BluBlock>();
+        for (var rawBlock : rawBlocks) {
+            int x = centered ? rawBlock.x() + width / 2 : rawBlock.x();
+            int y = centered ? rawBlock.y() + height / 2 : rawBlock.y();
+            int z = centered ? rawBlock.z() + length / 2 : rawBlock.z();
+            if (insideVolume(x, y, z, width, height, length)) {
+                placedBlocks.put(x + "," + y + "," + z, new BluBlock(x, y, z, rawBlock.state()));
+            }
+        }
+
+        var vanilla = newBaseTemplate(width, height, length);
+        var paletteIds = new LinkedHashMap<String, Integer>();
+        var palette = new ListTag();
+        var blocks = new ListTag();
+        for (var placedBlock : placedBlocks.values()) {
+            var state = normalizeBluBlockState(placedBlock.state());
+            if (state.equals("minecraft:air")) {
+                continue;
+            }
+            Integer stateId = paletteIds.get(state);
+            if (stateId == null) {
+                stateId = paletteIds.size();
+                paletteIds.put(state, stateId);
+                palette.add(blockStateTag(state));
+            }
+            var block = new CompoundTag();
+            block.put("pos", intList(placedBlock.x(), placedBlock.y(), placedBlock.z()));
+            block.putInt("state", stateId);
+            blocks.add(block);
+        }
+        if (palette.isEmpty()) {
+            palette.add(blockStateTag("minecraft:air"));
+        }
+        vanilla.put("palette", palette);
+        vanilla.put("blocks", blocks);
+        return vanilla;
+    }
+
+    private static JsonObject vanillaToBlu(CompoundTag vanilla) {
+        var size = vanilla.getListOrEmpty("size");
+        int width = size.getIntOr(0, 1);
+        int height = size.getIntOr(1, 1);
+        int length = size.getIntOr(2, 1);
+        var json = new JsonObject();
+        json.addProperty("name", "structure");
+        json.addProperty("xSize", width);
+        json.addProperty("ySize", height);
+        json.addProperty("zSize", length);
+
+        var palette = vanillaPalette(vanilla);
+        var blocks = new JsonObject();
+        JsonArray[] bedrock = { null };
+        vanilla.getListOrEmpty("blocks").compoundStream().forEach(block -> {
+            var pos = block.getListOrEmpty("pos");
+            int stateId = block.getIntOr("state", 0);
+            var state = stateId >= 0 && stateId < palette.size()
+                    ? blockStateString(palette.getCompoundOrEmpty(stateId))
+                    : "minecraft:air";
+            if (state.equals("minecraft:air")) {
+                return;
+            }
+            var vector = bluVector(pos.getIntOr(0, 0) - width / 2, pos.getIntOr(1, 0) - height / 2, pos.getIntOr(2, 0) - length / 2);
+            var blockJson = new JsonObject();
+            blockJson.addProperty("blockData", state);
+            if ("minecraft:bedrock".equals(blockJson.get("blockData").getAsString())) {
+                bedrock[0] = vector;
+            }
+            blocks.add(vector.toString(), blockJson);
+        });
+        json.add("blocks", blocks);
+        json.add("bedrock", bedrock[0] == null ? bluVector(0, 0, 0) : bedrock[0]);
+        return json;
+    }
+
+    private static int bluInt(JsonObject json, String key) throws IOException {
+        var value = json.get(key);
+        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) {
+            throw new IOException("BLU blueprint missing numeric " + key);
+        }
+        return value.getAsInt();
+    }
+
+    private static void addBluBlocks(JsonElement element, java.util.List<BluBlock> output) {
+        if (element == null || element.isJsonNull()) {
+            return;
+        }
+        if (element.isJsonObject()) {
+            for (var entry : element.getAsJsonObject().entrySet()) {
+                bluVector(entry.getKey()).ifPresent(pos -> output.add(new BluBlock(pos[0], pos[1], pos[2], bluBlockState(entry.getValue()))));
+            }
+            return;
+        }
+        if (!element.isJsonArray()) {
+            return;
+        }
+        for (var rawEntry : element.getAsJsonArray()) {
+            if (rawEntry.isJsonArray()) {
+                var pair = rawEntry.getAsJsonArray();
+                if (pair.size() >= 2) {
+                    bluVector(pair.get(0)).ifPresent(pos -> output.add(new BluBlock(pos[0], pos[1], pos[2], bluBlockState(pair.get(1)))));
+                }
+            } else if (rawEntry.isJsonObject()) {
+                var object = rawEntry.getAsJsonObject();
+                var position = object.has("pos") ? object.get("pos") : object.get("position");
+                var block = object.has("block") ? object.get("block") : object;
+                bluVector(position).ifPresent(pos -> output.add(new BluBlock(pos[0], pos[1], pos[2], bluBlockState(block))));
+            }
+        }
+    }
+
+    private static String bluBlockState(JsonElement element) {
+        if (element == null || element.isJsonNull()) {
+            return "minecraft:air";
+        }
+        if (element.isJsonPrimitive()) {
+            return element.getAsString();
+        }
+        if (!element.isJsonObject()) {
+            return "minecraft:air";
+        }
+        var object = element.getAsJsonObject();
+        for (var key : List.of("blockData", "BlockData", "state", "id")) {
+            var value = object.get(key);
+            if (value != null && value.isJsonPrimitive()) {
+                return value.getAsString();
+            }
+        }
+        return "minecraft:air";
+    }
+
+    private static String normalizeBluBlockState(String state) {
+        var trimmed = state == null ? "" : state.trim();
+        if (trimmed.isEmpty()) {
+            return "minecraft:air";
+        }
+        int propertyStart = trimmed.indexOf('[');
+        var name = propertyStart >= 0 ? trimmed.substring(0, propertyStart) : trimmed;
+        var properties = propertyStart >= 0 ? trimmed.substring(propertyStart) : "";
+        if (!name.contains(":")) {
+            name = "minecraft:" + name.toLowerCase(Locale.ROOT);
+        }
+        return name + properties;
+    }
+
+    private static Optional<int[]> bluVector(JsonElement element) {
+        if (element == null || element.isJsonNull()) {
+            return Optional.empty();
+        }
+        if (element.isJsonArray()) {
+            var array = element.getAsJsonArray();
+            if (array.size() < 3) {
+                return Optional.empty();
+            }
+            return Optional.of(new int[] { bluCoordinate(array.get(0)), bluCoordinate(array.get(1)), bluCoordinate(array.get(2)) });
+        }
+        if (element.isJsonPrimitive()) {
+            return bluVector(element.getAsString());
+        }
+        if (element.isJsonObject()) {
+            var object = element.getAsJsonObject();
+            if (object.has("x") && object.has("y") && object.has("z")) {
+                return Optional.of(new int[] { bluCoordinate(object.get("x")), bluCoordinate(object.get("y")), bluCoordinate(object.get("z")) });
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<int[]> bluVector(String key) {
+        try {
+            var parsed = JsonParser.parseString(key);
+            if (parsed.isJsonArray()) {
+                return bluVector(parsed);
+            }
+        } catch (RuntimeException ignored) {
+        }
+        var cleaned = key.replace('[', ' ')
+                .replace(']', ' ')
+                .replace('(', ' ')
+                .replace(')', ' ')
+                .replace(';', ',')
+                .replace("Vector", "")
+                .trim();
+        cleaned = cleaned.replace("x=", "")
+                .replace("y=", "")
+                .replace("z=", "");
+        var parts = cleaned.split(",");
+        if (parts.length < 3) {
+            parts = cleaned.split("\\s+");
+        }
+        if (parts.length < 3) {
+            return Optional.empty();
+        }
+        return Optional.of(new int[] { bluCoordinate(parts[0]), bluCoordinate(parts[1]), bluCoordinate(parts[2]) });
+    }
+
+    private static int bluCoordinate(JsonElement element) {
+        return (int) Math.round(element.getAsDouble());
+    }
+
+    private static int bluCoordinate(String value) {
+        var trimmed = value.trim();
+        int split = trimmed.indexOf('=');
+        if (split >= 0) {
+            trimmed = trimmed.substring(split + 1);
+        }
+        return (int) Math.round(Double.parseDouble(trimmed));
+    }
+
+    private static JsonArray bluVector(int x, int y, int z) {
+        var vector = new JsonArray();
+        vector.add(x);
+        vector.add(y);
+        vector.add(z);
+        return vector;
+    }
+
+    private static byte[] writeLitematic(CompoundTag vanilla) throws IOException {
+        var root = vanillaToLitematic(vanilla);
+        var out = new ByteArrayOutputStream();
+        NbtIo.writeCompressed(root, out);
+        return out.toByteArray();
+    }
+
+    private static boolean isLitematic(CompoundTag tag) {
+        return tag.contains("Regions")
+                && (tag.contains("Metadata") || tag.contains("Version") || tag.contains("MinecraftDataVersion"));
+    }
+
+    private static CompoundTag litematicToVanilla(CompoundTag litematic) throws IOException {
+        var regions = litematic.getCompoundOrEmpty("Regions");
+        var parsed = new java.util.ArrayList<LitematicRegion>();
+        for (var entry : regions.entrySet()) {
+            if (entry.getValue() instanceof CompoundTag region) {
+                parsed.add(readLitematicRegion(region));
+            }
+        }
+        if (parsed.isEmpty()) {
+            throw new IOException("Litematic contains no regions");
+        }
+
+        int minX = parsed.stream().mapToInt(LitematicRegion::minX).min().orElse(0);
+        int minY = parsed.stream().mapToInt(LitematicRegion::minY).min().orElse(0);
+        int minZ = parsed.stream().mapToInt(LitematicRegion::minZ).min().orElse(0);
+        int maxX = parsed.stream().mapToInt(LitematicRegion::maxX).max().orElse(0);
+        int maxY = parsed.stream().mapToInt(LitematicRegion::maxY).max().orElse(0);
+        int maxZ = parsed.stream().mapToInt(LitematicRegion::maxZ).max().orElse(0);
+        int width = maxX - minX + 1;
+        int height = maxY - minY + 1;
+        int length = maxZ - minZ + 1;
+        requirePositiveSize(width, height, length);
+
+        var vanilla = newBaseTemplate(width, height, length);
+        var paletteIds = new LinkedHashMap<String, Integer>();
+        var palette = new ListTag();
+        var blocks = new ListTag();
+        var blockEntityByPosition = new java.util.HashMap<String, CompoundTag>();
+        parsed.forEach(region -> collectLitematicBlockEntities(region, minX, minY, minZ, blockEntityByPosition));
+
+        for (var region : parsed) {
+            int[] states = decodePackedLongArray(region.blockStates(), region.palette().size(), region.volume());
+            for (int y = 0; y < region.height(); y++) {
+                for (int z = 0; z < region.length(); z++) {
+                    for (int x = 0; x < region.width(); x++) {
+                        int localIndex = blockIndex(region.width(), region.length(), x, y, z);
+                        int paletteIndex = states[localIndex];
+                        if (paletteIndex < 0 || paletteIndex >= region.palette().size()) {
+                            throw new IOException("Litematic block state index outside palette");
+                        }
+                        var state = blockStateString(region.palette().getCompoundOrEmpty(paletteIndex));
+                        Integer stateId = paletteIds.get(state);
+                        if (stateId == null) {
+                            stateId = paletteIds.size();
+                            paletteIds.put(state, stateId);
+                            palette.add(blockStateTag(state));
+                        }
+
+                        int globalX = region.minX() + x;
+                        int globalY = region.minY() + y;
+                        int globalZ = region.minZ() + z;
+                        int targetX = globalX - minX;
+                        int targetY = globalY - minY;
+                        int targetZ = globalZ - minZ;
+                        var block = new CompoundTag();
+                        block.put("pos", intList(targetX, targetY, targetZ));
+                        block.putInt("state", stateId);
+                        var blockEntity = blockEntityByPosition.get(positionKey(targetX, targetY, targetZ));
+                        if (blockEntity != null) {
+                            block.put("nbt", blockEntity);
+                        }
+                        blocks.add(block);
+                    }
+                }
+            }
+        }
+
+        vanilla.put("palette", palette);
+        vanilla.put("blocks", blocks);
+        vanilla.put("entities", litematicEntities(parsed, minX, minY, minZ));
+        litematic.getCompound("Metadata").ifPresent(metadata -> vanilla.put("Metadata", metadata.copy()));
+        vanilla.putInt("DataVersion", litematic.getIntOr("MinecraftDataVersion", currentDataVersion()));
+        return vanilla;
+    }
+
+    private static LitematicRegion readLitematicRegion(CompoundTag region) throws IOException {
+        int[] position = litematicVector(region.getCompoundOrEmpty("Position"));
+        int[] rawSize = litematicVector(region.getCompoundOrEmpty("Size"));
+        int width = Math.abs(rawSize[0]);
+        int height = Math.abs(rawSize[1]);
+        int length = Math.abs(rawSize[2]);
+        requirePositiveSize(width, height, length);
+
+        int minX = rawSize[0] < 0 ? position[0] + rawSize[0] + 1 : position[0];
+        int minY = rawSize[1] < 0 ? position[1] + rawSize[1] + 1 : position[1];
+        int minZ = rawSize[2] < 0 ? position[2] + rawSize[2] + 1 : position[2];
+        var palette = region.getListOrEmpty("BlockStatePalette");
+        if (palette.isEmpty()) {
+            throw new IOException("Litematic region missing BlockStatePalette");
+        }
+        var blockStates = region.getLongArray("BlockStates").orElse(new long[0]);
+        return new LitematicRegion(
+                minX,
+                minY,
+                minZ,
+                width,
+                height,
+                length,
+                palette,
+                blockStates,
+                region.getListOrEmpty("TileEntities"),
+                region.getListOrEmpty("Entities"));
+    }
+
+    private static CompoundTag vanillaToLitematic(CompoundTag vanilla) {
+        var size = vanilla.getListOrEmpty("size");
+        int width = size.getIntOr(0, 1);
+        int height = size.getIntOr(1, 1);
+        int length = size.getIntOr(2, 1);
+        var palette = copyPaletteWithAir(vanillaPalette(vanilla));
+        int airState = findPaletteIndex(palette, "minecraft:air");
+        int[] states = new int[width * height * length];
+        java.util.Arrays.fill(states, Math.max(airState, 0));
+        var tileEntities = new ListTag();
+        vanilla.getListOrEmpty("blocks").compoundStream().forEach(block -> {
+            var pos = block.getListOrEmpty("pos");
+            int x = pos.getIntOr(0, 0);
+            int y = pos.getIntOr(1, 0);
+            int z = pos.getIntOr(2, 0);
+            if (!insideVolume(x, y, z, width, height, length)) {
+                return;
+            }
+            states[blockIndex(width, length, x, y, z)] = block.getIntOr("state", Math.max(airState, 0));
+            block.getCompound("nbt").ifPresent(nbt -> {
+                var blockEntity = nbt.copy();
+                blockEntity.putInt("x", x);
+                blockEntity.putInt("y", y);
+                blockEntity.putInt("z", z);
+                tileEntities.add(blockEntity);
+            });
+        });
+
+        var region = new CompoundTag();
+        region.put("Position", litematicVectorTag(0, 0, 0));
+        region.put("Size", litematicVectorTag(width, height, length));
+        region.put("BlockStatePalette", palette);
+        region.putLongArray("BlockStates", encodePackedLongArray(states, palette.size()));
+        if (!tileEntities.isEmpty()) {
+            region.put("TileEntities", tileEntities);
+        }
+        var entities = litematicEntityList(vanilla.getListOrEmpty("entities"));
+        if (!entities.isEmpty()) {
+            region.put("Entities", entities);
+        }
+
+        var regions = new CompoundTag();
+        regions.put("main", region);
+        var root = new CompoundTag();
+        root.putInt("Version", 7);
+        root.putInt("MinecraftDataVersion", currentDataVersion());
+        root.put("Metadata", litematicMetadata(vanilla, width, height, length));
+        root.put("Regions", regions);
+        return root;
+    }
+
+    private static CompoundTag litematicMetadata(CompoundTag vanilla, int width, int height, int length) {
+        var metadata = vanilla.getCompoundOrEmpty("Metadata").copy();
+        if (!metadata.contains("Name")) {
+            metadata.putString("Name", "structure");
+        }
+        if (!metadata.contains("Author")) {
+            metadata.putString("Author", "Fand");
+        }
+        metadata.put("EnclosingSize", litematicVectorTag(width, height, length));
+        metadata.putInt("RegionCount", 1);
+        metadata.putInt("TotalVolume", width * height * length);
+        metadata.putLong("TimeModified", System.currentTimeMillis());
+        if (!metadata.contains("TimeCreated")) {
+            metadata.putLong("TimeCreated", System.currentTimeMillis());
+        }
+        return metadata;
+    }
+
+    private static ListTag copyPaletteWithAir(ListTag source) {
+        var palette = new ListTag();
+        boolean hasAir = false;
+        for (int i = 0; i < source.size(); i++) {
+            var state = source.getCompoundOrEmpty(i).copy();
+            hasAir |= "minecraft:air".equals(blockStateString(state));
+            palette.add(state);
+        }
+        if (!hasAir) {
+            palette.add(blockStateTag("minecraft:air"));
+        }
+        return palette;
+    }
+
+    private static int[] decodePackedLongArray(long[] packed, int paletteSize, int expected) throws IOException {
+        int bits = packedBits(paletteSize);
+        long mask = (1L << bits) - 1L;
+        var states = new int[expected];
+        if (packed.length == 0) {
+            return states;
+        }
+        for (int i = 0; i < expected; i++) {
+            long bitIndex = (long) i * bits;
+            int longIndex = (int) (bitIndex >>> 6);
+            int bitOffset = (int) (bitIndex & 63L);
+            if (longIndex >= packed.length) {
+                throw new IOException("Litematic BlockStates ended early");
+            }
+            long value = packed[longIndex] >>> bitOffset;
+            int spill = bitOffset + bits - 64;
+            if (spill > 0) {
+                if (longIndex + 1 >= packed.length) {
+                    throw new IOException("Litematic BlockStates ended mid-entry");
+                }
+                value |= packed[longIndex + 1] << (bits - spill);
+            }
+            states[i] = (int) (value & mask);
+        }
+        return states;
+    }
+
+    private static long[] encodePackedLongArray(int[] states, int paletteSize) {
+        int bits = packedBits(paletteSize);
+        long mask = (1L << bits) - 1L;
+        int length = (int) ((((long) states.length * bits) + 63L) >>> 6);
+        var packed = new long[Math.max(length, 1)];
+        for (int i = 0; i < states.length; i++) {
+            long value = states[i] & mask;
+            long bitIndex = (long) i * bits;
+            int longIndex = (int) (bitIndex >>> 6);
+            int bitOffset = (int) (bitIndex & 63L);
+            packed[longIndex] = (packed[longIndex] & ~(mask << bitOffset)) | (value << bitOffset);
+            int spill = bitOffset + bits - 64;
+            if (spill > 0) {
+                long spillMask = (1L << spill) - 1L;
+                packed[longIndex + 1] = (packed[longIndex + 1] & ~spillMask) | (value >>> (bits - spill));
+            }
+        }
+        return packed;
+    }
+
+    private static int packedBits(int paletteSize) {
+        return Math.max(1, 32 - Integer.numberOfLeadingZeros(Math.max(1, paletteSize - 1)));
+    }
+
+    private static void collectLitematicBlockEntities(
+            LitematicRegion region,
+            int originX,
+            int originY,
+            int originZ,
+            java.util.Map<String, CompoundTag> target) {
+        region.blockEntities().compoundStream().forEach(blockEntity -> {
+            int[] pos = litematicStoredPosition(blockEntity, region);
+            int x = pos[0] - originX;
+            int y = pos[1] - originY;
+            int z = pos[2] - originZ;
+            var nbt = normalizeBlockEntityNbt(blockEntity);
+            nbt.putInt("x", x);
+            nbt.putInt("y", y);
+            nbt.putInt("z", z);
+            target.put(positionKey(x, y, z), nbt);
+        });
+    }
+
+    private static ListTag litematicEntities(java.util.List<LitematicRegion> regions, int originX, int originY, int originZ) {
+        var entities = new ListTag();
+        regions.forEach(region -> region.entities().compoundStream().forEach(source -> {
+            var nbt = normalizeEntityNbt(source);
+            var pos = entityPosition(source);
+            if (insideVolume((int) Math.floor(pos[0]), (int) Math.floor(pos[1]), (int) Math.floor(pos[2]), region.width(), region.height(), region.length())) {
+                pos[0] += region.minX();
+                pos[1] += region.minY();
+                pos[2] += region.minZ();
+            }
+            var entity = new CompoundTag();
+            entity.put("pos", doubleList(pos[0] - originX, pos[1] - originY, pos[2] - originZ));
+            entity.put("blockPos", intList(
+                    (int) Math.floor(pos[0] - originX),
+                    (int) Math.floor(pos[1] - originY),
+                    (int) Math.floor(pos[2] - originZ)));
+            entity.put("nbt", nbt);
+            entities.add(entity);
+        }));
+        return entities;
+    }
+
+    private static ListTag litematicEntityList(ListTag vanillaEntities) {
+        var entities = new ListTag();
+        vanillaEntities.compoundStream().forEach(entity -> {
+            var nbt = entity.getCompound("nbt").map(CompoundTag::copy).orElseGet(entity::copy);
+            var pos = entityPosition(entity);
+            nbt.put("Pos", doubleList(pos[0], pos[1], pos[2]));
+            entities.add(nbt);
+        });
+        return entities;
+    }
+
+    private static int[] litematicStoredPosition(CompoundTag tag, LitematicRegion region) {
+        int[] pos = blockEntityPosition(tag);
+        if (insideVolume(pos[0], pos[1], pos[2], region.width(), region.height(), region.length())) {
+            return new int[] { region.minX() + pos[0], region.minY() + pos[1], region.minZ() + pos[2] };
+        }
+        return pos;
+    }
+
+    private static int[] litematicVector(CompoundTag tag) {
+        return new int[] {
+                tag.getIntOr("x", tag.getIntOr("X", 0)),
+                tag.getIntOr("y", tag.getIntOr("Y", 0)),
+                tag.getIntOr("z", tag.getIntOr("Z", 0))
+        };
+    }
+
+    private static CompoundTag litematicVectorTag(int x, int y, int z) {
+        var tag = new CompoundTag();
+        tag.putInt("x", x);
+        tag.putInt("y", y);
+        tag.putInt("z", z);
+        return tag;
+    }
+
+    private static String positionKey(int x, int y, int z) {
+        return x + "," + y + "," + z;
     }
 
     private static CompoundTag schematicToVanilla(CompoundTag schematic) throws IOException {
@@ -1195,6 +1853,38 @@ public final class FandStructureService implements StructureService {
                     yield true;
                 }
             };
+        }
+    }
+
+    private record BluBlock(int x, int y, int z, String state) {
+    }
+
+    private record LitematicRegion(
+            int minX,
+            int minY,
+            int minZ,
+            int width,
+            int height,
+            int length,
+            ListTag palette,
+            long[] blockStates,
+            ListTag blockEntities,
+            ListTag entities) {
+
+        int volume() {
+            return width * height * length;
+        }
+
+        int maxX() {
+            return minX + width - 1;
+        }
+
+        int maxY() {
+            return minY + height - 1;
+        }
+
+        int maxZ() {
+            return minZ + length - 1;
         }
     }
 

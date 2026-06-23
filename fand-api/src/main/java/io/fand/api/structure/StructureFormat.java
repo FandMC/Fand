@@ -5,5 +5,7 @@ public enum StructureFormat {
     VANILLA_NBT,
     VANILLA_SNBT,
     SPONGE_SCHEMATIC,
-    WORLDEDIT_SCHEMATIC
+    WORLDEDIT_SCHEMATIC,
+    BLU,
+    LITEMATIC
 }

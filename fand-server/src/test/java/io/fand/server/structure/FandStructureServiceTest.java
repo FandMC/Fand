@@ -10,14 +10,21 @@ import io.fand.api.structure.StructurePlacement;
 import io.fand.api.structure.StructureVolume;
 import io.fand.api.world.Location;
 import io.fand.api.world.World;
+import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import net.kyori.adventure.key.Key;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.DoubleTag;
 import net.minecraft.nbt.IntTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
 import org.junit.jupiter.api.Test;
 
 final class FandStructureServiceTest {
@@ -174,6 +181,107 @@ final class FandStructureServiceTest {
         assertThat(invokeLegacyBlockId(new byte[] { 0x23, 0x00 }, new byte[] { 0x10 }, 1)).isEqualTo(0x100);
     }
 
+    @Test
+    void bluImportReadsZippedBlueprintJson() throws Exception {
+        var json = """
+                {
+                  "name": "island",
+                  "xSize": 3,
+                  "ySize": 3,
+                  "zSize": 3,
+                  "bedrock": [0, 0, 0],
+                  "blocks": {
+                    "[1,0,0]": {"blockData": "minecraft:stone"}
+                  }
+                }
+                """;
+
+        var vanilla = invokeReadTag(zipBlu("island", json), io.fand.api.structure.StructureFormat.BLU);
+
+        assertThat(vanilla.getListOrEmpty("size").getIntOr(0, 0)).isEqualTo(3);
+        assertThat(vanilla.getListOrEmpty("size").getIntOr(1, 0)).isEqualTo(3);
+        assertThat(vanilla.getListOrEmpty("size").getIntOr(2, 0)).isEqualTo(3);
+        assertThat(vanilla.getListOrEmpty("blocks")).hasSize(2);
+        assertThat(vanilla.getListOrEmpty("blocks").compoundStream()
+                .anyMatch(block -> block.getListOrEmpty("pos").getIntOr(0, -1) == 0
+                        && block.getListOrEmpty("pos").getIntOr(1, -1) == 0
+                        && block.getListOrEmpty("pos").getIntOr(2, -1) == 0))
+                .isTrue();
+    }
+
+    @Test
+    void bluExportWritesZippedBlueprintJson() throws Exception {
+        var vanilla = newBaseVanilla();
+
+        var data = invokeWriteTag(vanilla, io.fand.api.structure.StructureFormat.BLU);
+
+        assertThat(new String(unzipBlu(data), StandardCharsets.UTF_8)).contains(
+                "\"xSize\":1",
+                "\"ySize\":1",
+                "\"zSize\":1",
+                "\"blocks\":{\"[0,0,0]\"",
+                "\"minecraft:bedrock\"");
+    }
+
+    @Test
+    void bluImportAcceptsLegacyBedrockOnlyArchive() throws Exception {
+        var json = """
+                {
+                  "name": "island",
+                  "xSize": 6,
+                  "ySize": 10,
+                  "zSize": 6,
+                  "bedrock": [1, -5, -2]
+                }
+                """;
+
+        var vanilla = invokeReadTag(zipBlu("island", json), io.fand.api.structure.StructureFormat.BLU);
+
+        assertThat(vanilla.getListOrEmpty("size").getIntOr(0, 0)).isEqualTo(6);
+        assertThat(vanilla.getListOrEmpty("size").getIntOr(1, 0)).isEqualTo(10);
+        assertThat(vanilla.getListOrEmpty("size").getIntOr(2, 0)).isEqualTo(6);
+        assertThat(vanilla.getListOrEmpty("blocks")).hasSize(1);
+        assertThat(vanilla.getListOrEmpty("palette").getCompoundOrEmpty(0).getStringOr("Name", ""))
+                .isEqualTo("minecraft:bedrock");
+    }
+
+    @Test
+    void litematicImportReadsPaletteAndPackedBlockStates() throws Exception {
+        var litematic = new CompoundTag();
+        litematic.putInt("Version", 7);
+        litematic.putInt("MinecraftDataVersion", 4440);
+        litematic.put("Metadata", new CompoundTag());
+        var region = new CompoundTag();
+        region.put("Position", vectorTag(0, 0, 0));
+        region.put("Size", vectorTag(2, 1, 1));
+        var palette = new ListTag();
+        palette.add(blockState("minecraft:air"));
+        palette.add(blockState("minecraft:stone"));
+        region.put("BlockStatePalette", palette);
+        region.putLongArray("BlockStates", new long[] { 2L });
+        var regions = new CompoundTag();
+        regions.put("main", region);
+        litematic.put("Regions", regions);
+
+        var vanilla = invokeReadTag(writeCompressed(litematic), io.fand.api.structure.StructureFormat.LITEMATIC);
+
+        assertThat(vanilla.getListOrEmpty("size").getIntOr(0, 0)).isEqualTo(2);
+        assertThat(vanilla.getListOrEmpty("blocks")).hasSize(2);
+        assertThat(vanilla.getListOrEmpty("palette").compoundStream().map(tag -> tag.getStringOr("Name", "")).toList())
+                .contains("minecraft:air", "minecraft:stone");
+    }
+
+    @Test
+    void litematicExportWritesRegionsPaletteAndPackedStates() throws Exception {
+        var data = invokeWriteTag(newBaseVanilla(), io.fand.api.structure.StructureFormat.LITEMATIC);
+        var root = NbtIo.readCompressed(new ByteArrayInputStream(data), NbtAccounter.unlimitedHeap());
+        var region = root.getCompoundOrEmpty("Regions").getCompoundOrEmpty("main");
+
+        assertThat(root.getCompoundOrEmpty("Regions").keySet()).contains("main");
+        assertThat(region.getListOrEmpty("BlockStatePalette")).isNotEmpty();
+        assertThat(region.getLongArray("BlockStates").orElseThrow()).isNotEmpty();
+    }
+
     private static World world(Key key) {
         return (World) Proxy.newProxyInstance(
                 World.class.getClassLoader(),
@@ -198,6 +306,26 @@ final class FandStructureServiceTest {
         }
     }
 
+    private static CompoundTag invokeReadTag(byte[] data, io.fand.api.structure.StructureFormat format) {
+        try {
+            Method method = FandStructureService.class.getDeclaredMethod("readTag", byte[].class, io.fand.api.structure.StructureFormat.class);
+            method.setAccessible(true);
+            return (CompoundTag) method.invoke(null, data, format);
+        } catch (ReflectiveOperationException failure) {
+            throw new AssertionError(failure);
+        }
+    }
+
+    private static byte[] invokeWriteTag(CompoundTag tag, io.fand.api.structure.StructureFormat format) {
+        try {
+            Method method = FandStructureService.class.getDeclaredMethod("writeTag", CompoundTag.class, io.fand.api.structure.StructureFormat.class);
+            method.setAccessible(true);
+            return (byte[]) method.invoke(null, tag, format);
+        } catch (ReflectiveOperationException failure) {
+            throw new AssertionError(failure);
+        }
+    }
+
     private static int invokeLegacyBlockId(byte[] blocks, byte[] addBlocks, int index) {
         try {
             Method method = FandStructureService.class.getDeclaredMethod("legacyBlockId", byte[].class, byte[].class, int.class);
@@ -211,6 +339,53 @@ final class FandStructureServiceTest {
     private static CompoundTag blockState(String name) {
         var tag = new CompoundTag();
         tag.putString("Name", name);
+        return tag;
+    }
+
+    private static CompoundTag newBaseVanilla() {
+        var vanilla = new CompoundTag();
+        vanilla.put("size", intList(1, 1, 1));
+        var palette = new ListTag();
+        palette.add(blockState("minecraft:bedrock"));
+        vanilla.put("palette", palette);
+        var blocks = new ListTag();
+        var block = new CompoundTag();
+        block.put("pos", intList(0, 0, 0));
+        block.putInt("state", 0);
+        blocks.add(block);
+        vanilla.put("blocks", blocks);
+        return vanilla;
+    }
+
+    private static byte[] zipBlu(String name, String json) throws Exception {
+        var out = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(out, StandardCharsets.UTF_8)) {
+            zip.putNextEntry(new ZipEntry(name));
+            zip.write(json.getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        return out.toByteArray();
+    }
+
+    private static byte[] unzipBlu(byte[] data) throws Exception {
+        try (var zip = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(data), StandardCharsets.UTF_8)) {
+            var entry = zip.getNextEntry();
+            assertThat(entry).isNotNull();
+            return zip.readAllBytes();
+        }
+    }
+
+    private static byte[] writeCompressed(CompoundTag tag) throws Exception {
+        var out = new ByteArrayOutputStream();
+        NbtIo.writeCompressed(tag, out);
+        return out.toByteArray();
+    }
+
+    private static CompoundTag vectorTag(int x, int y, int z) {
+        var tag = new CompoundTag();
+        tag.putInt("x", x);
+        tag.putInt("y", y);
+        tag.putInt("z", z);
         return tag;
     }
 
