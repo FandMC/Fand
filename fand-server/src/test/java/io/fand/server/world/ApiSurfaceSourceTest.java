@@ -254,6 +254,47 @@ final class ApiSurfaceSourceTest {
     }
 
     @Test
+    void pluginScopedDataPackApiStaysWiredToRuntimeAndLifecycleCleanup() throws IOException {
+        var serverApi = read("../fand-api/src/main/java/io/fand/api/Server.java");
+        var context = read("../fand-api/src/main/java/io/fand/api/plugin/PluginContext.java");
+        var runtimeContext = read("src/main/java/io/fand/server/plugin/RuntimePluginContext.java");
+        var runtime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
+        var pluginDataPacks = read("src/main/java/io/fand/server/plugin/PluginDataPackService.java");
+        var tracker = read("src/main/java/io/fand/server/plugin/PluginResourceTracker.java");
+        var server = read("src/main/java/io/fand/server/FandServer.java");
+        var service = read("src/main/java/io/fand/server/datapack/FandDataPackService.java");
+
+        assertThat(serverApi).contains("default DataPackService dataPacks()");
+        assertThat(context).contains("default DataPackService dataPacks()");
+        assertThat(runtimeContext).contains(
+                "private final DataPackService dataPacks",
+                "public DataPackService dataPacks()");
+        assertThat(runtime).contains(
+                "private final DataPackService dataPackService",
+                "new PluginDataPackService(dataPackService, resources, id)");
+        assertThat(pluginDataPacks).contains(
+                "public final class PluginDataPackService implements DataPackService",
+                "return delegate.packs().stream()",
+                "return tracker.track(delegate.create(new DataPack(scopedId(pack.id()), pack.description(), pack.enabled())))",
+                "Plugin data pack files must stay under data/");
+        assertThat(tracker).contains(
+                "TrackedDataPackRegistration track(DataPackRegistration delegate)",
+                "dataPackRegistrationsToClose",
+                "registration.closeFromTracker()",
+                "static final class TrackedDataPackRegistration implements DataPackRegistration");
+        assertThat(server).contains(
+                "this.dataPacks = new FandDataPackService(Path.of(\"datapacks\"), minecraftServer::get)",
+                "dataPacks,",
+                "public DataPackService dataPacks()",
+                "return dataPacks.reload()");
+        assertThat(service).contains(
+                "public final class FandDataPackService implements DataPackService",
+                "private static final String WORLD_PACK_PREFIX = \"fand-\"",
+                "current.getWorldPath(LevelResource.DATAPACK_DIR)",
+                "return \"file/\" + worldPackDirectoryName(id)");
+    }
+
+    @Test
     void pluginMapRenderersStayScopedToPluginLifecycle() throws IOException {
         var runtime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
         var pluginMap = read("src/main/java/io/fand/server/plugin/PluginMapService.java");

@@ -7,6 +7,7 @@ import io.fand.api.config.Configuration;
 import io.fand.api.config.ConfigurationService;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
+import io.fand.api.datapack.DataPackService;
 import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.gamerule.GameRuleService;
@@ -114,6 +115,11 @@ public interface PluginContext {
     /** Custom game rules scoped to this plugin's namespace. */
     default GameRuleService gameRules() {
         return GameRuleService.empty();
+    }
+
+    /** Data-pack file tree service scoped to this plugin's lifecycle and namespace. */
+    default DataPackService dataPacks() {
+        return DataPackService.empty();
     }
 
     /** Custom item registry scoped to this plugin's lifecycle and namespace. */

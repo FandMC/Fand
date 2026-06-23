@@ -8,6 +8,7 @@ import io.fand.api.command.CommandDescriptor;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
+import io.fand.api.datapack.DataPackService;
 import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.gamerule.GameRuleService;
@@ -94,6 +95,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final PacketRegistry packetRegistry;
     private final PluginMessaging pluginMessaging;
     private volatile GameRuleService gameRuleService = GameRuleService.empty();
+    private final DataPackService dataPackService;
     private final CustomItemRegistry customItemRegistry;
     private final CustomBlockRegistry customBlockRegistry;
     private final GuiService guiService;
@@ -151,6 +153,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 unavailableScoreboardService(),
                 new PacketRegistryImpl(),
                 null,
+                DataPackService.empty(),
                 AdvancementRegistry.empty(),
                 EnchantmentRegistry.empty(),
                 StructureService.empty(),
@@ -221,6 +224,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 unavailableScoreboardService(),
                 new PacketRegistryImpl(),
                 null,
+                DataPackService.empty(),
                 AdvancementRegistry.empty(),
                 EnchantmentRegistry.empty(),
                 StructureService.empty(),
@@ -270,6 +274,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 scoreboardService,
                 packetRegistry,
                 defaultPluginMessaging(packetRegistry),
+                DataPackService.empty(),
                 advancementRegistry,
                 enchantmentRegistry,
                 structureService,
@@ -320,6 +325,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 scoreboardService,
                 packetRegistry,
                 pluginMessaging,
+                DataPackService.empty(),
                 advancementRegistry,
                 enchantmentRegistry,
                 structureService,
@@ -348,6 +354,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             ScoreboardService scoreboardService,
             PacketRegistry packetRegistry,
             PluginMessaging pluginMessaging,
+            DataPackService dataPackService,
             AdvancementRegistry advancementRegistry,
             EnchantmentRegistry enchantmentRegistry,
             StructureService structureService,
@@ -374,6 +381,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 scoreboardService,
                 packetRegistry,
                 pluginMessaging,
+                dataPackService,
                 advancementRegistry,
                 enchantmentRegistry,
                 structureService,
@@ -427,6 +435,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 scoreboardService,
                 packetRegistry,
                 pluginMessaging,
+                DataPackService.empty(),
                 advancementRegistry,
                 enchantmentRegistry,
                 structureService,
@@ -476,6 +485,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 scoreboardService,
                 packetRegistry,
                 pluginMessaging,
+                DataPackService.empty(),
                 advancementRegistry,
                 enchantmentRegistry,
                 structureService,
@@ -505,6 +515,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             ScoreboardService scoreboardService,
             PacketRegistry packetRegistry,
             PluginMessaging pluginMessaging,
+            DataPackService dataPackService,
             AdvancementRegistry advancementRegistry,
             EnchantmentRegistry enchantmentRegistry,
             StructureService structureService,
@@ -538,6 +549,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.scoreboardService = scoreboardService;
         this.packetRegistry = packetRegistry;
         this.pluginMessaging = pluginMessaging == null ? defaultPluginMessaging(packetRegistry) : pluginMessaging;
+        this.dataPackService = Objects.requireNonNull(dataPackService, "dataPackService");
         this.customItemRegistry = customItemRegistry;
         this.customBlockRegistry = customBlockRegistry;
         this.guiService = guiService;
@@ -975,6 +987,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new PluginPacketRegistry(packetRegistry, resources),
                 new PluginPluginMessaging(pluginMessaging, resources),
                 new PluginGameRuleService(gameRuleService, resources, id),
+                new PluginDataPackService(dataPackService, resources, id),
                 new PluginCustomItemRegistry(customItemRegistry, resources, id),
                 new PluginCustomBlockRegistry(customBlockRegistry, resources, id),
                 new PluginGuiService(guiService, resources),

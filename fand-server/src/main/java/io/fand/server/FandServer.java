@@ -7,6 +7,7 @@ import io.fand.api.bossbar.BossBarService;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
+import io.fand.api.datapack.DataPackService;
 import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.event.EventPriority;
@@ -53,6 +54,7 @@ import io.fand.server.compat.modprotocol.ModProtocolCompatibility;
 import io.fand.server.config.ConfigReloadResult;
 import io.fand.server.config.ConfigReloader;
 import io.fand.server.config.FandConfig;
+import io.fand.server.datapack.FandDataPackService;
 import io.fand.server.entity.EntityRegistry;
 import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.enchantment.FandEnchantmentRegistry;
@@ -125,6 +127,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final PacketRegistryImpl packets;
     private final FandPluginMessaging pluginMessaging;
     private final FandGameRuleService gameRules;
+    private final FandDataPackService dataPacks;
     private final ModProtocolCompatibility modProtocols;
     private final EventSubscription pluginChannelAdvertisement;
     private final EventSubscription simulatedPlayerCleanup;
@@ -184,6 +187,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.players = new PlayerRegistry(permissions, scoreboard, tabLists);
         this.pluginMessaging = new FandPluginMessaging(packets, players::snapshot);
         this.gameRules = new FandGameRuleService();
+        this.dataPacks = new FandDataPackService(Path.of("datapacks"), minecraftServer::get);
         this.pluginChannelAdvertisement = events.subscribe(
                 PlayerJoinEvent.class,
                 EventPriority.OBSERVER,
@@ -222,6 +226,7 @@ public final class FandServer implements Server, AutoCloseable {
                 scoreboard,
                 packets,
                 pluginMessaging,
+                dataPacks,
                 advancements,
                 enchantments,
                 structures,
@@ -444,6 +449,11 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
+    public DataPackService dataPacks() {
+        return dataPacks;
+    }
+
+    @Override
     public CustomItemRegistry customItems() {
         return customItems;
     }
@@ -592,8 +602,7 @@ public final class FandServer implements Server, AutoCloseable {
         if (server == null) {
             return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is not attached"));
         }
-        return server.reloadResources(server.getPackRepository().getSelectedIds())
-                .thenApply(ignored -> true);
+        return dataPacks.reload();
     }
 
     @Override

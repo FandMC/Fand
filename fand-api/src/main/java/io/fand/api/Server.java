@@ -6,6 +6,7 @@ import io.fand.api.command.CommandRegistry;
 import io.fand.api.block.BlockTagKey;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
+import io.fand.api.datapack.DataPackService;
 import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.entity.EntityKey;
 import io.fand.api.entity.EntityTypeTagKey;
@@ -144,6 +145,10 @@ public interface Server extends ForwardingAudience {
 
     default GameRuleService gameRules() {
         return GameRuleService.empty();
+    }
+
+    default DataPackService dataPacks() {
+        return DataPackService.empty();
     }
 
     /** Lightweight GUI routing service. */

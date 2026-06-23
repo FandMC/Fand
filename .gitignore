@@ -51,6 +51,8 @@ replay_pid*
 /world_nether/
 /world_the_end/
 /plugins/
+/datapacks/*
+!/datapacks/.gitkeep
 crash-reports/
 banned-*.json
 ops.json

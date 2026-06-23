@@ -8,6 +8,7 @@ import io.fand.api.command.CommandRegistration;
 import io.fand.api.customblock.CustomBlockItemBinding;
 import io.fand.api.customblock.CustomBlockRegistration;
 import io.fand.api.customitem.CustomItemRegistration;
+import io.fand.api.datapack.DataPackRegistration;
 import io.fand.api.enchantment.EnchantmentRegistration;
 import io.fand.api.event.EventSubscription;
 import io.fand.api.gamerule.GameRuleRegistration;
@@ -54,6 +55,7 @@ final class PluginResourceTracker {
     private final Set<TrackedPlaceholderRegistration> placeholderRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedPluginMessageRegistration> pluginMessageRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedGameRuleRegistration> gameRuleRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedDataPackRegistration> dataPackRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedAdvancementRegistration> advancementRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedEnchantmentRegistration> enchantmentRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedStructureRegistration> structureRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -337,6 +339,22 @@ final class PluginResourceTracker {
         return tracked;
     }
 
+    TrackedDataPackRegistration track(DataPackRegistration delegate) {
+        var tracked = new TrackedDataPackRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                dataPackRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.closeFromTracker();
+        }
+        return tracked;
+    }
+
     TrackedScoreboardRegistration track(ScoreboardRegistration delegate) {
         var tracked = new TrackedScoreboardRegistration(this, delegate);
         var dispose = false;
@@ -591,6 +609,12 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedDataPackRegistration registration) {
+        synchronized (lock) {
+            dataPackRegistrations.remove(registration);
+        }
+    }
+
     void release(TrackedAdvancementRegistration registration) {
         synchronized (lock) {
             advancementRegistrations.remove(registration);
@@ -683,6 +707,7 @@ final class PluginResourceTracker {
         List<TrackedPlaceholderRegistration> placeholderRegistrationsToClose;
         List<TrackedPluginMessageRegistration> pluginMessageRegistrationsToClose;
         List<TrackedGameRuleRegistration> gameRuleRegistrationsToClose;
+        List<TrackedDataPackRegistration> dataPackRegistrationsToClose;
         List<TrackedAdvancementRegistration> advancementRegistrationsToClose;
         List<TrackedEnchantmentRegistration> enchantmentRegistrationsToClose;
         List<TrackedStructureRegistration> structureRegistrationsToClose;
@@ -712,6 +737,7 @@ final class PluginResourceTracker {
             placeholderRegistrationsToClose = new ArrayList<>(placeholderRegistrations);
             pluginMessageRegistrationsToClose = new ArrayList<>(pluginMessageRegistrations);
             gameRuleRegistrationsToClose = new ArrayList<>(gameRuleRegistrations);
+            dataPackRegistrationsToClose = new ArrayList<>(dataPackRegistrations);
             advancementRegistrationsToClose = new ArrayList<>(advancementRegistrations);
             enchantmentRegistrationsToClose = new ArrayList<>(enchantmentRegistrations);
             structureRegistrationsToClose = new ArrayList<>(structureRegistrations);
@@ -737,6 +763,7 @@ final class PluginResourceTracker {
             placeholderRegistrations.clear();
             pluginMessageRegistrations.clear();
             gameRuleRegistrations.clear();
+            dataPackRegistrations.clear();
             advancementRegistrations.clear();
             enchantmentRegistrations.clear();
             structureRegistrations.clear();
@@ -791,6 +818,9 @@ final class PluginResourceTracker {
         }
         for (var registration : gameRuleRegistrationsToClose) {
             registration.unregisterFromTracker();
+        }
+        for (var registration : dataPackRegistrationsToClose) {
+            registration.closeFromTracker();
         }
         for (var registration : advancementRegistrationsToClose) {
             registration.closeFromTracker();
@@ -1503,6 +1533,66 @@ final class PluginResourceTracker {
             if (!released) {
                 released = true;
                 delegate.unregister();
+            }
+        }
+    }
+
+    static final class TrackedDataPackRegistration implements DataPackRegistration {
+
+        private final PluginResourceTracker owner;
+        private final DataPackRegistration delegate;
+        private volatile boolean released;
+
+        TrackedDataPackRegistration(PluginResourceTracker owner, DataPackRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public String id() {
+            return delegate.id();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void enable() {
+            ensureOpen();
+            delegate.enable();
+        }
+
+        @Override
+        public void disable() {
+            if (!released) {
+                delegate.disable();
+            }
+        }
+
+        @Override
+        public void delete() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.delete();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void closeFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.close();
+            }
+        }
+
+        private void ensureOpen() {
+            if (released) {
+                throw new IllegalStateException("Data pack registration is closed");
             }
         }
     }
