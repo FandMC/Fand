@@ -186,6 +186,29 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     int foodLevel();
 
     /**
+     * Last movement-key input known by the server.
+     *
+     * <p>For real clients this reflects the latest vanilla input packet. For
+     * simulated players, plugins may drive the value through
+     * {@link #setInput(PlayerInput)}.
+     */
+    default PlayerInput input() {
+        return PlayerInput.NONE;
+    }
+
+    /**
+     * Replaces the player's current movement-key input.
+     *
+     * <p>This follows the vanilla server input path: jump/sneak/sprint and
+     * directional bits are stored on the player and can be consumed by vanilla
+     * movement and vehicle logic. It is most useful for simulated players.
+     */
+    default void setInput(PlayerInput input) {
+        java.util.Objects.requireNonNull(input, "input");
+        throw new UnsupportedOperationException("Player input injection is not supported");
+    }
+
+    /**
      * Sets the food level, clamped to {@code [0, 20]}. Marshals to the server
      * thread when called from elsewhere.
      */

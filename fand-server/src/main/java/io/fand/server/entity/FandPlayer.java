@@ -11,6 +11,7 @@ import io.fand.api.entity.EntityType;
 import io.fand.api.entity.EntityEffect;
 import io.fand.api.entity.GameMode;
 import io.fand.api.entity.Player;
+import io.fand.api.entity.PlayerInput;
 import io.fand.api.item.ItemType;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.component.ItemEquipmentSlot;
@@ -79,6 +80,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.UseCooldown;
 import net.minecraft.world.entity.Entity.RemovalReason;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.player.Input;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
 import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.phys.Vec3;
@@ -1121,6 +1123,17 @@ public final class FandPlayer implements Player {
     }
 
     @Override
+    public PlayerInput input() {
+        return toApiInput(bound.handle.getLastClientInput());
+    }
+
+    @Override
+    public void setInput(PlayerInput input) {
+        Objects.requireNonNull(input, "input");
+        runOnServerThread(() -> applyInput(bound.handle, input));
+    }
+
+    @Override
     public void setFoodLevel(int level) {
         int clamped = Math.max(0, Math.min(20, level));
         runOnServerThread(() -> bound.handle.getFoodData().setFoodLevel(clamped));
@@ -1777,6 +1790,31 @@ public final class FandPlayer implements Player {
     @Override
     public void closeInventory() {
         runOnServerThread(() -> bound.handle.closeContainer());
+    }
+
+    private static PlayerInput toApiInput(Input input) {
+        return new PlayerInput(
+                input.forward(),
+                input.backward(),
+                input.left(),
+                input.right(),
+                input.jump(),
+                input.shift(),
+                input.sprint());
+    }
+
+    private static void applyInput(ServerPlayer handle, PlayerInput input) {
+        var vanilla = new Input(
+                input.forward(),
+                input.backward(),
+                input.left(),
+                input.right(),
+                input.jump(),
+                input.sneak(),
+                input.sprint());
+        handle.setLastClientInput(vanilla);
+        handle.setShiftKeyDown(vanilla.shift());
+        handle.setSprinting(vanilla.sprint());
     }
 
     private void pushAbilities() {
