@@ -51,6 +51,8 @@ final class ConfigReloadResultTest {
                     recipeViewers:
                       jei: true
                       rei: true
+                    servux:
+                      enabled: true
                 """);
 
         var initial = FandConfig.load(path);
@@ -91,6 +93,8 @@ final class ConfigReloadResultTest {
                     recipeViewers:
                       jei: false
                       rei: false
+                    servux:
+                      enabled: false
                 """);
 
         var result = server.reloadConfig();
@@ -115,6 +119,7 @@ final class ConfigReloadResultTest {
                 "chunks.lightTaskQueueFastPath",
                 "compat.modProtocols.recipeViewers.jei",
                 "compat.modProtocols.recipeViewers.rei",
+                "compat.modProtocols.servux.enabled",
                 "network.forwarding.mode",
                 "network.forwarding.secret"
         );
@@ -140,6 +145,12 @@ final class ConfigReloadResultTest {
                   chunkTaskDispatcherBatchLoop: false
                   chunkStorageRegionScanFastPath: false
                   worldgenSeaLevelCache: false
+                  playerNameLookupIndex: false
+                  scoreboardTeamWaypointFastPath: false
+                  reusablePacketEncoding: false
+                  packetFlushCoalescing: false
+                  outboundPacketQueueCoalescing: false
+                  aiSensorLoopFastPath: false
                 """);
 
         var initial = FandConfig.load(path);
@@ -160,6 +171,12 @@ final class ConfigReloadResultTest {
                   chunkTaskDispatcherBatchLoop: true
                   chunkStorageRegionScanFastPath: true
                   worldgenSeaLevelCache: true
+                  playerNameLookupIndex: true
+                  scoreboardTeamWaypointFastPath: true
+                  reusablePacketEncoding: true
+                  packetFlushCoalescing: true
+                  outboundPacketQueueCoalescing: true
+                  aiSensorLoopFastPath: true
                 """);
 
         var result = server.reloadConfig();
@@ -177,7 +194,13 @@ final class ConfigReloadResultTest {
                 "performance.chunkGenerationTaskPlanCache",
                 "performance.chunkTaskDispatcherBatchLoop",
                 "performance.chunkStorageRegionScanFastPath",
-                "performance.worldgenSeaLevelCache"
+                "performance.worldgenSeaLevelCache",
+                "performance.playerNameLookupIndex",
+                "performance.scoreboardTeamWaypointFastPath",
+                "performance.reusablePacketEncoding",
+                "performance.packetFlushCoalescing",
+                "performance.outboundPacketQueueCoalescing",
+                "performance.aiSensorLoopFastPath"
         );
         assertThat(result.requiresRestart()).isEmpty();
     }

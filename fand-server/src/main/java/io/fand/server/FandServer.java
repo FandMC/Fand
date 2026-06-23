@@ -184,7 +184,6 @@ public final class FandServer implements Server, AutoCloseable {
         this.players = new PlayerRegistry(permissions, scoreboard, tabLists);
         this.pluginMessaging = new FandPluginMessaging(packets, players::snapshot);
         this.gameRules = new FandGameRuleService();
-        this.modProtocols = new ModProtocolCompatibility(pluginMessaging, events, initialConfig.compat.modProtocols);
         this.pluginChannelAdvertisement = events.subscribe(
                 PlayerJoinEvent.class,
                 EventPriority.OBSERVER,
@@ -196,6 +195,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.advancements = new FandAdvancementRegistry(minecraftServer::get);
         this.enchantments = new FandEnchantmentRegistry(minecraftServer::get);
         this.structures = new FandStructureService(minecraftServer::get);
+        this.modProtocols = new ModProtocolCompatibility(pluginMessaging, events, structures, initialConfig.compat.modProtocols);
         this.maps = new FandMapService(minecraftServer::get);
         this.bossBars = new FandBossBarService(minecraftServer::get, scheduler);
         this.placeholders = new FandPlaceholderService();
@@ -350,6 +350,10 @@ public final class FandServer implements Server, AutoCloseable {
         scheduler.tick();
         recipes.tick();
         maps.tick();
+        var server = minecraftServer.get();
+        if (server != null) {
+            modProtocols.tick(server);
+        }
         for (var world : worlds()) {
             customBlocks.tick(world);
         }

@@ -54,6 +54,40 @@ public final class ConfigReloader {
             field("compat.modProtocols.recipeViewers.jei", (FandConfig.RecipeViewers config) -> config.jei),
             field("compat.modProtocols.recipeViewers.rei", (FandConfig.RecipeViewers config) -> config.rei)
     );
+    private static final List<ReloadField<FandConfig.Servux, ?>> RESTART_SERVUX_FIELDS = List.of(
+            field("compat.modProtocols.servux.enabled", (FandConfig.Servux config) -> config.enabled),
+            field("compat.modProtocols.servux.hud", (FandConfig.Servux config) -> config.hud),
+            field("compat.modProtocols.servux.hudPermissionLevel", (FandConfig.Servux config) -> config.hudPermissionLevel),
+            field("compat.modProtocols.servux.hudUpdateIntervalTicks", (FandConfig.Servux config) -> config.hudUpdateIntervalTicks),
+            field("compat.modProtocols.servux.hudLoggers", (FandConfig.Servux config) -> config.hudLoggers),
+            field("compat.modProtocols.servux.hudLoggerPermissionLevel", (FandConfig.Servux config) -> config.hudLoggerPermissionLevel),
+            field("compat.modProtocols.servux.shareWeather", (FandConfig.Servux config) -> config.shareWeather),
+            field("compat.modProtocols.servux.weatherPermissionLevel", (FandConfig.Servux config) -> config.weatherPermissionLevel),
+            field("compat.modProtocols.servux.shareSeed", (FandConfig.Servux config) -> config.shareSeed),
+            field("compat.modProtocols.servux.seedPermissionLevel", (FandConfig.Servux config) -> config.seedPermissionLevel),
+            field("compat.modProtocols.servux.entityData", (FandConfig.Servux config) -> config.entityData),
+            field("compat.modProtocols.servux.entityPermissionLevel", (FandConfig.Servux config) -> config.entityPermissionLevel),
+            field("compat.modProtocols.servux.playerInventory", (FandConfig.Servux config) -> config.playerInventory),
+            field("compat.modProtocols.servux.playerInventoryPermissionLevel", (FandConfig.Servux config) -> config.playerInventoryPermissionLevel),
+            field("compat.modProtocols.servux.playerEnderItems", (FandConfig.Servux config) -> config.playerEnderItems),
+            field("compat.modProtocols.servux.playerEnderItemsPermissionLevel", (FandConfig.Servux config) -> config.playerEnderItemsPermissionLevel),
+            field("compat.modProtocols.servux.structures", (FandConfig.Servux config) -> config.structures),
+            field("compat.modProtocols.servux.structuresPermissionLevel", (FandConfig.Servux config) -> config.structuresPermissionLevel),
+            field("compat.modProtocols.servux.structuresUpdateIntervalTicks", (FandConfig.Servux config) -> config.structuresUpdateIntervalTicks),
+            field("compat.modProtocols.servux.structuresTimeoutTicks", (FandConfig.Servux config) -> config.structuresTimeoutTicks),
+            field("compat.modProtocols.servux.structureWhitelistEnabled", (FandConfig.Servux config) -> config.structureWhitelistEnabled),
+            field("compat.modProtocols.servux.structureWhitelist", (FandConfig.Servux config) -> config.structureWhitelist),
+            field("compat.modProtocols.servux.structureBlacklistEnabled", (FandConfig.Servux config) -> config.structureBlacklistEnabled),
+            field("compat.modProtocols.servux.structureBlacklist", (FandConfig.Servux config) -> config.structureBlacklist),
+            field("compat.modProtocols.servux.litematica", (FandConfig.Servux config) -> config.litematica),
+            field("compat.modProtocols.servux.litematicaPermissionLevel", (FandConfig.Servux config) -> config.litematicaPermissionLevel),
+            field("compat.modProtocols.servux.litematicaPaste", (FandConfig.Servux config) -> config.litematicaPaste),
+            field("compat.modProtocols.servux.litematicaPastePermissionLevel", (FandConfig.Servux config) -> config.litematicaPastePermissionLevel),
+            field("compat.modProtocols.servux.tweaks", (FandConfig.Servux config) -> config.tweaks),
+            field("compat.modProtocols.servux.tweaksPermissionLevel", (FandConfig.Servux config) -> config.tweaksPermissionLevel),
+            field("compat.modProtocols.servux.stackableShulkers", (FandConfig.Servux config) -> config.stackableShulkers),
+            field("compat.modProtocols.servux.stackableShulkerSize", (FandConfig.Servux config) -> config.stackableShulkerSize)
+    );
     private static final List<ReloadField<FandConfig.Performance, ?>> HOT_PERFORMANCE_FIELDS = List.of(
             field("performance.explosionDensityCache", (FandConfig.Performance config) -> config.explosionDensityCache),
             field("performance.collisionTeamCache", (FandConfig.Performance config) -> config.collisionTeamCache),
@@ -99,7 +133,19 @@ public final class ConfigReloader {
             field("performance.aiNearestTargetFastPath",
                     (FandConfig.Performance config) -> config.aiNearestTargetFastPath),
             field("performance.aiGoalStreamFastPath",
-                    (FandConfig.Performance config) -> config.aiGoalStreamFastPath)
+                    (FandConfig.Performance config) -> config.aiGoalStreamFastPath),
+            field("performance.aiSensorLoopFastPath",
+                    (FandConfig.Performance config) -> config.aiSensorLoopFastPath),
+            field("performance.playerNameLookupIndex",
+                    (FandConfig.Performance config) -> config.playerNameLookupIndex),
+            field("performance.scoreboardTeamWaypointFastPath",
+                    (FandConfig.Performance config) -> config.scoreboardTeamWaypointFastPath),
+            field("performance.reusablePacketEncoding",
+                    (FandConfig.Performance config) -> config.reusablePacketEncoding),
+            field("performance.packetFlushCoalescing",
+                    (FandConfig.Performance config) -> config.packetFlushCoalescing),
+            field("performance.outboundPacketQueueCoalescing",
+                    (FandConfig.Performance config) -> config.outboundPacketQueueCoalescing)
     );
     private static final List<ReloadField<FandConfig.Technical, ?>> HOT_TECHNICAL_FIELDS = List.of(
             field("technical.zeroTickPlants", (FandConfig.Technical config) -> config.zeroTickPlants),
@@ -195,6 +241,11 @@ public final class ConfigReloader {
                 RESTART_RECIPE_VIEWER_FIELDS,
                 previous.compat.modProtocols.recipeViewers,
                 reloaded.compat.modProtocols.recipeViewers);
+        markRestart(
+                changes,
+                RESTART_SERVUX_FIELDS,
+                previous.compat.modProtocols.servux,
+                reloaded.compat.modProtocols.servux);
         changes.restart(
                 "network.forwarding.mode",
                 ProxyForwardingMode.fromConfig(previous.network.forwarding.mode),

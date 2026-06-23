@@ -35,8 +35,12 @@ final class FandScoreboardTeam implements ScoreboardTeam {
     @Override
     public void setDisplayName(Component displayName) {
         Objects.requireNonNull(displayName, "displayName");
-        ScoreboardThreading.run(service.server(), () ->
-                handle.setDisplayName(AdventureBridge.toVanilla(displayName, service.server().registryAccess())));
+        ScoreboardThreading.run(service.server(), () -> {
+            var value = AdventureBridge.toVanilla(displayName, service.server().registryAccess());
+            if (!handle.getDisplayName().equals(value)) {
+                handle.setDisplayName(value);
+            }
+        });
     }
 
     @Override
@@ -48,8 +52,12 @@ final class FandScoreboardTeam implements ScoreboardTeam {
     @Override
     public void setPrefix(Component prefix) {
         Objects.requireNonNull(prefix, "prefix");
-        ScoreboardThreading.run(service.server(), () ->
-                handle.setPlayerPrefix(AdventureBridge.toVanilla(prefix, service.server().registryAccess())));
+        ScoreboardThreading.run(service.server(), () -> {
+            var value = AdventureBridge.toVanilla(prefix, service.server().registryAccess());
+            if (!handle.getPlayerPrefix().equals(value)) {
+                handle.setPlayerPrefix(value);
+            }
+        });
     }
 
     @Override
@@ -61,8 +69,12 @@ final class FandScoreboardTeam implements ScoreboardTeam {
     @Override
     public void setSuffix(Component suffix) {
         Objects.requireNonNull(suffix, "suffix");
-        ScoreboardThreading.run(service.server(), () ->
-                handle.setPlayerSuffix(AdventureBridge.toVanilla(suffix, service.server().registryAccess())));
+        ScoreboardThreading.run(service.server(), () -> {
+            var value = AdventureBridge.toVanilla(suffix, service.server().registryAccess());
+            if (!handle.getPlayerSuffix().equals(value)) {
+                handle.setPlayerSuffix(value);
+            }
+        });
     }
 
     @Override
@@ -72,7 +84,12 @@ final class FandScoreboardTeam implements ScoreboardTeam {
 
     @Override
     public void setColor(@Nullable NamedTextColor color) {
-        ScoreboardThreading.run(service.server(), () -> handle.setColor(ScoreboardConversions.toVanillaTeamColor(color)));
+        ScoreboardThreading.run(service.server(), () -> {
+            var value = ScoreboardConversions.toVanillaTeamColor(color);
+            if (handle.getColor() != value) {
+                handle.setColor(value);
+            }
+        });
     }
 
     @Override
@@ -82,7 +99,11 @@ final class FandScoreboardTeam implements ScoreboardTeam {
 
     @Override
     public void setAllowFriendlyFire(boolean allow) {
-        ScoreboardThreading.run(service.server(), () -> handle.setAllowFriendlyFire(allow));
+        ScoreboardThreading.run(service.server(), () -> {
+            if (handle.isAllowFriendlyFire() != allow) {
+                handle.setAllowFriendlyFire(allow);
+            }
+        });
     }
 
     @Override
@@ -92,7 +113,11 @@ final class FandScoreboardTeam implements ScoreboardTeam {
 
     @Override
     public void setSeeFriendlyInvisibles(boolean see) {
-        ScoreboardThreading.run(service.server(), () -> handle.setSeeFriendlyInvisibles(see));
+        ScoreboardThreading.run(service.server(), () -> {
+            if (handle.canSeeFriendlyInvisibles() != see) {
+                handle.setSeeFriendlyInvisibles(see);
+            }
+        });
     }
 
     @Override
@@ -102,7 +127,12 @@ final class FandScoreboardTeam implements ScoreboardTeam {
 
     @Override
     public void setNameTagVisibility(TeamVisibility visibility) {
-        ScoreboardThreading.run(service.server(), () -> handle.setNameTagVisibility(ScoreboardConversions.toVanilla(visibility)));
+        ScoreboardThreading.run(service.server(), () -> {
+            var value = ScoreboardConversions.toVanilla(visibility);
+            if (handle.getNameTagVisibility() != value) {
+                handle.setNameTagVisibility(value);
+            }
+        });
     }
 
     @Override
@@ -112,7 +142,12 @@ final class FandScoreboardTeam implements ScoreboardTeam {
 
     @Override
     public void setDeathMessageVisibility(TeamVisibility visibility) {
-        ScoreboardThreading.run(service.server(), () -> handle.setDeathMessageVisibility(ScoreboardConversions.toVanilla(visibility)));
+        ScoreboardThreading.run(service.server(), () -> {
+            var value = ScoreboardConversions.toVanilla(visibility);
+            if (handle.getDeathMessageVisibility() != value) {
+                handle.setDeathMessageVisibility(value);
+            }
+        });
     }
 
     @Override
@@ -122,7 +157,12 @@ final class FandScoreboardTeam implements ScoreboardTeam {
 
     @Override
     public void setCollisionRule(TeamCollisionRule rule) {
-        ScoreboardThreading.run(service.server(), () -> handle.setCollisionRule(ScoreboardConversions.toVanilla(rule)));
+        ScoreboardThreading.run(service.server(), () -> {
+            var value = ScoreboardConversions.toVanilla(rule);
+            if (handle.getCollisionRule() != value) {
+                handle.setCollisionRule(value);
+            }
+        });
     }
 
     @Override

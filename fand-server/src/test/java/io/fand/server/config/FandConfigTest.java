@@ -39,6 +39,16 @@ final class FandConfigTest {
         assertThat(config.network.forwarding.secret).isEmpty();
         assertThat(config.compat.modProtocols.recipeViewers.jei).isTrue();
         assertThat(config.compat.modProtocols.recipeViewers.rei).isTrue();
+        assertThat(config.compat.modProtocols.servux.enabled).isTrue();
+        assertThat(config.compat.modProtocols.servux.hud).isTrue();
+        assertThat(config.compat.modProtocols.servux.shareWeather).isTrue();
+        assertThat(config.compat.modProtocols.servux.entityData).isTrue();
+        assertThat(config.compat.modProtocols.servux.structures).isTrue();
+        assertThat(config.compat.modProtocols.servux.structureWhitelistEnabled).isFalse();
+        assertThat(config.compat.modProtocols.servux.structureBlacklistEnabled).isTrue();
+        assertThat(config.compat.modProtocols.servux.litematica).isTrue();
+        assertThat(config.compat.modProtocols.servux.litematicaPaste).isFalse();
+        assertThat(config.compat.modProtocols.servux.tweaks).isTrue();
         assertThat(config.performance.entityHardCollisionCandidateIndex).isTrue();
         assertThat(config.performance.entitySectionChunkScan).isTrue();
         assertThat(config.performance.entityCollisionAbortPropagation).isTrue();
@@ -52,6 +62,12 @@ final class FandConfigTest {
         assertThat(config.performance.chunkTaskDispatcherBatchLoop).isTrue();
         assertThat(config.performance.chunkStorageRegionScanFastPath).isTrue();
         assertThat(config.performance.worldgenSeaLevelCache).isTrue();
+        assertThat(config.performance.playerNameLookupIndex).isTrue();
+        assertThat(config.performance.scoreboardTeamWaypointFastPath).isTrue();
+        assertThat(config.performance.reusablePacketEncoding).isTrue();
+        assertThat(config.performance.packetFlushCoalescing).isTrue();
+        assertThat(config.performance.outboundPacketQueueCoalescing).isTrue();
+        assertThat(config.performance.aiSensorLoopFastPath).isTrue();
         assertThat(config.technical.zeroTickPlants).isFalse();
         assertThat(config.technical.oldHopperSuckInBehavior).isFalse();
         assertThat(config.technical.shearsInDispenserCanZeroAmount).isFalse();
@@ -114,6 +130,14 @@ final class FandConfigTest {
                 .contains("recipeViewers:")
                 .contains("jei: true")
                 .contains("rei: true")
+                .contains("servux:")
+                .contains("enabled: true")
+                .contains("hud: true")
+                .contains("entityData: true")
+                .contains("structures: true")
+                .contains("litematica: true")
+                .contains("litematicaPaste: false")
+                .contains("tweaks: true")
                 .contains("performance:")
                 .contains("entityHardCollisionCandidateIndex: true")
                 .contains("entitySectionChunkScan: true")
@@ -128,6 +152,12 @@ final class FandConfigTest {
                 .contains("chunkTaskDispatcherBatchLoop: true")
                 .contains("chunkStorageRegionScanFastPath: true")
                 .contains("worldgenSeaLevelCache: true")
+                .contains("playerNameLookupIndex: true")
+                .contains("scoreboardTeamWaypointFastPath: true")
+                .contains("reusablePacketEncoding: true")
+                .contains("packetFlushCoalescing: true")
+                .contains("outboundPacketQueueCoalescing: true")
+                .contains("aiSensorLoopFastPath: true")
                 .contains("technical:")
                 .contains("zeroTickPlants: false")
                 .contains("oldHopperSuckInBehavior: false")
@@ -202,6 +232,39 @@ final class FandConfigTest {
                     recipeViewers:
                       jei: false
                       rei: false
+                    servux:
+                      enabled: false
+                      hud: false
+                      hudPermissionLevel: 1
+                      hudUpdateIntervalTicks: 60
+                      hudLoggers: false
+                      hudLoggerPermissionLevel: 1
+                      shareWeather: false
+                      weatherPermissionLevel: 2
+                      shareSeed: true
+                      seedPermissionLevel: 3
+                      entityData: false
+                      entityPermissionLevel: 1
+                      playerInventory: true
+                      playerInventoryPermissionLevel: 3
+                      playerEnderItems: true
+                      playerEnderItemsPermissionLevel: 3
+                      structures: false
+                      structuresPermissionLevel: 1
+                      structuresUpdateIntervalTicks: 80
+                      structuresTimeoutTicks: 1200
+                      structureWhitelistEnabled: true
+                      structureWhitelist: 'minecraft:village'
+                      structureBlacklistEnabled: false
+                      structureBlacklist: ''
+                      litematica: false
+                      litematicaPermissionLevel: 1
+                      litematicaPaste: true
+                      litematicaPastePermissionLevel: 3
+                      tweaks: false
+                      tweaksPermissionLevel: 1
+                      stackableShulkers: true
+                      stackableShulkerSize: 16
 
                 performance:
                   entityHardCollisionCandidateIndex: false
@@ -217,6 +280,12 @@ final class FandConfigTest {
                   chunkTaskDispatcherBatchLoop: false
                   chunkStorageRegionScanFastPath: false
                   worldgenSeaLevelCache: false
+                  playerNameLookupIndex: false
+                  scoreboardTeamWaypointFastPath: false
+                  reusablePacketEncoding: false
+                  packetFlushCoalescing: false
+                  outboundPacketQueueCoalescing: false
+                  aiSensorLoopFastPath: false
 
                 technical:
                   zeroTickPlants: true
@@ -271,6 +340,38 @@ final class FandConfigTest {
         assertThat(config.network.forwarding.secret).isEqualTo("shared-secret");
         assertThat(config.compat.modProtocols.recipeViewers.jei).isFalse();
         assertThat(config.compat.modProtocols.recipeViewers.rei).isFalse();
+        assertThat(config.compat.modProtocols.servux.enabled).isFalse();
+        assertThat(config.compat.modProtocols.servux.hud).isFalse();
+        assertThat(config.compat.modProtocols.servux.hudPermissionLevel).isEqualTo(1);
+        assertThat(config.compat.modProtocols.servux.hudUpdateIntervalTicks).isEqualTo(60);
+        assertThat(config.compat.modProtocols.servux.hudLoggers).isFalse();
+        assertThat(config.compat.modProtocols.servux.hudLoggerPermissionLevel).isEqualTo(1);
+        assertThat(config.compat.modProtocols.servux.shareWeather).isFalse();
+        assertThat(config.compat.modProtocols.servux.weatherPermissionLevel).isEqualTo(2);
+        assertThat(config.compat.modProtocols.servux.shareSeed).isTrue();
+        assertThat(config.compat.modProtocols.servux.seedPermissionLevel).isEqualTo(3);
+        assertThat(config.compat.modProtocols.servux.entityData).isFalse();
+        assertThat(config.compat.modProtocols.servux.entityPermissionLevel).isEqualTo(1);
+        assertThat(config.compat.modProtocols.servux.playerInventory).isTrue();
+        assertThat(config.compat.modProtocols.servux.playerInventoryPermissionLevel).isEqualTo(3);
+        assertThat(config.compat.modProtocols.servux.playerEnderItems).isTrue();
+        assertThat(config.compat.modProtocols.servux.playerEnderItemsPermissionLevel).isEqualTo(3);
+        assertThat(config.compat.modProtocols.servux.structures).isFalse();
+        assertThat(config.compat.modProtocols.servux.structuresPermissionLevel).isEqualTo(1);
+        assertThat(config.compat.modProtocols.servux.structuresUpdateIntervalTicks).isEqualTo(80);
+        assertThat(config.compat.modProtocols.servux.structuresTimeoutTicks).isEqualTo(1200);
+        assertThat(config.compat.modProtocols.servux.structureWhitelistEnabled).isTrue();
+        assertThat(config.compat.modProtocols.servux.structureWhitelist).isEqualTo("minecraft:village");
+        assertThat(config.compat.modProtocols.servux.structureBlacklistEnabled).isFalse();
+        assertThat(config.compat.modProtocols.servux.structureBlacklist).isEmpty();
+        assertThat(config.compat.modProtocols.servux.litematica).isFalse();
+        assertThat(config.compat.modProtocols.servux.litematicaPermissionLevel).isEqualTo(1);
+        assertThat(config.compat.modProtocols.servux.litematicaPaste).isTrue();
+        assertThat(config.compat.modProtocols.servux.litematicaPastePermissionLevel).isEqualTo(3);
+        assertThat(config.compat.modProtocols.servux.tweaks).isFalse();
+        assertThat(config.compat.modProtocols.servux.tweaksPermissionLevel).isEqualTo(1);
+        assertThat(config.compat.modProtocols.servux.stackableShulkers).isTrue();
+        assertThat(config.compat.modProtocols.servux.stackableShulkerSize).isEqualTo(16);
         assertThat(config.performance.entityHardCollisionCandidateIndex).isFalse();
         assertThat(config.performance.entitySectionChunkScan).isFalse();
         assertThat(config.performance.entityCollisionAbortPropagation).isFalse();
@@ -284,6 +385,12 @@ final class FandConfigTest {
         assertThat(config.performance.chunkTaskDispatcherBatchLoop).isFalse();
         assertThat(config.performance.chunkStorageRegionScanFastPath).isFalse();
         assertThat(config.performance.worldgenSeaLevelCache).isFalse();
+        assertThat(config.performance.playerNameLookupIndex).isFalse();
+        assertThat(config.performance.scoreboardTeamWaypointFastPath).isFalse();
+        assertThat(config.performance.reusablePacketEncoding).isFalse();
+        assertThat(config.performance.packetFlushCoalescing).isFalse();
+        assertThat(config.performance.outboundPacketQueueCoalescing).isFalse();
+        assertThat(config.performance.aiSensorLoopFastPath).isFalse();
         assertThat(config.technical.zeroTickPlants).isTrue();
         assertThat(config.technical.oldHopperSuckInBehavior).isTrue();
         assertThat(config.technical.shearsInDispenserCanZeroAmount).isTrue();

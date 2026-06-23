@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 final class PermissionManagerTest {
@@ -99,6 +100,44 @@ final class PermissionManagerTest {
                 .set("fand.command.reload", false);
 
         assertThat(manager.hasPermission(subject, "fand.command.reload")).isFalse();
+    }
+
+    @Test
+    void mostSpecificParentPermissionControlsDeclaredChildren() {
+        var manager = new PermissionManager();
+        manager.register(new PermissionDescriptor(
+                "fand.admin",
+                PermissionDefault.FALSE,
+                Map.of("fand.command.reload", true)
+        ));
+        manager.register(new PermissionDescriptor(
+                "fand.admin.commands",
+                PermissionDefault.FALSE,
+                Map.of("fand.command.reload", false)
+        ));
+
+        var subject = new PermissionSet(false)
+                .set("fand.admin", true)
+                .set("fand.admin.commands", true);
+
+        assertThat(manager.hasPermission(subject, "fand.command.reload")).isFalse();
+    }
+
+    @Test
+    void unregisterNamespacesRemovesDeclaredChildIndexEntries() {
+        var manager = new PermissionManager();
+        manager.register(new PermissionDescriptor(
+                "demo.admin",
+                PermissionDefault.FALSE,
+                Map.of("demo.command.reload", true)
+        ));
+
+        var subject = new PermissionSet(false).set("demo.admin", true);
+        assertThat(manager.hasPermission(subject, "demo.command.reload")).isTrue();
+
+        manager.unregisterNamespaces(Set.of("demo"));
+
+        assertThat(manager.hasPermission(subject, "demo.command.reload")).isFalse();
     }
 
     @Test

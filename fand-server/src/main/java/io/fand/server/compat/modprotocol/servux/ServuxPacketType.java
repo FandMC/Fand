@@ -1,0 +1,38 @@
+package io.fand.server.compat.modprotocol.servux;
+
+enum ServuxPacketType {
+    S2C_METADATA(1),
+    C2S_METADATA_REQUEST(2),
+    C2S_BLOCK_ENTITY_REQUEST(3),
+    C2S_ENTITY_REQUEST(4),
+    S2C_BLOCK_NBT_RESPONSE_SIMPLE(5),
+    S2C_ENTITY_NBT_RESPONSE_SIMPLE(6),
+    C2S_BULK_ENTITY_NBT_REQUEST(7),
+    S2C_DATA_LOGGER_TICK(7),
+    C2S_DATA_LOGGER_REQUEST(8),
+    S2C_NBT_RESPONSE_START(10),
+    S2C_NBT_RESPONSE_DATA(11),
+    C2S_NBT_RESPONSE_START(12),
+    C2S_NBT_RESPONSE_DATA(13),
+    S2C_STRUCTURE_DATA(2),
+    C2S_STRUCTURES_REGISTER(3),
+    C2S_STRUCTURES_UNREGISTER(4),
+    S2C_STRUCTURE_DATA_START(5),
+    S2C_SPAWN_DATA(3),
+    C2S_SPAWN_DATA_REQUEST(4),
+    S2C_WEATHER_TICK(5),
+    C2S_RECIPE_MANAGER_REQUEST(6),
+    S2C_SPAWN_METADATA(10),
+    C2S_REQUEST_SPAWN_METADATA(11),
+    S2C_WEATHER_DATA(12);
+
+    private final int id;
+
+    ServuxPacketType(int id) {
+        this.id = id;
+    }
+
+    int id() {
+        return id;
+    }
+}

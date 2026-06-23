@@ -56,6 +56,7 @@ public final class FandConfig {
         }
         io.fand.server.console.gui.GuiTheme.fromConfig(config.console.gui.theme);
         validateTripwireBehavior(config.technical.tripwireBehavior);
+        validateServux(config.compat.modProtocols.servux);
     }
 
     private static void validateTripwireBehavior(String value) {
@@ -64,6 +65,15 @@ public final class FandConfig {
             }
             default -> throw new ConfigException(
                     "technical.tripwireBehavior must be one of: vanilla_21, vanilla_20, mixed");
+        }
+    }
+
+    private static void validateServux(Servux config) {
+        if (config.structureWhitelist == null) {
+            throw new ConfigException("compat.modProtocols.servux.structureWhitelist must not be null");
+        }
+        if (config.structureBlacklist == null) {
+            throw new ConfigException("compat.modProtocols.servux.structureBlacklist must not be null");
         }
     }
 
@@ -132,6 +142,9 @@ public final class FandConfig {
 
         @ConfigComment("Recipe viewer protocol compatibility settings.")
         public final RecipeViewers recipeViewers = new RecipeViewers();
+
+        @ConfigComment("Servux/MiniHUD/Litematica protocol compatibility settings.")
+        public final Servux servux = new Servux();
     }
 
     public static final class RecipeViewers {
@@ -141,6 +154,120 @@ public final class FandConfig {
 
         @ConfigComment("Expose REI-compatible plugin messaging channels.")
         public volatile boolean rei = true;
+    }
+
+    public static final class Servux {
+
+        @ConfigComment("Expose Servux plugin messaging channels.")
+        public boolean enabled = true;
+
+        @ConfigComment("Expose Servux HUD metadata, spawn metadata, recipe manager, TPS, and mob-cap loggers.")
+        public boolean hud = true;
+
+        @ConfigComment("Operator permission level required for HUD metadata requests. Set 0 to allow everyone.")
+        @ConfigRange(min = 0, max = 4)
+        public int hudPermissionLevel = 0;
+
+        @ConfigComment("Ticks between Servux HUD logger updates.")
+        @ConfigRange(min = 1, max = 20_000)
+        public int hudUpdateIntervalTicks = 20;
+
+        @ConfigComment("Allow Servux HUD logger streams such as TPS and mob caps.")
+        public boolean hudLoggers = true;
+
+        @ConfigComment("Operator permission level required for HUD logger streams. Set 0 to allow everyone.")
+        @ConfigRange(min = 0, max = 4)
+        public int hudLoggerPermissionLevel = 0;
+
+        @ConfigComment("Share weather status through the Servux HUD channel.")
+        public boolean shareWeather = true;
+
+        @ConfigComment("Operator permission level required to receive weather status through Servux.")
+        @ConfigRange(min = 0, max = 4)
+        public int weatherPermissionLevel = 0;
+
+        @ConfigComment("Include world seed in Servux spawn metadata when the requester has permission.")
+        public boolean shareSeed = false;
+
+        @ConfigComment("Operator permission level required to receive the world seed through Servux.")
+        @ConfigRange(min = 0, max = 4)
+        public int seedPermissionLevel = 2;
+
+        @ConfigComment("Expose Servux entity_data requests for entity and block entity NBT.")
+        public boolean entityData = true;
+
+        @ConfigComment("Operator permission level required for entity_data NBT requests. Set 0 to allow everyone.")
+        @ConfigRange(min = 0, max = 4)
+        public int entityPermissionLevel = 0;
+
+        @ConfigComment("Allow Servux entity_data responses to include player inventory NBT.")
+        public boolean playerInventory = false;
+
+        @ConfigComment("Operator permission level required to include player inventory NBT.")
+        @ConfigRange(min = 0, max = 4)
+        public int playerInventoryPermissionLevel = 2;
+
+        @ConfigComment("Allow Servux entity_data responses to include player ender chest item NBT.")
+        public boolean playerEnderItems = false;
+
+        @ConfigComment("Operator permission level required to include player ender chest item NBT.")
+        @ConfigRange(min = 0, max = 4)
+        public int playerEnderItemsPermissionLevel = 2;
+
+        @ConfigComment("Expose Servux structure bounding-box tracking for MiniHUD.")
+        public boolean structures = true;
+
+        @ConfigComment("Operator permission level required for Servux structure tracking. Set 0 to allow everyone.")
+        @ConfigRange(min = 0, max = 4)
+        public int structuresPermissionLevel = 0;
+
+        @ConfigComment("Ticks between Servux structure refresh scans for tracked players.")
+        @ConfigRange(min = 1, max = 20_000)
+        public int structuresUpdateIntervalTicks = 40;
+
+        @ConfigComment("Ticks before a tracked structure-reference chunk is refreshed.")
+        @ConfigRange(min = 1, max = 1_000_000)
+        public int structuresTimeoutTicks = 600;
+
+        @ConfigComment("Enable the Servux structure whitelist. When false, the whitelist value is ignored.")
+        public boolean structureWhitelistEnabled = false;
+
+        @ConfigComment("Comma-separated structure type or structure id whitelist.")
+        public String structureWhitelist = "";
+
+        @ConfigComment("Enable the Servux structure blacklist. When false, the blacklist value is ignored.")
+        public boolean structureBlacklistEnabled = true;
+
+        @ConfigComment("Comma-separated structure type or structure id blacklist.")
+        public String structureBlacklist = "minecraft:buried_treasure";
+
+        @ConfigComment("Expose Servux litematics channel for block/entity NBT and paste upload negotiation.")
+        public boolean litematica = true;
+
+        @ConfigComment("Operator permission level required for Servux litematica NBT requests. Set 0 to allow everyone.")
+        @ConfigRange(min = 0, max = 4)
+        public int litematicaPermissionLevel = 0;
+
+        @ConfigComment("Accept Servux litematica paste uploads and place received schematics into the world.")
+        public boolean litematicaPaste = false;
+
+        @ConfigComment("Operator permission level required for Servux litematica paste uploads.")
+        @ConfigRange(min = 0, max = 4)
+        public int litematicaPastePermissionLevel = 2;
+
+        @ConfigComment("Expose Servux tweaks channel for extra block/entity NBT and tweak metadata.")
+        public boolean tweaks = true;
+
+        @ConfigComment("Operator permission level required for Servux tweaks requests. Set 0 to allow everyone.")
+        @ConfigRange(min = 0, max = 4)
+        public int tweaksPermissionLevel = 0;
+
+        @ConfigComment("Advertise stackable shulker support in Servux tweaks metadata.")
+        public boolean stackableShulkers = false;
+
+        @ConfigComment("Advertised maximum stack size for stackable shulkers when enabled.")
+        @ConfigRange(min = 1, max = 99)
+        public int stackableShulkerSize = 64;
     }
 
     public static final class Chunks {
@@ -402,6 +529,62 @@ public final class FandConfig {
                 "allocation in dense mob scenes."
         })
         public volatile boolean aiGoalStreamFastPath = true;
+
+        @ConfigComment({
+                "Replace hot AI sensor stream/list pipelines with direct loops.",
+                "Player, temptation, and nearest-item sensor results keep vanilla",
+                "distance ordering and visibility rules while reducing allocation",
+                "pressure in dense entity or simulated-player scenes."
+        })
+        public volatile boolean aiSensorLoopFastPath = true;
+
+        @ConfigComment({
+                "Maintain a case-insensitive online-player name index for",
+                "PlayerList#getPlayerByName and getPlayer(String). Vanilla scans",
+                "the whole online player list for every lookup; scoreboard teams",
+                "and commands can call this hundreds of times per player join.",
+                "The index is kept in sync with login, quit, and respawn and falls",
+                "back to vanilla scanning when disabled."
+        })
+        public volatile boolean playerNameLookupIndex = true;
+
+        @ConfigComment({
+                "When scoreboard team metadata changes, rebuild locator-bar",
+                "waypoint connections only through the changed online players'",
+                "own level managers. Vanilla loops every level and resolves every",
+                "team member by name, which becomes very expensive with large tab",
+                "teams or simulated-player stress tests. Resulting waypoint",
+                "connections are unchanged."
+        })
+        public volatile boolean scoreboardTeamWaypointFastPath = true;
+
+        @ConfigComment({
+                "Reuse protocol-encoded bytes for immutable packet instances that",
+                "are broadcast to many players. The packet still passes through",
+                "the normal per-connection Netty pipeline, framing, compression,",
+                "encryption, and flush steps; this only avoids serializing the",
+                "same packet object repeatedly."
+        })
+        public volatile boolean reusablePacketEncoding = true;
+
+        @ConfigComment({
+                "Coalesce packet flushes that happen on the same Netty event-loop",
+                "turn. Packet writes, ordering, encryption, and delivery semantics",
+                "stay unchanged; only repeated writeAndFlush calls are collapsed",
+                "into a single flush when no per-packet completion listener is",
+                "required."
+        })
+        public volatile boolean packetFlushCoalescing = true;
+
+        @ConfigComment({
+                "Coalesce ordinary outbound packet writes per connection before",
+                "they enter the Netty event loop. Packet order, interception,",
+                "framing, compression, encryption, and delivery semantics stay",
+                "unchanged; this only turns many same-connection write tasks into",
+                "one drain task during dense player/entity fanout."
+        })
+        public volatile boolean outboundPacketQueueCoalescing = true;
+
     }
 
     public static final class Technical {

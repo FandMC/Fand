@@ -1,0 +1,1367 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Tue, 23 Jun 2026 20:12:18 +0800
+Subject: [PATCH] Fand: optimize packet fanout and AI hot paths
+
+Reuse encoded packet buffers across repeated sends, add packet-level cache invalidation hooks, and reduce per-tick entity sensor allocations for high-player-count simulations.
+
+diff --git a/net/minecraft/network/Connection.java b/net/minecraft/network/Connection.java
+index 6c220b1e64053a00c10f173078c4448a3da16594..671eda4cfd4e2a309ce7e07ad8874e55d4e7cc70 100644
+--- a/net/minecraft/network/Connection.java
++++ b/net/minecraft/network/Connection.java
+@@ -28,6 +28,7 @@ import java.util.Objects;
+ import java.util.Queue;
+ import java.util.UUID;
+ import java.util.concurrent.RejectedExecutionException;
++import java.util.concurrent.atomic.AtomicBoolean;
+ import java.util.function.Consumer;
+ import javax.crypto.Cipher;
+ import net.minecraft.SharedConstants;
+@@ -77,6 +78,9 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     private float averageReceivedPackets;
+     private float averageSentPackets;
+     private int tickCount;
++    private final Queue<Connection.QueuedOutboundPacket> outboundPackets = Queues.newConcurrentLinkedQueue();
++    private final AtomicBoolean outboundDrainScheduled = new AtomicBoolean();
++    private final AtomicBoolean flushScheduled = new AtomicBoolean();
+     private boolean handlingFault;
+     private volatile @Nullable DisconnectionDetails delayedDisconnect;
+     private @Nullable BandwidthDebugMonitor bandwidthDebugMonitor;
+@@ -296,7 +300,9 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+ 
+     public void send(final Packet<?> packet, final @Nullable ChannelFutureListener listener, final boolean flush) {
+         if (this.isConnected()) {
+-            this.flushQueue();
++            if (!this.pendingActions.isEmpty()) {
++                this.flushQueue();
++            }
+             this.sendPacket(packet, listener, flush);
+         } else {
+             this.pendingActions.add(connection -> connection.sendPacket(packet, listener, flush));
+@@ -305,7 +311,9 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+ 
+     public void runOnceConnected(final Consumer<Connection> action) {
+         if (this.isConnected()) {
+-            this.flushQueue();
++            if (!this.pendingActions.isEmpty()) {
++                this.flushQueue();
++            }
+             action.accept(this);
+         } else {
+             this.pendingActions.add(action);
+@@ -321,16 +329,46 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         }
+         this.sentPackets++;
+         if (this.channel.eventLoop().inEventLoop()) {
++            if (!this.outboundPackets.isEmpty()) {
++                this.drainOutboundPackets();
++            }
+             this.doSendPacket(intercepted, listener, flush);
++        } else if (io.fand.server.hooks.FandHooks.outboundPacketQueueCoalescingEnabled()) {
++            this.outboundPackets.add(new Connection.QueuedOutboundPacket(intercepted, listener, flush));
++            this.requestOutboundDrain();
+         } else {
+             this.channel.eventLoop().execute(() -> this.doSendPacket(intercepted, listener, flush));
+         }
+     }
+ 
++    private void requestOutboundDrain() {
++        if (this.channel == null || !this.channel.isOpen() || !this.outboundDrainScheduled.compareAndSet(false, true)) {
++            return;
++        }
++
++        this.channel.eventLoop().execute(this::drainOutboundPackets);
++    }
++
++    private void drainOutboundPackets() {
++        this.outboundDrainScheduled.set(false);
++
++        Connection.QueuedOutboundPacket queued;
++        while ((queued = this.outboundPackets.poll()) != null) {
++            this.doSendPacket(queued.packet, queued.listener, queued.flush);
++        }
++
++        if (!this.outboundPackets.isEmpty()) {
++            this.requestOutboundDrain();
++        }
++    }
++
+     private void doSendPacket(final Packet<?> packet, final @Nullable ChannelFutureListener listener, final boolean flush) {
+         if (listener != null) {
+             ChannelFuture future = flush ? this.channel.writeAndFlush(packet) : this.channel.write(packet);
+             future.addListener(listener);
++        } else if (flush && io.fand.server.hooks.FandHooks.packetFlushCoalescingEnabled()) {
++            this.channel.write(packet, this.channel.voidPromise());
++            this.requestFlush();
+         } else if (flush) {
+             this.channel.writeAndFlush(packet, this.channel.voidPromise());
+         } else {
+@@ -338,8 +376,23 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         }
+     }
+ 
++    private void requestFlush() {
++        if (this.channel == null || !this.channel.isOpen() || !this.flushScheduled.compareAndSet(false, true)) {
++            return;
++        }
++
++        this.channel.eventLoop().execute(() -> {
++            if (!this.flushScheduled.compareAndSet(true, false)) {
++                return;
++            }
++
++            this.flush();
++        });
++    }
++
+     public void flushChannel() {
+         if (this.isConnected()) {
++            this.flushScheduled.set(false);
+             this.flush();
+         } else {
+             this.pendingActions.add(Connection::flush);
+@@ -348,23 +401,28 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+ 
+     private void flush() {
+         if (this.channel.eventLoop().inEventLoop()) {
++            this.drainOutboundPackets();
+             this.channel.flush();
+         } else {
+-            this.channel.eventLoop().execute(() -> this.channel.flush());
++            this.channel.eventLoop().execute(() -> {
++                this.drainOutboundPackets();
++                this.channel.flush();
++            });
+         }
+     }
+ 
+     private void flushQueue() {
+         if (this.channel != null && this.channel.isOpen()) {
+-            synchronized (this.pendingActions) {
+-                Consumer<Connection> pendingAction;
+-                while ((pendingAction = this.pendingActions.poll()) != null) {
+-                    pendingAction.accept(this);
+-                }
++            Consumer<Connection> pendingAction;
++            while ((pendingAction = this.pendingActions.poll()) != null) {
++                pendingAction.accept(this);
+             }
+         }
+     }
+ 
++    private record QueuedOutboundPacket(Packet<?> packet, @Nullable ChannelFutureListener listener, boolean flush) {
++    }
++
+     public void tick() {
+         this.flushQueue();
+         if (this.packetListener instanceof TickablePacketListener tickable) {
+@@ -376,7 +434,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         }
+ 
+         if (this.channel != null) {
+-            this.channel.flush();
++            this.flush();
+         }
+ 
+         if (this.tickCount++ % 20 == 0) {
+diff --git a/net/minecraft/network/PacketEncoder.java b/net/minecraft/network/PacketEncoder.java
+index db19e465a2f7bce72dd17fae815c895eb3df18da..70909d89fa693cb210dc00d90d56ebf9ebbfd052 100644
+--- a/net/minecraft/network/PacketEncoder.java
++++ b/net/minecraft/network/PacketEncoder.java
+@@ -6,6 +6,7 @@ import io.netty.channel.ChannelHandlerContext;
+ import io.netty.handler.codec.MessageToByteEncoder;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.PacketType;
++import net.minecraft.network.protocol.ReusablePacketEncoding;
+ import net.minecraft.util.profiling.jfr.JvmProfiler;
+ import org.slf4j.Logger;
+ 
+@@ -22,8 +23,9 @@ public class PacketEncoder<T extends PacketListener> extends MessageToByteEncode
+         PacketType<? extends Packet<? super T>> packetId = packet.type();
+ 
+         try {
+-            this.protocolInfo.codec().encode(output, packet);
+-            int writtenBytes = output.readableBytes();
++            int startIndex = output.writerIndex();
++            this.encodePacket(packet, output);
++            int writtenBytes = output.writerIndex() - startIndex;
+             if (LOGGER.isDebugEnabled()) {
+                 LOGGER.debug(
+                     Connection.PACKET_SENT_MARKER,
+@@ -47,4 +49,24 @@ public class PacketEncoder<T extends PacketListener> extends MessageToByteEncode
+             ProtocolSwapHandler.handleOutboundTerminalPacket(ctx, packet);
+         }
+     }
++
++    private void encodePacket(final Packet<T> packet, final ByteBuf output) {
++        if (!io.fand.server.hooks.FandHooks.reusablePacketEncodingEnabled() || !(packet instanceof ReusablePacketEncoding reusable)) {
++            this.protocolInfo.codec().encode(output, packet);
++            return;
++        }
++
++        byte[] cached = reusable.fand$cachedEncoding(this.protocolInfo.id());
++        if (cached != null) {
++            output.writeBytes(cached);
++            return;
++        }
++
++        int startIndex = output.writerIndex();
++        this.protocolInfo.codec().encode(output, packet);
++        int encodedLength = output.writerIndex() - startIndex;
++        byte[] encoded = new byte[encodedLength];
++        output.getBytes(startIndex, encoded);
++        reusable.fand$cacheEncoding(this.protocolInfo.id(), encoded);
++    }
+ }
+diff --git a/net/minecraft/network/protocol/ReusablePacketEncoding.java b/net/minecraft/network/protocol/ReusablePacketEncoding.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..52fff060f17b53d0a08ae0c165bb2e4bc69e3711
+--- /dev/null
++++ b/net/minecraft/network/protocol/ReusablePacketEncoding.java
+@@ -0,0 +1,10 @@
++package net.minecraft.network.protocol;
++
++import net.minecraft.network.ConnectionProtocol;
++import org.jspecify.annotations.Nullable;
++
++public interface ReusablePacketEncoding {
++    byte @Nullable [] fand$cachedEncoding(ConnectionProtocol protocol);
++
++    void fand$cacheEncoding(ConnectionProtocol protocol, byte[] encoded);
++}
+diff --git a/net/minecraft/network/protocol/game/ClientboundEntityPositionSyncPacket.java b/net/minecraft/network/protocol/game/ClientboundEntityPositionSyncPacket.java
+index 3234802349d9f6fa64eb681a8fd3737081991d44..33e511c694273057a34976a39ae151fc6c2bd631 100644
+--- a/net/minecraft/network/protocol/game/ClientboundEntityPositionSyncPacket.java
++++ b/net/minecraft/network/protocol/game/ClientboundEntityPositionSyncPacket.java
+@@ -1,14 +1,17 @@
+ package net.minecraft.network.protocol.game;
+ 
++import net.minecraft.network.ConnectionProtocol;
+ import net.minecraft.network.FriendlyByteBuf;
+ import net.minecraft.network.codec.ByteBufCodecs;
+ import net.minecraft.network.codec.StreamCodec;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.PacketType;
++import net.minecraft.network.protocol.ReusablePacketEncoding;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.PositionMoveRotation;
++import org.jspecify.annotations.Nullable;
+ 
+-public record ClientboundEntityPositionSyncPacket(int id, PositionMoveRotation values, boolean onGround) implements Packet<ClientGamePacketListener> {
++public final class ClientboundEntityPositionSyncPacket implements Packet<ClientGamePacketListener>, ReusablePacketEncoding {
+     public static final StreamCodec<FriendlyByteBuf, ClientboundEntityPositionSyncPacket> STREAM_CODEC = StreamCodec.composite(
+         ByteBufCodecs.VAR_INT,
+         ClientboundEntityPositionSyncPacket::id,
+@@ -19,6 +22,17 @@ public record ClientboundEntityPositionSyncPacket(int id, PositionMoveRotation v
+         ClientboundEntityPositionSyncPacket::new
+     );
+ 
++    private final int id;
++    private final PositionMoveRotation values;
++    private final boolean onGround;
++    private volatile byte @Nullable [] cachedPlayEncoding;
++
++    public ClientboundEntityPositionSyncPacket(final int id, final PositionMoveRotation values, final boolean onGround) {
++        this.id = id;
++        this.values = values;
++        this.onGround = onGround;
++    }
++
+     public static ClientboundEntityPositionSyncPacket of(final Entity entity) {
+         return new ClientboundEntityPositionSyncPacket(
+             entity.getId(),
+@@ -27,6 +41,18 @@ public record ClientboundEntityPositionSyncPacket(int id, PositionMoveRotation v
+         );
+     }
+ 
++    public int id() {
++        return this.id;
++    }
++
++    public PositionMoveRotation values() {
++        return this.values;
++    }
++
++    public boolean onGround() {
++        return this.onGround;
++    }
++
+     @Override
+     public PacketType<ClientboundEntityPositionSyncPacket> type() {
+         return GamePacketTypes.CLIENTBOUND_ENTITY_POSITION_SYNC;
+@@ -36,4 +62,16 @@ public record ClientboundEntityPositionSyncPacket(int id, PositionMoveRotation v
+     public void handle(final ClientGamePacketListener listener) {
+         listener.handleEntityPositionSync(this);
+     }
++
++    @Override
++    public byte @Nullable [] fand$cachedEncoding(final ConnectionProtocol protocol) {
++        return protocol == ConnectionProtocol.PLAY ? this.cachedPlayEncoding : null;
++    }
++
++    @Override
++    public void fand$cacheEncoding(final ConnectionProtocol protocol, final byte[] encoded) {
++        if (protocol == ConnectionProtocol.PLAY) {
++            this.cachedPlayEncoding = encoded;
++        }
++    }
+ }
+diff --git a/net/minecraft/network/protocol/game/ClientboundMoveEntityPacket.java b/net/minecraft/network/protocol/game/ClientboundMoveEntityPacket.java
+index e01db54392a072f7ea5da9a07f45bf567ad46c51..993a050bedda5a83be97923ff7d72b14c06758ca 100644
+--- a/net/minecraft/network/protocol/game/ClientboundMoveEntityPacket.java
++++ b/net/minecraft/network/protocol/game/ClientboundMoveEntityPacket.java
+@@ -1,15 +1,17 @@
+ package net.minecraft.network.protocol.game;
+ 
+ import net.minecraft.network.FriendlyByteBuf;
++import net.minecraft.network.ConnectionProtocol;
+ import net.minecraft.network.codec.StreamCodec;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.PacketType;
++import net.minecraft.network.protocol.ReusablePacketEncoding;
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.level.Level;
+ import org.jspecify.annotations.Nullable;
+ 
+-public abstract class ClientboundMoveEntityPacket implements Packet<ClientGamePacketListener> {
++public abstract class ClientboundMoveEntityPacket implements Packet<ClientGamePacketListener>, ReusablePacketEncoding {
+     protected final int entityId;
+     protected final short xa;
+     protected final short ya;
+@@ -19,6 +21,7 @@ public abstract class ClientboundMoveEntityPacket implements Packet<ClientGamePa
+     protected final boolean onGround;
+     protected final boolean hasRot;
+     protected final boolean hasPos;
++    private volatile byte @Nullable [] cachedPlayEncoding;
+ 
+     protected ClientboundMoveEntityPacket(
+         final int entityId,
+@@ -91,6 +94,18 @@ public abstract class ClientboundMoveEntityPacket implements Packet<ClientGamePa
+         return this.onGround;
+     }
+ 
++    @Override
++    public byte @Nullable [] fand$cachedEncoding(final ConnectionProtocol protocol) {
++        return protocol == ConnectionProtocol.PLAY ? this.cachedPlayEncoding : null;
++    }
++
++    @Override
++    public void fand$cacheEncoding(final ConnectionProtocol protocol, final byte[] encoded) {
++        if (protocol == ConnectionProtocol.PLAY) {
++            this.cachedPlayEncoding = encoded;
++        }
++    }
++
+     public static class Pos extends ClientboundMoveEntityPacket {
+         public static final StreamCodec<FriendlyByteBuf, ClientboundMoveEntityPacket.Pos> STREAM_CODEC = Packet.codec(
+             ClientboundMoveEntityPacket.Pos::write, ClientboundMoveEntityPacket.Pos::read
+diff --git a/net/minecraft/network/protocol/game/ClientboundPlayerInfoUpdatePacket.java b/net/minecraft/network/protocol/game/ClientboundPlayerInfoUpdatePacket.java
+index 80805f2376db81ca3f7527d56a9d1ca2706c33e4..de33f55384313d3c570e74f6ac43e4ac77ee125f 100644
+--- a/net/minecraft/network/protocol/game/ClientboundPlayerInfoUpdatePacket.java
++++ b/net/minecraft/network/protocol/game/ClientboundPlayerInfoUpdatePacket.java
+@@ -9,6 +9,7 @@ import java.util.List;
+ import java.util.Objects;
+ import java.util.UUID;
+ import net.minecraft.Optionull;
++import net.minecraft.network.ConnectionProtocol;
+ import net.minecraft.network.FriendlyByteBuf;
+ import net.minecraft.network.RegistryFriendlyByteBuf;
+ import net.minecraft.network.chat.Component;
+@@ -18,21 +19,40 @@ import net.minecraft.network.codec.ByteBufCodecs;
+ import net.minecraft.network.codec.StreamCodec;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.PacketType;
++import net.minecraft.network.protocol.ReusablePacketEncoding;
+ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.entity.player.PlayerModelPart;
+ import net.minecraft.world.level.GameType;
+ import org.jspecify.annotations.Nullable;
+ 
+-public class ClientboundPlayerInfoUpdatePacket implements Packet<ClientGamePacketListener> {
++public class ClientboundPlayerInfoUpdatePacket implements Packet<ClientGamePacketListener>, ReusablePacketEncoding {
+     public static final StreamCodec<RegistryFriendlyByteBuf, ClientboundPlayerInfoUpdatePacket> STREAM_CODEC = Packet.codec(
+         ClientboundPlayerInfoUpdatePacket::write, ClientboundPlayerInfoUpdatePacket::new
+     );
++    private static final EnumSet<ClientboundPlayerInfoUpdatePacket.Action> INITIALIZE_ACTIONS = EnumSet.of(
++        ClientboundPlayerInfoUpdatePacket.Action.ADD_PLAYER,
++        ClientboundPlayerInfoUpdatePacket.Action.INITIALIZE_CHAT,
++        ClientboundPlayerInfoUpdatePacket.Action.UPDATE_GAME_MODE,
++        ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LISTED,
++        ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY,
++        ClientboundPlayerInfoUpdatePacket.Action.UPDATE_DISPLAY_NAME,
++        ClientboundPlayerInfoUpdatePacket.Action.UPDATE_HAT,
++        ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LIST_ORDER
++    );
+     private final EnumSet<ClientboundPlayerInfoUpdatePacket.Action> actions;
+     private final List<ClientboundPlayerInfoUpdatePacket.Entry> entries;
++    private volatile byte @Nullable [] cachedPlayEncoding;
+ 
+     public ClientboundPlayerInfoUpdatePacket(final EnumSet<ClientboundPlayerInfoUpdatePacket.Action> actions, final Collection<ServerPlayer> players) {
+-        this.actions = actions;
+-        this.entries = players.stream().map(ClientboundPlayerInfoUpdatePacket.Entry::new).toList();
++        this.actions = EnumSet.copyOf(actions);
++        this.entries = entries(players);
++    }
++
++    public static ClientboundPlayerInfoUpdatePacket fromEntries(
++        final Collection<ClientboundPlayerInfoUpdatePacket.Action> actions,
++        final Collection<ClientboundPlayerInfoUpdatePacket.Entry> entries
++    ) {
++        return new ClientboundPlayerInfoUpdatePacket(EnumSet.copyOf(actions), List.copyOf(entries), false);
+     }
+ 
+     public ClientboundPlayerInfoUpdatePacket(final ClientboundPlayerInfoUpdatePacket.Action action, final ServerPlayer player) {
+@@ -40,18 +60,29 @@ public class ClientboundPlayerInfoUpdatePacket implements Packet<ClientGamePacke
+         this.entries = List.of(new ClientboundPlayerInfoUpdatePacket.Entry(player));
+     }
+ 
++    private ClientboundPlayerInfoUpdatePacket(
++        final EnumSet<ClientboundPlayerInfoUpdatePacket.Action> actions,
++        final List<ClientboundPlayerInfoUpdatePacket.Entry> entries,
++        final boolean copyActions
++    ) {
++        this.actions = copyActions ? EnumSet.copyOf(actions) : actions;
++        this.entries = entries;
++    }
++
+     public static ClientboundPlayerInfoUpdatePacket createPlayerInitializing(final Collection<ServerPlayer> players) {
+-        EnumSet<ClientboundPlayerInfoUpdatePacket.Action> actions = EnumSet.of(
+-            ClientboundPlayerInfoUpdatePacket.Action.ADD_PLAYER,
+-            ClientboundPlayerInfoUpdatePacket.Action.INITIALIZE_CHAT,
+-            ClientboundPlayerInfoUpdatePacket.Action.UPDATE_GAME_MODE,
+-            ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LISTED,
+-            ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY,
+-            ClientboundPlayerInfoUpdatePacket.Action.UPDATE_DISPLAY_NAME,
+-            ClientboundPlayerInfoUpdatePacket.Action.UPDATE_HAT,
+-            ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LIST_ORDER
+-        );
+-        return new ClientboundPlayerInfoUpdatePacket(actions, players);
++        return new ClientboundPlayerInfoUpdatePacket(EnumSet.copyOf(INITIALIZE_ACTIONS), players);
++    }
++
++    private static List<ClientboundPlayerInfoUpdatePacket.Entry> entries(final Collection<ServerPlayer> players) {
++        if (players.isEmpty()) {
++            return List.of();
++        }
++        ClientboundPlayerInfoUpdatePacket.Entry[] entries = new ClientboundPlayerInfoUpdatePacket.Entry[players.size()];
++        int index = 0;
++        for (ServerPlayer player : players) {
++            entries[index++] = new ClientboundPlayerInfoUpdatePacket.Entry(player);
++        }
++        return List.of(entries);
+     }
+ 
+     private ClientboundPlayerInfoUpdatePacket(final RegistryFriendlyByteBuf input) {
+@@ -100,6 +131,18 @@ public class ClientboundPlayerInfoUpdatePacket implements Packet<ClientGamePacke
+         return this.actions.contains(ClientboundPlayerInfoUpdatePacket.Action.ADD_PLAYER) ? this.entries : List.of();
+     }
+ 
++    @Override
++    public byte @Nullable [] fand$cachedEncoding(final ConnectionProtocol protocol) {
++        return protocol == ConnectionProtocol.PLAY ? this.cachedPlayEncoding : null;
++    }
++
++    @Override
++    public void fand$cacheEncoding(final ConnectionProtocol protocol, final byte[] encoded) {
++        if (protocol == ConnectionProtocol.PLAY) {
++            this.cachedPlayEncoding = encoded;
++        }
++    }
++
+     @Override
+     public String toString() {
+         return MoreObjects.toStringHelper(this).add("actions", this.actions).add("entries", this.entries).toString();
+diff --git a/net/minecraft/network/protocol/game/ClientboundRotateHeadPacket.java b/net/minecraft/network/protocol/game/ClientboundRotateHeadPacket.java
+index f324a42371a143bcfe922d980786ee7365bd575a..9ff1f3c68ab788faa6cf0956bc1cf418f9b84e10 100644
+--- a/net/minecraft/network/protocol/game/ClientboundRotateHeadPacket.java
++++ b/net/minecraft/network/protocol/game/ClientboundRotateHeadPacket.java
+@@ -1,20 +1,23 @@
+ package net.minecraft.network.protocol.game;
+ 
+ import net.minecraft.network.FriendlyByteBuf;
++import net.minecraft.network.ConnectionProtocol;
+ import net.minecraft.network.codec.StreamCodec;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.PacketType;
++import net.minecraft.network.protocol.ReusablePacketEncoding;
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.level.Level;
+ import org.jspecify.annotations.Nullable;
+ 
+-public class ClientboundRotateHeadPacket implements Packet<ClientGamePacketListener> {
++public class ClientboundRotateHeadPacket implements Packet<ClientGamePacketListener>, ReusablePacketEncoding {
+     public static final StreamCodec<FriendlyByteBuf, ClientboundRotateHeadPacket> STREAM_CODEC = Packet.codec(
+         ClientboundRotateHeadPacket::write, ClientboundRotateHeadPacket::new
+     );
+     private final int entityId;
+     private final byte yHeadRot;
++    private volatile byte @Nullable [] cachedPlayEncoding;
+ 
+     public ClientboundRotateHeadPacket(final Entity entity, final byte yHeadRot) {
+         this.entityId = entity.getId();
+@@ -48,4 +51,16 @@ public class ClientboundRotateHeadPacket implements Packet<ClientGamePacketListe
+     public float getYHeadRot() {
+         return Mth.unpackDegrees(this.yHeadRot);
+     }
++
++    @Override
++    public byte @Nullable [] fand$cachedEncoding(final ConnectionProtocol protocol) {
++        return protocol == ConnectionProtocol.PLAY ? this.cachedPlayEncoding : null;
++    }
++
++    @Override
++    public void fand$cacheEncoding(final ConnectionProtocol protocol, final byte[] encoded) {
++        if (protocol == ConnectionProtocol.PLAY) {
++            this.cachedPlayEncoding = encoded;
++        }
++    }
+ }
+diff --git a/net/minecraft/network/protocol/game/ClientboundSetEntityMotionPacket.java b/net/minecraft/network/protocol/game/ClientboundSetEntityMotionPacket.java
+index bc52ba519964ea57e847dbf89949285a069d7cfa..5ffb9c9bb773f31e301d16826286fd3063d04fc0 100644
+--- a/net/minecraft/network/protocol/game/ClientboundSetEntityMotionPacket.java
++++ b/net/minecraft/network/protocol/game/ClientboundSetEntityMotionPacket.java
+@@ -1,14 +1,17 @@
+ package net.minecraft.network.protocol.game;
+ 
+ import io.netty.buffer.ByteBuf;
++import net.minecraft.network.ConnectionProtocol;
+ import net.minecraft.network.codec.ByteBufCodecs;
+ import net.minecraft.network.codec.StreamCodec;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.PacketType;
++import net.minecraft.network.protocol.ReusablePacketEncoding;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.phys.Vec3;
++import org.jspecify.annotations.Nullable;
+ 
+-public record ClientboundSetEntityMotionPacket(int id, Vec3 movement) implements Packet<ClientGamePacketListener> {
++public final class ClientboundSetEntityMotionPacket implements Packet<ClientGamePacketListener>, ReusablePacketEncoding {
+     public static final StreamCodec<ByteBuf, ClientboundSetEntityMotionPacket> STREAM_CODEC = StreamCodec.composite(
+         ByteBufCodecs.VAR_INT,
+         ClientboundSetEntityMotionPacket::id,
+@@ -17,10 +20,27 @@ public record ClientboundSetEntityMotionPacket(int id, Vec3 movement) implements
+         ClientboundSetEntityMotionPacket::new
+     );
+ 
++    private final int id;
++    private final Vec3 movement;
++    private volatile byte @Nullable [] cachedPlayEncoding;
++
++    public ClientboundSetEntityMotionPacket(final int id, final Vec3 movement) {
++        this.id = id;
++        this.movement = movement;
++    }
++
+     public ClientboundSetEntityMotionPacket(final Entity entity) {
+         this(entity.getId(), entity.getDeltaMovement());
+     }
+ 
++    public int id() {
++        return this.id;
++    }
++
++    public Vec3 movement() {
++        return this.movement;
++    }
++
+     @Override
+     public PacketType<ClientboundSetEntityMotionPacket> type() {
+         return GamePacketTypes.CLIENTBOUND_SET_ENTITY_MOTION;
+@@ -30,4 +50,16 @@ public record ClientboundSetEntityMotionPacket(int id, Vec3 movement) implements
+     public void handle(final ClientGamePacketListener listener) {
+         listener.handleSetEntityMotion(this);
+     }
++
++    @Override
++    public byte @Nullable [] fand$cachedEncoding(final ConnectionProtocol protocol) {
++        return protocol == ConnectionProtocol.PLAY ? this.cachedPlayEncoding : null;
++    }
++
++    @Override
++    public void fand$cacheEncoding(final ConnectionProtocol protocol, final byte[] encoded) {
++        if (protocol == ConnectionProtocol.PLAY) {
++            this.cachedPlayEncoding = encoded;
++        }
++    }
+ }
+diff --git a/net/minecraft/server/ServerScoreboard.java b/net/minecraft/server/ServerScoreboard.java
+index 5fdb7c1b3c0584c2a5b1c467a1ff901569ac91d9..94909f054f78d0e7361edabe8caf338ce516b7f2 100644
+--- a/net/minecraft/server/ServerScoreboard.java
++++ b/net/minecraft/server/ServerScoreboard.java
+@@ -273,6 +273,17 @@ public class ServerScoreboard extends Scoreboard {
+     }
+ 
+     private void updateTeamWaypoints(final PlayerTeam team) {
++        if (io.fand.server.hooks.FandHooks.scoreboardTeamWaypointFastPathEnabled()) {
++            List<ServerPlayer> players = team.getPlayers()
++                .stream()
++                .map(name -> this.server.getPlayerList().getPlayerByName(name))
++                .filter(Objects::nonNull)
++                .toList();
++            for (ServerLevel level : this.server.getAllLevels()) {
++                players.forEach(player -> level.getWaypointManager().remakeConnections(player));
++            }
++            return;
++        }
+         for (ServerLevel level : this.server.getAllLevels()) {
+             team.getPlayers()
+                 .stream()
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index b1825e58d854e0b28263c1451d3cf9e0518fd677..13d896576f05ee59ecd76c5b0dfeb53d4bcb8869 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -109,6 +109,7 @@ import net.minecraft.world.level.levelgen.structure.StructureStart;
+ import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
+ import net.minecraft.world.level.storage.LevelStorageSource;
+ import net.minecraft.world.level.storage.SavedDataStorage;
++import net.minecraft.world.phys.AABB;
+ import net.minecraft.world.phys.Vec3;
+ import org.apache.commons.lang3.mutable.MutableBoolean;
+ import org.jspecify.annotations.Nullable;
+@@ -154,6 +155,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     private final String storageName;
+     private final PlayerMap playerMap = new PlayerMap();
+     private final Int2ObjectMap<ChunkMap.TrackedEntity> entityMap = new Int2ObjectOpenHashMap<>();
++    private final Set<ServerPlayer> locallyUpdatedMovedPlayers = new ReferenceOpenHashSet<>();
+     private final Long2ByteMap chunkTypeCache = new Long2ByteOpenHashMap();
+     private final Long2LongMap nextChunkSaveTime = new Long2LongOpenHashMap();
+     private final LongSet chunksToEagerlySave = new LongLinkedOpenHashSet();
+@@ -1107,10 +1109,64 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+             }
+         }
+ 
++        if (io.fand.server.hooks.FandHooks.entityTrackerFastPathEnabled()) {
++            this.locallyUpdatedMovedPlayers.add(player);
++        }
++
++        this.updateMovedPlayerStatus(player);
++    }
++
++    public void move(final ServerPlayer player, final double oldX, final double oldY, final double oldZ) {
++        if (!io.fand.server.hooks.FandHooks.entityTrackerFastPathEnabled()) {
++            this.move(player);
++            return;
++        }
++
++        AABB oldRange = playerTrackingRange(player, oldX, oldY, oldZ);
++        AABB newRange = playerTrackingRange(player, player.getX(), player.getY(), player.getZ());
++        AABB scanRange = oldRange.minmax(newRange);
+         SectionPos oldSection = player.getLastSectionPos();
+         SectionPos newSection = SectionPos.of(player);
++        boolean chunkChanged = oldSection.chunk().x() != newSection.chunk().x() || oldSection.chunk().z() != newSection.chunk().z();
++        ChunkMap.TrackedEntity playerTrackedEntity = this.entityMap.get(player.getId());
++
++        this.level.getEntities().get(scanRange, entity -> {
++            if (entity == player) {
++                return;
++            }
++
++            ChunkMap.TrackedEntity trackedEntity = this.entityMap.get(entity.getId());
++            if (io.fand.server.hooks.FandHooks.entityTrackerFastPathEnabled()
++                && !chunkChanged
++                && playerTrackedEntity != null
++                && trackedEntity != null
++                && entity instanceof ServerPlayer otherPlayer
++                && playerTrackedEntity.isVisibleTo(otherPlayer, oldX, oldZ, otherPlayer.getX(), otherPlayer.getZ())
++                    == playerTrackedEntity.isVisibleTo(otherPlayer)
++                && trackedEntity.isVisibleTo(player, trackedEntity.entity.getX(), trackedEntity.entity.getZ(), oldX, oldZ)
++                    == trackedEntity.isVisibleTo(player)) {
++                return;
++            }
++
++            if (playerTrackedEntity != null && entity instanceof ServerPlayer otherPlayer) {
++                playerTrackedEntity.updatePlayer(otherPlayer);
++            }
++
++            if (trackedEntity != null) {
++                trackedEntity.updatePlayer(player);
++            }
++        });
++
++        this.locallyUpdatedMovedPlayers.add(player);
++
++        this.updateMovedPlayerStatus(player);
++    }
++
++    private void updateMovedPlayerStatus(final ServerPlayer player) {
+         boolean wasIgnored = this.playerMap.ignored(player);
+         boolean ignored = this.skipPlayer(player);
++        SectionPos oldSection = player.getLastSectionPos();
++        SectionPos newSection = SectionPos.of(player);
+         boolean positionChanged = oldSection.asLong() != newSection.asLong();
+         if (positionChanged || wasIgnored != ignored) {
+             this.updatePlayerPos(player);
+@@ -1134,6 +1190,11 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         }
+     }
+ 
++    private AABB playerTrackingRange(final ServerPlayer player, final double x, final double y, final double z) {
++        double range = Math.max(this.level.getServer().getScaledTrackingDistance(player.getType().clientTrackingRange() * 16), this.getPlayerViewDistance(player) * 16.0);
++        return new AABB(x - range, this.level.getMinY(), z - range, x + range, this.level.getMaxY(), z + range);
++    }
++
+     private void updateChunkTracking(final ServerPlayer player) {
+         ChunkPos chunkPos = player.chunkPosition();
+         int playerViewDistance = this.getPlayerViewDistance(player);
+@@ -1293,6 +1354,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+ 
+     protected void removeEntity(final Entity entity) {
+         if (entity instanceof ServerPlayer player) {
++            this.locallyUpdatedMovedPlayers.remove(player);
+             this.updatePlayerStatus(player, false);
+ 
+             for (ChunkMap.TrackedEntity trackedEntity : this.entityMap.values()) {
+@@ -1319,9 +1381,13 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+             SectionPos newPos = SectionPos.of(trackedEntity.entity);
+             boolean sectionPosChanged = !Objects.equals(oldPos, newPos);
+             if (sectionPosChanged) {
+-                trackedEntity.updatePlayers(players);
+-                if (trackedEntity.entity instanceof ServerPlayer serverPlayer) {
+-                    movedPlayers.add(serverPlayer);
++                if (trackedEntity.entity instanceof ServerPlayer serverPlayer && this.locallyUpdatedMovedPlayers.remove(serverPlayer)) {
++                    // The network movement path already updated both directions against nearby entities.
++                } else {
++                    trackedEntity.updatePlayers(players);
++                    if (trackedEntity.entity instanceof ServerPlayer serverPlayer) {
++                        movedPlayers.add(serverPlayer);
++                    }
+                 }
+ 
+                 trackedEntity.lastSectionPos = newPos;
+@@ -1337,6 +1403,8 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+                 trackedEntity.updatePlayers(movedPlayers);
+             }
+         }
++
++        this.locallyUpdatedMovedPlayers.clear();
+     }
+ 
+     public void sendToTrackingPlayers(final Entity entity, final Packet<? super ClientGamePacketListener> packet) {
+@@ -1475,24 +1543,32 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+ 
+         @Override
+         public void sendToTrackingPlayers(final Packet<? super ClientGamePacketListener> packet) {
++            if (this.seenBy.isEmpty()) {
++                return;
++            }
+             for (ServerPlayerConnection connection : this.seenBy) {
+-                connection.send(packet);
++                connection.send(packet, false);
+             }
+         }
+ 
+         @Override
+         public void sendToTrackingPlayersAndSelf(final Packet<? super ClientGamePacketListener> packet) {
+-            this.sendToTrackingPlayers(packet);
++            if (!this.seenBy.isEmpty()) {
++                this.sendToTrackingPlayers(packet);
++            }
+             if (this.entity instanceof ServerPlayer player) {
+-                player.connection.send(packet);
++                player.connection.send(packet, false);
+             }
+         }
+ 
+         @Override
+         public void sendToTrackingPlayersFiltered(final Packet<? super ClientGamePacketListener> packet, final Predicate<ServerPlayer> targetPredicate) {
++            if (this.seenBy.isEmpty()) {
++                return;
++            }
+             for (ServerPlayerConnection connection : this.seenBy) {
+                 if (targetPredicate.test(connection.getPlayer())) {
+-                    connection.send(packet);
++                    connection.send(packet, false);
+                 }
+             }
+         }
+@@ -1514,14 +1590,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+ 
+         public void updatePlayer(final ServerPlayer player) {
+             if (player != this.entity) {
+-                Vec3 deltaToPlayer = player.position().subtract(this.entity.position());
+-                int playerViewDistance = ChunkMap.this.getPlayerViewDistance(player);
+-                double visibleRange = Math.min(this.getEffectiveRange(), playerViewDistance * 16);
+-                double distanceSquared = deltaToPlayer.x * deltaToPlayer.x + deltaToPlayer.z * deltaToPlayer.z;
+-                double rangeSquared = visibleRange * visibleRange;
+-                boolean visibleToPlayer = distanceSquared <= rangeSquared
+-                    && this.entity.broadcastToPlayer(player)
+-                    && ChunkMap.this.isChunkTracked(player, this.entity.chunkPosition().x(), this.entity.chunkPosition().z());
++                boolean visibleToPlayer = this.isVisibleTo(player);
+                 if (visibleToPlayer) {
+                     if (this.seenBy.add(player.connection)) {
+                         this.serverEntity.addPairing(player);
+@@ -1537,6 +1606,27 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+             }
+         }
+ 
++        private boolean isVisibleTo(final ServerPlayer player) {
++            return this.isVisibleTo(player, this.entity.getX(), this.entity.getZ(), player.getX(), player.getZ());
++        }
++
++        private boolean isVisibleTo(
++            final ServerPlayer player,
++            final double entityX,
++            final double entityZ,
++            final double playerX,
++            final double playerZ
++        ) {
++            double xDiff = playerX - entityX;
++            double zDiff = playerZ - entityZ;
++            int playerViewDistance = ChunkMap.this.getPlayerViewDistance(player);
++            double visibleRange = Math.min(this.getEffectiveRange(), playerViewDistance * 16);
++            double rangeSquared = visibleRange * visibleRange;
++            return xDiff * xDiff + zDiff * zDiff <= rangeSquared
++                && this.entity.broadcastToPlayer(player)
++                && ChunkMap.this.isChunkTracked(player, this.entity.chunkPosition().x(), this.entity.chunkPosition().z());
++        }
++
+         private int scaledRange(final int range) {
+             return ChunkMap.this.level.getServer().getScaledTrackingDistance(range);
+         }
+diff --git a/net/minecraft/server/level/ServerChunkCache.java b/net/minecraft/server/level/ServerChunkCache.java
+index c8cd4099e13c5591f20eed10137ab4ed2db80e65..96a1f79e7081a0e4df0e53b5330d46024b0fb09e 100644
+--- a/net/minecraft/server/level/ServerChunkCache.java
++++ b/net/minecraft/server/level/ServerChunkCache.java
+@@ -535,6 +535,15 @@ public class ServerChunkCache extends ChunkSource {
+         }
+     }
+ 
++    public void move(final ServerPlayer player, final double oldX, final double oldY, final double oldZ) {
++        if (!player.isRemoved()) {
++            this.chunkMap.move(player, oldX, oldY, oldZ);
++            if (player.isReceivingWaypoints()) {
++                this.level.getWaypointManager().updatePlayer(player);
++            }
++        }
++    }
++
+     public boolean hasEntityWithId(final int id) {
+         return this.chunkMap.hasEntityWithId(id);
+     }
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index 4ab7b4f5409fad2fc8b2bdb28d927bbbd1a06749..4c7c3e3949749f103bd6ed587be9a8ee72648ba8 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -548,7 +548,22 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+ 
+     private void wakeUpAllPlayers() {
+         this.sleepStatus.removeAllSleepers();
+-        this.players.stream().filter(LivingEntity::isSleeping).collect(Collectors.toList()).forEach(player -> player.stopSleepInBed(false, false));
++        int sleepingCount = 0;
++        for (ServerPlayer player : this.players) {
++            if (player.isSleeping()) {
++                sleepingCount++;
++            }
++        }
++        ServerPlayer[] sleepingPlayers = new ServerPlayer[sleepingCount];
++        int index = 0;
++        for (ServerPlayer player : this.players) {
++            if (player.isSleeping()) {
++                sleepingPlayers[index++] = player;
++            }
++        }
++        for (ServerPlayer player : sleepingPlayers) {
++            player.stopSleepInBed(false, false);
++        }
+     }
+ 
+     public void tickChunk(final LevelChunk chunk, final int tickSpeed) {
+diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
+index 3d245d295d063f1fbf36b4ea6361d733763807db..d05b6319db473991fd22ae8264b8d7cb4a022ee5 100644
+--- a/net/minecraft/server/level/ServerPlayer.java
++++ b/net/minecraft/server/level/ServerPlayer.java
+@@ -609,8 +609,11 @@ public class ServerPlayer extends Player {
+         Entity camera = this.getCamera();
+         if (camera != this) {
+             if (camera.isAlive()) {
++                double oldX = this.getX();
++                double oldY = this.getY();
++                double oldZ = this.getZ();
+                 this.absSnapTo(camera.getX(), camera.getY(), camera.getZ(), camera.getYRot(), camera.getXRot());
+-                this.level().getChunkSource().move(this);
++                this.level().getChunkSource().move(this, oldX, oldY, oldZ);
+                 if (this.wantsToStopRiding()) {
+                     this.setCamera(this);
+                 }
+@@ -2040,12 +2043,15 @@ public class ServerPlayer extends Player {
+         Entity oldCamera = this.getCamera();
+         this.camera = newCamera == null ? this : newCamera;
+         if (oldCamera != this.camera) {
++            double oldX = this.getX();
++            double oldY = this.getY();
++            double oldZ = this.getZ();
+             if (this.camera.level() instanceof ServerLevel level) {
+                 this.teleportTo(level, this.camera.getX(), this.camera.getY(), this.camera.getZ(), Set.of(), this.getYRot(), this.getXRot(), false);
+             }
+ 
+             if (newCamera != null) {
+-                this.level().getChunkSource().move(this);
++                this.level().getChunkSource().move(this, oldX, oldY, oldZ);
+             }
+ 
+             this.connection.send(new ClientboundSetCameraPacket(this.camera));
+diff --git a/net/minecraft/server/network/ServerCommonPacketListenerImpl.java b/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+index 4ccbcad52beb704b469bddd3f5fbd249efc45e09..d62885788831b7317c5b4699b4a83fab7f17e6ce 100644
+--- a/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+@@ -169,13 +169,20 @@ public abstract class ServerCommonPacketListenerImpl implements ServerCommonPack
+         this.send(packet, null);
+     }
+ 
++    public void send(final Packet<?> packet, final boolean flush) {
++        this.send(packet, null, flush);
++    }
++
+     public void send(final Packet<?> packet, final @Nullable ChannelFutureListener listener) {
++        boolean flush = !this.suspendFlushingOnServerThread || !this.server.isSameThread();
++        this.send(packet, listener, flush);
++    }
++
++    private void send(final Packet<?> packet, final @Nullable ChannelFutureListener listener, final boolean flush) {
+         if (packet.isTerminal()) {
+             this.close();
+         }
+ 
+-        boolean flush = !this.suspendFlushingOnServerThread || !this.server.isSameThread();
+-
+         try {
+             this.connection.send(packet, listener, flush);
+         } catch (Throwable t) {
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 916f90d6ca4aa5344c608f36d2f2f81199debf08..2e88f818d32ed15a2143b0923ca9d83875f8ecb6 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -502,7 +502,7 @@ public class ServerGamePacketListenerImpl
+                 }
+ 
+                 vehicle.absSnapTo(targetX, targetY, targetZ, targetYRot, targetXRot);
+-                this.player.level().getChunkSource().move(this.player);
++                this.player.level().getChunkSource().move(this.player, oldX, oldY, oldZ);
+                 Vec3 clientDeltaMovement = new Vec3(vehicle.getX() - oldX, vehicle.getY() - oldY, vehicle.getZ() - oldZ);
+                 this.handlePlayerKnownMovement(clientDeltaMovement);
+                 vehicle.setOnGroundWithMovement(packet.onGround(), clientDeltaMovement);
+@@ -1124,8 +1124,11 @@ public class ServerGamePacketListenerImpl
+                         double targetY = clampVertical(packet.getY(this.player.getY()));
+                         double targetZ = clampHorizontal(packet.getZ(this.player.getZ()));
+                         if (this.player.isPassenger()) {
++                            double startX = this.player.getX();
++                            double startY = this.player.getY();
++                            double startZ = this.player.getZ();
+                             this.player.absSnapTo(this.player.getX(), this.player.getY(), this.player.getZ(), targetYRot, targetXRot);
+-                            this.player.level().getChunkSource().move(this.player);
++                            this.player.level().getChunkSource().move(this.player, startX, startY, startZ);
+                         } else {
+                             double startX = this.player.getX();
+                             double startY = this.player.getY();
+@@ -1234,7 +1237,7 @@ public class ServerGamePacketListenerImpl
+                                         && !isFallFlying
+                                         && !isAutoSpinAttack
+                                         && this.noBlocksAround(this.player);
+-                                    this.player.level().getChunkSource().move(this.player);
++                                    this.player.level().getChunkSource().move(this.player, startX, startY, startZ);
+                                     Vec3 clientDeltaMovement = new Vec3(this.player.getX() - startX, this.player.getY() - startY, this.player.getZ() - startZ);
+                                     this.player.setOnGroundWithMovement(packet.isOnGround(), packet.horizontalCollision(), clientDeltaMovement);
+                                     this.player.doCheckFallDamage(clientDeltaMovement.x, clientDeltaMovement.y, clientDeltaMovement.z, packet.isOnGround());
+diff --git a/net/minecraft/server/network/ServerPlayerConnection.java b/net/minecraft/server/network/ServerPlayerConnection.java
+index 2283bcdf8d188ea4f777960ec071530a0e8af40d..16ff7e0c2115e846b8b1573cf64be7d3240d3770 100644
+--- a/net/minecraft/server/network/ServerPlayerConnection.java
++++ b/net/minecraft/server/network/ServerPlayerConnection.java
+@@ -7,4 +7,8 @@ public interface ServerPlayerConnection {
+     ServerPlayer getPlayer();
+ 
+     void send(final Packet<?> packet);
++
++    default void send(final Packet<?> packet, final boolean flush) {
++        this.send(packet);
++    }
+ }
+diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
+index de455026dc6bdd1ff31c862195d54245820dd732..c38769bba450a455ff069c4aec67f046666ddf42 100644
+--- a/net/minecraft/server/players/PlayerList.java
++++ b/net/minecraft/server/players/PlayerList.java
+@@ -117,6 +117,7 @@ public abstract class PlayerList {
+     private final MinecraftServer server;
+     private final List<ServerPlayer> players = Lists.newArrayList();
+     private final Map<UUID, ServerPlayer> playersByUUID = Maps.newHashMap();
++    private final Map<String, ServerPlayer> playersByLowercaseName = Maps.newHashMap();
+     private final UserBanList bans;
+     private final IpBanList ipBans;
+     private final ServerOpList ops;
+@@ -229,6 +230,7 @@ public abstract class PlayerList {
+         player.connection.send(ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(this.players));
+         this.players.add(player);
+         this.playersByUUID.put(player.getUUID(), player);
++        this.addPlayerNameIndex(player);
+         this.broadcastAll(ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(List.of(player)));
+         this.sendLevelInfo(player, level);
+         level.addNewPlayer(player);
+@@ -371,6 +373,7 @@ public abstract class PlayerList {
+         level.removePlayerImmediately(player, Entity.RemovalReason.UNLOADED_WITH_PLAYER);
+         player.getAdvancements().clearTriggers();
+         this.players.remove(player);
++        this.removePlayerNameIndex(player);
+         this.server.getCustomBossEvents().onPlayerDisconnect(player);
+         UUID uuid = player.getUUID();
+         ServerPlayer serverPlayer = this.playersByUUID.get(uuid);
+@@ -457,6 +460,7 @@ public abstract class PlayerList {
+     public ServerPlayer respawn(final ServerPlayer serverPlayer, final boolean keepAllPlayerData, final Entity.RemovalReason removalReason) {
+         TeleportTransition respawnInfo = serverPlayer.findRespawnPositionAndUseSpawnBlock(!keepAllPlayerData, TeleportTransition.DO_NOTHING);
+         this.players.remove(serverPlayer);
++        this.removePlayerNameIndex(serverPlayer);
+         serverPlayer.level().removePlayerImmediately(serverPlayer, removalReason);
+         ServerLevel level = respawnInfo.newLevel();
+         ServerPlayer player = new ServerPlayer(this.server, level, serverPlayer.getGameProfile(), serverPlayer.clientInformation());
+@@ -491,6 +495,7 @@ public abstract class PlayerList {
+         this.sendPlayerPermissionLevel(player);
+         this.players.add(player);
+         this.playersByUUID.put(player.getUUID(), player);
++        this.addPlayerNameIndex(player);
+         io.fand.server.hooks.FandHooks.players().onRespawn(player);
+         level = io.fand.server.event.PlayerEvents.fireRespawn(player, level, keepAllPlayerData, removalReason);
+         level.addRespawnedPlayer(player);
+@@ -658,6 +663,9 @@ public abstract class PlayerList {
+     }
+ 
+     public @Nullable ServerPlayer getPlayerByName(final String name) {
++        if (io.fand.server.hooks.FandHooks.playerNameLookupIndexEnabled()) {
++            return this.playersByLowercaseName.get(playerNameKey(name));
++        }
+         int size = this.players.size();
+ 
+         for (int i = 0; i < size; i++) {
+@@ -905,6 +913,9 @@ public abstract class PlayerList {
+     }
+ 
+     public @Nullable ServerPlayer getPlayer(final String playerName) {
++        if (io.fand.server.hooks.FandHooks.playerNameLookupIndexEnabled()) {
++            return this.playersByLowercaseName.get(playerNameKey(playerName));
++        }
+         for (ServerPlayer player : this.players) {
+             if (player.getGameProfile().name().equalsIgnoreCase(playerName)) {
+                 return player;
+@@ -914,6 +925,29 @@ public abstract class PlayerList {
+         return null;
+     }
+ 
++    private void addPlayerNameIndex(final ServerPlayer player) {
++        this.playersByLowercaseName.putIfAbsent(playerNameKey(player.getGameProfile().name()), player);
++    }
++
++    private void removePlayerNameIndex(final ServerPlayer player) {
++        String key = playerNameKey(player.getGameProfile().name());
++        if (this.playersByLowercaseName.remove(key, player)) {
++            for (ServerPlayer candidate : this.players) {
++                if (candidate != player && candidate.getGameProfile().name().equalsIgnoreCase(player.getGameProfile().name())) {
++                    this.playersByLowercaseName.put(key, candidate);
++                    return;
++                }
++            }
++        }
++    }
++
++    private static String playerNameKey(final String name) {
++        if (name == null) {
++            return null;
++        }
++        return name.toLowerCase(Locale.ROOT);
++    }
++
+     public boolean canBypassPlayerLimit(final NameAndId nameAndId) {
+         return false;
+     }
+diff --git a/net/minecraft/world/entity/ai/sensing/BreezeAttackEntitySensor.java b/net/minecraft/world/entity/ai/sensing/BreezeAttackEntitySensor.java
+index 4c035ed3eb4eb782e76953c0dca2aa30b8977807..41240bec5cefab426a5c2659c1153d9aa4935003 100644
+--- a/net/minecraft/world/entity/ai/sensing/BreezeAttackEntitySensor.java
++++ b/net/minecraft/world/entity/ai/sensing/BreezeAttackEntitySensor.java
+@@ -4,9 +4,11 @@ import com.google.common.collect.ImmutableSet;
+ import com.google.common.collect.Iterables;
+ import java.util.Collection;
+ import java.util.List;
++import java.util.Optional;
+ import java.util.Set;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.world.entity.EntitySelector;
++import net.minecraft.world.entity.LivingEntity;
+ import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+ import net.minecraft.world.entity.monster.breeze.Breeze;
+ 
+@@ -19,6 +21,14 @@ public class BreezeAttackEntitySensor extends NearestLivingEntitySensor<Breeze>
+     @Override
+     protected void doTick(final ServerLevel level, final Breeze breeze) {
+         super.doTick(level, breeze);
++        if (io.fand.server.hooks.FandHooks.aiSensorLoopFastPathEnabled()) {
++            this.findNearestAttackable(level, breeze)
++                .ifPresentOrElse(
++                    entity -> breeze.getBrain().setMemory(MemoryModuleType.NEAREST_ATTACKABLE, entity),
++                    () -> breeze.getBrain().eraseMemory(MemoryModuleType.NEAREST_ATTACKABLE)
++                );
++            return;
++        }
+         breeze.getBrain()
+             .getMemory(MemoryModuleType.NEAREST_LIVING_ENTITIES)
+             .stream()
+@@ -31,4 +41,19 @@ public class BreezeAttackEntitySensor extends NearestLivingEntitySensor<Breeze>
+                 () -> breeze.getBrain().eraseMemory(MemoryModuleType.NEAREST_ATTACKABLE)
+             );
+     }
++
++    private Optional<LivingEntity> findNearestAttackable(final ServerLevel level, final Breeze breeze) {
++        Optional<List<LivingEntity>> entities = breeze.getBrain()
++            .getMemory(MemoryModuleType.NEAREST_LIVING_ENTITIES);
++        if (entities.isEmpty()) {
++            return Optional.empty();
++        }
++
++        for (LivingEntity entity : entities.get()) {
++            if (EntitySelector.NO_CREATIVE_OR_SPECTATOR.test(entity) && Sensor.isEntityAttackable(level, breeze, entity)) {
++                return Optional.of(entity);
++            }
++        }
++        return Optional.empty();
++    }
+ }
+diff --git a/net/minecraft/world/entity/ai/sensing/GolemSensor.java b/net/minecraft/world/entity/ai/sensing/GolemSensor.java
+index 6bdc94f4de3a3190907fe0b0325223ad31a600e9..ae585eb76e9d80f8d6a510b585a7a7b581f7e0d3 100644
+--- a/net/minecraft/world/entity/ai/sensing/GolemSensor.java
++++ b/net/minecraft/world/entity/ai/sensing/GolemSensor.java
+@@ -33,6 +33,15 @@ public class GolemSensor extends Sensor<LivingEntity> {
+     public static void checkForNearbyGolem(final LivingEntity body) {
+         Optional<List<LivingEntity>> livingEntitiesMemory = body.getBrain().getMemory(MemoryModuleType.NEAREST_LIVING_ENTITIES);
+         if (!livingEntitiesMemory.isEmpty()) {
++            if (io.fand.server.hooks.FandHooks.aiSensorLoopFastPathEnabled()) {
++                for (LivingEntity entity : livingEntitiesMemory.get()) {
++                    if (entity.is(EntityTypes.IRON_GOLEM)) {
++                        golemDetected(body);
++                        return;
++                    }
++                }
++                return;
++            }
+             boolean golemPresent = livingEntitiesMemory.get().stream().anyMatch(entity -> entity.is(EntityTypes.IRON_GOLEM));
+             if (golemPresent) {
+                 golemDetected(body);
+diff --git a/net/minecraft/world/entity/ai/sensing/MobSensor.java b/net/minecraft/world/entity/ai/sensing/MobSensor.java
+index ac9c50d680814b5752f7c712633555d587633598..cb6f7b2bd23da9bce71b736ac86cbc5d44f27c94 100644
+--- a/net/minecraft/world/entity/ai/sensing/MobSensor.java
++++ b/net/minecraft/world/entity/ai/sensing/MobSensor.java
+@@ -46,6 +46,15 @@ public class MobSensor<T extends LivingEntity> extends Sensor<T> {
+     public void checkForMobsNearby(final T body) {
+         Optional<List<LivingEntity>> livingEntitiesMemory = body.getBrain().getMemory(MemoryModuleType.NEAREST_LIVING_ENTITIES);
+         if (!livingEntitiesMemory.isEmpty()) {
++            if (io.fand.server.hooks.FandHooks.aiSensorLoopFastPathEnabled()) {
++                for (LivingEntity entity : livingEntitiesMemory.get()) {
++                    if (this.mobTest.test(body, entity)) {
++                        this.mobDetected(body);
++                        return;
++                    }
++                }
++                return;
++            }
+             boolean mobPresent = livingEntitiesMemory.get().stream().anyMatch(entity -> this.mobTest.test(body, entity));
+             if (mobPresent) {
+                 this.mobDetected(body);
+diff --git a/net/minecraft/world/entity/ai/sensing/NearestItemSensor.java b/net/minecraft/world/entity/ai/sensing/NearestItemSensor.java
+index e08da5b08dca5849fe0fd6d0ed237fbd36881e15..e380a6cd274352151d33aba3814b9ad63290e4b2 100644
+--- a/net/minecraft/world/entity/ai/sensing/NearestItemSensor.java
++++ b/net/minecraft/world/entity/ai/sensing/NearestItemSensor.java
+@@ -6,10 +6,12 @@ import java.util.List;
+ import java.util.Optional;
+ import java.util.Set;
+ import net.minecraft.server.level.ServerLevel;
++import net.minecraft.util.AbortableIterationConsumer;
+ import net.minecraft.world.entity.Mob;
+ import net.minecraft.world.entity.ai.Brain;
+ import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+ import net.minecraft.world.entity.item.ItemEntity;
++import net.minecraft.world.level.entity.EntityTypeTest;
+ 
+ public class NearestItemSensor extends Sensor<Mob> {
+     private static final long XZ_RANGE = 32L;
+@@ -24,6 +26,10 @@ public class NearestItemSensor extends Sensor<Mob> {
+     @Override
+     protected void doTick(final ServerLevel level, final Mob body) {
+         Brain<?> brain = body.getBrain();
++        if (io.fand.server.hooks.FandHooks.aiSensorLoopFastPathEnabled()) {
++            brain.setMemory(MemoryModuleType.NEAREST_VISIBLE_WANTED_ITEM, this.nearestVisibleWantedItem(level, body));
++            return;
++        }
+         List<ItemEntity> items = level.getEntitiesOfClass(ItemEntity.class, body.getBoundingBox().inflate(32.0, 16.0, 32.0), item -> true);
+         items.sort(Comparator.comparingDouble(body::distanceToSqr));
+         Optional<ItemEntity> nearestVisibleLovedItem = items.stream()
+@@ -33,4 +39,25 @@ public class NearestItemSensor extends Sensor<Mob> {
+             .findFirst();
+         brain.setMemory(MemoryModuleType.NEAREST_VISIBLE_WANTED_ITEM, nearestVisibleLovedItem);
+     }
++
++    private Optional<ItemEntity> nearestVisibleWantedItem(final ServerLevel level, final Mob body) {
++        ItemEntity[] nearest = {null};
++        double[] nearestDistance = {Double.MAX_VALUE};
++        level.forEachEntity(
++            EntityTypeTest.forClass(ItemEntity.class),
++            body.getBoundingBox().inflate(XZ_RANGE, Y_RANGE, XZ_RANGE),
++            item -> true,
++            item -> {
++                if (body.wantsToPickUp(level, item.getItem()) && item.closerThan(body, MAX_DISTANCE_TO_WANTED_ITEM) && body.hasLineOfSight(item)) {
++                    double distance = body.distanceToSqr(item);
++                    if (distance < nearestDistance[0]) {
++                        nearest[0] = item;
++                        nearestDistance[0] = distance;
++                    }
++                }
++                return AbortableIterationConsumer.Continuation.CONTINUE;
++            }
++        );
++        return Optional.ofNullable(nearest[0]);
++    }
+ }
+diff --git a/net/minecraft/world/entity/ai/sensing/PlayerSensor.java b/net/minecraft/world/entity/ai/sensing/PlayerSensor.java
+index 22f58ba0bce5db69c7bcea76d40bac6079f5581a..4845601eb51e3f065ec0e855b90a435fbb0508a3 100644
+--- a/net/minecraft/world/entity/ai/sensing/PlayerSensor.java
++++ b/net/minecraft/world/entity/ai/sensing/PlayerSensor.java
+@@ -1,6 +1,7 @@
+ package net.minecraft.world.entity.ai.sensing;
+ 
+ import com.google.common.collect.ImmutableSet;
++import java.util.ArrayList;
+ import java.util.Comparator;
+ import java.util.List;
+ import java.util.Set;
+@@ -26,6 +27,10 @@ public class PlayerSensor extends Sensor<LivingEntity> {
+ 
+     @Override
+     protected void doTick(final ServerLevel level, final LivingEntity body) {
++        if (io.fand.server.hooks.FandHooks.aiSensorLoopFastPathEnabled()) {
++            this.doTickFast(level, body);
++            return;
++        }
+         List<Player> players = level.players()
+             .stream()
+             .filter(EntitySelector.NO_SPECTATORS)
+@@ -41,6 +46,34 @@ public class PlayerSensor extends Sensor<LivingEntity> {
+         brain.setMemory(MemoryModuleType.NEAREST_VISIBLE_ATTACKABLE_PLAYER, visibleAttackablePlayers.isEmpty() ? null : visibleAttackablePlayers.get(0));
+     }
+ 
++    private void doTickFast(final ServerLevel level, final LivingEntity body) {
++        double followDistance = this.getFollowDistance(body);
++        List<Player> players = new ArrayList<>();
++        for (Player player : level.players()) {
++            if (EntitySelector.NO_SPECTATORS.test(player) && body.closerThan(player, followDistance)) {
++                players.add(player);
++            }
++        }
++        players.sort(Comparator.comparingDouble(body::distanceToSqr));
++
++        Brain<?> brain = body.getBrain();
++        brain.setMemory(MemoryModuleType.NEAREST_PLAYERS, players);
++
++        List<Player> visiblePlayers = new ArrayList<>();
++        List<Player> visibleAttackablePlayers = new ArrayList<>();
++        for (Player player : players) {
++            if (isEntityTargetable(level, body, player)) {
++                visiblePlayers.add(player);
++                if (isEntityAttackable(level, body, player)) {
++                    visibleAttackablePlayers.add(player);
++                }
++            }
++        }
++        brain.setMemory(MemoryModuleType.NEAREST_VISIBLE_PLAYER, visiblePlayers.isEmpty() ? null : visiblePlayers.get(0));
++        brain.setMemory(MemoryModuleType.NEAREST_VISIBLE_ATTACKABLE_PLAYERS, visibleAttackablePlayers);
++        brain.setMemory(MemoryModuleType.NEAREST_VISIBLE_ATTACKABLE_PLAYER, visibleAttackablePlayers.isEmpty() ? null : visibleAttackablePlayers.get(0));
++    }
++
+     protected double getFollowDistance(final LivingEntity body) {
+         return body.getAttributeValue(Attributes.FOLLOW_RANGE);
+     }
+diff --git a/net/minecraft/world/entity/ai/sensing/TemptingSensor.java b/net/minecraft/world/entity/ai/sensing/TemptingSensor.java
+index 903438c7cd5ec1a4bab89824bd22b710543f5a2a..6b414016243c4b4341da3539fe7fc6c2b4d9cbca 100644
+--- a/net/minecraft/world/entity/ai/sensing/TemptingSensor.java
++++ b/net/minecraft/world/entity/ai/sensing/TemptingSensor.java
+@@ -38,6 +38,15 @@ public class TemptingSensor extends Sensor<PathfinderMob> {
+     protected void doTick(final ServerLevel level, final PathfinderMob body) {
+         Brain<?> brain = body.getBrain();
+         TargetingConditions targeting = TEMPT_TARGETING.copy().range((float)body.getAttributeValue(Attributes.TEMPT_RANGE));
++        if (io.fand.server.hooks.FandHooks.aiSensorLoopFastPathEnabled()) {
++            Player nearest = this.nearestTemptingPlayer(level, body, targeting);
++            if (nearest != null) {
++                brain.setMemory(MemoryModuleType.TEMPTING_PLAYER, nearest);
++            } else {
++                brain.eraseMemory(MemoryModuleType.TEMPTING_PLAYER);
++            }
++            return;
++        }
+         List<Player> players = level.players()
+             .stream()
+             .filter(EntitySelector.NO_SPECTATORS)
+@@ -54,6 +63,26 @@ public class TemptingSensor extends Sensor<PathfinderMob> {
+         }
+     }
+ 
++    private Player nearestTemptingPlayer(final ServerLevel level, final PathfinderMob body, final TargetingConditions targeting) {
++        Player nearest = null;
++        double nearestDistance = Double.MAX_VALUE;
++        for (Player player : level.players()) {
++            if (!EntitySelector.NO_SPECTATORS.test(player)
++                || !targeting.test(level, body, player)
++                || !this.playerHoldingTemptation(body, player)
++                || body.hasPassenger(player)) {
++                continue;
++            }
++
++            double distance = body.distanceToSqr(player);
++            if (distance < nearestDistance) {
++                nearest = player;
++                nearestDistance = distance;
++            }
++        }
++        return nearest;
++    }
++
+     private boolean playerHoldingTemptation(final PathfinderMob mob, final Player player) {
+         return this.isTemptation(mob, player.getMainHandItem()) || this.isTemptation(mob, player.getOffhandItem());
+     }
+diff --git a/net/minecraft/world/entity/ai/sensing/WardenEntitySensor.java b/net/minecraft/world/entity/ai/sensing/WardenEntitySensor.java
+index 78a5d265067ffb14dd91af39317187b6b8cad903..653f07793d651f47fdb2d23876694abe0294c895 100644
+--- a/net/minecraft/world/entity/ai/sensing/WardenEntitySensor.java
++++ b/net/minecraft/world/entity/ai/sensing/WardenEntitySensor.java
+@@ -22,6 +22,13 @@ public class WardenEntitySensor extends NearestLivingEntitySensor<Warden> {
+     @Override
+     protected void doTick(final ServerLevel level, final Warden body) {
+         super.doTick(level, body);
++        if (io.fand.server.hooks.FandHooks.aiSensorLoopFastPathEnabled()) {
++            getClosestFast(body).ifPresentOrElse(
++                entity -> body.getBrain().setMemory(MemoryModuleType.NEAREST_ATTACKABLE, entity),
++                () -> body.getBrain().eraseMemory(MemoryModuleType.NEAREST_ATTACKABLE)
++            );
++            return;
++        }
+         getClosest(body, e -> e.is(EntityTypes.PLAYER))
+             .or(() -> getClosest(body, e -> !e.is(EntityTypes.PLAYER)))
+             .ifPresentOrElse(
+@@ -39,4 +46,25 @@ public class WardenEntitySensor extends NearestLivingEntitySensor<Warden> {
+             .filter(test)
+             .findFirst();
+     }
++
++    private static Optional<LivingEntity> getClosestFast(final Warden body) {
++        Optional<List<LivingEntity>> entities = body.getBrain().getMemory(MemoryModuleType.NEAREST_LIVING_ENTITIES);
++        if (entities.isEmpty()) {
++            return Optional.empty();
++        }
++
++        LivingEntity firstNonPlayer = null;
++        for (LivingEntity entity : entities.get()) {
++            if (!body.canTargetEntity(entity)) {
++                continue;
++            }
++            if (entity.is(EntityTypes.PLAYER)) {
++                return Optional.of(entity);
++            }
++            if (firstNonPlayer == null) {
++                firstNonPlayer = entity;
++            }
++        }
++        return Optional.ofNullable(firstNonPlayer);
++    }
+ }

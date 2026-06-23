@@ -5,8 +5,6 @@ import io.fand.api.entity.GameMode;
 import io.fand.api.tablist.TabListEntry;
 import io.fand.server.command.AdventureBridge;
 import io.fand.server.player.PlayerProfiles;
-import io.fand.server.util.ReflectionFields;
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
@@ -41,9 +39,6 @@ public final class FandTabListPackets {
             ClientboundPlayerInfoUpdatePacket.Action.UPDATE_HAT,
             ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LIST_ORDER);
 
-    private static final Field ACTIONS = ReflectionFields.field(ClientboundPlayerInfoUpdatePacket.class, "actions");
-    private static final Field ENTRIES = ReflectionFields.field(ClientboundPlayerInfoUpdatePacket.class, "entries");
-
     private FandTabListPackets() {
     }
 
@@ -76,10 +71,7 @@ public final class FandTabListPackets {
     ) {
         Objects.requireNonNull(actions, "actions");
         Objects.requireNonNull(entries, "entries");
-        var packet = new ClientboundPlayerInfoUpdatePacket(EnumSet.copyOf(actions), java.util.List.of());
-        ReflectionFields.set(ACTIONS, packet, EnumSet.copyOf(actions));
-        ReflectionFields.set(ENTRIES, packet, List.copyOf(entries));
-        return packet;
+        return ClientboundPlayerInfoUpdatePacket.fromEntries(actions, entries);
     }
 
     public static ClientboundPlayerInfoUpdatePacket rewrite(

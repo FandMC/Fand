@@ -142,6 +142,12 @@ public final class FandHooks {
     private static volatile boolean areaEffectCloudFastPath = true;
     private static volatile boolean aiNearestTargetFastPath = true;
     private static volatile boolean aiGoalStreamFastPath = true;
+    private static volatile boolean aiSensorLoopFastPath = true;
+    private static volatile boolean playerNameLookupIndex = true;
+    private static volatile boolean scoreboardTeamWaypointFastPath = true;
+    private static volatile boolean reusablePacketEncoding = true;
+    private static volatile boolean packetFlushCoalescing = true;
+    private static volatile boolean outboundPacketQueueCoalescing = true;
     private static volatile int chunkWorldgenParallelism = 0;
     private static volatile boolean chunkDedicatedLightThread = true;
     private static volatile boolean chunkLightTaskQueueFastPath = true;
@@ -204,6 +210,12 @@ public final class FandHooks {
         areaEffectCloudFastPath = performance.areaEffectCloudFastPath;
         aiNearestTargetFastPath = performance.aiNearestTargetFastPath;
         aiGoalStreamFastPath = performance.aiGoalStreamFastPath;
+        aiSensorLoopFastPath = performance.aiSensorLoopFastPath;
+        playerNameLookupIndex = performance.playerNameLookupIndex;
+        scoreboardTeamWaypointFastPath = performance.scoreboardTeamWaypointFastPath;
+        reusablePacketEncoding = performance.reusablePacketEncoding;
+        packetFlushCoalescing = performance.packetFlushCoalescing;
+        outboundPacketQueueCoalescing = performance.outboundPacketQueueCoalescing;
     }
 
     public static void applyPlayerConfig(io.fand.server.config.FandConfig.Players players) {
@@ -362,6 +374,30 @@ public final class FandHooks {
 
     public static boolean aiGoalStreamFastPathEnabled() {
         return aiGoalStreamFastPath;
+    }
+
+    public static boolean aiSensorLoopFastPathEnabled() {
+        return aiSensorLoopFastPath;
+    }
+
+    public static boolean playerNameLookupIndexEnabled() {
+        return playerNameLookupIndex;
+    }
+
+    public static boolean scoreboardTeamWaypointFastPathEnabled() {
+        return scoreboardTeamWaypointFastPath;
+    }
+
+    public static boolean reusablePacketEncodingEnabled() {
+        return reusablePacketEncoding;
+    }
+
+    public static boolean packetFlushCoalescingEnabled() {
+        return packetFlushCoalescing;
+    }
+
+    public static boolean outboundPacketQueueCoalescingEnabled() {
+        return outboundPacketQueueCoalescing;
     }
 
     public static int chunkWorldgenParallelism() {

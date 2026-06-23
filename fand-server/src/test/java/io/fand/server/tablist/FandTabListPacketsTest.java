@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.network.protocol.ReusablePacketEncoding;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.world.level.GameType;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,7 @@ final class FandTabListPacketsTest {
 
         assertThat(packet.actions()).containsExactly(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY);
         assertThat(packet.entries()).containsExactly(entry);
+        assertThat(packet).isInstanceOf(ReusablePacketEncoding.class);
         assertThat(packet.entries().getFirst().profileId()).isEqualTo(id);
         assertThat(packet.entries().getFirst().latency()).isEqualTo(87);
         assertThat(packet.entries().getFirst().listOrder()).isEqualTo(12);

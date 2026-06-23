@@ -121,6 +121,51 @@ final class ApiSurfaceSourceTest {
     }
 
     @Test
+    void aiSensorLoopFastPathsStayWiredToVanillaSensors() throws IOException {
+        var playerSensor = read("src/minecraft/java/net/minecraft/world/entity/ai/sensing/PlayerSensor.java");
+        var temptingSensor = read("src/minecraft/java/net/minecraft/world/entity/ai/sensing/TemptingSensor.java");
+        var nearestItemSensor = read("src/minecraft/java/net/minecraft/world/entity/ai/sensing/NearestItemSensor.java");
+        var golemSensor = read("src/minecraft/java/net/minecraft/world/entity/ai/sensing/GolemSensor.java");
+        var mobSensor = read("src/minecraft/java/net/minecraft/world/entity/ai/sensing/MobSensor.java");
+        var breezeSensor = read("src/minecraft/java/net/minecraft/world/entity/ai/sensing/BreezeAttackEntitySensor.java");
+        var wardenSensor = read("src/minecraft/java/net/minecraft/world/entity/ai/sensing/WardenEntitySensor.java");
+        var hooks = read("src/main/java/io/fand/server/hooks/FandHooks.java");
+        var config = read("src/main/java/io/fand/server/config/FandConfig.java");
+        var reloader = read("src/main/java/io/fand/server/config/ConfigReloader.java");
+
+        assertThat(playerSensor).contains(
+                "FandHooks.aiSensorLoopFastPathEnabled()",
+                "private void doTickFast",
+                "players.sort(Comparator.comparingDouble(body::distanceToSqr))");
+        assertThat(temptingSensor).contains(
+                "FandHooks.aiSensorLoopFastPathEnabled()",
+                "private Player nearestTemptingPlayer",
+                "double nearestDistance = Double.MAX_VALUE");
+        assertThat(nearestItemSensor).contains(
+                "FandHooks.aiSensorLoopFastPathEnabled()",
+                "private Optional<ItemEntity> nearestVisibleWantedItem",
+                "level.forEachEntity(");
+        assertThat(golemSensor).contains(
+                "FandHooks.aiSensorLoopFastPathEnabled()",
+                "for (LivingEntity entity : livingEntitiesMemory.get())");
+        assertThat(mobSensor).contains(
+                "FandHooks.aiSensorLoopFastPathEnabled()",
+                "for (LivingEntity entity : livingEntitiesMemory.get())");
+        assertThat(breezeSensor).contains(
+                "FandHooks.aiSensorLoopFastPathEnabled()",
+                "private Optional<LivingEntity> findNearestAttackable");
+        assertThat(wardenSensor).contains(
+                "FandHooks.aiSensorLoopFastPathEnabled()",
+                "private static Optional<LivingEntity> getClosestFast");
+        assertThat(hooks).contains(
+                "private static volatile boolean aiSensorLoopFastPath = true",
+                "aiSensorLoopFastPath = performance.aiSensorLoopFastPath",
+                "public static boolean aiSensorLoopFastPathEnabled()");
+        assertThat(config).contains("public volatile boolean aiSensorLoopFastPath = true");
+        assertThat(reloader).contains("performance.aiSensorLoopFastPath");
+    }
+
+    @Test
     void scoreboardTeamAndPerPlayerScoreboardsStayImplemented() throws IOException {
         var apiTeam = read("../fand-api/src/main/java/io/fand/api/scoreboard/ScoreboardTeam.java");
         var apiPlayerScoreboard = read("../fand-api/src/main/java/io/fand/api/scoreboard/PlayerScoreboard.java");
@@ -162,7 +207,8 @@ final class ApiSurfaceSourceTest {
                 "public void recalculate(PermissionSubject subject)",
                 "public void recalculateAll()",
                 "descriptorChildValue",
-                "descriptor.children().containsKey(normalized)",
+                "childParents",
+                "PermissionChildParent",
                 "Permission already registered with different children");
         assertThat(pluginService).contains(
                 "validatePluginPermissionNode(pluginId, descriptor.node())",

@@ -32,6 +32,7 @@ public final class PermissionManager implements PermissionService {
 
     private final @Nullable EventBus events;
     private final ConcurrentHashMap<String, PermissionDescriptor> descriptors = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, List<PermissionChildParent>> childParents = new ConcurrentHashMap<>();
     private final Map<PermissionSubject, List<FandPermissionAttachment>> attachments =
             Collections.synchronizedMap(new IdentityHashMap<>());
 
@@ -48,7 +49,18 @@ public final class PermissionManager implements PermissionService {
         Objects.requireNonNull(descriptor, "descriptor");
         var normalized = normalizeAttachmentNode(descriptor.node());
         var stored = new PermissionDescriptor(normalized, descriptor.defaultAccess(), normalizeChildren(descriptor.children()));
-        descriptors.compute(normalized, (node, existing) -> mergeDescriptor(node, existing, stored));
+        synchronized (this) {
+            var existing = descriptors.get(normalized);
+            var merged = mergeDescriptor(normalized, existing, stored);
+            if (existing != null && existing.equals(merged)) {
+                return;
+            }
+            if (existing != null) {
+                removeChildIndex(existing);
+            }
+            descriptors.put(normalized, merged);
+            addChildIndex(merged);
+        }
     }
 
     /**
@@ -60,7 +72,17 @@ public final class PermissionManager implements PermissionService {
         Objects.requireNonNull(node, "node");
         Objects.requireNonNull(expected, "expected");
         var normalized = normalizeAttachmentNode(node);
-        descriptors.remove(normalized, expected);
+        var normalizedExpected = new PermissionDescriptor(
+                normalized,
+                expected.defaultAccess(),
+                normalizeChildren(expected.children()));
+        synchronized (this) {
+            var existing = descriptors.get(normalized);
+            if (normalizedExpected.equals(existing)) {
+                descriptors.remove(normalized);
+                removeChildIndex(existing);
+            }
+        }
     }
 
     /**
@@ -77,7 +99,15 @@ public final class PermissionManager implements PermissionService {
         for (var namespace : namespaces) {
             normalized.add(namespace.trim().toLowerCase(Locale.ROOT));
         }
-        descriptors.entrySet().removeIf(entry -> underNamespace(entry.getKey(), normalized));
+        var removed = new ArrayList<PermissionDescriptor>();
+        synchronized (this) {
+            descriptors.forEach((node, descriptor) -> {
+                if (underNamespace(node, normalized) && descriptors.remove(node, descriptor)) {
+                    removed.add(descriptor);
+                }
+            });
+            removed.forEach(this::removeChildIndex);
+        }
     }
 
     private static boolean underNamespace(String node, Set<String> namespaces) {
@@ -178,17 +208,49 @@ public final class PermissionManager implements PermissionService {
     }
 
     private Boolean descriptorChildValue(PermissionSubject subject, String normalized, HashSet<String> resolving) {
-        var parents = descriptors.values().stream()
-                .filter(descriptor -> descriptor.children().containsKey(normalized))
-                .sorted(Comparator.comparingInt((PermissionDescriptor descriptor) -> descriptor.node().length()).reversed())
-                .toList();
+        var parents = childParents.get(normalized);
+        if (parents == null || parents.isEmpty()) {
+            return null;
+        }
         for (var parent : parents) {
             var parentValue = resolvePermission(subject, parent.node(), resolving);
             if (parentValue) {
-                return parent.children().get(normalized);
+                return parent.value();
             }
         }
         return null;
+    }
+
+    private void addChildIndex(PermissionDescriptor descriptor) {
+        for (var child : descriptor.children().entrySet()) {
+            childParents.compute(child.getKey(), (node, existing) -> sortedParents(existing, new PermissionChildParent(
+                    descriptor.node(),
+                    child.getValue())));
+        }
+    }
+
+    private void removeChildIndex(PermissionDescriptor descriptor) {
+        if (descriptor.children().isEmpty()) {
+            return;
+        }
+        for (var child : descriptor.children().keySet()) {
+            childParents.computeIfPresent(child, (node, existing) -> {
+                var filtered = existing.stream()
+                        .filter(parent -> !parent.node().equals(descriptor.node()))
+                        .toList();
+                return filtered.isEmpty() ? null : filtered;
+            });
+        }
+    }
+
+    private static List<PermissionChildParent> sortedParents(
+            @Nullable List<PermissionChildParent> existing,
+            PermissionChildParent incoming
+    ) {
+        var parents = existing == null ? new ArrayList<PermissionChildParent>() : new ArrayList<>(existing);
+        parents.add(incoming);
+        parents.sort(Comparator.comparingInt((PermissionChildParent parent) -> parent.node().length()).reversed());
+        return List.copyOf(parents);
     }
 
     private @Nullable PermissionDescriptor descriptorFor(String node) {
@@ -339,5 +401,8 @@ public final class PermissionManager implements PermissionService {
             return existing;
         }
         throw new IllegalStateException("Permission already registered with different children: " + node);
+    }
+
+    private record PermissionChildParent(String node, boolean value) {
     }
 }
