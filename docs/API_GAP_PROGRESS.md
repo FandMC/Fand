@@ -32,7 +32,10 @@
 - Verified: `./gradlew :fand-server:test --tests io.fand.server.plugin.PluginTabListServiceTest`.
 - Verified: `./gradlew :fand-server:test --tests io.fand.server.tablist.FandTabListPacketsTest`.
 - Verified: `./gradlew :fand-api:compileJava :fand-server:compileJava`.
-- Remaining for this lane: layout/group helpers, global/proxy player-list sync, and public packet-level player-info factory remain to be layered on top of the now-stable per-viewer row/ping foundation.
+- Implemented: added `TabListGroup` and `TabListLayout` helpers for building per-viewer row groups from real players without exposing NMS packet details.
+- Implemented: added `RemoteTabListEntry` and `TabListSyncStrategy` so proxy/cluster bridges can publish remote player-list rows through the same `TabListService` surface.
+- Implemented: added public `PlayerInfoPacketFactory` through `PacketRegistry#playerInfo()`, backed by server-side player-info update/remove packet rebuilding for interceptor replacement flows.
+- Remaining for this lane: concrete proxy transport/adapters are intentionally left to plugins or distribution modules; the API now exposes the stable helper and packet construction surface they need.
 - Current focus: Placeholder service.
 - Implemented: added `PlaceholderService`, `PlaceholderProvider`, and `PlaceholderRegistration` API surfaces.
 - Implemented: added global `Server#placeholders()` and plugin-scoped `PluginContext#placeholders()`.
@@ -48,6 +51,13 @@
 - Verified: `./gradlew --no-parallel --max-workers=2 :fand-api:compileJava :fand-server:compileJava`.
 - Verified: `./gradlew --no-parallel --max-workers=2 :fand-server:test --tests io.fand.server.text.FandMiniMessageServiceTest`.
 - Verified: `./gradlew --no-parallel --max-workers=2 :fand-server:test --tests io.fand.server.world.ApiSurfaceSourceTest`.
+
+## 2026-06-26
+
+- Current focus: external integration strategy and API style consistency.
+- Implemented: added `ExternalIntegration`, `ExternalIntegrationKind`, and `ExternalIntegrationStrategy` API surfaces for declarative SQL/Redis/message-queue integration handles.
+- Implemented: wired `Server#integrations()` and `PluginContext#integrations()` through the server/plugin runtime with an empty default strategy. Concrete MySQL, Redis, RabbitMQ, or other clients remain plugin/distribution-owned.
+- Implemented: added `Player#hideEntity(Entity)` and `Player#showEntity(Entity)` receiver-style overloads, with the old `hideEntity(Player, Entity)` / `showEntity(Player, Entity)` signatures retained as deprecated compatibility forwarders.
 
 ## 2026-06-24
 

@@ -6,6 +6,10 @@ import java.util.List;
 public interface MapView {
     int id();
 
+    /**
+     * Installs a renderer for this map. Plugin-scoped services remove renderers
+     * registered by the plugin when it unloads.
+     */
     void renderer(MapRenderer renderer);
 
     default void renderer(PlayerMapRenderer renderer) {
@@ -46,6 +50,10 @@ public interface MapView {
         throw new UnsupportedOperationException("Map center is not supported");
     }
 
+    /**
+     * Sets the map center in world coordinates. This mutates the underlying
+     * saved map data and is not automatically reverted when a plugin unloads.
+     */
     default void setCenter(int x, int z) {
         throw new UnsupportedOperationException("Map center is not supported");
     }
@@ -54,6 +62,10 @@ public interface MapView {
         throw new UnsupportedOperationException("Map scale is not supported");
     }
 
+    /**
+     * Sets the map scale. This mutates the underlying saved map data and is not
+     * automatically reverted when a plugin unloads.
+     */
     default void setScale(MapScale scale) {
         throw new UnsupportedOperationException("Map scale is not supported");
     }
@@ -62,6 +74,10 @@ public interface MapView {
         return false;
     }
 
+    /**
+     * Sets whether the map tracks player positions. This mutates the underlying
+     * saved map data and is not automatically reverted when a plugin unloads.
+     */
     default void setTrackingPosition(boolean tracking) {
         throw new UnsupportedOperationException("Map tracking is not supported");
     }
@@ -70,6 +86,11 @@ public interface MapView {
         return false;
     }
 
+    /**
+     * Sets whether the map tracks positions outside its normal range. This
+     * mutates the underlying saved map data and is not automatically reverted
+     * when a plugin unloads.
+     */
     default void setUnlimitedTracking(boolean unlimited) {
         throw new UnsupportedOperationException("Map unlimited tracking is not supported");
     }
@@ -78,6 +99,10 @@ public interface MapView {
         return false;
     }
 
+    /**
+     * Sets whether the map is locked. This mutates the underlying saved map data
+     * and is not automatically reverted when a plugin unloads.
+     */
     default void setLocked(boolean locked) {
         throw new UnsupportedOperationException("Map locking is not supported");
     }
@@ -86,6 +111,10 @@ public interface MapView {
         return List.of();
     }
 
+    /**
+     * Replaces client-side cursors stored on this map view. This mutates the
+     * underlying map state and is not automatically reverted when a plugin unloads.
+     */
     default void setCursors(List<MapCursor> cursors) {
         throw new UnsupportedOperationException("Map cursors are not supported");
     }

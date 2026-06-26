@@ -31,8 +31,8 @@ final class ApiSurfaceSourceTest {
                 "openItemGui",
                 "public void openSign(Location location)",
                 "openTextEdit",
-                "public void hideEntity(Player viewer, io.fand.api.entity.Entity entity)",
-                "public void showEntity(Player viewer, io.fand.api.entity.Entity entity)",
+                "public void hideEntity(io.fand.api.entity.Entity entity)",
+                "public void showEntity(io.fand.api.entity.Entity entity)",
                 "public void respawn()",
                 "server.getPlayerList().respawn(handle, false, RemovalReason.KILLED)",
                 "public boolean hasCooldown(Key group)",
@@ -306,6 +306,9 @@ final class ApiSurfaceSourceTest {
                 "public final class PluginMapService implements MapService",
                 "return delegate.map(id).map(this::wrap)",
                 "tracker.track(new PluginResourceTracker.MapRendererBinding(delegate, id(), renderer))");
+        assertThat(read("../fand-api/src/main/java/io/fand/api/map/MapView.java")).contains(
+                "Plugin-scoped services remove renderers",
+                "saved map data and is not automatically reverted when a plugin unloads");
         assertThat(tracker).contains(
                 "record MapRendererBinding(MapService service, int mapId, MapRenderer renderer)",
                 "mapRendererBindingsToClose",
@@ -342,7 +345,9 @@ final class ApiSurfaceSourceTest {
                 "return delegate.importTemplate(scopedKey(key), projection)",
                 "save(Key key, Path path, StructureFormat format)",
                 "return delegate.place(scopedKey(key), origin, placement)",
-                "return delegate.locate(structure, origin, radius)");
+                "place(StructureProjection projection, Location origin, StructurePlacement placement)",
+                "return delegate.place(projection, origin, placement)",
+                "return delegate.locate(scopedKey(structure), origin, radius)");
         assertThat(serverStructures).contains(
                 "registerStructure(CustomStructure structure)",
                 "registerStructureSet(CustomStructureSet structureSet)",
@@ -373,6 +378,9 @@ final class ApiSurfaceSourceTest {
                 "BlockRotProcessor",
                 "BlockIgnoreProcessor.STRUCTURE_BLOCK",
                 "place(Key key, Location origin, StructurePlacement placement)",
+                "place(StructureProjection projection, Location origin, StructurePlacement placement)",
+                "placeProjectionOnServerThread",
+                "server.getStructureManager().remove(id)",
                 "locate(Key structure, Location origin, int radius)");
         assertThat(source).contains(
                 "new FilteredStructureSetLookup(structureSets, settings, structures)",
@@ -497,6 +505,79 @@ final class ApiSurfaceSourceTest {
                 "MiniMessage.miniMessage()",
                 "placeholders.replace(viewer, input)",
                 "parser.deserialize");
+    }
+
+    @Test
+    void tabListSyncAndPlayerInfoPacketApiStayExposed() throws IOException {
+        var tabService = read("../fand-api/src/main/java/io/fand/api/tablist/TabListService.java");
+        var group = read("../fand-api/src/main/java/io/fand/api/tablist/TabListGroup.java");
+        var layout = read("../fand-api/src/main/java/io/fand/api/tablist/TabListLayout.java");
+        var sync = read("../fand-api/src/main/java/io/fand/api/tablist/TabListSyncStrategy.java");
+        var remote = read("../fand-api/src/main/java/io/fand/api/tablist/RemoteTabListEntry.java");
+        var factory = read("../fand-api/src/main/java/io/fand/api/packet/PlayerInfoPacketFactory.java");
+        var registryApi = read("../fand-api/src/main/java/io/fand/api/packet/PacketRegistry.java");
+        var serverFactory = read("src/main/java/io/fand/server/network/packet/FandPlayerInfoPacketFactory.java");
+        var registry = read("src/main/java/io/fand/server/network/packet/PacketRegistryImpl.java");
+        var bridge = read("src/main/java/io/fand/server/network/packet/VanillaPacketBridge.java");
+        var pluginPackets = read("src/main/java/io/fand/server/plugin/PluginPacketRegistry.java");
+        var server = read("src/main/java/io/fand/server/FandServer.java");
+
+        assertThat(tabService).contains(
+                "default void apply(Player viewer, TabListLayout layout)",
+                "default void sync(Player viewer, TabListSyncStrategy strategy)");
+        assertThat(group).contains("public record TabListGroup", "entries(Collection<? extends Player> players)");
+        assertThat(layout).contains("public record TabListLayout", "void apply(TabListService service, Player viewer)");
+        assertThat(sync).contains("interface TabListSyncStrategy", "Collection<RemoteTabListEntry> entries(Player viewer)");
+        assertThat(remote).contains("record RemoteTabListEntry(Key source, TabListEntry entry)");
+        assertThat(factory).contains(
+                "interface PlayerInfoPacketFactory",
+                "PacketView add(Collection<? extends TabListEntry> entries)",
+                "PacketView remove(Collection<UUID> entryIds)");
+        assertThat(registryApi).contains("default PlayerInfoPacketFactory playerInfo()");
+        assertThat(serverFactory).contains(
+                "public final class FandPlayerInfoPacketFactory implements PlayerInfoPacketFactory",
+                "PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE",
+                "PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_REMOVE");
+        assertThat(registry).contains(
+                "private final PlayerInfoPacketFactory playerInfo = new FandPlayerInfoPacketFactory()",
+                "public PacketRegistryImpl(Supplier<@Nullable MinecraftServer> server)",
+                "public PlayerInfoPacketFactory playerInfo()");
+        assertThat(bridge).contains(
+                "FandTabListPackets.packetFromApi",
+                "new ClientboundPlayerInfoRemovePacket(profileIds(view))");
+        assertThat(pluginPackets).contains("public PlayerInfoPacketFactory playerInfo()");
+        assertThat(server).contains("this.packets = new PacketRegistryImpl(minecraftServer::get)");
+    }
+
+    @Test
+    void externalIntegrationStrategyStaysWiredToServerAndPlugins() throws IOException {
+        var serverApi = read("../fand-api/src/main/java/io/fand/api/Server.java");
+        var context = read("../fand-api/src/main/java/io/fand/api/plugin/PluginContext.java");
+        var integration = read("../fand-api/src/main/java/io/fand/api/integration/ExternalIntegration.java");
+        var strategy = read("../fand-api/src/main/java/io/fand/api/integration/ExternalIntegrationStrategy.java");
+        var server = read("src/main/java/io/fand/server/FandServer.java");
+        var runtime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
+        var runtimeContext = read("src/main/java/io/fand/server/plugin/RuntimePluginContext.java");
+
+        assertThat(serverApi).contains("default ExternalIntegrationStrategy integrations()");
+        assertThat(context).contains("default ExternalIntegrationStrategy integrations()");
+        assertThat(integration).contains("record ExternalIntegration", "ExternalIntegrationKind kind");
+        assertThat(strategy).contains(
+                "interface ExternalIntegrationStrategy",
+                "Collection<ExternalIntegration> integrations()",
+                "static ExternalIntegrationStrategy empty()");
+        assertThat(server).contains(
+                "private final ExternalIntegrationStrategy integrations",
+                "this.integrations = ExternalIntegrationStrategy.empty()",
+                "this.plugins.integrations(integrations)",
+                "public ExternalIntegrationStrategy integrations()");
+        assertThat(runtime).contains(
+                "private volatile ExternalIntegrationStrategy integrationStrategy = ExternalIntegrationStrategy.empty()",
+                "public void integrations(ExternalIntegrationStrategy strategy)",
+                "integrationStrategy,");
+        assertThat(runtimeContext).contains(
+                "private final ExternalIntegrationStrategy integrations",
+                "public ExternalIntegrationStrategy integrations()");
     }
 
     private static String read(String path) throws IOException {

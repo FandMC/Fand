@@ -91,11 +91,36 @@ final class PluginTabListServiceTest {
                 change(viewer, target, true));
     }
 
-    private static final class FakeTabListService implements TabListService {
+    @Test
+    void showOnlyRestoresCrossWorldTargetsWhenPluginCloses() {
+        var delegate = new FakeTabListService();
+        var tracker = new PluginResourceTracker();
+        var service = new PluginTabListService(delegate, tracker);
+        var viewerWorld = fakeWorld();
+        var otherWorld = fakeWorld();
+        var viewer = fakePlayer(UUID.randomUUID(), viewerWorld);
+        var sameWorldTarget = fakePlayer(UUID.randomUUID(), viewerWorld);
+        var crossWorldTarget = fakePlayer(UUID.randomUUID(), otherWorld);
+        setPlayers(viewerWorld, viewer, sameWorldTarget);
+        setPlayers(otherWorld, crossWorldTarget);
+        delegate.setShowOnlyCandidates(viewer, List.of(viewer, sameWorldTarget, crossWorldTarget));
+
+        service.showOnly(viewer, List.of(sameWorldTarget));
+
+        assertThat(delegate.visible(viewer, sameWorldTarget)).isTrue();
+        assertThat(delegate.visible(viewer, crossWorldTarget)).isFalse();
+
+        tracker.close();
+
+        assertThat(delegate.visible(viewer, crossWorldTarget)).isTrue();
+    }
+
+    private static final class FakeTabListService implements TabListService, io.fand.server.tablist.RealPlayerTabListAccess {
 
         private final Map<UUID, Map<UUID, FakeRegistration>> entries = new LinkedHashMap<>();
         private final Set<String> hidden = new HashSet<>();
         private final java.util.ArrayList<String> visibilityChanges = new java.util.ArrayList<>();
+        private final Map<UUID, Collection<UUID>> showOnlyCandidates = new LinkedHashMap<>();
 
         @Override
         public boolean visible(Player viewer, Player target) {
@@ -110,6 +135,40 @@ final class PluginTabListServiceTest {
             } else {
                 hidden.add(key(viewer, target));
             }
+        }
+
+        @Override
+        public void showOnly(Player viewer, Collection<? extends Player> visibleTargets) {
+            var visibleIds = visibleTargets.stream()
+                    .map(Player::uniqueId)
+                    .collect(java.util.stream.Collectors.toSet());
+            for (var targetId : showOnlyCandidates.getOrDefault(viewer.uniqueId(), List.of())) {
+                setRealEntryVisible(viewer.uniqueId(), targetId, targetId.equals(viewer.uniqueId()) || visibleIds.contains(targetId));
+            }
+        }
+
+        @Override
+        public Collection<UUID> showOnlyCandidateIds(Player viewer, Collection<? extends Player> visibleTargets) {
+            return showOnlyCandidates.getOrDefault(viewer.uniqueId(), List.of());
+        }
+
+        @Override
+        public boolean visibleInRealPlayerList(UUID viewerId, UUID targetId) {
+            return !hidden.contains(key(viewerId, targetId));
+        }
+
+        @Override
+        public void setRealEntryVisible(UUID viewerId, UUID targetId, boolean visible) {
+            visibilityChanges.add(change(viewerId, targetId, visible));
+            if (visible) {
+                hidden.remove(key(viewerId, targetId));
+            } else {
+                hidden.add(key(viewerId, targetId));
+            }
+        }
+
+        void setShowOnlyCandidates(Player viewer, Collection<? extends Player> candidates) {
+            showOnlyCandidates.put(viewer.uniqueId(), candidates.stream().map(Player::uniqueId).toList());
         }
 
         @Override
@@ -236,11 +295,19 @@ final class PluginTabListServiceTest {
     }
 
     private static String key(Player viewer, Player target) {
-        return viewer.uniqueId() + "->" + target.uniqueId();
+        return key(viewer.uniqueId(), target.uniqueId());
+    }
+
+    private static String key(UUID viewerId, UUID targetId) {
+        return viewerId + "->" + targetId;
     }
 
     private static String change(Player viewer, Player target, boolean visible) {
-        return key(viewer, target) + "=" + visible;
+        return change(viewer.uniqueId(), target.uniqueId(), visible);
+    }
+
+    private static String change(UUID viewerId, UUID targetId, boolean visible) {
+        return key(viewerId, targetId) + "=" + visible;
     }
 
     private interface PlayerHolder {

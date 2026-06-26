@@ -12,6 +12,7 @@ import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
+import io.fand.api.integration.ExternalIntegrationStrategy;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
@@ -126,6 +127,11 @@ public interface PluginContext {
     /** Data-pack file tree service scoped to this plugin's lifecycle and namespace. */
     default DataPackService dataPacks() {
         return DataPackService.empty();
+    }
+
+    /** External integration strategy visible to this plugin. */
+    default ExternalIntegrationStrategy integrations() {
+        return ExternalIntegrationStrategy.empty();
     }
 
     /** Custom item registry scoped to this plugin's lifecycle and namespace. */

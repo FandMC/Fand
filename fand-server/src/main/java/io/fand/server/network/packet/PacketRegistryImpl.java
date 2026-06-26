@@ -9,6 +9,7 @@ import io.fand.api.packet.PacketRegistration;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.packet.PacketType;
 import io.fand.api.packet.PacketView;
+import io.fand.api.packet.PlayerInfoPacketFactory;
 import io.fand.api.entity.Player;
 import io.fand.api.player.PlayerProfile;
 import java.net.SocketAddress;
@@ -19,11 +20,13 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Supplier;
 import net.kyori.adventure.key.Key;
 import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.network.PacketListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
+import net.minecraft.server.MinecraftServer;
 import org.jspecify.annotations.Nullable;
 
 public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
@@ -31,7 +34,17 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
     private final ConcurrentMap<PacketType, CopyOnWriteArrayList<InterceptorRegistration<? extends PacketView>>> interceptors =
             new ConcurrentHashMap<>();
     private final ConcurrentMap<CustomChannelKey, CustomChannelRegistration> customChannels = new ConcurrentHashMap<>();
+    private final Supplier<@Nullable MinecraftServer> server;
     private final VanillaPacketBridge bridge = new VanillaPacketBridge(this);
+    private final PlayerInfoPacketFactory playerInfo = new FandPlayerInfoPacketFactory();
+
+    public PacketRegistryImpl() {
+        this(() -> null);
+    }
+
+    public PacketRegistryImpl(Supplier<@Nullable MinecraftServer> server) {
+        this.server = Objects.requireNonNull(server, "server");
+    }
 
     @Override
     public Collection<PacketType> types() {
@@ -41,6 +54,11 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
     @Override
     public Optional<PacketType> type(PacketProtocol protocol, PacketDirection direction, Key key) {
         return PacketType.find(protocol, direction, key);
+    }
+
+    @Override
+    public PlayerInfoPacketFactory playerInfo() {
+        return playerInfo;
     }
 
     @Override
@@ -109,6 +127,10 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
     public Optional<CustomPacketHandler> customHandler(PacketProtocol protocol, Key channel) {
         var registration = customChannels.get(new CustomChannelKey(protocol, channel));
         return registration == null ? Optional.empty() : Optional.ofNullable(registration.handler());
+    }
+
+    Optional<MinecraftServer> server() {
+        return Optional.ofNullable(server.get());
     }
 
     public @Nullable Packet<?> interceptInbound(

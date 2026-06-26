@@ -1303,38 +1303,30 @@ public final class FandPlayer implements Player {
     }
 
     @Override
-    public void hideEntity(Player viewer, io.fand.api.entity.Entity entity) {
-        Objects.requireNonNull(viewer, "viewer");
+    public void hideEntity(io.fand.api.entity.Entity entity) {
         Objects.requireNonNull(entity, "entity");
-        if (!(viewer instanceof FandPlayer fandViewer)) {
-            return;
-        }
         var target = EntityHandles.unwrap(entity);
         runOnServerThread(() -> {
-            if (fandViewer.bound.handle.connection == null || target.isRemoved()) {
+            if (bound.handle.connection == null || target.isRemoved()) {
                 return;
             }
-            if (fandViewer.hiddenEntityTargets.add(target.getUUID())) {
-                EntityVisibility.hide(fandViewer.bound.handle, target);
+            if (hiddenEntityTargets.add(target.getUUID())) {
+                EntityVisibility.hide(bound.handle, target);
             }
         });
     }
 
     @Override
-    public void showEntity(Player viewer, io.fand.api.entity.Entity entity) {
-        Objects.requireNonNull(viewer, "viewer");
+    public void showEntity(io.fand.api.entity.Entity entity) {
         Objects.requireNonNull(entity, "entity");
-        if (!(viewer instanceof FandPlayer fandViewer)) {
-            return;
-        }
         var target = EntityHandles.unwrap(entity);
         runOnServerThread(() -> {
-            if (!fandViewer.hiddenEntityTargets.remove(target.getUUID())
+            if (!hiddenEntityTargets.remove(target.getUUID())
                     || target.isRemoved()
-                    || fandViewer.bound.handle.connection == null) {
+                    || bound.handle.connection == null) {
                 return;
             }
-            EntityVisibility.show(fandViewer.bound.handle, target);
+            EntityVisibility.show(bound.handle, target);
         });
     }
 

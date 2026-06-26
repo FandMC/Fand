@@ -7,6 +7,8 @@ import io.fand.api.packet.PacketProtocol;
 import io.fand.api.packet.PacketType;
 import io.fand.api.packet.PacketView;
 import io.fand.api.player.PlayerProfile;
+import io.fand.api.tablist.TabListEntry;
+import io.fand.server.tablist.FandTabListPackets;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InaccessibleObjectException;
@@ -28,6 +30,7 @@ import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
 import net.minecraft.network.protocol.common.custom.DiscardedPayload;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
 import net.minecraft.resources.Identifier;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -151,11 +154,57 @@ final class VanillaPacketBridge {
             return packet;
         }
         try {
+            var rebuilt = rebuildPlayerInfo(currentView);
+            if (rebuilt != null) {
+                return rebuilt;
+            }
             return shape.rebuild(currentView);
         } catch (RuntimeException failure) {
             LOGGER.warn("Failed to rebuild vanilla packet {}", packet.getClass().getName(), failure);
             return packet;
         }
+    }
+
+    private @Nullable Packet<?> rebuildPlayerInfo(PacketView view) {
+        if (view.packetType() == PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE && isApiPlayerInfoUpdate(view)) {
+            var server = registry.server().orElse(null);
+            return FandTabListPackets.packetFromApi(actions(view), tabListEntries(view), server);
+        }
+        if (view.packetType() == PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_REMOVE && view.has("profileIds")) {
+            return new ClientboundPlayerInfoRemovePacket(profileIds(view));
+        }
+        return null;
+    }
+
+    private static boolean isApiPlayerInfoUpdate(PacketView view) {
+        if (!view.has("actions") || !view.has("entries")) {
+            return false;
+        }
+        var actions = view.value("actions");
+        var entries = view.value("entries");
+        if (!(actions instanceof List<?> actionList) || actionList.stream().anyMatch(action -> !(action instanceof String))) {
+            return false;
+        }
+        return entries instanceof List<?> entryList
+                && entryList.stream().allMatch(entry -> entry instanceof TabListEntry);
+    }
+
+    private static List<String> actions(PacketView view) {
+        return view.value("actions", List.class).stream()
+                .map(Object::toString)
+                .toList();
+    }
+
+    private static List<TabListEntry> tabListEntries(PacketView view) {
+        return view.value("entries", List.class).stream()
+                .map(TabListEntry.class::cast)
+                .toList();
+    }
+
+    private static List<java.util.UUID> profileIds(PacketView view) {
+        return view.value("profileIds", List.class).stream()
+                .map(java.util.UUID.class::cast)
+                .toList();
     }
 
     private void dispatchCustomPayload(

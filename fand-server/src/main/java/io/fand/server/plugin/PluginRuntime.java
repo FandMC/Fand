@@ -13,6 +13,7 @@ import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
+import io.fand.api.integration.ExternalIntegrationStrategy;
 import io.fand.api.lifecycle.PluginDisableEvent;
 import io.fand.api.lifecycle.PluginEnableEvent;
 import io.fand.api.loot.LootTableService;
@@ -98,6 +99,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private volatile GameRuleService gameRuleService = GameRuleService.empty();
     private final RegionService regionService;
     private final DataPackService dataPackService;
+    private volatile ExternalIntegrationStrategy integrationStrategy = ExternalIntegrationStrategy.empty();
     private final CustomItemRegistry customItemRegistry;
     private final CustomBlockRegistry customBlockRegistry;
     private final GuiService guiService;
@@ -578,6 +580,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.gameRuleService = Objects.requireNonNull(service, "service");
     }
 
+    public void integrations(ExternalIntegrationStrategy strategy) {
+        this.integrationStrategy = Objects.requireNonNull(strategy, "strategy");
+    }
+
     public void loadPlugins() {
         synchronized (lifecycleLock) {
             ensureOpen();
@@ -1001,6 +1007,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new PluginGameRuleService(gameRuleService, resources, id),
                 new PluginRegionService(regionService, resources, id),
                 new PluginDataPackService(dataPackService, resources, id),
+                integrationStrategy,
                 new PluginCustomItemRegistry(customItemRegistry, resources, id),
                 new PluginCustomBlockRegistry(customBlockRegistry, resources, id),
                 new PluginGuiService(guiService, resources),

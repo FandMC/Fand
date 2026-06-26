@@ -4,7 +4,6 @@ import io.fand.api.entity.Player;
 import io.fand.api.tablist.TabListEntry;
 import io.fand.api.tablist.TabListRegistration;
 import io.fand.api.tablist.TabListService;
-import io.fand.server.entity.FandPlayer;
 import io.fand.server.util.ServerThreading;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -22,7 +21,7 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
-public final class FandTabListService implements TabListService, AutoCloseable {
+public final class FandTabListService implements TabListService, RealPlayerTabListAccess, AutoCloseable {
 
     private final Supplier<MinecraftServer> server;
     private final Map<UUID, Map<UUID, FandTabListRegistration>> entriesByViewer = new ConcurrentHashMap<>();
@@ -71,6 +70,21 @@ public final class FandTabListService implements TabListService, AutoCloseable {
                 setRealEntryVisible(viewerId, targetId, targetId.equals(viewerId) || visibleIds.contains(targetId));
             }
         });
+    }
+
+    @Override
+    public Collection<UUID> showOnlyCandidateIds(Player viewer, Collection<? extends Player> visibleTargets) {
+        Objects.requireNonNull(viewer, "viewer");
+        Objects.requireNonNull(visibleTargets, "visibleTargets");
+        var current = server.get();
+        if (current == null) {
+            return viewer.world().players().stream()
+                    .map(Player::uniqueId)
+                    .toList();
+        }
+        return ServerThreading.callBlocking(current, () -> current.getPlayerList().getPlayers().stream()
+                .map(ServerPlayer::getUUID)
+                .toList());
     }
 
     @Override
@@ -297,7 +311,7 @@ public final class FandTabListService implements TabListService, AutoCloseable {
 
     private static UUID viewerId(Player viewer) {
         Objects.requireNonNull(viewer, "viewer");
-        if (viewer instanceof FandPlayer fandPlayer) {
+        if (viewer instanceof io.fand.server.entity.FandPlayer fandPlayer) {
             return fandPlayer.uniqueId();
         }
         return viewer.uniqueId();

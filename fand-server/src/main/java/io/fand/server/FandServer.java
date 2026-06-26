@@ -18,6 +18,7 @@ import io.fand.api.event.world.WorldLoadEvent;
 import io.fand.api.event.world.WorldUnloadEvent;
 import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
+import io.fand.api.integration.ExternalIntegrationStrategy;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
@@ -133,6 +134,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final FandGameRuleService gameRules;
     private final FandRegionService regions;
     private final FandDataPackService dataPacks;
+    private final ExternalIntegrationStrategy integrations;
     private final ModProtocolCompatibility modProtocols;
     private final EventSubscription pluginChannelAdvertisement;
     private final EventSubscription simulatedPlayerCleanup;
@@ -189,12 +191,13 @@ public final class FandServer implements Server, AutoCloseable {
         this.recipes = new FandRecipeRegistry();
         this.scoreboard = new FandScoreboardService(minecraftServer::get);
         this.tabLists = new FandTabListService(minecraftServer::get);
-        this.packets = new PacketRegistryImpl();
+        this.packets = new PacketRegistryImpl(minecraftServer::get);
         this.players = new PlayerRegistry(permissions, scoreboard, tabLists);
         this.pluginMessaging = new FandPluginMessaging(packets, players::snapshot);
         this.gameRules = new FandGameRuleService();
         this.regions = new FandRegionService(Path.of("regions"));
         this.dataPacks = new FandDataPackService(Path.of("datapacks"), minecraftServer::get);
+        this.integrations = ExternalIntegrationStrategy.empty();
         this.pluginChannelAdvertisement = events.subscribe(
                 PlayerJoinEvent.class,
                 EventPriority.OBSERVER,
@@ -249,6 +252,7 @@ public final class FandServer implements Server, AutoCloseable {
                 ConfigReloader.toPluginOptions(initialConfig)
         );
         this.plugins.gameRuleService(gameRules);
+        this.plugins.integrations(integrations);
         this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, chunks, chunkTasks, guiThemes);
         io.fand.server.hooks.FandHooks.applyPlayerConfig(initialConfig.players);
         io.fand.server.hooks.FandHooks.applyChunkConfig(initialConfig.chunks);
@@ -476,6 +480,11 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public DataPackService dataPacks() {
         return dataPacks;
+    }
+
+    @Override
+    public ExternalIntegrationStrategy integrations() {
+        return integrations;
     }
 
     @Override

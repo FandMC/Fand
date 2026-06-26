@@ -13,6 +13,10 @@ public interface PacketRegistry {
 
     Optional<PacketType> type(PacketProtocol protocol, PacketDirection direction, Key key);
 
+    default PlayerInfoPacketFactory playerInfo() {
+        return PlayerInfoPacketFactory.unsupported();
+    }
+
     PacketRegistration intercept(PacketType type, PacketInterceptor<PacketView> interceptor);
 
     <T extends PacketView> PacketRegistration intercept(

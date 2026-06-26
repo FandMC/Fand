@@ -9,6 +9,7 @@ import io.fand.api.packet.PacketRegistration;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.packet.PacketType;
 import io.fand.api.packet.PacketView;
+import io.fand.api.packet.PlayerInfoPacketFactory;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.Optional;
@@ -32,6 +33,11 @@ public final class PluginPacketRegistry implements PacketRegistry {
     @Override
     public Optional<PacketType> type(PacketProtocol protocol, PacketDirection direction, Key key) {
         return delegate.type(protocol, direction, key);
+    }
+
+    @Override
+    public PlayerInfoPacketFactory playerInfo() {
+        return delegate.playerInfo();
     }
 
     @Override

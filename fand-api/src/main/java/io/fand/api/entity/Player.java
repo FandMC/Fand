@@ -279,16 +279,32 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
         throw new UnsupportedOperationException("Client-side block changes are not supported");
     }
 
-    default void hideEntity(Player viewer, Entity entity) {
-        java.util.Objects.requireNonNull(viewer, "viewer");
+    default void hideEntity(Entity entity) {
         java.util.Objects.requireNonNull(entity, "entity");
         throw new UnsupportedOperationException("Per-viewer entity hiding is not supported");
     }
 
-    default void showEntity(Player viewer, Entity entity) {
-        java.util.Objects.requireNonNull(viewer, "viewer");
+    default void showEntity(Entity entity) {
         java.util.Objects.requireNonNull(entity, "entity");
         throw new UnsupportedOperationException("Per-viewer entity hiding is not supported");
+    }
+
+    /**
+     * @deprecated Use {@link #hideEntity(Entity)} on the viewer instead.
+     */
+    @Deprecated(forRemoval = false)
+    default void hideEntity(Player viewer, Entity entity) {
+        java.util.Objects.requireNonNull(viewer, "viewer");
+        viewer.hideEntity(entity);
+    }
+
+    /**
+     * @deprecated Use {@link #showEntity(Entity)} on the viewer instead.
+     */
+    @Deprecated(forRemoval = false)
+    default void showEntity(Player viewer, Entity entity) {
+        java.util.Objects.requireNonNull(viewer, "viewer");
+        viewer.showEntity(entity);
     }
 
     default void openBook(ItemStack book) {

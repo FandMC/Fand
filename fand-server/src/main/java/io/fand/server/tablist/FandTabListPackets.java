@@ -74,6 +74,24 @@ public final class FandTabListPackets {
         return ClientboundPlayerInfoUpdatePacket.fromEntries(actions, entries);
     }
 
+    public static ClientboundPlayerInfoUpdatePacket packetFromApi(
+            Collection<String> actions,
+            Collection<TabListEntry> entries,
+            @Nullable MinecraftServer server
+    ) {
+        Objects.requireNonNull(actions, "actions");
+        Objects.requireNonNull(entries, "entries");
+        var convertedActions = EnumSet.noneOf(ClientboundPlayerInfoUpdatePacket.Action.class);
+        for (var action : actions) {
+            convertedActions.add(ClientboundPlayerInfoUpdatePacket.Action.valueOf(action));
+        }
+        return packet(
+                convertedActions,
+                entries.stream()
+                        .map(entry -> entry(entry, server))
+                        .toList());
+    }
+
     public static ClientboundPlayerInfoUpdatePacket rewrite(
             ClientboundPlayerInfoUpdatePacket packet,
             Set<UUID> hiddenEntries,
@@ -110,7 +128,7 @@ public final class FandTabListPackets {
         return packet(EnumSet.copyOf(packet.actions()), rewritten);
     }
 
-    private static ClientboundPlayerInfoUpdatePacket.Entry entry(TabListEntry entry, MinecraftServer server) {
+    private static ClientboundPlayerInfoUpdatePacket.Entry entry(TabListEntry entry, @Nullable MinecraftServer server) {
         Objects.requireNonNull(entry, "entry");
         return new ClientboundPlayerInfoUpdatePacket.Entry(
                 entry.profile().uniqueId(),
@@ -137,9 +155,15 @@ public final class FandTabListPackets {
         };
     }
 
-    private static @Nullable Component displayName(TabListEntry entry, MinecraftServer server) {
+    private static @Nullable Component displayName(TabListEntry entry, @Nullable MinecraftServer server) {
         var displayName = entry.displayName();
-        return displayName == null ? null : AdventureBridge.toVanilla(displayName, server.registryAccess());
+        if (displayName == null) {
+            return null;
+        }
+        if (server == null) {
+            throw new IllegalStateException("Minecraft server is not attached");
+        }
+        return AdventureBridge.toVanilla(displayName, server.registryAccess());
     }
 
     private static ClientboundPlayerInfoUpdatePacket.Entry withLatency(

@@ -9,6 +9,7 @@ import io.fand.api.packet.PacketDirection;
 import io.fand.api.packet.PacketProtocol;
 import io.fand.api.packet.PacketType;
 import io.fand.api.packet.view.ClientboundBlockChangedAckPacketView;
+import io.fand.api.tablist.TabListEntry;
 import io.fand.server.tablist.FandTabListPackets;
 import io.netty.buffer.Unpooled;
 import java.net.InetSocketAddress;
@@ -27,6 +28,7 @@ import net.minecraft.network.protocol.common.ClientboundKeepAlivePacket;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
 import net.minecraft.network.protocol.common.custom.DiscardedPayload;
 import net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.GameType;
@@ -144,6 +146,61 @@ final class VanillaPacketBridgeTest {
         assertThat(info.actions()).containsExactly(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY);
         assertThat(info.entries()).containsExactlyElementsOf(replacementEntries);
         assertThat(info.entries().getFirst().latency()).isEqualTo(99);
+    }
+
+    @Test
+    void playerInfoFactoryReplacementRebuildsUpdatePacket() {
+        var registry = new PacketRegistryImpl();
+        var entryId = UUID.randomUUID();
+        var original = FandTabListPackets.latency(entryId, 42);
+        registry.intercept(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE, packet -> packet.replace(
+                registry.playerInfo().update(List.of(TabListEntry.builder(entryId, "Remote")
+                        .latency(99)
+                        .gameMode(io.fand.api.entity.GameMode.CREATIVE)
+                        .order(7)
+                        .build()))));
+
+        var intercepted = registry.interceptOutbound(
+                ConnectionProtocol.PLAY,
+                PacketFlow.CLIENTBOUND,
+                Optional.empty(),
+                Optional.empty(),
+                null,
+                original);
+
+        assertThat(intercepted).isInstanceOf(ClientboundPlayerInfoUpdatePacket.class);
+        var info = (ClientboundPlayerInfoUpdatePacket) intercepted;
+        assertThat(info.actions()).contains(
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_GAME_MODE,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LIST_ORDER);
+        assertThat(info.entries()).hasSize(1);
+        var entry = info.entries().getFirst();
+        assertThat(entry.profileId()).isEqualTo(entryId);
+        assertThat(entry.profile().name()).isEqualTo("Remote");
+        assertThat(entry.latency()).isEqualTo(99);
+        assertThat(entry.gameMode()).isEqualTo(GameType.CREATIVE);
+        assertThat(entry.listOrder()).isEqualTo(7);
+    }
+
+    @Test
+    void playerInfoFactoryReplacementRebuildsRemovePacket() {
+        var registry = new PacketRegistryImpl();
+        var oldId = UUID.randomUUID();
+        var newId = UUID.randomUUID();
+        registry.intercept(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_REMOVE, packet -> packet.replace(
+                registry.playerInfo().remove(List.of(newId))));
+
+        var intercepted = registry.interceptOutbound(
+                ConnectionProtocol.PLAY,
+                PacketFlow.CLIENTBOUND,
+                Optional.empty(),
+                Optional.empty(),
+                null,
+                new ClientboundPlayerInfoRemovePacket(List.of(oldId)));
+
+        assertThat(intercepted).isInstanceOf(ClientboundPlayerInfoRemovePacket.class);
+        assertThat(((ClientboundPlayerInfoRemovePacket) intercepted).profileIds()).containsExactly(newId);
     }
 
     @Test

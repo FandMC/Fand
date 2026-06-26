@@ -1,0 +1,1848 @@
+﻿diff --git a/docs/API_GAP_PROGRESS.md b/docs/API_GAP_PROGRESS.md
+index 9365e2f..adc57cb 100644
+--- a/docs/API_GAP_PROGRESS.md
++++ b/docs/API_GAP_PROGRESS.md
+@@ -32,7 +32,10 @@
+ - Verified: `./gradlew :fand-server:test --tests io.fand.server.plugin.PluginTabListServiceTest`.
+ - Verified: `./gradlew :fand-server:test --tests io.fand.server.tablist.FandTabListPacketsTest`.
+ - Verified: `./gradlew :fand-api:compileJava :fand-server:compileJava`.
+-- Remaining for this lane: layout/group helpers, global/proxy player-list sync, and public packet-level player-info factory remain to be layered on top of the now-stable per-viewer row/ping foundation.
++- Implemented: added `TabListGroup` and `TabListLayout` helpers for building per-viewer row groups from real players without exposing NMS packet details.
++- Implemented: added `RemoteTabListEntry` and `TabListSyncStrategy` so proxy/cluster bridges can publish remote player-list rows through the same `TabListService` surface.
++- Implemented: added public `PlayerInfoPacketFactory` through `PacketRegistry#playerInfo()`, backed by server-side player-info update/remove packet rebuilding for interceptor replacement flows.
++- Remaining for this lane: concrete proxy transport/adapters are intentionally left to plugins or distribution modules; the API now exposes the stable helper and packet construction surface they need.
+ - Current focus: Placeholder service.
+ - Implemented: added `PlaceholderService`, `PlaceholderProvider`, and `PlaceholderRegistration` API surfaces.
+ - Implemented: added global `Server#placeholders()` and plugin-scoped `PluginContext#placeholders()`.
+@@ -49,6 +52,13 @@
+ - Verified: `./gradlew --no-parallel --max-workers=2 :fand-server:test --tests io.fand.server.text.FandMiniMessageServiceTest`.
+ - Verified: `./gradlew --no-parallel --max-workers=2 :fand-server:test --tests io.fand.server.world.ApiSurfaceSourceTest`.
+ 
++## 2026-06-26
++
++- Current focus: external integration strategy and API style consistency.
++- Implemented: added `ExternalIntegration`, `ExternalIntegrationKind`, and `ExternalIntegrationStrategy` API surfaces for declarative SQL/Redis/message-queue integration handles.
++- Implemented: wired `Server#integrations()` and `PluginContext#integrations()` through the server/plugin runtime with an empty default strategy. Concrete MySQL, Redis, RabbitMQ, or other clients remain plugin/distribution-owned.
++- Implemented: added `Player#hideEntity(Entity)` and `Player#showEntity(Entity)` receiver-style overloads, with the old `hideEntity(Player, Entity)` / `showEntity(Player, Entity)` signatures retained as deprecated compatibility forwarders.
++
+ ## 2026-06-24
+ 
+ - Current focus: region / land API.
+diff --git a/fand-api/src/main/java/io/fand/api/Server.java b/fand-api/src/main/java/io/fand/api/Server.java
+index 4383c7f..df3254e 100644
+--- a/fand-api/src/main/java/io/fand/api/Server.java
++++ b/fand-api/src/main/java/io/fand/api/Server.java
+@@ -14,6 +14,7 @@ import io.fand.api.entity.Player;
+ import io.fand.api.event.EventBus;
+ import io.fand.api.gamerule.GameRuleService;
+ import io.fand.api.gui.GuiService;
++import io.fand.api.integration.ExternalIntegrationStrategy;
+ import io.fand.api.item.ItemTagKey;
+ import io.fand.api.item.ItemType;
+ import io.fand.api.lifecycle.LifecyclePhase;
+@@ -156,6 +157,10 @@ public interface Server extends ForwardingAudience {
+         return DataPackService.empty();
+     }
+ 
++    default ExternalIntegrationStrategy integrations() {
++        return ExternalIntegrationStrategy.empty();
++    }
++
+     /** Lightweight GUI routing service. */
+     GuiService guis();
+ 
+diff --git a/fand-api/src/main/java/io/fand/api/entity/Player.java b/fand-api/src/main/java/io/fand/api/entity/Player.java
+index 003584b..05aa943 100644
+--- a/fand-api/src/main/java/io/fand/api/entity/Player.java
++++ b/fand-api/src/main/java/io/fand/api/entity/Player.java
+@@ -279,18 +279,34 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
+         throw new UnsupportedOperationException("Client-side block changes are not supported");
+     }
+ 
+-    default void hideEntity(Player viewer, Entity entity) {
+-        java.util.Objects.requireNonNull(viewer, "viewer");
++    default void hideEntity(Entity entity) {
+         java.util.Objects.requireNonNull(entity, "entity");
+         throw new UnsupportedOperationException("Per-viewer entity hiding is not supported");
+     }
+ 
+-    default void showEntity(Player viewer, Entity entity) {
+-        java.util.Objects.requireNonNull(viewer, "viewer");
++    default void showEntity(Entity entity) {
+         java.util.Objects.requireNonNull(entity, "entity");
+         throw new UnsupportedOperationException("Per-viewer entity hiding is not supported");
+     }
+ 
++    /**
++     * @deprecated Use {@link #hideEntity(Entity)} on the viewer instead.
++     */
++    @Deprecated(forRemoval = false)
++    default void hideEntity(Player viewer, Entity entity) {
++        java.util.Objects.requireNonNull(viewer, "viewer");
++        viewer.hideEntity(entity);
++    }
++
++    /**
++     * @deprecated Use {@link #showEntity(Entity)} on the viewer instead.
++     */
++    @Deprecated(forRemoval = false)
++    default void showEntity(Player viewer, Entity entity) {
++        java.util.Objects.requireNonNull(viewer, "viewer");
++        viewer.showEntity(entity);
++    }
++
+     default void openBook(ItemStack book) {
+         throw new UnsupportedOperationException("Opening books is not supported");
+     }
+diff --git a/fand-api/src/main/java/io/fand/api/map/MapView.java b/fand-api/src/main/java/io/fand/api/map/MapView.java
+index 8a66d7e..e392da8 100644
+--- a/fand-api/src/main/java/io/fand/api/map/MapView.java
++++ b/fand-api/src/main/java/io/fand/api/map/MapView.java
+@@ -6,6 +6,10 @@ import java.util.List;
+ public interface MapView {
+     int id();
+ 
++    /**
++     * Installs a renderer for this map. Plugin-scoped services remove renderers
++     * registered by the plugin when it unloads.
++     */
+     void renderer(MapRenderer renderer);
+ 
+     default void renderer(PlayerMapRenderer renderer) {
+@@ -46,6 +50,10 @@ public interface MapView {
+         throw new UnsupportedOperationException("Map center is not supported");
+     }
+ 
++    /**
++     * Sets the map center in world coordinates. This mutates the underlying
++     * saved map data and is not automatically reverted when a plugin unloads.
++     */
+     default void setCenter(int x, int z) {
+         throw new UnsupportedOperationException("Map center is not supported");
+     }
+@@ -54,6 +62,10 @@ public interface MapView {
+         throw new UnsupportedOperationException("Map scale is not supported");
+     }
+ 
++    /**
++     * Sets the map scale. This mutates the underlying saved map data and is not
++     * automatically reverted when a plugin unloads.
++     */
+     default void setScale(MapScale scale) {
+         throw new UnsupportedOperationException("Map scale is not supported");
+     }
+@@ -62,6 +74,10 @@ public interface MapView {
+         return false;
+     }
+ 
++    /**
++     * Sets whether the map tracks player positions. This mutates the underlying
++     * saved map data and is not automatically reverted when a plugin unloads.
++     */
+     default void setTrackingPosition(boolean tracking) {
+         throw new UnsupportedOperationException("Map tracking is not supported");
+     }
+@@ -70,6 +86,11 @@ public interface MapView {
+         return false;
+     }
+ 
++    /**
++     * Sets whether the map tracks positions outside its normal range. This
++     * mutates the underlying saved map data and is not automatically reverted
++     * when a plugin unloads.
++     */
+     default void setUnlimitedTracking(boolean unlimited) {
+         throw new UnsupportedOperationException("Map unlimited tracking is not supported");
+     }
+@@ -78,6 +99,10 @@ public interface MapView {
+         return false;
+     }
+ 
++    /**
++     * Sets whether the map is locked. This mutates the underlying saved map data
++     * and is not automatically reverted when a plugin unloads.
++     */
+     default void setLocked(boolean locked) {
+         throw new UnsupportedOperationException("Map locking is not supported");
+     }
+@@ -86,6 +111,10 @@ public interface MapView {
+         return List.of();
+     }
+ 
++    /**
++     * Replaces client-side cursors stored on this map view. This mutates the
++     * underlying map state and is not automatically reverted when a plugin unloads.
++     */
+     default void setCursors(List<MapCursor> cursors) {
+         throw new UnsupportedOperationException("Map cursors are not supported");
+     }
+diff --git a/fand-api/src/main/java/io/fand/api/packet/PacketRegistry.java b/fand-api/src/main/java/io/fand/api/packet/PacketRegistry.java
+index 56e9185..aa1d178 100644
+--- a/fand-api/src/main/java/io/fand/api/packet/PacketRegistry.java
++++ b/fand-api/src/main/java/io/fand/api/packet/PacketRegistry.java
+@@ -13,6 +13,10 @@ public interface PacketRegistry {
+ 
+     Optional<PacketType> type(PacketProtocol protocol, PacketDirection direction, Key key);
+ 
++    default PlayerInfoPacketFactory playerInfo() {
++        return PlayerInfoPacketFactory.unsupported();
++    }
++
+     PacketRegistration intercept(PacketType type, PacketInterceptor<PacketView> interceptor);
+ 
+     <T extends PacketView> PacketRegistration intercept(
+diff --git a/fand-api/src/main/java/io/fand/api/plugin/PluginContext.java b/fand-api/src/main/java/io/fand/api/plugin/PluginContext.java
+index 98a0d9d..6337b35 100644
+--- a/fand-api/src/main/java/io/fand/api/plugin/PluginContext.java
++++ b/fand-api/src/main/java/io/fand/api/plugin/PluginContext.java
+@@ -12,6 +12,7 @@ import io.fand.api.enchantment.EnchantmentRegistry;
+ import io.fand.api.event.EventBus;
+ import io.fand.api.gamerule.GameRuleService;
+ import io.fand.api.gui.GuiService;
++import io.fand.api.integration.ExternalIntegrationStrategy;
+ import io.fand.api.loot.LootTableService;
+ import io.fand.api.map.MapService;
+ import io.fand.api.messaging.PluginMessaging;
+@@ -128,6 +129,11 @@ public interface PluginContext {
+         return DataPackService.empty();
+     }
+ 
++    /** External integration strategy visible to this plugin. */
++    default ExternalIntegrationStrategy integrations() {
++        return ExternalIntegrationStrategy.empty();
++    }
++
+     /** Custom item registry scoped to this plugin's lifecycle and namespace. */
+     CustomItemRegistry customItems();
+ 
+diff --git a/fand-api/src/main/java/io/fand/api/structure/StructureService.java b/fand-api/src/main/java/io/fand/api/structure/StructureService.java
+index 47c4b7e..f54076c 100644
+--- a/fand-api/src/main/java/io/fand/api/structure/StructureService.java
++++ b/fand-api/src/main/java/io/fand/api/structure/StructureService.java
+@@ -52,10 +52,7 @@ public interface StructureService {
+     CompletableFuture<Boolean> place(Key key, Location origin, StructurePlacement placement);
+ 
+     default CompletableFuture<Boolean> place(StructureProjection projection, Location origin, StructurePlacement placement) {
+-        var key = projection.sourceKey().orElseGet(() -> Key.key("fand", "projection/" + Integer.toHexString(java.util.Arrays.hashCode(projection.data()))));
+-        return importTemplate(key, projection).thenCompose(imported -> imported
+-                ? place(key, origin, placement)
+-                : CompletableFuture.completedFuture(false));
++        throw new UnsupportedOperationException("Direct structure projection placement is not supported");
+     }
+ 
+     CompletableFuture<Optional<Location>> locate(Key structure, Location origin, int radius);
+diff --git a/fand-api/src/main/java/io/fand/api/tablist/TabListService.java b/fand-api/src/main/java/io/fand/api/tablist/TabListService.java
+index 81c8cb4..00da381 100644
+--- a/fand-api/src/main/java/io/fand/api/tablist/TabListService.java
++++ b/fand-api/src/main/java/io/fand/api/tablist/TabListService.java
+@@ -53,6 +53,16 @@ public interface TabListService {
+                 () -> add(viewer, entry));
+     }
+ 
++    default void apply(Player viewer, TabListLayout layout) {
++        Objects.requireNonNull(layout, "layout");
++        layout.apply(this, viewer);
++    }
++
++    default void sync(Player viewer, TabListSyncStrategy strategy) {
++        Objects.requireNonNull(strategy, "strategy");
++        strategy.apply(this, viewer);
++    }
++
+     boolean remove(Player viewer, UUID entryId);
+ 
+     default boolean remove(Player viewer, TabListEntry entry) {
+diff --git a/fand-api/src/test/java/io/fand/api/ApiGapModelsTest.java b/fand-api/src/test/java/io/fand/api/ApiGapModelsTest.java
+index 6973a8e..888b232 100644
+--- a/fand-api/src/test/java/io/fand/api/ApiGapModelsTest.java
++++ b/fand-api/src/test/java/io/fand/api/ApiGapModelsTest.java
+@@ -9,12 +9,34 @@ import io.fand.api.event.entity.DamageModifier;
+ import io.fand.api.event.entity.EntityDamageEvent;
+ import io.fand.api.block.FluidState;
+ import io.fand.api.block.FluidTypes;
++import io.fand.api.entity.Entity;
++import io.fand.api.entity.GameMode;
++import io.fand.api.entity.Player;
++import io.fand.api.integration.ExternalIntegration;
++import io.fand.api.integration.ExternalIntegrationKind;
++import io.fand.api.integration.ExternalIntegrationStrategy;
+ import io.fand.api.item.ItemStack;
+ import io.fand.api.item.ItemType;
+ import io.fand.api.persistence.PersistentDataContainer;
++import io.fand.api.player.PlayerProfile;
++import io.fand.api.tablist.RemoteTabListEntry;
++import io.fand.api.tablist.TabListEntry;
++import io.fand.api.tablist.TabListGroup;
++import io.fand.api.tablist.TabListLayout;
++import io.fand.api.tablist.TabListRegistration;
++import io.fand.api.tablist.TabListService;
++import io.fand.api.tablist.TabListSyncStrategy;
+ import io.fand.api.world.Vector3;
++import java.lang.reflect.InvocationHandler;
++import java.lang.reflect.Proxy;
++import java.util.Collection;
++import java.util.Comparator;
++import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
++import java.util.Optional;
++import java.util.UUID;
++import java.util.concurrent.atomic.AtomicReference;
+ import net.kyori.adventure.key.Key;
+ import org.junit.jupiter.api.Test;
+ 
+@@ -113,9 +135,206 @@ class ApiGapModelsTest {
+         assertThat(FluidState.none().empty()).isTrue();
+     }
+ 
++    @Test
++    void tabListGroupAndLayoutBuildViewerRows() {
++        var alice = player("Alice", 5, GameMode.SURVIVAL);
++        var bob = player("Bob", 25, GameMode.CREATIVE);
++        var group = TabListGroup.of(player -> player.ping() >= 10)
++                .withOrder(Comparator.comparing(Player::name).reversed())
++                .withOrderBase(40);
++
++        var layout = TabListLayout.from(group, List.of(alice, bob));
++        var service = new RecordingTabListService();
++        layout.apply(service, alice);
++
++        assertThat(layout.entries()).hasSize(1);
++        assertThat(layout.entries().getFirst().profile().name()).isEqualTo("Bob");
++        assertThat(layout.entries().getFirst().latency()).isEqualTo(25);
++        assertThat(layout.entries().getFirst().gameMode()).isEqualTo(GameMode.CREATIVE);
++        assertThat(layout.entries().getFirst().order()).isEqualTo(40);
++        assertThat(service.entriesByViewer.get(alice.uniqueId())).hasSize(1);
++    }
++
++    @Test
++    void tabListSyncStrategyAppliesRemoteEntries() {
++        var viewer = player("Viewer", 0, GameMode.SURVIVAL);
++        var remote = TabListEntry.builder(UUID.randomUUID(), "Remote").latency(80).build();
++        TabListSyncStrategy strategy = ignored -> List.of(new RemoteTabListEntry(Key.key("proxy:lobby"), remote));
++        var service = new RecordingTabListService();
++
++        service.sync(viewer, strategy);
++
++        assertThat(service.entriesByViewer.get(viewer.uniqueId())).containsKey(remote.profile().uniqueId());
++    }
++
++    @Test
++    void externalIntegrationStrategyFindsDeclaredServices() {
++        var redis = new ExternalIntegration(
++                Key.key("fand:redis"),
++                ExternalIntegrationKind.REDIS,
++                Map.of("host", "127.0.0.1"));
++        ExternalIntegrationStrategy strategy = () -> List.of(redis);
++
++        assertThat(strategy.integration(Key.key("fand:redis"))).contains(redis);
++        assertThat(strategy.integration(Key.key("fand:mysql"))).isEmpty();
++        assertThat(ExternalIntegrationStrategy.empty().integrations()).isEmpty();
++    }
++
++    @Test
++    @SuppressWarnings("deprecation")
++    void legacyHideEntitySignatureDelegatesToViewerReceiver() {
++        var viewer = new AtomicReference<Entity>();
++        var receiver = player("Viewer", 0, GameMode.SURVIVAL, (proxy, method, args) -> {
++            if (method.getName().equals("hideEntity") && method.getParameterCount() == 1) {
++                viewer.set((Entity) args[0]);
++                return Boolean.TRUE;
++            }
++            return null;
++        });
++        var target = new TestLivingEntity();
++
++        receiver.hideEntity(receiver, target);
++
++        assertThat(viewer).hasValue(target);
++    }
++
+     private record TestItemType(Key key, int maxStackSize) implements ItemType {
+     }
+ 
++    private static Player player(String name, int ping, GameMode gameMode) {
++        return player(name, ping, gameMode, (proxy, method, args) -> null);
++    }
++
++    private static Player player(String name, int ping, GameMode gameMode, InvocationHandler custom) {
++        var uniqueId = UUID.nameUUIDFromBytes(name.getBytes(java.nio.charset.StandardCharsets.UTF_8));
++        InvocationHandler handler = (proxy, method, args) -> {
++            var customResult = custom.invoke(proxy, method, args);
++            if (customResult != null) {
++                return customResult;
++            }
++            if (method.isDefault()) {
++                return InvocationHandler.invokeDefault(proxy, method, args);
++            }
++            if (method.getDeclaringClass() == Object.class) {
++                return switch (method.getName()) {
++                    case "toString" -> name;
++                    case "hashCode" -> uniqueId.hashCode();
++                    case "equals" -> proxy == args[0];
++                    default -> throw new UnsupportedOperationException(method.toString());
++                };
++            }
++            return switch (method.getName()) {
++                case "uniqueId" -> uniqueId;
++                case "entityId" -> 1;
++                case "name" -> name;
++                case "profile" -> new PlayerProfile(uniqueId, name);
++                case "ping" -> ping;
++                case "gameMode" -> gameMode;
++                case "tabListDisplayName" -> Optional.empty();
++                case "sendMessage", "setVelocity", "setCustomName", "setCustomNameVisible",
++                        "setGlowing", "setSilent", "setGravity", "setInvulnerable",
++                        "addScoreboardTag", "removeScoreboardTag", "remove", "ejectPassengers",
++                        "kick", "playSound", "sendTabList", "clearTabList",
++                        "setTabListDisplayName", "setTabListOrder", "sendResourcePack",
++                        "removeResourcePack", "setGameMode", "setFoodLevel", "setSaturation",
++                        "setExperienceLevel", "setExperienceProgress", "giveExperience",
++                        "setFlying", "setAllowFlight", "discoverRecipes", "undiscoverRecipes",
++                        "setCooldown", "clearCooldown", "setStatistic", "setRespawnLocation",
++                        "sendCompassTarget", "setCursorItem", "closeInventory" -> null;
++                default -> defaultValue(method.getReturnType());
++            };
++        };
++        return (Player) Proxy.newProxyInstance(
++                Player.class.getClassLoader(),
++                new Class<?>[] {Player.class},
++                handler);
++    }
++
++    private static Object defaultValue(Class<?> returnType) {
++        if (returnType == Void.TYPE) {
++            return null;
++        }
++        if (returnType == boolean.class) {
++            return false;
++        }
++        if (returnType == int.class) {
++            return 0;
++        }
++        if (returnType == long.class) {
++            return 0L;
++        }
++        if (returnType == float.class) {
++            return 0.0F;
++        }
++        if (returnType == double.class) {
++            return 0.0D;
++        }
++        if (returnType == Optional.class) {
++            return Optional.empty();
++        }
++        if (returnType == Collection.class || returnType == List.class) {
++            return List.of();
++        }
++        return null;
++    }
++
++    private static final class RecordingTabListService implements TabListService {
++
++        private final Map<UUID, Map<UUID, TabListEntry>> entriesByViewer = new LinkedHashMap<>();
++
++        @Override
++        public Collection<? extends TabListRegistration> entries(Player viewer) {
++            return List.of();
++        }
++
++        @Override
++        public Optional<? extends TabListRegistration> entry(Player viewer, UUID entryId) {
++            return Optional.empty();
++        }
++
++        @Override
++        public TabListRegistration add(Player viewer, TabListEntry entry) {
++            entriesByViewer.computeIfAbsent(viewer.uniqueId(), ignored -> new LinkedHashMap<>())
++                    .put(entry.profile().uniqueId(), entry);
++            return new TabListRegistration() {
++                @Override
++                public UUID viewerId() {
++                    return viewer.uniqueId();
++                }
++
++                @Override
++                public UUID entryId() {
++                    return entry.profile().uniqueId();
++                }
++
++                @Override
++                public void update(TabListEntry replacement) {
++                    entriesByViewer.get(viewer.uniqueId()).put(replacement.profile().uniqueId(), replacement);
++                }
++
++                @Override
++                public void remove() {
++                    entriesByViewer.getOrDefault(viewer.uniqueId(), Map.of()).remove(entry.profile().uniqueId());
++                }
++
++                @Override
++                public boolean active() {
++                    return true;
++                }
++            };
++        }
++
++        @Override
++        public boolean remove(Player viewer, UUID entryId) {
++            return entriesByViewer.getOrDefault(viewer.uniqueId(), Map.of()).remove(entryId) != null;
++        }
++
++        @Override
++        public void removeAll(Player viewer) {
++            entriesByViewer.remove(viewer.uniqueId());
++        }
++    }
++
+     private static final class TestLivingEntity implements io.fand.api.entity.LivingEntity {
+         @Override
+         public java.util.UUID uniqueId() {
+diff --git a/fand-server/src/main/java/io/fand/server/FandServer.java b/fand-server/src/main/java/io/fand/server/FandServer.java
+index c2a75d9..a70448a 100644
+--- a/fand-server/src/main/java/io/fand/server/FandServer.java
++++ b/fand-server/src/main/java/io/fand/server/FandServer.java
+@@ -18,6 +18,7 @@ import io.fand.api.event.world.WorldLoadEvent;
+ import io.fand.api.event.world.WorldUnloadEvent;
+ import io.fand.api.gamerule.GameRuleService;
+ import io.fand.api.gui.GuiService;
++import io.fand.api.integration.ExternalIntegrationStrategy;
+ import io.fand.api.loot.LootTableService;
+ import io.fand.api.map.MapService;
+ import io.fand.api.messaging.PluginMessaging;
+@@ -133,6 +134,7 @@ public final class FandServer implements Server, AutoCloseable {
+     private final FandGameRuleService gameRules;
+     private final FandRegionService regions;
+     private final FandDataPackService dataPacks;
++    private final ExternalIntegrationStrategy integrations;
+     private final ModProtocolCompatibility modProtocols;
+     private final EventSubscription pluginChannelAdvertisement;
+     private final EventSubscription simulatedPlayerCleanup;
+@@ -189,12 +191,13 @@ public final class FandServer implements Server, AutoCloseable {
+         this.recipes = new FandRecipeRegistry();
+         this.scoreboard = new FandScoreboardService(minecraftServer::get);
+         this.tabLists = new FandTabListService(minecraftServer::get);
+-        this.packets = new PacketRegistryImpl();
++        this.packets = new PacketRegistryImpl(minecraftServer::get);
+         this.players = new PlayerRegistry(permissions, scoreboard, tabLists);
+         this.pluginMessaging = new FandPluginMessaging(packets, players::snapshot);
+         this.gameRules = new FandGameRuleService();
+         this.regions = new FandRegionService(Path.of("regions"));
+         this.dataPacks = new FandDataPackService(Path.of("datapacks"), minecraftServer::get);
++        this.integrations = ExternalIntegrationStrategy.empty();
+         this.pluginChannelAdvertisement = events.subscribe(
+                 PlayerJoinEvent.class,
+                 EventPriority.OBSERVER,
+@@ -249,6 +252,7 @@ public final class FandServer implements Server, AutoCloseable {
+                 ConfigReloader.toPluginOptions(initialConfig)
+         );
+         this.plugins.gameRuleService(gameRules);
++        this.plugins.integrations(integrations);
+         this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, chunks, chunkTasks, guiThemes);
+         io.fand.server.hooks.FandHooks.applyPlayerConfig(initialConfig.players);
+         io.fand.server.hooks.FandHooks.applyChunkConfig(initialConfig.chunks);
+@@ -478,6 +482,11 @@ public final class FandServer implements Server, AutoCloseable {
+         return dataPacks;
+     }
+ 
++    @Override
++    public ExternalIntegrationStrategy integrations() {
++        return integrations;
++    }
++
+     @Override
+     public CustomItemRegistry customItems() {
+         return customItems;
+diff --git a/fand-server/src/main/java/io/fand/server/entity/FandPlayer.java b/fand-server/src/main/java/io/fand/server/entity/FandPlayer.java
+index be57727..a3a2a61 100644
+--- a/fand-server/src/main/java/io/fand/server/entity/FandPlayer.java
++++ b/fand-server/src/main/java/io/fand/server/entity/FandPlayer.java
+@@ -1303,38 +1303,30 @@ public final class FandPlayer implements Player {
+     }
+ 
+     @Override
+-    public void hideEntity(Player viewer, io.fand.api.entity.Entity entity) {
+-        Objects.requireNonNull(viewer, "viewer");
++    public void hideEntity(io.fand.api.entity.Entity entity) {
+         Objects.requireNonNull(entity, "entity");
+-        if (!(viewer instanceof FandPlayer fandViewer)) {
+-            return;
+-        }
+         var target = EntityHandles.unwrap(entity);
+         runOnServerThread(() -> {
+-            if (fandViewer.bound.handle.connection == null || target.isRemoved()) {
++            if (bound.handle.connection == null || target.isRemoved()) {
+                 return;
+             }
+-            if (fandViewer.hiddenEntityTargets.add(target.getUUID())) {
+-                EntityVisibility.hide(fandViewer.bound.handle, target);
++            if (hiddenEntityTargets.add(target.getUUID())) {
++                EntityVisibility.hide(bound.handle, target);
+             }
+         });
+     }
+ 
+     @Override
+-    public void showEntity(Player viewer, io.fand.api.entity.Entity entity) {
+-        Objects.requireNonNull(viewer, "viewer");
++    public void showEntity(io.fand.api.entity.Entity entity) {
+         Objects.requireNonNull(entity, "entity");
+-        if (!(viewer instanceof FandPlayer fandViewer)) {
+-            return;
+-        }
+         var target = EntityHandles.unwrap(entity);
+         runOnServerThread(() -> {
+-            if (!fandViewer.hiddenEntityTargets.remove(target.getUUID())
++            if (!hiddenEntityTargets.remove(target.getUUID())
+                     || target.isRemoved()
+-                    || fandViewer.bound.handle.connection == null) {
++                    || bound.handle.connection == null) {
+                 return;
+             }
+-            EntityVisibility.show(fandViewer.bound.handle, target);
++            EntityVisibility.show(bound.handle, target);
+         });
+     }
+ 
+diff --git a/fand-server/src/main/java/io/fand/server/network/packet/PacketRegistryImpl.java b/fand-server/src/main/java/io/fand/server/network/packet/PacketRegistryImpl.java
+index d23e2db..96f79bf 100644
+--- a/fand-server/src/main/java/io/fand/server/network/packet/PacketRegistryImpl.java
++++ b/fand-server/src/main/java/io/fand/server/network/packet/PacketRegistryImpl.java
+@@ -9,6 +9,7 @@ import io.fand.api.packet.PacketRegistration;
+ import io.fand.api.packet.PacketRegistry;
+ import io.fand.api.packet.PacketType;
+ import io.fand.api.packet.PacketView;
++import io.fand.api.packet.PlayerInfoPacketFactory;
+ import io.fand.api.entity.Player;
+ import io.fand.api.player.PlayerProfile;
+ import java.net.SocketAddress;
+@@ -19,11 +20,13 @@ import java.util.Optional;
+ import java.util.concurrent.ConcurrentHashMap;
+ import java.util.concurrent.ConcurrentMap;
+ import java.util.concurrent.CopyOnWriteArrayList;
++import java.util.function.Supplier;
+ import net.kyori.adventure.key.Key;
+ import net.minecraft.network.ConnectionProtocol;
+ import net.minecraft.network.PacketListener;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.PacketFlow;
++import net.minecraft.server.MinecraftServer;
+ import org.jspecify.annotations.Nullable;
+ 
+ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
+@@ -31,7 +34,17 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
+     private final ConcurrentMap<PacketType, CopyOnWriteArrayList<InterceptorRegistration<? extends PacketView>>> interceptors =
+             new ConcurrentHashMap<>();
+     private final ConcurrentMap<CustomChannelKey, CustomChannelRegistration> customChannels = new ConcurrentHashMap<>();
++    private final Supplier<@Nullable MinecraftServer> server;
+     private final VanillaPacketBridge bridge = new VanillaPacketBridge(this);
++    private final PlayerInfoPacketFactory playerInfo = new FandPlayerInfoPacketFactory();
++
++    public PacketRegistryImpl() {
++        this(() -> null);
++    }
++
++    public PacketRegistryImpl(Supplier<@Nullable MinecraftServer> server) {
++        this.server = Objects.requireNonNull(server, "server");
++    }
+ 
+     @Override
+     public Collection<PacketType> types() {
+@@ -43,6 +56,11 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
+         return PacketType.find(protocol, direction, key);
+     }
+ 
++    @Override
++    public PlayerInfoPacketFactory playerInfo() {
++        return playerInfo;
++    }
++
+     @Override
+     public PacketRegistration intercept(PacketType type, PacketInterceptor<PacketView> interceptor) {
+         return intercept(type, PacketView.class, interceptor);
+@@ -111,6 +129,10 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
+         return registration == null ? Optional.empty() : Optional.ofNullable(registration.handler());
+     }
+ 
++    Optional<MinecraftServer> server() {
++        return Optional.ofNullable(server.get());
++    }
++
+     public @Nullable Packet<?> interceptInbound(
+             PacketListener listener,
+             Optional<? extends Player> player,
+diff --git a/fand-server/src/main/java/io/fand/server/network/packet/VanillaPacketBridge.java b/fand-server/src/main/java/io/fand/server/network/packet/VanillaPacketBridge.java
+index aa8f9e0..3893c3f 100644
+--- a/fand-server/src/main/java/io/fand/server/network/packet/VanillaPacketBridge.java
++++ b/fand-server/src/main/java/io/fand/server/network/packet/VanillaPacketBridge.java
+@@ -7,6 +7,8 @@ import io.fand.api.packet.PacketProtocol;
+ import io.fand.api.packet.PacketType;
+ import io.fand.api.packet.PacketView;
+ import io.fand.api.player.PlayerProfile;
++import io.fand.api.tablist.TabListEntry;
++import io.fand.server.tablist.FandTabListPackets;
+ import java.lang.reflect.Constructor;
+ import java.lang.reflect.Field;
+ import java.lang.reflect.InaccessibleObjectException;
+@@ -28,6 +30,7 @@ import net.minecraft.network.ConnectionProtocol;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
+ import net.minecraft.network.protocol.common.custom.DiscardedPayload;
++import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
+ import net.minecraft.resources.Identifier;
+ import org.jspecify.annotations.Nullable;
+ import org.slf4j.Logger;
+@@ -151,6 +154,10 @@ final class VanillaPacketBridge {
+             return packet;
+         }
+         try {
++            var rebuilt = rebuildPlayerInfo(currentView);
++            if (rebuilt != null) {
++                return rebuilt;
++            }
+             return shape.rebuild(currentView);
+         } catch (RuntimeException failure) {
+             LOGGER.warn("Failed to rebuild vanilla packet {}", packet.getClass().getName(), failure);
+@@ -158,6 +165,48 @@ final class VanillaPacketBridge {
+         }
+     }
+ 
++    private @Nullable Packet<?> rebuildPlayerInfo(PacketView view) {
++        if (view.packetType() == PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE && isApiPlayerInfoUpdate(view)) {
++            var server = registry.server().orElse(null);
++            return FandTabListPackets.packetFromApi(actions(view), tabListEntries(view), server);
++        }
++        if (view.packetType() == PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_REMOVE && view.has("profileIds")) {
++            return new ClientboundPlayerInfoRemovePacket(profileIds(view));
++        }
++        return null;
++    }
++
++    private static boolean isApiPlayerInfoUpdate(PacketView view) {
++        if (!view.has("actions") || !view.has("entries")) {
++            return false;
++        }
++        var actions = view.value("actions");
++        var entries = view.value("entries");
++        if (!(actions instanceof List<?> actionList) || actionList.stream().anyMatch(action -> !(action instanceof String))) {
++            return false;
++        }
++        return entries instanceof List<?> entryList
++                && entryList.stream().allMatch(entry -> entry instanceof TabListEntry);
++    }
++
++    private static List<String> actions(PacketView view) {
++        return view.value("actions", List.class).stream()
++                .map(Object::toString)
++                .toList();
++    }
++
++    private static List<TabListEntry> tabListEntries(PacketView view) {
++        return view.value("entries", List.class).stream()
++                .map(TabListEntry.class::cast)
++                .toList();
++    }
++
++    private static List<java.util.UUID> profileIds(PacketView view) {
++        return view.value("profileIds", List.class).stream()
++                .map(java.util.UUID.class::cast)
++                .toList();
++    }
++
+     private void dispatchCustomPayload(
+             PacketProtocol protocol,
+             PacketDirection direction,
+diff --git a/fand-server/src/main/java/io/fand/server/plugin/PluginPacketRegistry.java b/fand-server/src/main/java/io/fand/server/plugin/PluginPacketRegistry.java
+index f338059..1556620 100644
+--- a/fand-server/src/main/java/io/fand/server/plugin/PluginPacketRegistry.java
++++ b/fand-server/src/main/java/io/fand/server/plugin/PluginPacketRegistry.java
+@@ -9,6 +9,7 @@ import io.fand.api.packet.PacketRegistration;
+ import io.fand.api.packet.PacketRegistry;
+ import io.fand.api.packet.PacketType;
+ import io.fand.api.packet.PacketView;
++import io.fand.api.packet.PlayerInfoPacketFactory;
+ import java.util.Collection;
+ import java.util.Objects;
+ import java.util.Optional;
+@@ -34,6 +35,11 @@ public final class PluginPacketRegistry implements PacketRegistry {
+         return delegate.type(protocol, direction, key);
+     }
+ 
++    @Override
++    public PlayerInfoPacketFactory playerInfo() {
++        return delegate.playerInfo();
++    }
++
+     @Override
+     public PacketRegistration intercept(PacketType type, PacketInterceptor<PacketView> interceptor) {
+         return tracker.track(delegate.intercept(type, interceptor));
+diff --git a/fand-server/src/main/java/io/fand/server/plugin/PluginRuntime.java b/fand-server/src/main/java/io/fand/server/plugin/PluginRuntime.java
+index ea90a5b..fccb801 100644
+--- a/fand-server/src/main/java/io/fand/server/plugin/PluginRuntime.java
++++ b/fand-server/src/main/java/io/fand/server/plugin/PluginRuntime.java
+@@ -13,6 +13,7 @@ import io.fand.api.enchantment.EnchantmentRegistry;
+ import io.fand.api.event.EventBus;
+ import io.fand.api.gamerule.GameRuleService;
+ import io.fand.api.gui.GuiService;
++import io.fand.api.integration.ExternalIntegrationStrategy;
+ import io.fand.api.lifecycle.PluginDisableEvent;
+ import io.fand.api.lifecycle.PluginEnableEvent;
+ import io.fand.api.loot.LootTableService;
+@@ -98,6 +99,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
+     private volatile GameRuleService gameRuleService = GameRuleService.empty();
+     private final RegionService regionService;
+     private final DataPackService dataPackService;
++    private volatile ExternalIntegrationStrategy integrationStrategy = ExternalIntegrationStrategy.empty();
+     private final CustomItemRegistry customItemRegistry;
+     private final CustomBlockRegistry customBlockRegistry;
+     private final GuiService guiService;
+@@ -578,6 +580,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
+         this.gameRuleService = Objects.requireNonNull(service, "service");
+     }
+ 
++    public void integrations(ExternalIntegrationStrategy strategy) {
++        this.integrationStrategy = Objects.requireNonNull(strategy, "strategy");
++    }
++
+     public void loadPlugins() {
+         synchronized (lifecycleLock) {
+             ensureOpen();
+@@ -1001,6 +1007,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
+                 new PluginGameRuleService(gameRuleService, resources, id),
+                 new PluginRegionService(regionService, resources, id),
+                 new PluginDataPackService(dataPackService, resources, id),
++                integrationStrategy,
+                 new PluginCustomItemRegistry(customItemRegistry, resources, id),
+                 new PluginCustomBlockRegistry(customBlockRegistry, resources, id),
+                 new PluginGuiService(guiService, resources),
+diff --git a/fand-server/src/main/java/io/fand/server/plugin/PluginStructureService.java b/fand-server/src/main/java/io/fand/server/plugin/PluginStructureService.java
+index 307e361..9677d77 100644
+--- a/fand-server/src/main/java/io/fand/server/plugin/PluginStructureService.java
++++ b/fand-server/src/main/java/io/fand/server/plugin/PluginStructureService.java
+@@ -114,9 +114,14 @@ public final class PluginStructureService implements StructureService {
+         return delegate.place(scopedKey(key), origin, placement);
+     }
+ 
++    @Override
++    public CompletableFuture<Boolean> place(StructureProjection projection, Location origin, StructurePlacement placement) {
++        return delegate.place(projection, origin, placement);
++    }
++
+     @Override
+     public CompletableFuture<Optional<Location>> locate(Key structure, Location origin, int radius) {
+-        return delegate.locate(structure, origin, radius);
++        return delegate.locate(scopedKey(structure), origin, radius);
+     }
+ 
+     private Key scopedKey(Key key) {
+diff --git a/fand-server/src/main/java/io/fand/server/plugin/PluginTabListService.java b/fand-server/src/main/java/io/fand/server/plugin/PluginTabListService.java
+index 11f985e..3a3ce52 100644
+--- a/fand-server/src/main/java/io/fand/server/plugin/PluginTabListService.java
++++ b/fand-server/src/main/java/io/fand/server/plugin/PluginTabListService.java
+@@ -4,8 +4,9 @@ import io.fand.api.entity.Player;
+ import io.fand.api.tablist.TabListEntry;
+ import io.fand.api.tablist.TabListRegistration;
+ import io.fand.api.tablist.TabListService;
+-import java.util.HashSet;
++import io.fand.server.tablist.RealPlayerTabListAccess;
+ import java.util.Collection;
++import java.util.HashSet;
+ import java.util.Objects;
+ import java.util.Optional;
+ import java.util.Set;
+@@ -55,13 +56,39 @@ public final class PluginTabListService implements TabListService {
+     public void showOnly(Player viewer, Collection<? extends Player> visibleTargets) {
+         Objects.requireNonNull(viewer, "viewer");
+         Objects.requireNonNull(visibleTargets, "visibleTargets");
++        for (var target : visibleTargets) {
++            Objects.requireNonNull(target, "visibleTargets cannot contain null");
++        }
++        RealPlayerTabListAccess realPlayers = delegate instanceof RealPlayerTabListAccess access ? access : null;
++        if (realPlayers == null) {
++            showOnlyWithPlayerCandidates(viewer, visibleTargets);
++            return;
++        }
++
++        Set<UUID> candidateIds = new HashSet<>();
++        var viewerId = viewer.uniqueId();
++        candidateIds.addAll(realPlayers.showOnlyCandidateIds(viewer, visibleTargets));
++        for (var target : visibleTargets) {
++            candidateIds.add(target.uniqueId());
++        }
++        delegate.showOnly(viewer, visibleTargets);
++        for (var targetId : candidateIds) {
++            if (targetId.equals(viewerId) || realPlayers.visibleInRealPlayerList(viewerId, targetId)) {
++                tracker.restoreTabListVisibility(viewerId, targetId);
++            } else {
++                tracker.trackTabListVisibility(
++                        viewerId,
++                        targetId,
++                        () -> realPlayers.setRealEntryVisible(viewerId, targetId, true));
++            }
++        }
++    }
++
++    private void showOnlyWithPlayerCandidates(Player viewer, Collection<? extends Player> visibleTargets) {
+         Set<Player> candidates = new HashSet<>();
+         candidates.addAll(viewer.world().players());
+         candidates.addAll(visibleTargets);
+         delegate.showOnly(viewer, visibleTargets);
+-        for (var target : visibleTargets) {
+-            Objects.requireNonNull(target, "visibleTargets cannot contain null");
+-        }
+         for (var target : candidates) {
+             if (target.uniqueId().equals(viewer.uniqueId()) || delegate.visible(viewer, target)) {
+                 tracker.restoreTabListVisibility(viewer.uniqueId(), target.uniqueId());
+diff --git a/fand-server/src/main/java/io/fand/server/plugin/RuntimePluginContext.java b/fand-server/src/main/java/io/fand/server/plugin/RuntimePluginContext.java
+index ae201bc..5e9f650 100644
+--- a/fand-server/src/main/java/io/fand/server/plugin/RuntimePluginContext.java
++++ b/fand-server/src/main/java/io/fand/server/plugin/RuntimePluginContext.java
+@@ -12,6 +12,7 @@ import io.fand.api.enchantment.EnchantmentRegistry;
+ import io.fand.api.event.EventBus;
+ import io.fand.api.gamerule.GameRuleService;
+ import io.fand.api.gui.GuiService;
++import io.fand.api.integration.ExternalIntegrationStrategy;
+ import io.fand.api.loot.LootTableService;
+ import io.fand.api.map.MapService;
+ import io.fand.api.messaging.PluginMessaging;
+@@ -66,6 +67,7 @@ public final class RuntimePluginContext implements PluginContext {
+     private final GameRuleService gameRules;
+     private final RegionService regions;
+     private final DataPackService dataPacks;
++    private final ExternalIntegrationStrategy integrations;
+     private final CustomItemRegistry customItems;
+     private final CustomBlockRegistry customBlocks;
+     private final GuiService guis;
+@@ -100,6 +102,7 @@ public final class RuntimePluginContext implements PluginContext {
+             GameRuleService gameRules,
+             RegionService regions,
+             DataPackService dataPacks,
++            ExternalIntegrationStrategy integrations,
+             CustomItemRegistry customItems,
+             CustomBlockRegistry customBlocks,
+             GuiService guis,
+@@ -130,6 +133,7 @@ public final class RuntimePluginContext implements PluginContext {
+         this.gameRules = gameRules;
+         this.regions = regions;
+         this.dataPacks = dataPacks;
++        this.integrations = integrations;
+         this.customItems = customItems;
+         this.customBlocks = customBlocks;
+         this.guis = guis;
+@@ -249,6 +253,11 @@ public final class RuntimePluginContext implements PluginContext {
+         return dataPacks;
+     }
+ 
++    @Override
++    public ExternalIntegrationStrategy integrations() {
++        return integrations;
++    }
++
+     @Override
+     public CustomItemRegistry customItems() {
+         return customItems;
+diff --git a/fand-server/src/main/java/io/fand/server/structure/FandStructureService.java b/fand-server/src/main/java/io/fand/server/structure/FandStructureService.java
+index 66f95bb..9259447 100644
+--- a/fand-server/src/main/java/io/fand/server/structure/FandStructureService.java
++++ b/fand-server/src/main/java/io/fand/server/structure/FandStructureService.java
+@@ -39,6 +39,7 @@ import java.util.List;
+ import java.util.Locale;
+ import java.util.Objects;
+ import java.util.Optional;
++import java.util.UUID;
+ import java.util.concurrent.CompletableFuture;
+ import java.util.concurrent.atomic.AtomicBoolean;
+ import java.util.concurrent.atomic.AtomicLong;
+@@ -293,6 +294,18 @@ public final class FandStructureService implements StructureService {
+         return submit(current, () -> placeOnServerThread(key, origin, placement));
+     }
+ 
++    @Override
++    public CompletableFuture<Boolean> place(StructureProjection projection, Location origin, StructurePlacement placement) {
++        Objects.requireNonNull(projection, "projection");
++        Objects.requireNonNull(origin, "origin");
++        Objects.requireNonNull(placement, "placement");
++        var current = server.get();
++        if (current == null) {
++            return notAttached();
++        }
++        return submit(current, () -> placeProjectionOnServerThread(current, projection, origin, placement));
++    }
++
+     @Override
+     public CompletableFuture<Optional<Location>> locate(Key structure, Location origin, int radius) {
+         Objects.requireNonNull(structure, "structure");
+@@ -383,6 +396,22 @@ public final class FandStructureService implements StructureService {
+                 placement.updateFlags());
+     }
+ 
++    private boolean placeProjectionOnServerThread(
++            MinecraftServer server,
++            StructureProjection projection,
++            Location origin,
++            StructurePlacement placement
++    ) {
++        var key = Key.key("fand", "projection/" + UUID.randomUUID());
++        var id = identifier(key);
++        try {
++            return importOnServerThread(server, key, projection)
++                    && placeOnServerThread(key, origin, placement);
++        } finally {
++            server.getStructureManager().remove(id);
++        }
++    }
++
+     private Optional<Location> locateOnServerThread(Key structure, Location origin, int radius) {
+         if (!runtimeStructureActive(structure)) {
+             return Optional.empty();
+diff --git a/fand-server/src/main/java/io/fand/server/tablist/FandTabListPackets.java b/fand-server/src/main/java/io/fand/server/tablist/FandTabListPackets.java
+index ef81187..845610d 100644
+--- a/fand-server/src/main/java/io/fand/server/tablist/FandTabListPackets.java
++++ b/fand-server/src/main/java/io/fand/server/tablist/FandTabListPackets.java
+@@ -74,6 +74,24 @@ public final class FandTabListPackets {
+         return ClientboundPlayerInfoUpdatePacket.fromEntries(actions, entries);
+     }
+ 
++    public static ClientboundPlayerInfoUpdatePacket packetFromApi(
++            Collection<String> actions,
++            Collection<TabListEntry> entries,
++            @Nullable MinecraftServer server
++    ) {
++        Objects.requireNonNull(actions, "actions");
++        Objects.requireNonNull(entries, "entries");
++        var convertedActions = EnumSet.noneOf(ClientboundPlayerInfoUpdatePacket.Action.class);
++        for (var action : actions) {
++            convertedActions.add(ClientboundPlayerInfoUpdatePacket.Action.valueOf(action));
++        }
++        return packet(
++                convertedActions,
++                entries.stream()
++                        .map(entry -> entry(entry, server))
++                        .toList());
++    }
++
+     public static ClientboundPlayerInfoUpdatePacket rewrite(
+             ClientboundPlayerInfoUpdatePacket packet,
+             Set<UUID> hiddenEntries,
+@@ -110,7 +128,7 @@ public final class FandTabListPackets {
+         return packet(EnumSet.copyOf(packet.actions()), rewritten);
+     }
+ 
+-    private static ClientboundPlayerInfoUpdatePacket.Entry entry(TabListEntry entry, MinecraftServer server) {
++    private static ClientboundPlayerInfoUpdatePacket.Entry entry(TabListEntry entry, @Nullable MinecraftServer server) {
+         Objects.requireNonNull(entry, "entry");
+         return new ClientboundPlayerInfoUpdatePacket.Entry(
+                 entry.profile().uniqueId(),
+@@ -137,9 +155,15 @@ public final class FandTabListPackets {
+         };
+     }
+ 
+-    private static @Nullable Component displayName(TabListEntry entry, MinecraftServer server) {
++    private static @Nullable Component displayName(TabListEntry entry, @Nullable MinecraftServer server) {
+         var displayName = entry.displayName();
+-        return displayName == null ? null : AdventureBridge.toVanilla(displayName, server.registryAccess());
++        if (displayName == null) {
++            return null;
++        }
++        if (server == null) {
++            throw new IllegalStateException("Minecraft server is not attached");
++        }
++        return AdventureBridge.toVanilla(displayName, server.registryAccess());
+     }
+ 
+     private static ClientboundPlayerInfoUpdatePacket.Entry withLatency(
+diff --git a/fand-server/src/main/java/io/fand/server/tablist/FandTabListService.java b/fand-server/src/main/java/io/fand/server/tablist/FandTabListService.java
+index cfc1ecc..14ea6f0 100644
+--- a/fand-server/src/main/java/io/fand/server/tablist/FandTabListService.java
++++ b/fand-server/src/main/java/io/fand/server/tablist/FandTabListService.java
+@@ -4,7 +4,6 @@ import io.fand.api.entity.Player;
+ import io.fand.api.tablist.TabListEntry;
+ import io.fand.api.tablist.TabListRegistration;
+ import io.fand.api.tablist.TabListService;
+-import io.fand.server.entity.FandPlayer;
+ import io.fand.server.util.ServerThreading;
+ import java.util.Collection;
+ import java.util.LinkedHashMap;
+@@ -22,7 +21,7 @@ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.server.MinecraftServer;
+ import net.minecraft.server.level.ServerPlayer;
+ 
+-public final class FandTabListService implements TabListService, AutoCloseable {
++public final class FandTabListService implements TabListService, RealPlayerTabListAccess, AutoCloseable {
+ 
+     private final Supplier<MinecraftServer> server;
+     private final Map<UUID, Map<UUID, FandTabListRegistration>> entriesByViewer = new ConcurrentHashMap<>();
+@@ -73,6 +72,21 @@ public final class FandTabListService implements TabListService, AutoCloseable {
+         });
+     }
+ 
++    @Override
++    public Collection<UUID> showOnlyCandidateIds(Player viewer, Collection<? extends Player> visibleTargets) {
++        Objects.requireNonNull(viewer, "viewer");
++        Objects.requireNonNull(visibleTargets, "visibleTargets");
++        var current = server.get();
++        if (current == null) {
++            return viewer.world().players().stream()
++                    .map(Player::uniqueId)
++                    .toList();
++        }
++        return ServerThreading.callBlocking(current, () -> current.getPlayerList().getPlayers().stream()
++                .map(ServerPlayer::getUUID)
++                .toList());
++    }
++
+     @Override
+     public Optional<? extends TabListRegistration> entry(Player viewer, UUID entryId) {
+         var entries = entriesByViewer.get(viewerId(viewer));
+@@ -297,7 +311,7 @@ public final class FandTabListService implements TabListService, AutoCloseable {
+ 
+     private static UUID viewerId(Player viewer) {
+         Objects.requireNonNull(viewer, "viewer");
+-        if (viewer instanceof FandPlayer fandPlayer) {
++        if (viewer instanceof io.fand.server.entity.FandPlayer fandPlayer) {
+             return fandPlayer.uniqueId();
+         }
+         return viewer.uniqueId();
+diff --git a/fand-server/src/test/java/io/fand/server/network/packet/PacketRegistryImplTest.java b/fand-server/src/test/java/io/fand/server/network/packet/PacketRegistryImplTest.java
+index dc23621..332a9da 100644
+--- a/fand-server/src/test/java/io/fand/server/network/packet/PacketRegistryImplTest.java
++++ b/fand-server/src/test/java/io/fand/server/network/packet/PacketRegistryImplTest.java
+@@ -9,6 +9,9 @@ import io.fand.api.packet.PacketProtocol;
+ import io.fand.api.packet.PacketType;
+ import io.fand.api.packet.PacketView;
+ import io.fand.api.packet.view.ClientboundAddEntityPacketView;
++import io.fand.api.tablist.TabListEntry;
++import java.util.List;
++import java.util.UUID;
+ import net.kyori.adventure.key.Key;
+ import org.junit.jupiter.api.Test;
+ 
+@@ -87,6 +90,20 @@ final class PacketRegistryImplTest {
+                 .contains(PacketType.PLAY_CLIENTBOUND_ADD_ENTITY);
+     }
+ 
++    @Test
++    void exposesPlayerInfoPacketFactory() {
++        var registry = new PacketRegistryImpl();
++        var entryId = UUID.randomUUID();
++
++        var update = registry.playerInfo().update(List.of(TabListEntry.builder(entryId, "Remote").latency(12).build()));
++        var remove = registry.playerInfo().remove(List.of(entryId));
++
++        assertThat(update.packetType()).isEqualTo(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE);
++        assertThat(update.value("entries", List.class)).hasSize(1);
++        assertThat(remove.packetType()).isEqualTo(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_REMOVE);
++        assertThat(remove.value("profileIds", List.class)).containsExactly(entryId);
++    }
++
+     private interface WrongPacketView extends PacketView {
+     }
+ }
+diff --git a/fand-server/src/test/java/io/fand/server/network/packet/VanillaPacketBridgeTest.java b/fand-server/src/test/java/io/fand/server/network/packet/VanillaPacketBridgeTest.java
+index 997b514..6876d6f 100644
+--- a/fand-server/src/test/java/io/fand/server/network/packet/VanillaPacketBridgeTest.java
++++ b/fand-server/src/test/java/io/fand/server/network/packet/VanillaPacketBridgeTest.java
+@@ -9,6 +9,7 @@ import io.fand.api.packet.PacketDirection;
+ import io.fand.api.packet.PacketProtocol;
+ import io.fand.api.packet.PacketType;
+ import io.fand.api.packet.view.ClientboundBlockChangedAckPacketView;
++import io.fand.api.tablist.TabListEntry;
+ import io.fand.server.tablist.FandTabListPackets;
+ import io.netty.buffer.Unpooled;
+ import java.net.InetSocketAddress;
+@@ -27,6 +28,7 @@ import net.minecraft.network.protocol.common.ClientboundKeepAlivePacket;
+ import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
+ import net.minecraft.network.protocol.common.custom.DiscardedPayload;
+ import net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket;
++import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
+ import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
+ import net.minecraft.resources.Identifier;
+ import net.minecraft.world.level.GameType;
+@@ -146,6 +148,61 @@ final class VanillaPacketBridgeTest {
+         assertThat(info.entries().getFirst().latency()).isEqualTo(99);
+     }
+ 
++    @Test
++    void playerInfoFactoryReplacementRebuildsUpdatePacket() {
++        var registry = new PacketRegistryImpl();
++        var entryId = UUID.randomUUID();
++        var original = FandTabListPackets.latency(entryId, 42);
++        registry.intercept(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE, packet -> packet.replace(
++                registry.playerInfo().update(List.of(TabListEntry.builder(entryId, "Remote")
++                        .latency(99)
++                        .gameMode(io.fand.api.entity.GameMode.CREATIVE)
++                        .order(7)
++                        .build()))));
++
++        var intercepted = registry.interceptOutbound(
++                ConnectionProtocol.PLAY,
++                PacketFlow.CLIENTBOUND,
++                Optional.empty(),
++                Optional.empty(),
++                null,
++                original);
++
++        assertThat(intercepted).isInstanceOf(ClientboundPlayerInfoUpdatePacket.class);
++        var info = (ClientboundPlayerInfoUpdatePacket) intercepted;
++        assertThat(info.actions()).contains(
++                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY,
++                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_GAME_MODE,
++                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LIST_ORDER);
++        assertThat(info.entries()).hasSize(1);
++        var entry = info.entries().getFirst();
++        assertThat(entry.profileId()).isEqualTo(entryId);
++        assertThat(entry.profile().name()).isEqualTo("Remote");
++        assertThat(entry.latency()).isEqualTo(99);
++        assertThat(entry.gameMode()).isEqualTo(GameType.CREATIVE);
++        assertThat(entry.listOrder()).isEqualTo(7);
++    }
++
++    @Test
++    void playerInfoFactoryReplacementRebuildsRemovePacket() {
++        var registry = new PacketRegistryImpl();
++        var oldId = UUID.randomUUID();
++        var newId = UUID.randomUUID();
++        registry.intercept(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_REMOVE, packet -> packet.replace(
++                registry.playerInfo().remove(List.of(newId))));
++
++        var intercepted = registry.interceptOutbound(
++                ConnectionProtocol.PLAY,
++                PacketFlow.CLIENTBOUND,
++                Optional.empty(),
++                Optional.empty(),
++                null,
++                new ClientboundPlayerInfoRemovePacket(List.of(oldId)));
++
++        assertThat(intercepted).isInstanceOf(ClientboundPlayerInfoRemovePacket.class);
++        assertThat(((ClientboundPlayerInfoRemovePacket) intercepted).profileIds()).containsExactly(newId);
++    }
++
+     @Test
+     void nestedPacketClassResolvesToItsType() {
+         var registry = new PacketRegistryImpl();
+diff --git a/fand-server/src/test/java/io/fand/server/plugin/PluginPacketRegistryTest.java b/fand-server/src/test/java/io/fand/server/plugin/PluginPacketRegistryTest.java
+index 517e543..fc11bb9 100644
+--- a/fand-server/src/test/java/io/fand/server/plugin/PluginPacketRegistryTest.java
++++ b/fand-server/src/test/java/io/fand/server/plugin/PluginPacketRegistryTest.java
+@@ -5,7 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
+ import io.fand.api.messaging.PluginMessageDirection;
+ import io.fand.api.packet.CustomPacketDefinition;
+ import io.fand.api.packet.PacketDirection;
++import io.fand.api.packet.PacketType;
++import io.fand.api.tablist.TabListEntry;
+ import io.fand.server.network.packet.PacketRegistryImpl;
++import java.util.List;
++import java.util.UUID;
+ import net.kyori.adventure.key.Key;
+ import org.junit.jupiter.api.Test;
+ 
+@@ -42,4 +46,17 @@ final class PluginPacketRegistryTest {
+ 
+         assertThat(registry.customHandler(io.fand.api.packet.PacketProtocol.PLAY, channel)).isEmpty();
+     }
++
++    @Test
++    void playerInfoFactoryIsForwardedToPluginRegistry() {
++        var registry = new PacketRegistryImpl();
++        var resources = new PluginResourceTracker();
++        var packets = new PluginPacketRegistry(registry, resources);
++        var entryId = UUID.randomUUID();
++
++        var view = packets.playerInfo().update(List.of(TabListEntry.builder(entryId, "Remote").build()));
++
++        assertThat(view.packetType()).isEqualTo(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE);
++        assertThat(view.value("entries", List.class)).hasSize(1);
++    }
+ }
+diff --git a/fand-server/src/test/java/io/fand/server/plugin/PluginTabListServiceTest.java b/fand-server/src/test/java/io/fand/server/plugin/PluginTabListServiceTest.java
+index a80d6bf..0133a5c 100644
+--- a/fand-server/src/test/java/io/fand/server/plugin/PluginTabListServiceTest.java
++++ b/fand-server/src/test/java/io/fand/server/plugin/PluginTabListServiceTest.java
+@@ -91,11 +91,36 @@ final class PluginTabListServiceTest {
+                 change(viewer, target, true));
+     }
+ 
+-    private static final class FakeTabListService implements TabListService {
++    @Test
++    void showOnlyRestoresCrossWorldTargetsWhenPluginCloses() {
++        var delegate = new FakeTabListService();
++        var tracker = new PluginResourceTracker();
++        var service = new PluginTabListService(delegate, tracker);
++        var viewerWorld = fakeWorld();
++        var otherWorld = fakeWorld();
++        var viewer = fakePlayer(UUID.randomUUID(), viewerWorld);
++        var sameWorldTarget = fakePlayer(UUID.randomUUID(), viewerWorld);
++        var crossWorldTarget = fakePlayer(UUID.randomUUID(), otherWorld);
++        setPlayers(viewerWorld, viewer, sameWorldTarget);
++        setPlayers(otherWorld, crossWorldTarget);
++        delegate.setShowOnlyCandidates(viewer, List.of(viewer, sameWorldTarget, crossWorldTarget));
++
++        service.showOnly(viewer, List.of(sameWorldTarget));
++
++        assertThat(delegate.visible(viewer, sameWorldTarget)).isTrue();
++        assertThat(delegate.visible(viewer, crossWorldTarget)).isFalse();
++
++        tracker.close();
++
++        assertThat(delegate.visible(viewer, crossWorldTarget)).isTrue();
++    }
++
++    private static final class FakeTabListService implements TabListService, io.fand.server.tablist.RealPlayerTabListAccess {
+ 
+         private final Map<UUID, Map<UUID, FakeRegistration>> entries = new LinkedHashMap<>();
+         private final Set<String> hidden = new HashSet<>();
+         private final java.util.ArrayList<String> visibilityChanges = new java.util.ArrayList<>();
++        private final Map<UUID, Collection<UUID>> showOnlyCandidates = new LinkedHashMap<>();
+ 
+         @Override
+         public boolean visible(Player viewer, Player target) {
+@@ -112,6 +137,40 @@ final class PluginTabListServiceTest {
+             }
+         }
+ 
++        @Override
++        public void showOnly(Player viewer, Collection<? extends Player> visibleTargets) {
++            var visibleIds = visibleTargets.stream()
++                    .map(Player::uniqueId)
++                    .collect(java.util.stream.Collectors.toSet());
++            for (var targetId : showOnlyCandidates.getOrDefault(viewer.uniqueId(), List.of())) {
++                setRealEntryVisible(viewer.uniqueId(), targetId, targetId.equals(viewer.uniqueId()) || visibleIds.contains(targetId));
++            }
++        }
++
++        @Override
++        public Collection<UUID> showOnlyCandidateIds(Player viewer, Collection<? extends Player> visibleTargets) {
++            return showOnlyCandidates.getOrDefault(viewer.uniqueId(), List.of());
++        }
++
++        @Override
++        public boolean visibleInRealPlayerList(UUID viewerId, UUID targetId) {
++            return !hidden.contains(key(viewerId, targetId));
++        }
++
++        @Override
++        public void setRealEntryVisible(UUID viewerId, UUID targetId, boolean visible) {
++            visibilityChanges.add(change(viewerId, targetId, visible));
++            if (visible) {
++                hidden.remove(key(viewerId, targetId));
++            } else {
++                hidden.add(key(viewerId, targetId));
++            }
++        }
++
++        void setShowOnlyCandidates(Player viewer, Collection<? extends Player> candidates) {
++            showOnlyCandidates.put(viewer.uniqueId(), candidates.stream().map(Player::uniqueId).toList());
++        }
++
+         @Override
+         public Collection<? extends TabListRegistration> entries(Player viewer) {
+             return entries.getOrDefault(viewer.uniqueId(), Map.of()).values();
+@@ -236,11 +295,19 @@ final class PluginTabListServiceTest {
+     }
+ 
+     private static String key(Player viewer, Player target) {
+-        return viewer.uniqueId() + "->" + target.uniqueId();
++        return key(viewer.uniqueId(), target.uniqueId());
++    }
++
++    private static String key(UUID viewerId, UUID targetId) {
++        return viewerId + "->" + targetId;
+     }
+ 
+     private static String change(Player viewer, Player target, boolean visible) {
+-        return key(viewer, target) + "=" + visible;
++        return change(viewer.uniqueId(), target.uniqueId(), visible);
++    }
++
++    private static String change(UUID viewerId, UUID targetId, boolean visible) {
++        return key(viewerId, targetId) + "=" + visible;
+     }
+ 
+     private interface PlayerHolder {
+diff --git a/fand-server/src/test/java/io/fand/server/world/ApiSurfaceSourceTest.java b/fand-server/src/test/java/io/fand/server/world/ApiSurfaceSourceTest.java
+index 4847190..cc39a1d 100644
+--- a/fand-server/src/test/java/io/fand/server/world/ApiSurfaceSourceTest.java
++++ b/fand-server/src/test/java/io/fand/server/world/ApiSurfaceSourceTest.java
+@@ -31,8 +31,8 @@ final class ApiSurfaceSourceTest {
+                 "openItemGui",
+                 "public void openSign(Location location)",
+                 "openTextEdit",
+-                "public void hideEntity(Player viewer, io.fand.api.entity.Entity entity)",
+-                "public void showEntity(Player viewer, io.fand.api.entity.Entity entity)",
++                "public void hideEntity(io.fand.api.entity.Entity entity)",
++                "public void showEntity(io.fand.api.entity.Entity entity)",
+                 "public void respawn()",
+                 "server.getPlayerList().respawn(handle, false, RemovalReason.KILLED)",
+                 "public boolean hasCooldown(Key group)",
+@@ -306,6 +306,9 @@ final class ApiSurfaceSourceTest {
+                 "public final class PluginMapService implements MapService",
+                 "return delegate.map(id).map(this::wrap)",
+                 "tracker.track(new PluginResourceTracker.MapRendererBinding(delegate, id(), renderer))");
++        assertThat(read("../fand-api/src/main/java/io/fand/api/map/MapView.java")).contains(
++                "Plugin-scoped services remove renderers",
++                "saved map data and is not automatically reverted when a plugin unloads");
+         assertThat(tracker).contains(
+                 "record MapRendererBinding(MapService service, int mapId, MapRenderer renderer)",
+                 "mapRendererBindingsToClose",
+@@ -342,7 +345,9 @@ final class ApiSurfaceSourceTest {
+                 "return delegate.importTemplate(scopedKey(key), projection)",
+                 "save(Key key, Path path, StructureFormat format)",
+                 "return delegate.place(scopedKey(key), origin, placement)",
+-                "return delegate.locate(structure, origin, radius)");
++                "place(StructureProjection projection, Location origin, StructurePlacement placement)",
++                "return delegate.place(projection, origin, placement)",
++                "return delegate.locate(scopedKey(structure), origin, radius)");
+         assertThat(serverStructures).contains(
+                 "registerStructure(CustomStructure structure)",
+                 "registerStructureSet(CustomStructureSet structureSet)",
+@@ -373,6 +378,9 @@ final class ApiSurfaceSourceTest {
+                 "BlockRotProcessor",
+                 "BlockIgnoreProcessor.STRUCTURE_BLOCK",
+                 "place(Key key, Location origin, StructurePlacement placement)",
++                "place(StructureProjection projection, Location origin, StructurePlacement placement)",
++                "placeProjectionOnServerThread",
++                "server.getStructureManager().remove(id)",
+                 "locate(Key structure, Location origin, int radius)");
+         assertThat(source).contains(
+                 "new FilteredStructureSetLookup(structureSets, settings, structures)",
+@@ -499,6 +507,79 @@ final class ApiSurfaceSourceTest {
+                 "parser.deserialize");
+     }
+ 
++    @Test
++    void tabListSyncAndPlayerInfoPacketApiStayExposed() throws IOException {
++        var tabService = read("../fand-api/src/main/java/io/fand/api/tablist/TabListService.java");
++        var group = read("../fand-api/src/main/java/io/fand/api/tablist/TabListGroup.java");
++        var layout = read("../fand-api/src/main/java/io/fand/api/tablist/TabListLayout.java");
++        var sync = read("../fand-api/src/main/java/io/fand/api/tablist/TabListSyncStrategy.java");
++        var remote = read("../fand-api/src/main/java/io/fand/api/tablist/RemoteTabListEntry.java");
++        var factory = read("../fand-api/src/main/java/io/fand/api/packet/PlayerInfoPacketFactory.java");
++        var registryApi = read("../fand-api/src/main/java/io/fand/api/packet/PacketRegistry.java");
++        var serverFactory = read("src/main/java/io/fand/server/network/packet/FandPlayerInfoPacketFactory.java");
++        var registry = read("src/main/java/io/fand/server/network/packet/PacketRegistryImpl.java");
++        var bridge = read("src/main/java/io/fand/server/network/packet/VanillaPacketBridge.java");
++        var pluginPackets = read("src/main/java/io/fand/server/plugin/PluginPacketRegistry.java");
++        var server = read("src/main/java/io/fand/server/FandServer.java");
++
++        assertThat(tabService).contains(
++                "default void apply(Player viewer, TabListLayout layout)",
++                "default void sync(Player viewer, TabListSyncStrategy strategy)");
++        assertThat(group).contains("public record TabListGroup", "entries(Collection<? extends Player> players)");
++        assertThat(layout).contains("public record TabListLayout", "void apply(TabListService service, Player viewer)");
++        assertThat(sync).contains("interface TabListSyncStrategy", "Collection<RemoteTabListEntry> entries(Player viewer)");
++        assertThat(remote).contains("record RemoteTabListEntry(Key source, TabListEntry entry)");
++        assertThat(factory).contains(
++                "interface PlayerInfoPacketFactory",
++                "PacketView add(Collection<? extends TabListEntry> entries)",
++                "PacketView remove(Collection<UUID> entryIds)");
++        assertThat(registryApi).contains("default PlayerInfoPacketFactory playerInfo()");
++        assertThat(serverFactory).contains(
++                "public final class FandPlayerInfoPacketFactory implements PlayerInfoPacketFactory",
++                "PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE",
++                "PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_REMOVE");
++        assertThat(registry).contains(
++                "private final PlayerInfoPacketFactory playerInfo = new FandPlayerInfoPacketFactory()",
++                "public PacketRegistryImpl(Supplier<@Nullable MinecraftServer> server)",
++                "public PlayerInfoPacketFactory playerInfo()");
++        assertThat(bridge).contains(
++                "FandTabListPackets.packetFromApi",
++                "new ClientboundPlayerInfoRemovePacket(profileIds(view))");
++        assertThat(pluginPackets).contains("public PlayerInfoPacketFactory playerInfo()");
++        assertThat(server).contains("this.packets = new PacketRegistryImpl(minecraftServer::get)");
++    }
++
++    @Test
++    void externalIntegrationStrategyStaysWiredToServerAndPlugins() throws IOException {
++        var serverApi = read("../fand-api/src/main/java/io/fand/api/Server.java");
++        var context = read("../fand-api/src/main/java/io/fand/api/plugin/PluginContext.java");
++        var integration = read("../fand-api/src/main/java/io/fand/api/integration/ExternalIntegration.java");
++        var strategy = read("../fand-api/src/main/java/io/fand/api/integration/ExternalIntegrationStrategy.java");
++        var server = read("src/main/java/io/fand/server/FandServer.java");
++        var runtime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
++        var runtimeContext = read("src/main/java/io/fand/server/plugin/RuntimePluginContext.java");
++
++        assertThat(serverApi).contains("default ExternalIntegrationStrategy integrations()");
++        assertThat(context).contains("default ExternalIntegrationStrategy integrations()");
++        assertThat(integration).contains("record ExternalIntegration", "ExternalIntegrationKind kind");
++        assertThat(strategy).contains(
++                "interface ExternalIntegrationStrategy",
++                "Collection<ExternalIntegration> integrations()",
++                "static ExternalIntegrationStrategy empty()");
++        assertThat(server).contains(
++                "private final ExternalIntegrationStrategy integrations",
++                "this.integrations = ExternalIntegrationStrategy.empty()",
++                "this.plugins.integrations(integrations)",
++                "public ExternalIntegrationStrategy integrations()");
++        assertThat(runtime).contains(
++                "private volatile ExternalIntegrationStrategy integrationStrategy = ExternalIntegrationStrategy.empty()",
++                "public void integrations(ExternalIntegrationStrategy strategy)",
++                "integrationStrategy,");
++        assertThat(runtimeContext).contains(
++                "private final ExternalIntegrationStrategy integrations",
++                "public ExternalIntegrationStrategy integrations()");
++    }
++
+     private static String read(String path) throws IOException {
+         return Files.readString(Path.of(path), StandardCharsets.UTF_8).replace("\r\n", "\n");
+     }
+
+
+diff --git a/fand-api/src/main/java/io/fand/api/integration/ExternalIntegration.java b/fand-api/src/main/java/io/fand/api/integration/ExternalIntegration.java
+new file mode 100644
+index 0000000..5d7074e
+--- /dev/null
++++ b/fand-api/src/main/java/io/fand/api/integration/ExternalIntegration.java
+@@ -0,0 +1,22 @@
++package io.fand.api.integration;
++
++import java.util.Map;
++import java.util.Objects;
++import net.kyori.adventure.key.Key;
++
++/**
++ * Declarative handle for an external service integration such as SQL, Redis, or
++ * message queues.
++ */
++public record ExternalIntegration(
++        Key key,
++        ExternalIntegrationKind kind,
++        Map<String, String> properties
++) {
++
++    public ExternalIntegration {
++        Objects.requireNonNull(key, "key");
++        Objects.requireNonNull(kind, "kind");
++        properties = Map.copyOf(Objects.requireNonNull(properties, "properties"));
++    }
++}
+
+
+diff --git a/fand-api/src/main/java/io/fand/api/integration/ExternalIntegrationKind.java b/fand-api/src/main/java/io/fand/api/integration/ExternalIntegrationKind.java
+new file mode 100644
+index 0000000..2c5a49f
+--- /dev/null
++++ b/fand-api/src/main/java/io/fand/api/integration/ExternalIntegrationKind.java
+@@ -0,0 +1,8 @@
++package io.fand.api.integration;
++
++public enum ExternalIntegrationKind {
++    SQL,
++    REDIS,
++    MESSAGE_QUEUE,
++    CUSTOM
++}
+
+
+diff --git a/fand-api/src/main/java/io/fand/api/integration/ExternalIntegrationStrategy.java b/fand-api/src/main/java/io/fand/api/integration/ExternalIntegrationStrategy.java
+new file mode 100644
+index 0000000..8491d3a
+--- /dev/null
++++ b/fand-api/src/main/java/io/fand/api/integration/ExternalIntegrationStrategy.java
+@@ -0,0 +1,27 @@
++package io.fand.api.integration;
++
++import java.util.Collection;
++import java.util.List;
++import java.util.Optional;
++import net.kyori.adventure.key.Key;
++
++/**
++ * Registry-facing strategy for external integrations. Core Fand keeps the
++ * contract API-only; concrete MySQL, Redis, RabbitMQ, or other clients live in
++ * plugins or distribution modules.
++ */
++public interface ExternalIntegrationStrategy {
++
++    Collection<ExternalIntegration> integrations();
++
++    default Optional<ExternalIntegration> integration(Key key) {
++        java.util.Objects.requireNonNull(key, "key");
++        return integrations().stream()
++                .filter(integration -> integration.key().equals(key))
++                .findFirst();
++    }
++
++    static ExternalIntegrationStrategy empty() {
++        return List::of;
++    }
++}
+
+
+diff --git a/fand-api/src/main/java/io/fand/api/packet/PlayerInfoPacketFactory.java b/fand-api/src/main/java/io/fand/api/packet/PlayerInfoPacketFactory.java
+new file mode 100644
+index 0000000..6e742c2
+--- /dev/null
++++ b/fand-api/src/main/java/io/fand/api/packet/PlayerInfoPacketFactory.java
+@@ -0,0 +1,43 @@
++package io.fand.api.packet;
++
++import io.fand.api.tablist.TabListEntry;
++import java.util.Collection;
++import java.util.List;
++import java.util.Objects;
++import java.util.UUID;
++
++/**
++ * API-safe factory for player-info packet views.
++ */
++public interface PlayerInfoPacketFactory {
++
++    PacketView add(Collection<? extends TabListEntry> entries);
++
++    PacketView update(Collection<? extends TabListEntry> entries);
++
++    PacketView remove(Collection<UUID> entryIds);
++
++    default PacketView latency(UUID entryId, int latency) {
++        Objects.requireNonNull(entryId, "entryId");
++        return update(List.of(TabListEntry.builder(entryId, entryId.toString()).latency(latency).build()));
++    }
++
++    static PlayerInfoPacketFactory unsupported() {
++        return new PlayerInfoPacketFactory() {
++            @Override
++            public PacketView add(Collection<? extends TabListEntry> entries) {
++                throw new UnsupportedOperationException("Player-info packet factories are not supported");
++            }
++
++            @Override
++            public PacketView update(Collection<? extends TabListEntry> entries) {
++                throw new UnsupportedOperationException("Player-info packet factories are not supported");
++            }
++
++            @Override
++            public PacketView remove(Collection<UUID> entryIds) {
++                throw new UnsupportedOperationException("Player-info packet factories are not supported");
++            }
++        };
++    }
++}
+
+
+diff --git a/fand-api/src/main/java/io/fand/api/tablist/RemoteTabListEntry.java b/fand-api/src/main/java/io/fand/api/tablist/RemoteTabListEntry.java
+new file mode 100644
+index 0000000..7e27fe9
+--- /dev/null
++++ b/fand-api/src/main/java/io/fand/api/tablist/RemoteTabListEntry.java
+@@ -0,0 +1,15 @@
++package io.fand.api.tablist;
++
++import java.util.Objects;
++import net.kyori.adventure.key.Key;
++
++/**
++ * A tab-list row mirrored from another server or proxy.
++ */
++public record RemoteTabListEntry(Key source, TabListEntry entry) {
++
++    public RemoteTabListEntry {
++        Objects.requireNonNull(source, "source");
++        Objects.requireNonNull(entry, "entry");
++    }
++}
+
+
+diff --git a/fand-api/src/main/java/io/fand/api/tablist/TabListGroup.java b/fand-api/src/main/java/io/fand/api/tablist/TabListGroup.java
+new file mode 100644
+index 0000000..71794e8
+--- /dev/null
++++ b/fand-api/src/main/java/io/fand/api/tablist/TabListGroup.java
+@@ -0,0 +1,59 @@
++package io.fand.api.tablist;
++
++import io.fand.api.entity.Player;
++import java.util.Collection;
++import java.util.Comparator;
++import java.util.List;
++import java.util.Objects;
++import java.util.function.Predicate;
++
++/**
++ * A reusable per-viewer player-list grouping rule.
++ */
++public record TabListGroup(
++        Predicate<Player> filter,
++        Comparator<Player> order,
++        int orderBase
++) {
++
++    public TabListGroup {
++        Objects.requireNonNull(filter, "filter");
++        Objects.requireNonNull(order, "order");
++    }
++
++    public static TabListGroup of(Predicate<Player> filter) {
++        return new TabListGroup(filter, Comparator.comparing(Player::name), 0);
++    }
++
++    public TabListGroup withOrder(Comparator<Player> order) {
++        return new TabListGroup(filter, order, orderBase);
++    }
++
++    public TabListGroup withOrderBase(int orderBase) {
++        return new TabListGroup(filter, order, orderBase);
++    }
++
++    public List<Player> select(Collection<? extends Player> players) {
++        Objects.requireNonNull(players, "players");
++        return players.stream()
++                .filter(filter)
++                .map(player -> (Player) player)
++                .sorted(order)
++                .toList();
++    }
++
++    public List<TabListEntry> entries(Collection<? extends Player> players) {
++        var selected = select(players);
++        var entries = new java.util.ArrayList<TabListEntry>(selected.size());
++        for (int i = 0; i < selected.size(); i++) {
++            var player = selected.get(i);
++            entries.add(TabListEntry.builder(player.profile())
++                    .latency(player.ping())
++                    .gameMode(player.gameMode())
++                    .displayName(player.tabListDisplayName().orElse(null))
++                    .order(orderBase + i)
++                    .build());
++        }
++        return List.copyOf(entries);
++    }
++}
+
+
+diff --git a/fand-api/src/main/java/io/fand/api/tablist/TabListLayout.java b/fand-api/src/main/java/io/fand/api/tablist/TabListLayout.java
+new file mode 100644
+index 0000000..2896b3f
+--- /dev/null
++++ b/fand-api/src/main/java/io/fand/api/tablist/TabListLayout.java
+@@ -0,0 +1,33 @@
++package io.fand.api.tablist;
++
++import io.fand.api.entity.Player;
++import java.util.Collection;
++import java.util.List;
++import java.util.Objects;
++
++/**
++ * A computed set of tab-list rows for one viewer.
++ */
++public record TabListLayout(List<TabListEntry> entries) {
++
++    public TabListLayout {
++        entries = List.copyOf(Objects.requireNonNull(entries, "entries"));
++    }
++
++    public static TabListLayout of(Collection<? extends TabListEntry> entries) {
++        return new TabListLayout(List.copyOf(entries));
++    }
++
++    public static TabListLayout from(TabListGroup group, Collection<? extends Player> players) {
++        Objects.requireNonNull(group, "group");
++        return new TabListLayout(group.entries(players));
++    }
++
++    public void apply(TabListService service, Player viewer) {
++        Objects.requireNonNull(service, "service");
++        Objects.requireNonNull(viewer, "viewer");
++        for (var entry : entries) {
++            service.update(viewer, entry);
++        }
++    }
++}
+
+
+diff --git a/fand-api/src/main/java/io/fand/api/tablist/TabListSyncStrategy.java b/fand-api/src/main/java/io/fand/api/tablist/TabListSyncStrategy.java
+new file mode 100644
+index 0000000..c56850d
+--- /dev/null
++++ b/fand-api/src/main/java/io/fand/api/tablist/TabListSyncStrategy.java
+@@ -0,0 +1,20 @@
++package io.fand.api.tablist;
++
++import io.fand.api.entity.Player;
++import java.util.Collection;
++
++/**
++ * Strategy used by proxies or clusters to publish remote player-list rows.
++ */
++public interface TabListSyncStrategy {
++
++    Collection<RemoteTabListEntry> entries(Player viewer);
++
++    default void apply(TabListService service, Player viewer) {
++        java.util.Objects.requireNonNull(service, "service");
++        java.util.Objects.requireNonNull(viewer, "viewer");
++        for (var remote : entries(viewer)) {
++            service.update(viewer, remote.entry());
++        }
++    }
++}
+
+
+diff --git a/fand-server/src/main/java/io/fand/server/network/packet/FandPlayerInfoPacketFactory.java b/fand-server/src/main/java/io/fand/server/network/packet/FandPlayerInfoPacketFactory.java
+new file mode 100644
+index 0000000..5c5e614
+--- /dev/null
++++ b/fand-server/src/main/java/io/fand/server/network/packet/FandPlayerInfoPacketFactory.java
+@@ -0,0 +1,40 @@
++package io.fand.server.network.packet;
++
++import io.fand.api.packet.PacketType;
++import io.fand.api.packet.PacketView;
++import io.fand.api.packet.PlayerInfoPacketFactory;
++import io.fand.api.tablist.TabListEntry;
++import java.util.Collection;
++import java.util.List;
++import java.util.Map;
++import java.util.Objects;
++import java.util.UUID;
++
++public final class FandPlayerInfoPacketFactory implements PlayerInfoPacketFactory {
++
++    private final PacketViewFactory views = new PacketViewFactory();
++
++    @Override
++    public PacketView add(Collection<? extends TabListEntry> entries) {
++        return updateLike(List.of("ADD_PLAYER", "UPDATE_GAME_MODE", "UPDATE_LISTED", "UPDATE_LATENCY", "UPDATE_DISPLAY_NAME", "UPDATE_HAT", "UPDATE_LIST_ORDER"), entries);
++    }
++
++    @Override
++    public PacketView update(Collection<? extends TabListEntry> entries) {
++        return updateLike(List.of("UPDATE_GAME_MODE", "UPDATE_LISTED", "UPDATE_LATENCY", "UPDATE_DISPLAY_NAME", "UPDATE_HAT", "UPDATE_LIST_ORDER"), entries);
++    }
++
++    @Override
++    public PacketView remove(Collection<UUID> entryIds) {
++        Objects.requireNonNull(entryIds, "entryIds");
++        return views.view(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_REMOVE, Map.of(
++                "profileIds", List.copyOf(entryIds)));
++    }
++
++    private PacketView updateLike(Collection<String> actions, Collection<? extends TabListEntry> entries) {
++        Objects.requireNonNull(entries, "entries");
++        return views.view(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE, Map.of(
++                "actions", List.copyOf(actions),
++                "entries", List.copyOf(entries)));
++    }
++}
+
+
+diff --git a/fand-server/src/main/java/io/fand/server/tablist/RealPlayerTabListAccess.java b/fand-server/src/main/java/io/fand/server/tablist/RealPlayerTabListAccess.java
+new file mode 100644
+index 0000000..0f4f704
+--- /dev/null
++++ b/fand-server/src/main/java/io/fand/server/tablist/RealPlayerTabListAccess.java
+@@ -0,0 +1,14 @@
++package io.fand.server.tablist;
++
++import io.fand.api.entity.Player;
++import java.util.Collection;
++import java.util.UUID;
++
++public interface RealPlayerTabListAccess {
++
++    Collection<UUID> showOnlyCandidateIds(Player viewer, Collection<? extends Player> visibleTargets);
++
++    boolean visibleInRealPlayerList(UUID viewerId, UUID targetId);
++
++    void setRealEntryVisible(UUID viewerId, UUID targetId, boolean visible);
++}

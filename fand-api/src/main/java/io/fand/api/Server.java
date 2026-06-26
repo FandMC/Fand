@@ -14,6 +14,7 @@ import io.fand.api.entity.Player;
 import io.fand.api.event.EventBus;
 import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
+import io.fand.api.integration.ExternalIntegrationStrategy;
 import io.fand.api.item.ItemTagKey;
 import io.fand.api.item.ItemType;
 import io.fand.api.lifecycle.LifecyclePhase;
@@ -154,6 +155,10 @@ public interface Server extends ForwardingAudience {
 
     default DataPackService dataPacks() {
         return DataPackService.empty();
+    }
+
+    default ExternalIntegrationStrategy integrations() {
+        return ExternalIntegrationStrategy.empty();
     }
 
     /** Lightweight GUI routing service. */

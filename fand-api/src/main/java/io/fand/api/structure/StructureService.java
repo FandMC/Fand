@@ -52,10 +52,7 @@ public interface StructureService {
     CompletableFuture<Boolean> place(Key key, Location origin, StructurePlacement placement);
 
     default CompletableFuture<Boolean> place(StructureProjection projection, Location origin, StructurePlacement placement) {
-        var key = projection.sourceKey().orElseGet(() -> Key.key("fand", "projection/" + Integer.toHexString(java.util.Arrays.hashCode(projection.data()))));
-        return importTemplate(key, projection).thenCompose(imported -> imported
-                ? place(key, origin, placement)
-                : CompletableFuture.completedFuture(false));
+        throw new UnsupportedOperationException("Direct structure projection placement is not supported");
     }
 
     CompletableFuture<Optional<Location>> locate(Key structure, Location origin, int radius);

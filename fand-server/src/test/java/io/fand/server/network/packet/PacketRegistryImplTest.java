@@ -9,6 +9,9 @@ import io.fand.api.packet.PacketProtocol;
 import io.fand.api.packet.PacketType;
 import io.fand.api.packet.PacketView;
 import io.fand.api.packet.view.ClientboundAddEntityPacketView;
+import io.fand.api.tablist.TabListEntry;
+import java.util.List;
+import java.util.UUID;
 import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
 
@@ -85,6 +88,20 @@ final class PacketRegistryImplTest {
 
         assertThat(registry.type(PacketProtocol.PLAY, PacketDirection.CLIENTBOUND, Key.key("minecraft:add_entity")))
                 .contains(PacketType.PLAY_CLIENTBOUND_ADD_ENTITY);
+    }
+
+    @Test
+    void exposesPlayerInfoPacketFactory() {
+        var registry = new PacketRegistryImpl();
+        var entryId = UUID.randomUUID();
+
+        var update = registry.playerInfo().update(List.of(TabListEntry.builder(entryId, "Remote").latency(12).build()));
+        var remove = registry.playerInfo().remove(List.of(entryId));
+
+        assertThat(update.packetType()).isEqualTo(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE);
+        assertThat(update.value("entries", List.class)).hasSize(1);
+        assertThat(remove.packetType()).isEqualTo(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_REMOVE);
+        assertThat(remove.value("profileIds", List.class)).containsExactly(entryId);
     }
 
     private interface WrongPacketView extends PacketView {

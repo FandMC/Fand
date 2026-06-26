@@ -9,12 +9,34 @@ import io.fand.api.event.entity.DamageModifier;
 import io.fand.api.event.entity.EntityDamageEvent;
 import io.fand.api.block.FluidState;
 import io.fand.api.block.FluidTypes;
+import io.fand.api.entity.Entity;
+import io.fand.api.entity.GameMode;
+import io.fand.api.entity.Player;
+import io.fand.api.integration.ExternalIntegration;
+import io.fand.api.integration.ExternalIntegrationKind;
+import io.fand.api.integration.ExternalIntegrationStrategy;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
 import io.fand.api.persistence.PersistentDataContainer;
+import io.fand.api.player.PlayerProfile;
+import io.fand.api.tablist.RemoteTabListEntry;
+import io.fand.api.tablist.TabListEntry;
+import io.fand.api.tablist.TabListGroup;
+import io.fand.api.tablist.TabListLayout;
+import io.fand.api.tablist.TabListRegistration;
+import io.fand.api.tablist.TabListService;
+import io.fand.api.tablist.TabListSyncStrategy;
 import io.fand.api.world.Vector3;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Proxy;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
 
@@ -113,7 +135,204 @@ class ApiGapModelsTest {
         assertThat(FluidState.none().empty()).isTrue();
     }
 
+    @Test
+    void tabListGroupAndLayoutBuildViewerRows() {
+        var alice = player("Alice", 5, GameMode.SURVIVAL);
+        var bob = player("Bob", 25, GameMode.CREATIVE);
+        var group = TabListGroup.of(player -> player.ping() >= 10)
+                .withOrder(Comparator.comparing(Player::name).reversed())
+                .withOrderBase(40);
+
+        var layout = TabListLayout.from(group, List.of(alice, bob));
+        var service = new RecordingTabListService();
+        layout.apply(service, alice);
+
+        assertThat(layout.entries()).hasSize(1);
+        assertThat(layout.entries().getFirst().profile().name()).isEqualTo("Bob");
+        assertThat(layout.entries().getFirst().latency()).isEqualTo(25);
+        assertThat(layout.entries().getFirst().gameMode()).isEqualTo(GameMode.CREATIVE);
+        assertThat(layout.entries().getFirst().order()).isEqualTo(40);
+        assertThat(service.entriesByViewer.get(alice.uniqueId())).hasSize(1);
+    }
+
+    @Test
+    void tabListSyncStrategyAppliesRemoteEntries() {
+        var viewer = player("Viewer", 0, GameMode.SURVIVAL);
+        var remote = TabListEntry.builder(UUID.randomUUID(), "Remote").latency(80).build();
+        TabListSyncStrategy strategy = ignored -> List.of(new RemoteTabListEntry(Key.key("proxy:lobby"), remote));
+        var service = new RecordingTabListService();
+
+        service.sync(viewer, strategy);
+
+        assertThat(service.entriesByViewer.get(viewer.uniqueId())).containsKey(remote.profile().uniqueId());
+    }
+
+    @Test
+    void externalIntegrationStrategyFindsDeclaredServices() {
+        var redis = new ExternalIntegration(
+                Key.key("fand:redis"),
+                ExternalIntegrationKind.REDIS,
+                Map.of("host", "127.0.0.1"));
+        ExternalIntegrationStrategy strategy = () -> List.of(redis);
+
+        assertThat(strategy.integration(Key.key("fand:redis"))).contains(redis);
+        assertThat(strategy.integration(Key.key("fand:mysql"))).isEmpty();
+        assertThat(ExternalIntegrationStrategy.empty().integrations()).isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
+    void legacyHideEntitySignatureDelegatesToViewerReceiver() {
+        var viewer = new AtomicReference<Entity>();
+        var receiver = player("Viewer", 0, GameMode.SURVIVAL, (proxy, method, args) -> {
+            if (method.getName().equals("hideEntity") && method.getParameterCount() == 1) {
+                viewer.set((Entity) args[0]);
+                return Boolean.TRUE;
+            }
+            return null;
+        });
+        var target = new TestLivingEntity();
+
+        receiver.hideEntity(receiver, target);
+
+        assertThat(viewer).hasValue(target);
+    }
+
     private record TestItemType(Key key, int maxStackSize) implements ItemType {
+    }
+
+    private static Player player(String name, int ping, GameMode gameMode) {
+        return player(name, ping, gameMode, (proxy, method, args) -> null);
+    }
+
+    private static Player player(String name, int ping, GameMode gameMode, InvocationHandler custom) {
+        var uniqueId = UUID.nameUUIDFromBytes(name.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        InvocationHandler handler = (proxy, method, args) -> {
+            var customResult = custom.invoke(proxy, method, args);
+            if (customResult != null) {
+                return customResult;
+            }
+            if (method.isDefault()) {
+                return InvocationHandler.invokeDefault(proxy, method, args);
+            }
+            if (method.getDeclaringClass() == Object.class) {
+                return switch (method.getName()) {
+                    case "toString" -> name;
+                    case "hashCode" -> uniqueId.hashCode();
+                    case "equals" -> proxy == args[0];
+                    default -> throw new UnsupportedOperationException(method.toString());
+                };
+            }
+            return switch (method.getName()) {
+                case "uniqueId" -> uniqueId;
+                case "entityId" -> 1;
+                case "name" -> name;
+                case "profile" -> new PlayerProfile(uniqueId, name);
+                case "ping" -> ping;
+                case "gameMode" -> gameMode;
+                case "tabListDisplayName" -> Optional.empty();
+                case "sendMessage", "setVelocity", "setCustomName", "setCustomNameVisible",
+                        "setGlowing", "setSilent", "setGravity", "setInvulnerable",
+                        "addScoreboardTag", "removeScoreboardTag", "remove", "ejectPassengers",
+                        "kick", "playSound", "sendTabList", "clearTabList",
+                        "setTabListDisplayName", "setTabListOrder", "sendResourcePack",
+                        "removeResourcePack", "setGameMode", "setFoodLevel", "setSaturation",
+                        "setExperienceLevel", "setExperienceProgress", "giveExperience",
+                        "setFlying", "setAllowFlight", "discoverRecipes", "undiscoverRecipes",
+                        "setCooldown", "clearCooldown", "setStatistic", "setRespawnLocation",
+                        "sendCompassTarget", "setCursorItem", "closeInventory" -> null;
+                default -> defaultValue(method.getReturnType());
+            };
+        };
+        return (Player) Proxy.newProxyInstance(
+                Player.class.getClassLoader(),
+                new Class<?>[] {Player.class},
+                handler);
+    }
+
+    private static Object defaultValue(Class<?> returnType) {
+        if (returnType == Void.TYPE) {
+            return null;
+        }
+        if (returnType == boolean.class) {
+            return false;
+        }
+        if (returnType == int.class) {
+            return 0;
+        }
+        if (returnType == long.class) {
+            return 0L;
+        }
+        if (returnType == float.class) {
+            return 0.0F;
+        }
+        if (returnType == double.class) {
+            return 0.0D;
+        }
+        if (returnType == Optional.class) {
+            return Optional.empty();
+        }
+        if (returnType == Collection.class || returnType == List.class) {
+            return List.of();
+        }
+        return null;
+    }
+
+    private static final class RecordingTabListService implements TabListService {
+
+        private final Map<UUID, Map<UUID, TabListEntry>> entriesByViewer = new LinkedHashMap<>();
+
+        @Override
+        public Collection<? extends TabListRegistration> entries(Player viewer) {
+            return List.of();
+        }
+
+        @Override
+        public Optional<? extends TabListRegistration> entry(Player viewer, UUID entryId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public TabListRegistration add(Player viewer, TabListEntry entry) {
+            entriesByViewer.computeIfAbsent(viewer.uniqueId(), ignored -> new LinkedHashMap<>())
+                    .put(entry.profile().uniqueId(), entry);
+            return new TabListRegistration() {
+                @Override
+                public UUID viewerId() {
+                    return viewer.uniqueId();
+                }
+
+                @Override
+                public UUID entryId() {
+                    return entry.profile().uniqueId();
+                }
+
+                @Override
+                public void update(TabListEntry replacement) {
+                    entriesByViewer.get(viewer.uniqueId()).put(replacement.profile().uniqueId(), replacement);
+                }
+
+                @Override
+                public void remove() {
+                    entriesByViewer.getOrDefault(viewer.uniqueId(), Map.of()).remove(entry.profile().uniqueId());
+                }
+
+                @Override
+                public boolean active() {
+                    return true;
+                }
+            };
+        }
+
+        @Override
+        public boolean remove(Player viewer, UUID entryId) {
+            return entriesByViewer.getOrDefault(viewer.uniqueId(), Map.of()).remove(entryId) != null;
+        }
+
+        @Override
+        public void removeAll(Player viewer) {
+            entriesByViewer.remove(viewer.uniqueId());
+        }
     }
 
     private static final class TestLivingEntity implements io.fand.api.entity.LivingEntity {

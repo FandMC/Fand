@@ -115,8 +115,13 @@ public final class PluginStructureService implements StructureService {
     }
 
     @Override
+    public CompletableFuture<Boolean> place(StructureProjection projection, Location origin, StructurePlacement placement) {
+        return delegate.place(projection, origin, placement);
+    }
+
+    @Override
     public CompletableFuture<Optional<Location>> locate(Key structure, Location origin, int radius) {
-        return delegate.locate(structure, origin, radius);
+        return delegate.locate(scopedKey(structure), origin, radius);
     }
 
     private Key scopedKey(Key key) {

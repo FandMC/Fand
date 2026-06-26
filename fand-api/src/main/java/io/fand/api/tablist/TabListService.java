@@ -53,6 +53,16 @@ public interface TabListService {
                 () -> add(viewer, entry));
     }
 
+    default void apply(Player viewer, TabListLayout layout) {
+        Objects.requireNonNull(layout, "layout");
+        layout.apply(this, viewer);
+    }
+
+    default void sync(Player viewer, TabListSyncStrategy strategy) {
+        Objects.requireNonNull(strategy, "strategy");
+        strategy.apply(this, viewer);
+    }
+
     boolean remove(Player viewer, UUID entryId);
 
     default boolean remove(Player viewer, TabListEntry entry) {

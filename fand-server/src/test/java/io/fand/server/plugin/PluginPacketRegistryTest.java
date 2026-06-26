@@ -5,7 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.fand.api.messaging.PluginMessageDirection;
 import io.fand.api.packet.CustomPacketDefinition;
 import io.fand.api.packet.PacketDirection;
+import io.fand.api.packet.PacketType;
+import io.fand.api.tablist.TabListEntry;
 import io.fand.server.network.packet.PacketRegistryImpl;
+import java.util.List;
+import java.util.UUID;
 import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
 
@@ -41,5 +45,18 @@ final class PluginPacketRegistryTest {
         resources.close();
 
         assertThat(registry.customHandler(io.fand.api.packet.PacketProtocol.PLAY, channel)).isEmpty();
+    }
+
+    @Test
+    void playerInfoFactoryIsForwardedToPluginRegistry() {
+        var registry = new PacketRegistryImpl();
+        var resources = new PluginResourceTracker();
+        var packets = new PluginPacketRegistry(registry, resources);
+        var entryId = UUID.randomUUID();
+
+        var view = packets.playerInfo().update(List.of(TabListEntry.builder(entryId, "Remote").build()));
+
+        assertThat(view.packetType()).isEqualTo(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE);
+        assertThat(view.value("entries", List.class)).hasSize(1);
     }
 }

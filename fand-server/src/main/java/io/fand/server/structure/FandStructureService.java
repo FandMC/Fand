@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -294,6 +295,18 @@ public final class FandStructureService implements StructureService {
     }
 
     @Override
+    public CompletableFuture<Boolean> place(StructureProjection projection, Location origin, StructurePlacement placement) {
+        Objects.requireNonNull(projection, "projection");
+        Objects.requireNonNull(origin, "origin");
+        Objects.requireNonNull(placement, "placement");
+        var current = server.get();
+        if (current == null) {
+            return notAttached();
+        }
+        return submit(current, () -> placeProjectionOnServerThread(current, projection, origin, placement));
+    }
+
+    @Override
     public CompletableFuture<Optional<Location>> locate(Key structure, Location origin, int radius) {
         Objects.requireNonNull(structure, "structure");
         Objects.requireNonNull(origin, "origin");
@@ -381,6 +394,22 @@ public final class FandStructureService implements StructureService {
                 settings,
                 net.minecraft.world.level.block.entity.StructureBlockEntity.createRandom(placement.seed()),
                 placement.updateFlags());
+    }
+
+    private boolean placeProjectionOnServerThread(
+            MinecraftServer server,
+            StructureProjection projection,
+            Location origin,
+            StructurePlacement placement
+    ) {
+        var key = Key.key("fand", "projection/" + UUID.randomUUID());
+        var id = identifier(key);
+        try {
+            return importOnServerThread(server, key, projection)
+                    && placeOnServerThread(key, origin, placement);
+        } finally {
+            server.getStructureManager().remove(id);
+        }
     }
 
     private Optional<Location> locateOnServerThread(Key structure, Location origin, int radius) {

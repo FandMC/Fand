@@ -4,8 +4,9 @@ import io.fand.api.entity.Player;
 import io.fand.api.tablist.TabListEntry;
 import io.fand.api.tablist.TabListRegistration;
 import io.fand.api.tablist.TabListService;
-import java.util.HashSet;
+import io.fand.server.tablist.RealPlayerTabListAccess;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -55,13 +56,39 @@ public final class PluginTabListService implements TabListService {
     public void showOnly(Player viewer, Collection<? extends Player> visibleTargets) {
         Objects.requireNonNull(viewer, "viewer");
         Objects.requireNonNull(visibleTargets, "visibleTargets");
+        for (var target : visibleTargets) {
+            Objects.requireNonNull(target, "visibleTargets cannot contain null");
+        }
+        RealPlayerTabListAccess realPlayers = delegate instanceof RealPlayerTabListAccess access ? access : null;
+        if (realPlayers == null) {
+            showOnlyWithPlayerCandidates(viewer, visibleTargets);
+            return;
+        }
+
+        Set<UUID> candidateIds = new HashSet<>();
+        var viewerId = viewer.uniqueId();
+        candidateIds.addAll(realPlayers.showOnlyCandidateIds(viewer, visibleTargets));
+        for (var target : visibleTargets) {
+            candidateIds.add(target.uniqueId());
+        }
+        delegate.showOnly(viewer, visibleTargets);
+        for (var targetId : candidateIds) {
+            if (targetId.equals(viewerId) || realPlayers.visibleInRealPlayerList(viewerId, targetId)) {
+                tracker.restoreTabListVisibility(viewerId, targetId);
+            } else {
+                tracker.trackTabListVisibility(
+                        viewerId,
+                        targetId,
+                        () -> realPlayers.setRealEntryVisible(viewerId, targetId, true));
+            }
+        }
+    }
+
+    private void showOnlyWithPlayerCandidates(Player viewer, Collection<? extends Player> visibleTargets) {
         Set<Player> candidates = new HashSet<>();
         candidates.addAll(viewer.world().players());
         candidates.addAll(visibleTargets);
         delegate.showOnly(viewer, visibleTargets);
-        for (var target : visibleTargets) {
-            Objects.requireNonNull(target, "visibleTargets cannot contain null");
-        }
         for (var target : candidates) {
             if (target.uniqueId().equals(viewer.uniqueId()) || delegate.visible(viewer, target)) {
                 tracker.restoreTabListVisibility(viewer.uniqueId(), target.uniqueId());
