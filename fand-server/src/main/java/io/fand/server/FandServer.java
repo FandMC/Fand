@@ -30,6 +30,7 @@ import io.fand.api.packet.PacketRegistry;
 import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.player.PlayerAccessService;
 import io.fand.api.player.SimulatedPlayerService;
+import io.fand.api.region.RegionService;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
@@ -49,6 +50,7 @@ import io.fand.server.bossbar.FandBossBarService;
 import io.fand.server.command.BuiltinCommands;
 import io.fand.server.chunk.ChunkSendScheduler;
 import io.fand.server.chunk.ChunkTrackingMetrics;
+import io.fand.server.chunk.ChunkTaskExecutors;
 import io.fand.server.command.CommandManager;
 import io.fand.server.compat.modprotocol.ModProtocolCompatibility;
 import io.fand.server.config.ConfigReloadResult;
@@ -72,6 +74,7 @@ import io.fand.server.permission.PermissionManager;
 import io.fand.server.performance.ServerPerformanceTracker;
 import io.fand.server.player.FandPlayerAccessService;
 import io.fand.server.player.FandSimulatedPlayerService;
+import io.fand.server.region.FandRegionService;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.recipe.FandRecipeRegistry;
 import io.fand.server.scheduler.TaskScheduler;
@@ -122,11 +125,13 @@ public final class FandServer implements Server, AutoCloseable {
     private final CommandManager commands;
     private final TaskScheduler scheduler;
     private final ChunkSendScheduler chunks;
+    private final ChunkTaskExecutors chunkTasks;
     private final FandRecipeRegistry recipes;
     private final FandScoreboardService scoreboard;
     private final PacketRegistryImpl packets;
     private final FandPluginMessaging pluginMessaging;
     private final FandGameRuleService gameRules;
+    private final FandRegionService regions;
     private final FandDataPackService dataPacks;
     private final ModProtocolCompatibility modProtocols;
     private final EventSubscription pluginChannelAdvertisement;
@@ -180,6 +185,7 @@ public final class FandServer implements Server, AutoCloseable {
         registerBuiltinCommands();
         this.scheduler = new TaskScheduler(initialConfig.scheduler.asyncThreads, initialConfig.scheduler.regionThreads);
         this.chunks = new ChunkSendScheduler(initialConfig.chunks);
+        this.chunkTasks = new ChunkTaskExecutors(initialConfig.chunks);
         this.recipes = new FandRecipeRegistry();
         this.scoreboard = new FandScoreboardService(minecraftServer::get);
         this.tabLists = new FandTabListService(minecraftServer::get);
@@ -187,6 +193,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.players = new PlayerRegistry(permissions, scoreboard, tabLists);
         this.pluginMessaging = new FandPluginMessaging(packets, players::snapshot);
         this.gameRules = new FandGameRuleService();
+        this.regions = new FandRegionService(Path.of("regions"));
         this.dataPacks = new FandDataPackService(Path.of("datapacks"), minecraftServer::get);
         this.pluginChannelAdvertisement = events.subscribe(
                 PlayerJoinEvent.class,
@@ -226,6 +233,7 @@ public final class FandServer implements Server, AutoCloseable {
                 scoreboard,
                 packets,
                 pluginMessaging,
+                regions,
                 dataPacks,
                 advancements,
                 enchantments,
@@ -241,7 +249,7 @@ public final class FandServer implements Server, AutoCloseable {
                 ConfigReloader.toPluginOptions(initialConfig)
         );
         this.plugins.gameRuleService(gameRules);
-        this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, chunks, guiThemes);
+        this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, chunks, chunkTasks, guiThemes);
         io.fand.server.hooks.FandHooks.applyPlayerConfig(initialConfig.players);
         io.fand.server.hooks.FandHooks.applyChunkConfig(initialConfig.chunks);
         io.fand.server.hooks.FandHooks.applyPerformanceConfig(initialConfig.performance);
@@ -293,6 +301,10 @@ public final class FandServer implements Server, AutoCloseable {
 
     public ProxyForwardingSettings proxyForwarding() {
         return proxyForwarding;
+    }
+
+    public FandConfig config() {
+        return config.get();
     }
 
     public boolean consoleGuiEnabled() {
@@ -372,6 +384,14 @@ public final class FandServer implements Server, AutoCloseable {
         return chunks.metrics();
     }
 
+    public java.util.concurrent.Executor chunkBackgroundExecutor() {
+        return this.chunkTasks.loadExecutor();
+    }
+
+    public java.util.concurrent.Executor chunkWorldgenExecutor() {
+        return this.chunkTasks.worldgenExecutor();
+    }
+
     public void recordTick(long tickStartNanos, long tickDurationNanos) {
         performance.recordTick(tickStartNanos, tickDurationNanos);
     }
@@ -446,6 +466,11 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public GameRuleService gameRules() {
         return gameRules;
+    }
+
+    @Override
+    public RegionService regions() {
+        return regions;
     }
 
     @Override
@@ -870,6 +895,7 @@ public final class FandServer implements Server, AutoCloseable {
         packets.close();
         guis.close();
         chunks.close();
+        chunkTasks.close();
         scheduler.close();
         guiThemes.close();
         performance.close();

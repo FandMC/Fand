@@ -251,9 +251,9 @@ final class DemoPlayerEvents implements Listener {
     public void onTeleport(PlayerTeleportEvent event) {
         if (context.config().getBoolean("protections.block-low-teleport", true)
                 && event.to().y() < -64.0) {
-            event.setCancelled(true);
-            event.player().sendMessage(Component.text("Teleport below world min height was cancelled.", NamedTextColor.RED));
-            return;
+            //event.setCancelled(true);
+            //event.player().sendMessage(Component.text("Teleport below world min height was cancelled.", NamedTextColor.RED));
+            //return;
         }
         if (context.config().getBoolean("features.log-teleports", false)) {
             logger.info("{} teleport {} {} -> {}", event.player().name(), event.cause(),

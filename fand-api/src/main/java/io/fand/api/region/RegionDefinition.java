@@ -1,0 +1,82 @@
+package io.fand.api.region;
+
+import io.fand.api.world.BlockRegion;
+import java.util.Map;
+import java.util.Objects;
+import net.kyori.adventure.key.Key;
+
+/**
+ * Immutable region definition with typed flag payloads.
+ */
+public record RegionDefinition(
+        Key key,
+        Key world,
+        BlockRegion region,
+        Map<Key, com.google.gson.JsonElement> flags
+) {
+
+    public RegionDefinition {
+        Objects.requireNonNull(key, "key");
+        world = Objects.requireNonNull(world, "world");
+        region = Objects.requireNonNull(region, "region");
+        var copied = new java.util.LinkedHashMap<Key, com.google.gson.JsonElement>();
+        for (var entry : Objects.requireNonNull(flags, "flags").entrySet()) {
+            copied.put(Objects.requireNonNull(entry.getKey(), "flag key"),
+                    Objects.requireNonNull(entry.getValue(), "flag value").deepCopy());
+        }
+        flags = Map.copyOf(copied);
+    }
+
+    public static Builder builder(Key key, Key world, BlockRegion region) {
+        return new Builder(key, world, region);
+    }
+
+    public Builder toBuilder() {
+        return new Builder(this);
+    }
+
+    public static final class Builder {
+        private Key key;
+        private Key world;
+        private BlockRegion region;
+        private final java.util.LinkedHashMap<Key, com.google.gson.JsonElement> flags = new java.util.LinkedHashMap<>();
+
+        private Builder(Key key, Key world, BlockRegion region) {
+            this.key = Objects.requireNonNull(key, "key");
+            this.world = Objects.requireNonNull(world, "world");
+            this.region = Objects.requireNonNull(region, "region");
+        }
+
+        private Builder(RegionDefinition definition) {
+            this.key = definition.key;
+            this.world = definition.world;
+            this.region = definition.region;
+            this.flags.putAll(definition.flags);
+        }
+
+        public Builder key(Key key) {
+            this.key = Objects.requireNonNull(key, "key");
+            return this;
+        }
+
+        public Builder world(Key world) {
+            this.world = Objects.requireNonNull(world, "world");
+            return this;
+        }
+
+        public Builder region(BlockRegion region) {
+            this.region = Objects.requireNonNull(region, "region");
+            return this;
+        }
+
+        public <T> Builder flag(RegionFlag<T> flag, T value) {
+            Objects.requireNonNull(flag, "flag");
+            flags.put(flag.key(), flag.encode(value));
+            return this;
+        }
+
+        public RegionDefinition build() {
+            return new RegionDefinition(key, world, region, flags);
+        }
+    }
+}

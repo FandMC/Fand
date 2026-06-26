@@ -3,6 +3,7 @@ package io.fand.server.config;
 import io.fand.server.console.gui.GuiTheme;
 import io.fand.server.console.gui.GuiThemeService;
 import io.fand.server.chunk.ChunkSendScheduler;
+import io.fand.server.chunk.ChunkTaskExecutors;
 import io.fand.server.network.ProxyForwardingMode;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.scheduler.TaskScheduler;
@@ -43,12 +44,24 @@ public final class ConfigReloader {
     );
     private static final List<ReloadField<FandConfig.Chunks, ?>> HOT_CHUNK_FIELDS = List.of(
             field("chunks.workerThreads", (FandConfig.Chunks config) -> config.workerThreads),
-            field("chunks.trackingDiffApplyBudget", (FandConfig.Chunks config) -> config.trackingDiffApplyBudget)
+            field("chunks.trackingDiffApplyBudget", (FandConfig.Chunks config) -> config.trackingDiffApplyBudget),
+            field("chunks.teleportPreload", (FandConfig.Chunks config) -> config.teleportPreload),
+            field("chunks.teleportPreloadExtraRadius", (FandConfig.Chunks config) -> config.teleportPreloadExtraRadius),
+            field("chunks.teleportPreloadSimulation", (FandConfig.Chunks config) -> config.teleportPreloadSimulation),
+            field("chunks.teleportChunkSendBurstTicks", (FandConfig.Chunks config) -> config.teleportChunkSendBurstTicks),
+            field("chunks.teleportChunkSendBurstChunksPerTick", (FandConfig.Chunks config) -> config.teleportChunkSendBurstChunksPerTick),
+            field("chunks.teleportChunkSendBurstBatches", (FandConfig.Chunks config) -> config.teleportChunkSendBurstBatches)
     );
     private static final List<ReloadField<FandConfig.Chunks, ?>> RESTART_CHUNK_FIELDS = List.of(
             field("chunks.worldgenParallelism", (FandConfig.Chunks config) -> config.worldgenParallelism),
             field("chunks.dedicatedLightThread", (FandConfig.Chunks config) -> config.dedicatedLightThread),
             field("chunks.lightTaskQueueFastPath", (FandConfig.Chunks config) -> config.lightTaskQueueFastPath)
+    );
+    private static final List<ReloadField<FandConfig.Watchdog, ?>> RESTART_WATCHDOG_FIELDS = List.of(
+            field("watchdog.timeoutSeconds", (FandConfig.Watchdog config) -> config.timeoutSeconds),
+            field("watchdog.restartOnCrash", (FandConfig.Watchdog config) -> config.restartOnCrash),
+            field("watchdog.earlyWarningEveryMillis", (FandConfig.Watchdog config) -> config.earlyWarningEveryMillis),
+            field("watchdog.earlyWarningDelayMillis", (FandConfig.Watchdog config) -> config.earlyWarningDelayMillis)
     );
     private static final List<ReloadField<FandConfig.RecipeViewers, ?>> RESTART_RECIPE_VIEWER_FIELDS = List.of(
             field("compat.modProtocols.recipeViewers.jei", (FandConfig.RecipeViewers config) -> config.jei),
@@ -198,6 +211,7 @@ public final class ConfigReloader {
     private final PluginRuntime plugins;
     private final TaskScheduler scheduler;
     private final ChunkSendScheduler chunks;
+    private final ChunkTaskExecutors chunkTasks;
     private final GuiThemeService guiThemes;
 
     public ConfigReloader(
@@ -206,6 +220,7 @@ public final class ConfigReloader {
             PluginRuntime plugins,
             TaskScheduler scheduler,
             ChunkSendScheduler chunks,
+            ChunkTaskExecutors chunkTasks,
             GuiThemeService guiThemes
     ) {
         this.configPath = configPath;
@@ -213,6 +228,7 @@ public final class ConfigReloader {
         this.plugins = plugins;
         this.scheduler = scheduler;
         this.chunks = chunks;
+        this.chunkTasks = chunkTasks;
         this.guiThemes = guiThemes;
     }
 
@@ -231,10 +247,22 @@ public final class ConfigReloader {
             apply("scheduler.asyncThreads", () -> scheduler.reconfigureAsyncThreads(reloaded.scheduler.asyncThreads));
         }
         changes.restart("scheduler.regionThreads", previous.scheduler.regionThreads, reloaded.scheduler.regionThreads);
+        boolean backgroundThreadsChanged = changed(previous.chunks.backgroundThreads, reloaded.chunks.backgroundThreads);
+        boolean worldgenThreadsChanged = changed(previous.chunks.worldgenThreads, reloaded.chunks.worldgenThreads);
+        if (backgroundThreadsChanged || worldgenThreadsChanged) {
+            if (backgroundThreadsChanged) {
+                changes.hot("chunks.backgroundThreads");
+            }
+            if (worldgenThreadsChanged) {
+                changes.hot("chunks.worldgenThreads");
+            }
+            apply("chunks.threadPools", () -> chunkTasks.reconfigure(reloaded.chunks));
+        }
         if (markHot(changes, HOT_CHUNK_FIELDS, previous.chunks, reloaded.chunks)) {
             apply("chunks", () -> chunks.reconfigure(reloaded.chunks));
         }
         markRestart(changes, RESTART_CHUNK_FIELDS, previous.chunks, reloaded.chunks);
+        markRestart(changes, RESTART_WATCHDOG_FIELDS, previous.watchdog, reloaded.watchdog);
         apply("chunks config", () -> io.fand.server.hooks.FandHooks.applyChunkConfig(reloaded.chunks));
         markRestart(
                 changes,
@@ -360,3 +388,4 @@ public final class ConfigReloader {
         }
     }
 }
+

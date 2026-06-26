@@ -28,11 +28,19 @@ final class FandConfigTest {
         assertThat(config.players.logCommands).isTrue();
         assertThat(config.scheduler.asyncThreads).isZero();
         assertThat(config.scheduler.regionThreads).isZero();
+        assertThat(config.chunks.backgroundThreads).isZero();
+        assertThat(config.chunks.worldgenThreads).isZero();
         assertThat(config.chunks.workerThreads).isZero();
         assertThat(config.chunks.trackingDiffApplyBudget).isEqualTo(256);
         assertThat(config.chunks.worldgenParallelism).isZero();
         assertThat(config.chunks.dedicatedLightThread).isTrue();
         assertThat(config.chunks.lightTaskQueueFastPath).isTrue();
+        assertThat(config.chunks.teleportPreload).isTrue();
+        assertThat(config.chunks.teleportPreloadExtraRadius).isEqualTo(3);
+        assertThat(config.chunks.teleportPreloadSimulation).isTrue();
+        assertThat(config.chunks.teleportChunkSendBurstTicks).isEqualTo(40);
+        assertThat(config.chunks.teleportChunkSendBurstChunksPerTick).isEqualTo(64);
+        assertThat(config.chunks.teleportChunkSendBurstBatches).isEqualTo(10);
         assertThat(config.console.gui.enabled).isTrue();
         assertThat(config.console.gui.theme).isEqualTo("system");
         assertThat(config.network.forwarding.mode).isEqualTo("none");
@@ -112,11 +120,19 @@ final class FandConfigTest {
                 .contains("asyncThreads: 0")
                 .contains("regionThreads: 0")
                 .contains("chunks:")
+                .contains("backgroundThreads: 0")
+                .contains("worldgenThreads: 0")
                 .contains("workerThreads: 0")
                 .contains("trackingDiffApplyBudget: 256")
                 .contains("worldgenParallelism: 0")
                 .contains("dedicatedLightThread: true")
                 .contains("lightTaskQueueFastPath: true")
+                .contains("teleportPreload: true")
+                .contains("teleportPreloadExtraRadius: 3")
+                .contains("teleportPreloadSimulation: true")
+                .contains("teleportChunkSendBurstTicks: 40")
+                .contains("teleportChunkSendBurstChunksPerTick: 64")
+                .contains("teleportChunkSendBurstBatches: 10")
                 .contains("console:")
                 .contains("gui:")
                 .contains("enabled: true")
@@ -211,11 +227,19 @@ final class FandConfigTest {
                   regionThreads: 4
 
                 chunks:
+                  backgroundThreads: 5
+                  worldgenThreads: 4
                   workerThreads: 3
                   trackingDiffApplyBudget: 64
                   worldgenParallelism: 6
                   dedicatedLightThread: false
                   lightTaskQueueFastPath: false
+                  teleportPreload: false
+                  teleportPreloadExtraRadius: 7
+                  teleportPreloadSimulation: false
+                  teleportChunkSendBurstTicks: 12
+                  teleportChunkSendBurstChunksPerTick: 128
+                  teleportChunkSendBurstBatches: 6
 
                 console:
                   gui:
@@ -329,11 +353,19 @@ final class FandConfigTest {
         assertThat(config.players.logCommands).isFalse();
         assertThat(config.scheduler.asyncThreads).isEqualTo(6);
         assertThat(config.scheduler.regionThreads).isEqualTo(4);
+        assertThat(config.chunks.backgroundThreads).isEqualTo(5);
+        assertThat(config.chunks.worldgenThreads).isEqualTo(4);
         assertThat(config.chunks.workerThreads).isEqualTo(3);
         assertThat(config.chunks.trackingDiffApplyBudget).isEqualTo(64);
         assertThat(config.chunks.worldgenParallelism).isEqualTo(6);
         assertThat(config.chunks.dedicatedLightThread).isFalse();
         assertThat(config.chunks.lightTaskQueueFastPath).isFalse();
+        assertThat(config.chunks.teleportPreload).isFalse();
+        assertThat(config.chunks.teleportPreloadExtraRadius).isEqualTo(7);
+        assertThat(config.chunks.teleportPreloadSimulation).isFalse();
+        assertThat(config.chunks.teleportChunkSendBurstTicks).isEqualTo(12);
+        assertThat(config.chunks.teleportChunkSendBurstChunksPerTick).isEqualTo(128);
+        assertThat(config.chunks.teleportChunkSendBurstBatches).isEqualTo(6);
         assertThat(config.console.gui.enabled).isFalse();
         assertThat(config.console.gui.theme).isEqualTo("dark");
         assertThat(config.network.forwarding.mode).isEqualTo("velocity-modern");
@@ -489,3 +521,4 @@ final class FandConfigTest {
                 .hasMessageContaining("technical.tripwireBehavior");
     }
 }
+

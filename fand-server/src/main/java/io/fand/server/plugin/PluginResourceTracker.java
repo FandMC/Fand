@@ -22,6 +22,8 @@ import io.fand.api.placeholder.PlaceholderRegistration;
 import io.fand.api.permission.PermissionAttachment;
 import io.fand.api.permission.PermissionDescriptor;
 import io.fand.api.player.SimulatedPlayerService;
+import io.fand.api.region.RegionFlagRegistration;
+import io.fand.api.region.RegionRegistration;
 import io.fand.api.recipe.RecipeRegistration;
 import io.fand.api.scheduler.Task;
 import io.fand.api.scoreboard.ScoreboardRegistration;
@@ -56,6 +58,8 @@ final class PluginResourceTracker {
     private final Set<TrackedPluginMessageRegistration> pluginMessageRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedGameRuleRegistration> gameRuleRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedDataPackRegistration> dataPackRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedRegionRegistration> regionRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedRegionFlagRegistration> regionFlagRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedAdvancementRegistration> advancementRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedEnchantmentRegistration> enchantmentRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedStructureRegistration> structureRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -355,6 +359,38 @@ final class PluginResourceTracker {
         return tracked;
     }
 
+    TrackedRegionRegistration track(RegionRegistration delegate) {
+        var tracked = new TrackedRegionRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                regionRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.closeFromTracker();
+        }
+        return tracked;
+    }
+
+    TrackedRegionFlagRegistration track(RegionFlagRegistration delegate) {
+        var tracked = new TrackedRegionFlagRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                regionFlagRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.closeFromTracker();
+        }
+        return tracked;
+    }
+
     TrackedScoreboardRegistration track(ScoreboardRegistration delegate) {
         var tracked = new TrackedScoreboardRegistration(this, delegate);
         var dispose = false;
@@ -615,6 +651,18 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedRegionRegistration registration) {
+        synchronized (lock) {
+            regionRegistrations.remove(registration);
+        }
+    }
+
+    void release(TrackedRegionFlagRegistration registration) {
+        synchronized (lock) {
+            regionFlagRegistrations.remove(registration);
+        }
+    }
+
     void release(TrackedAdvancementRegistration registration) {
         synchronized (lock) {
             advancementRegistrations.remove(registration);
@@ -708,6 +756,8 @@ final class PluginResourceTracker {
         List<TrackedPluginMessageRegistration> pluginMessageRegistrationsToClose;
         List<TrackedGameRuleRegistration> gameRuleRegistrationsToClose;
         List<TrackedDataPackRegistration> dataPackRegistrationsToClose;
+        List<TrackedRegionRegistration> regionRegistrationsToClose;
+        List<TrackedRegionFlagRegistration> regionFlagRegistrationsToClose;
         List<TrackedAdvancementRegistration> advancementRegistrationsToClose;
         List<TrackedEnchantmentRegistration> enchantmentRegistrationsToClose;
         List<TrackedStructureRegistration> structureRegistrationsToClose;
@@ -738,6 +788,8 @@ final class PluginResourceTracker {
             pluginMessageRegistrationsToClose = new ArrayList<>(pluginMessageRegistrations);
             gameRuleRegistrationsToClose = new ArrayList<>(gameRuleRegistrations);
             dataPackRegistrationsToClose = new ArrayList<>(dataPackRegistrations);
+            regionRegistrationsToClose = new ArrayList<>(regionRegistrations);
+            regionFlagRegistrationsToClose = new ArrayList<>(regionFlagRegistrations);
             advancementRegistrationsToClose = new ArrayList<>(advancementRegistrations);
             enchantmentRegistrationsToClose = new ArrayList<>(enchantmentRegistrations);
             structureRegistrationsToClose = new ArrayList<>(structureRegistrations);
@@ -764,6 +816,8 @@ final class PluginResourceTracker {
             pluginMessageRegistrations.clear();
             gameRuleRegistrations.clear();
             dataPackRegistrations.clear();
+            regionRegistrations.clear();
+            regionFlagRegistrations.clear();
             advancementRegistrations.clear();
             enchantmentRegistrations.clear();
             structureRegistrations.clear();
@@ -820,6 +874,12 @@ final class PluginResourceTracker {
             registration.unregisterFromTracker();
         }
         for (var registration : dataPackRegistrationsToClose) {
+            registration.closeFromTracker();
+        }
+        for (var registration : regionRegistrationsToClose) {
+            registration.closeFromTracker();
+        }
+        for (var registration : regionFlagRegistrationsToClose) {
             registration.closeFromTracker();
         }
         for (var registration : advancementRegistrationsToClose) {
@@ -1593,6 +1653,88 @@ final class PluginResourceTracker {
         private void ensureOpen() {
             if (released) {
                 throw new IllegalStateException("Data pack registration is closed");
+            }
+        }
+    }
+
+    static final class TrackedRegionRegistration implements RegionRegistration {
+
+        private final PluginResourceTracker owner;
+        private final RegionRegistration delegate;
+        private volatile boolean released;
+
+        TrackedRegionRegistration(PluginResourceTracker owner, RegionRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public net.kyori.adventure.key.Key key() {
+            return delegate.key();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void unregister() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.unregister();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void closeFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.close();
+            }
+        }
+    }
+
+    static final class TrackedRegionFlagRegistration implements RegionFlagRegistration {
+
+        private final PluginResourceTracker owner;
+        private final RegionFlagRegistration delegate;
+        private volatile boolean released;
+
+        TrackedRegionFlagRegistration(PluginResourceTracker owner, RegionFlagRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public net.kyori.adventure.key.Key key() {
+            return delegate.key();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void unregister() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.unregister();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void closeFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.close();
             }
         }
     }

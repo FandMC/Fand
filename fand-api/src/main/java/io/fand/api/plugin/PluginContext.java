@@ -19,6 +19,7 @@ import io.fand.api.packet.PacketRegistry;
 import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.player.SimulatedPlayerService;
+import io.fand.api.region.RegionService;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
@@ -115,6 +116,11 @@ public interface PluginContext {
     /** Custom game rules scoped to this plugin's namespace. */
     default GameRuleService gameRules() {
         return GameRuleService.empty();
+    }
+
+    /** Region registry scoped to this plugin's lifecycle. */
+    default RegionService regions() {
+        return RegionService.empty();
     }
 
     /** Data-pack file tree service scoped to this plugin's lifecycle and namespace. */

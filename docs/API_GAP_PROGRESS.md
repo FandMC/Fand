@@ -49,6 +49,27 @@
 - Verified: `./gradlew --no-parallel --max-workers=2 :fand-server:test --tests io.fand.server.text.FandMiniMessageServiceTest`.
 - Verified: `./gradlew --no-parallel --max-workers=2 :fand-server:test --tests io.fand.server.world.ApiSurfaceSourceTest`.
 
+## 2026-06-24
+
+- Current focus: region / land API.
+- Implemented: added `RegionService`, `Region`, `RegionDefinition`, `RegionFlag`, `RegionFlagCodec`, `RegionRegistration`, and `RegionFlagRegistration` API surfaces.
+- Implemented: added server-side `FandRegionService` with JSON-backed region persistence under `regions/<namespace>/<path>.json`, region lookup, region removal, flag registration, and location-based region queries.
+- Implemented: added plugin-scoped `PluginRegionService` wrapper and lifecycle tracking, so region registrations are cleaned up with the owning plugin.
+- Implemented: wired `Server#regions()` and `PluginContext#regions()` through the runtime.
+- Verified: `./gradlew.bat --no-daemon --max-workers=1 :fand-server:test --tests io.fand.server.region.FandRegionServiceTest`.
+
+## 2026-06-25
+
+- Current focus: chunk pipeline throughput and worldgen parallelism.
+- Implemented: split chunk background work into `chunks.backgroundThreads` for load/IO work and `chunks.worldgenThreads` for terrain-generation work.
+- Implemented: kept `chunks.worldgenParallelism` as the independent batch scheduler limit, so batch width and worker count can now be tuned separately.
+- Implemented: moved structure-start, structure-reference, surface, carver, feature, and spawn generation onto the dedicated worldgen executor.
+- Implemented: reloaded the chunk thread pools when either background or worldgen thread counts change.
+- Implemented: increased the automatic worldgen worker default to use available processors up to 32 threads.
+- Verified: `./gradlew \"fand-server:compileJava\" \"fand-server:compileTestJava\"`.
+- Verified: `./gradlew \"fand-server:test\" --tests \"io.fand.server.config.FandConfigTest\" --tests \"io.fand.server.config.ConfigReloadResultTest\"`.
+- Verified: `./gradlew \"fand-server:build\"`.
+
 ## 2026-06-21
 
 - Current focus: block API surface and scheduler region lanes.

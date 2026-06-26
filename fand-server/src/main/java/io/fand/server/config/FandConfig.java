@@ -29,6 +29,9 @@ public final class FandConfig {
     @ConfigComment("Chunk loading and player chunk-send scheduling settings.")
     public final Chunks chunks = new Chunks();
 
+    @ConfigComment("Server watchdog settings.")
+    public final Watchdog watchdog = new Watchdog();
+
     @ConfigComment("Game-path performance optimizations. All entries preserve vanilla behaviour unless noted.")
     public final Performance performance = new Performance();
 
@@ -273,6 +276,23 @@ public final class FandConfig {
     public static final class Chunks {
 
         @ConfigComment({
+                "Number of threads used for chunk loading, chunk data parsing,",
+                "chunk data upgrade, and terrain-generation worker tasks.",
+                "Set to 0 to derive the value from available processors."
+        })
+        @ConfigRange(min = 0, max = 1024)
+        public int backgroundThreads = 0;
+
+        @ConfigComment({
+                "Number of dedicated threads used for terrain generation work.",
+                "This is separate from chunks.worldgenParallelism, which controls",
+                "how many chunk-generation batches may run at the same time.",
+                "Set to 0 to derive the value from available processors."
+        })
+        @ConfigRange(min = 0, max = 1024)
+        public int worldgenThreads = 0;
+
+        @ConfigComment({
                 "Worker threads used for safe chunk tracking diff calculations.",
                 "Set to 0 to derive the value from available processors."
         })
@@ -316,6 +336,82 @@ public final class FandConfig {
                 "task queue."
         })
         public boolean lightTaskQueueFastPath = true;
+
+        @ConfigComment({
+                "Preload the player's destination chunk area immediately when a",
+                "teleport packet is sent. Teleport still happens immediately;",
+                "this only pushes chunk loading, generation, lighting, and send",
+                "dependencies into the chunk pipeline as early as possible."
+        })
+        public volatile boolean teleportPreload = true;
+
+        @ConfigComment({
+                "Extra chunks around the effective player view distance to load",
+                "after teleport. Higher values are aggressive and CPU-heavy, but",
+                "help long-distance teleports show terrain sooner. Set 0 to only",
+                "preload the view distance."
+        })
+        @ConfigRange(min = 0, max = 64)
+        public volatile int teleportPreloadExtraRadius = 3;
+
+        @ConfigComment({
+                "Also keep the destination area simulation-ready for the short",
+                "post-teleport ticket window. This does not skip or change chunk",
+                "generation; it only avoids immediately starving the destination",
+                "area while the client catches up."
+        })
+        public volatile boolean teleportPreloadSimulation = true;
+
+        @ConfigComment({
+                "Ticks after a teleport where chunk sending may use the teleport",
+                "burst limits below. Set 0 to disable the burst and use vanilla",
+                "client-paced chunk batches."
+        })
+        @ConfigRange(min = 0, max = 20000)
+        public volatile int teleportChunkSendBurstTicks = 40;
+
+        @ConfigComment({
+                "Chunk send target during the post-teleport burst. Vanilla starts",
+                "near 9 chunks/tick and then follows client feedback; this lets",
+                "servers with enough CPU/network push the first view faster."
+        })
+        @ConfigRange(min = 1, max = 1024)
+        public volatile int teleportChunkSendBurstChunksPerTick = 64;
+
+        @ConfigComment({
+                "Maximum unacknowledged chunk batches allowed during the",
+                "post-teleport burst. Higher values reduce first-view latency but",
+                "can increase per-player network memory under packet loss."
+        })
+        @ConfigRange(min = 1, max = 64)
+        public volatile int teleportChunkSendBurstBatches = 10;
+    }
+
+    public static final class Watchdog {
+
+        @ConfigComment({
+                "Server tick timeout in seconds before the watchdog escalates.",
+                "Set to 0 to disable watchdog enforcement."
+        })
+        @ConfigRange(min = 0, max = 86_400)
+        public int timeoutSeconds = 60;
+
+        @ConfigComment("Attempt a graceful shutdown before forcing the JVM down on watchdog timeout.")
+        public boolean restartOnCrash = true;
+
+        @ConfigComment({
+                "How often to print early watchdog warnings in milliseconds.",
+                "Set this to 0 to disable early warning dumps."
+        })
+        @ConfigRange(min = 0, max = 86_400_000)
+        public int earlyWarningEveryMillis = 5000;
+
+        @ConfigComment({
+                "Minimum age in milliseconds after the last successful tick before",
+                "an early watchdog warning can be emitted."
+        })
+        @ConfigRange(min = 0, max = 86_400_000)
+        public int earlyWarningDelayMillis = 10000;
     }
 
     public static final class Performance {
@@ -714,3 +810,4 @@ public final class FandConfig {
         public String secret = "";
     }
 }
+

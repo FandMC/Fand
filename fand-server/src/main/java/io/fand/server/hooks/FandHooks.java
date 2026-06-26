@@ -151,6 +151,12 @@ public final class FandHooks {
     private static volatile int chunkWorldgenParallelism = 0;
     private static volatile boolean chunkDedicatedLightThread = true;
     private static volatile boolean chunkLightTaskQueueFastPath = true;
+    private static volatile boolean chunkTeleportPreload = true;
+    private static volatile int chunkTeleportPreloadExtraRadius = 3;
+    private static volatile boolean chunkTeleportPreloadSimulation = true;
+    private static volatile int chunkTeleportChunkSendBurstTicks = 40;
+    private static volatile int chunkTeleportChunkSendBurstChunksPerTick = 64;
+    private static volatile int chunkTeleportChunkSendBurstBatches = 10;
     private static volatile boolean zeroTickPlants = false;
     private static volatile boolean oldHopperSuckInBehavior = false;
     private static volatile boolean shearsInDispenserCanZeroAmount = false;
@@ -227,6 +233,12 @@ public final class FandHooks {
         chunkWorldgenParallelism = chunks.worldgenParallelism;
         chunkDedicatedLightThread = chunks.dedicatedLightThread;
         chunkLightTaskQueueFastPath = chunks.lightTaskQueueFastPath;
+        chunkTeleportPreload = chunks.teleportPreload;
+        chunkTeleportPreloadExtraRadius = chunks.teleportPreloadExtraRadius;
+        chunkTeleportPreloadSimulation = chunks.teleportPreloadSimulation;
+        chunkTeleportChunkSendBurstTicks = chunks.teleportChunkSendBurstTicks;
+        chunkTeleportChunkSendBurstChunksPerTick = chunks.teleportChunkSendBurstChunksPerTick;
+        chunkTeleportChunkSendBurstBatches = chunks.teleportChunkSendBurstBatches;
     }
 
     public static boolean playerSpeedCheckEnabled() {
@@ -235,6 +247,16 @@ public final class FandHooks {
 
     public static boolean playerCommandLoggingEnabled() {
         return playerCommandLogging;
+    }
+
+    public static java.util.concurrent.Executor chunkBackgroundExecutor() {
+        var runtime = activeRuntime();
+        return runtime == null ? net.minecraft.util.Util.backgroundExecutor() : runtime.chunkBackgroundExecutor();
+    }
+
+    public static java.util.concurrent.Executor chunkWorldgenExecutor() {
+        var runtime = activeRuntime();
+        return runtime == null ? net.minecraft.util.Util.backgroundExecutor() : runtime.chunkWorldgenExecutor();
     }
 
     public static void applyTechnicalConfig(io.fand.server.config.FandConfig.Technical technical) {
@@ -415,6 +437,31 @@ public final class FandHooks {
 
     public static boolean chunkLightTaskQueueFastPathEnabled() {
         return chunkLightTaskQueueFastPath;
+    }
+
+    public static boolean chunkTeleportPreloadEnabled() {
+        return chunkTeleportPreload;
+    }
+
+    public static int chunkTeleportPreloadRadius(final int viewDistance, final int footprintRadius) {
+        int baseRadius = Math.max(Math.max(1, viewDistance), footprintRadius);
+        return baseRadius + Math.max(0, chunkTeleportPreloadExtraRadius);
+    }
+
+    public static boolean chunkTeleportPreloadSimulationEnabled() {
+        return chunkTeleportPreloadSimulation;
+    }
+
+    public static int chunkTeleportChunkSendBurstTicks() {
+        return chunkTeleportChunkSendBurstTicks;
+    }
+
+    public static int chunkTeleportChunkSendBurstChunksPerTick() {
+        return chunkTeleportChunkSendBurstChunksPerTick;
+    }
+
+    public static int chunkTeleportChunkSendBurstBatches() {
+        return chunkTeleportChunkSendBurstBatches;
     }
 
     public static boolean zeroTickPlantsEnabled() {
@@ -845,3 +892,4 @@ public final class FandHooks {
         return Optional.empty();
     }
 }
+

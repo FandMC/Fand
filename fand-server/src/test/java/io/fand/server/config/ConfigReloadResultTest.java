@@ -35,6 +35,8 @@ final class ConfigReloadResultTest {
                   regionThreads: 0
 
                 chunks:
+                  backgroundThreads: 0
+                  worldgenThreads: 0
                   workerThreads: 0
                   trackingDiffApplyBudget: 256
                   worldgenParallelism: 0
@@ -77,6 +79,8 @@ final class ConfigReloadResultTest {
                   regionThreads: 4
 
                 chunks:
+                  backgroundThreads: 6
+                  worldgenThreads: 5
                   workerThreads: 2
                   trackingDiffApplyBudget: 32
                   worldgenParallelism: 4
@@ -108,6 +112,8 @@ final class ConfigReloadResultTest {
                 "players.speedCheck",
                 "players.logCommands",
                 "scheduler.asyncThreads",
+                "chunks.backgroundThreads",
+                "chunks.worldgenThreads",
                 "chunks.workerThreads",
                 "chunks.trackingDiffApplyBudget"
         );

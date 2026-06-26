@@ -903,6 +903,7 @@ public final class PlayerEvents {
             LOGGER.warn("PlayerTeleportEvent targeted an unloaded world: {}", event.to().world().key().asString());
             return transition;
         }
+
         return new TeleportTransition(
                 level,
                 new Vec3(event.to().x(), event.to().y(), event.to().z()),
@@ -1488,3 +1489,4 @@ public final class PlayerEvents {
     public record EggThrowResult(boolean hatching, int hatchCount) {
     }
 }
+

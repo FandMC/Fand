@@ -780,6 +780,7 @@ public final class FandPlayer implements Player {
                 future.completeExceptionally(failure);
             }
         };
+
         if (server.isSameThread()) {
             run.run();
         } else {

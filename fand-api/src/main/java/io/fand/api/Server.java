@@ -27,6 +27,7 @@ import io.fand.api.permission.PermissionService;
 import io.fand.api.player.PlayerAccessService;
 import io.fand.api.player.SimulatedPlayerService;
 import io.fand.api.plugin.PluginManager;
+import io.fand.api.region.RegionService;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
@@ -145,6 +146,10 @@ public interface Server extends ForwardingAudience {
 
     default GameRuleService gameRules() {
         return GameRuleService.empty();
+    }
+
+    default RegionService regions() {
+        return RegionService.empty();
     }
 
     default DataPackService dataPacks() {

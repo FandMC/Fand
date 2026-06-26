@@ -19,6 +19,7 @@ import io.fand.api.packet.PacketRegistry;
 import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.player.SimulatedPlayerService;
+import io.fand.api.region.RegionService;
 import io.fand.api.plugin.PluginContext;
 import io.fand.api.plugin.PluginDescriptor;
 import io.fand.api.recipe.RecipeRegistry;
@@ -63,6 +64,7 @@ public final class RuntimePluginContext implements PluginContext {
     private final PacketRegistry packets;
     private final PluginMessaging pluginMessaging;
     private final GameRuleService gameRules;
+    private final RegionService regions;
     private final DataPackService dataPacks;
     private final CustomItemRegistry customItems;
     private final CustomBlockRegistry customBlocks;
@@ -96,6 +98,7 @@ public final class RuntimePluginContext implements PluginContext {
             PacketRegistry packets,
             PluginMessaging pluginMessaging,
             GameRuleService gameRules,
+            RegionService regions,
             DataPackService dataPacks,
             CustomItemRegistry customItems,
             CustomBlockRegistry customBlocks,
@@ -125,6 +128,7 @@ public final class RuntimePluginContext implements PluginContext {
         this.packets = packets;
         this.pluginMessaging = pluginMessaging;
         this.gameRules = gameRules;
+        this.regions = regions;
         this.dataPacks = dataPacks;
         this.customItems = customItems;
         this.customBlocks = customBlocks;
@@ -233,6 +237,11 @@ public final class RuntimePluginContext implements PluginContext {
     @Override
     public GameRuleService gameRules() {
         return gameRules;
+    }
+
+    @Override
+    public RegionService regions() {
+        return regions;
     }
 
     @Override

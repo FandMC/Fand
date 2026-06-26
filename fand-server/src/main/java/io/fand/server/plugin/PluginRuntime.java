@@ -24,6 +24,7 @@ import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.player.SimulatedPlayerService;
+import io.fand.api.region.RegionService;
 import io.fand.api.plugin.Plugin;
 import io.fand.api.plugin.PluginDescriptor;
 import io.fand.api.plugin.PluginManager;
@@ -95,6 +96,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final PacketRegistry packetRegistry;
     private final PluginMessaging pluginMessaging;
     private volatile GameRuleService gameRuleService = GameRuleService.empty();
+    private final RegionService regionService;
     private final DataPackService dataPackService;
     private final CustomItemRegistry customItemRegistry;
     private final CustomBlockRegistry customBlockRegistry;
@@ -153,6 +155,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 unavailableScoreboardService(),
                 new PacketRegistryImpl(),
                 null,
+                RegionService.empty(),
                 DataPackService.empty(),
                 AdvancementRegistry.empty(),
                 EnchantmentRegistry.empty(),
@@ -224,6 +227,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 unavailableScoreboardService(),
                 new PacketRegistryImpl(),
                 null,
+                RegionService.empty(),
                 DataPackService.empty(),
                 AdvancementRegistry.empty(),
                 EnchantmentRegistry.empty(),
@@ -274,6 +278,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 scoreboardService,
                 packetRegistry,
                 defaultPluginMessaging(packetRegistry),
+                RegionService.empty(),
                 DataPackService.empty(),
                 advancementRegistry,
                 enchantmentRegistry,
@@ -325,6 +330,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 scoreboardService,
                 packetRegistry,
                 pluginMessaging,
+                RegionService.empty(),
                 DataPackService.empty(),
                 advancementRegistry,
                 enchantmentRegistry,
@@ -354,6 +360,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             ScoreboardService scoreboardService,
             PacketRegistry packetRegistry,
             PluginMessaging pluginMessaging,
+            RegionService regionService,
             DataPackService dataPackService,
             AdvancementRegistry advancementRegistry,
             EnchantmentRegistry enchantmentRegistry,
@@ -381,6 +388,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 scoreboardService,
                 packetRegistry,
                 pluginMessaging,
+                regionService,
                 dataPackService,
                 advancementRegistry,
                 enchantmentRegistry,
@@ -435,6 +443,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 scoreboardService,
                 packetRegistry,
                 pluginMessaging,
+                RegionService.empty(),
                 DataPackService.empty(),
                 advancementRegistry,
                 enchantmentRegistry,
@@ -485,6 +494,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 scoreboardService,
                 packetRegistry,
                 pluginMessaging,
+                RegionService.empty(),
                 DataPackService.empty(),
                 advancementRegistry,
                 enchantmentRegistry,
@@ -515,6 +525,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             ScoreboardService scoreboardService,
             PacketRegistry packetRegistry,
             PluginMessaging pluginMessaging,
+            RegionService regionService,
             DataPackService dataPackService,
             AdvancementRegistry advancementRegistry,
             EnchantmentRegistry enchantmentRegistry,
@@ -549,6 +560,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.scoreboardService = scoreboardService;
         this.packetRegistry = packetRegistry;
         this.pluginMessaging = pluginMessaging == null ? defaultPluginMessaging(packetRegistry) : pluginMessaging;
+        this.regionService = Objects.requireNonNull(regionService, "regionService");
         this.dataPackService = Objects.requireNonNull(dataPackService, "dataPackService");
         this.customItemRegistry = customItemRegistry;
         this.customBlockRegistry = customBlockRegistry;
@@ -987,6 +999,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new PluginPacketRegistry(packetRegistry, resources),
                 new PluginPluginMessaging(pluginMessaging, resources),
                 new PluginGameRuleService(gameRuleService, resources, id),
+                new PluginRegionService(regionService, resources, id),
                 new PluginDataPackService(dataPackService, resources, id),
                 new PluginCustomItemRegistry(customItemRegistry, resources, id),
                 new PluginCustomBlockRegistry(customBlockRegistry, resources, id),
