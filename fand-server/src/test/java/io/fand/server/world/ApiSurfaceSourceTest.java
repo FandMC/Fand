@@ -345,8 +345,6 @@ final class ApiSurfaceSourceTest {
                 "return delegate.importTemplate(scopedKey(key), projection)",
                 "save(Key key, Path path, StructureFormat format)",
                 "return delegate.place(scopedKey(key), origin, placement)",
-                "place(StructureProjection projection, Location origin, StructurePlacement placement)",
-                "return delegate.place(projection, origin, placement)",
                 "return delegate.locate(scopedKey(structure), origin, radius)");
         assertThat(serverStructures).contains(
                 "registerStructure(CustomStructure structure)",
@@ -378,8 +376,8 @@ final class ApiSurfaceSourceTest {
                 "BlockRotProcessor",
                 "BlockIgnoreProcessor.STRUCTURE_BLOCK",
                 "place(Key key, Location origin, StructurePlacement placement)",
-                "place(StructureProjection projection, Location origin, StructurePlacement placement)",
-                "placeProjectionOnServerThread",
+                "placeEphemeral(StructureProjection projection, Location origin, StructurePlacement placement)",
+                "placeEphemeralOnServerThread",
                 "server.getStructureManager().remove(id)",
                 "locate(Key structure, Location origin, int radius)");
         assertThat(source).contains(
@@ -441,13 +439,9 @@ final class ApiSurfaceSourceTest {
         assertThat(playerApi).contains(
                 "PersistentDataContainer advancementData(Key advancement)",
                 "void setAdvancementData(Key advancement, PersistentDataContainer data)",
-                "default int getStatistic(Key key)",
-                "default int getStatistic(StatisticKey key)",
                 "default void incrementStatistic(StatisticKey key, int delta)");
         assertThat(offlinePlayerApi).contains(
-                "default int getStatistic(Key key)",
-                "default int statistic(StatisticKey key)",
-                "default int getStatistic(StatisticKey key)");
+                "default int statistic(StatisticKey key)");
         assertThat(recipeIngredient).contains(
                 "static RecipeIngredient matching",
                 "Predicate<ItemStack>",

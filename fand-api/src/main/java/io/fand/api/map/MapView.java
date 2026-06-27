@@ -12,10 +12,6 @@ public interface MapView {
      */
     void renderer(MapRenderer renderer);
 
-    default void renderer(PlayerMapRenderer renderer) {
-        renderer((MapRenderer) renderer);
-    }
-
     default void render() {
         throw new UnsupportedOperationException("Map rendering is not supported");
     }

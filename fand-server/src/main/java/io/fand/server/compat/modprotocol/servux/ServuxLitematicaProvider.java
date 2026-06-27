@@ -290,7 +290,7 @@ final class ServuxLitematicaProvider {
                 .withSourceKey(key)
                 .withName(placementData.getStringOr("Name", task));
         try {
-            structures.place(projection, origin, placement).whenComplete((placed, failure) -> {
+            structures.placeEphemeral(projection, origin, placement).whenComplete((placed, failure) -> {
                 if (failure != null) {
                     respond(player, transactionId, task, "Error", failure.getMessage());
                     return;

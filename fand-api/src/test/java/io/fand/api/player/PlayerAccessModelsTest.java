@@ -129,7 +129,7 @@ final class PlayerAccessModelsTest {
         assertThat(generated.generator()).isPresent();
         assertThat(generated.generatorSettings().mode()).isEqualTo(GenerationMode.CUSTOM);
         assertThat(generated.isVoidWorld()).isFalse();
-        var vanillaGenerated = WorldCreateOptions.vanillaGenerated(chunk -> { });
+        var vanillaGenerated = WorldCreateOptions.generated(chunk -> { }, WorldGeneratorSettings.vanilla());
         assertThat(vanillaGenerated.generator()).isPresent();
         assertThat(vanillaGenerated.generatorSettings().mode()).isEqualTo(GenerationMode.VANILLA);
         assertThat(vanillaGenerated.generatorSettings().usesVanillaNoisePipeline()).isTrue();

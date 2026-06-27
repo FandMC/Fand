@@ -158,10 +158,6 @@ public interface LivingEntity extends Entity {
         return false;
     }
 
-    default boolean hasLineOfSight(Entity target) {
-        return lineOfSight(target);
-    }
-
     default boolean sleeping() {
         return false;
     }

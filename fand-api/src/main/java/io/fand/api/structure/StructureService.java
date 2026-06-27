@@ -41,19 +41,11 @@ public interface StructureService {
 
     CompletableFuture<Boolean> importTemplate(Key key, StructureProjection projection);
 
-    default CompletableFuture<Boolean> importTemplate(Key key, StructureFormat format, byte[] data) {
-        return importTemplate(key, StructureProjection.of(format, data));
-    }
-
     CompletableFuture<Optional<StructureProjection>> load(Path path, StructureFormat format);
 
     CompletableFuture<Boolean> save(Key key, Path path, StructureFormat format);
 
     CompletableFuture<Boolean> place(Key key, Location origin, StructurePlacement placement);
-
-    default CompletableFuture<Boolean> place(StructureProjection projection, Location origin, StructurePlacement placement) {
-        throw new UnsupportedOperationException("Direct structure projection placement is not supported");
-    }
 
     CompletableFuture<Optional<Location>> locate(Key structure, Location origin, int radius);
 

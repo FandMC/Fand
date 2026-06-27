@@ -289,24 +289,6 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
         throw new UnsupportedOperationException("Per-viewer entity hiding is not supported");
     }
 
-    /**
-     * @deprecated Use {@link #hideEntity(Entity)} on the viewer instead.
-     */
-    @Deprecated(forRemoval = false)
-    default void hideEntity(Player viewer, Entity entity) {
-        java.util.Objects.requireNonNull(viewer, "viewer");
-        viewer.hideEntity(entity);
-    }
-
-    /**
-     * @deprecated Use {@link #showEntity(Entity)} on the viewer instead.
-     */
-    @Deprecated(forRemoval = false)
-    default void showEntity(Player viewer, Entity entity) {
-        java.util.Objects.requireNonNull(viewer, "viewer");
-        viewer.showEntity(entity);
-    }
-
     default void openBook(ItemStack book) {
         throw new UnsupportedOperationException("Opening books is not supported");
     }
@@ -331,19 +313,9 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
     /** Reads a vanilla custom statistic value. */
     int statistic(Key key);
 
-    /** Bukkit-style alias for {@link #statistic(Key)}. */
-    default int getStatistic(Key key) {
-        return statistic(key);
-    }
-
     /** Convenience overload for generated vanilla statistic keys. */
     default int statistic(StatisticKey key) {
         return statistic(key.key());
-    }
-
-    /** Bukkit-style alias for {@link #statistic(StatisticKey)}. */
-    default int getStatistic(StatisticKey key) {
-        return statistic(key);
     }
 
     /** Sets a vanilla custom statistic value and syncs it to the client. */

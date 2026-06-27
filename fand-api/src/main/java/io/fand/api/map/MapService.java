@@ -10,10 +10,6 @@ public interface MapService {
         throw new UnsupportedOperationException("Custom map rendering is not supported");
     }
 
-    default MapView create(PlayerMapRenderer renderer) {
-        return create((MapRenderer) renderer);
-    }
-
     static MapService empty() {
         return id -> Optional.empty();
     }

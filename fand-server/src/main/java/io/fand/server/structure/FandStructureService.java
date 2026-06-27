@@ -294,8 +294,7 @@ public final class FandStructureService implements StructureService {
         return submit(current, () -> placeOnServerThread(key, origin, placement));
     }
 
-    @Override
-    public CompletableFuture<Boolean> place(StructureProjection projection, Location origin, StructurePlacement placement) {
+    public CompletableFuture<Boolean> placeEphemeral(StructureProjection projection, Location origin, StructurePlacement placement) {
         Objects.requireNonNull(projection, "projection");
         Objects.requireNonNull(origin, "origin");
         Objects.requireNonNull(placement, "placement");
@@ -303,7 +302,7 @@ public final class FandStructureService implements StructureService {
         if (current == null) {
             return notAttached();
         }
-        return submit(current, () -> placeProjectionOnServerThread(current, projection, origin, placement));
+        return submit(current, () -> placeEphemeralOnServerThread(current, projection, origin, placement));
     }
 
     @Override
@@ -396,7 +395,7 @@ public final class FandStructureService implements StructureService {
                 placement.updateFlags());
     }
 
-    private boolean placeProjectionOnServerThread(
+    private boolean placeEphemeralOnServerThread(
             MinecraftServer server,
             StructureProjection projection,
             Location origin,

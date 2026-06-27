@@ -5,7 +5,7 @@ plugins {
 
 allprojects {
     group = "io.fand"
-    version = "0.1.0-SNAPSHOT"
+    version = "0.1.1"
 }
 
 subprojects {

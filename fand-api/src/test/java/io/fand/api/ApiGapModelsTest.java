@@ -36,7 +36,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
 
@@ -178,24 +177,6 @@ class ApiGapModelsTest {
         assertThat(strategy.integration(Key.key("fand:redis"))).contains(redis);
         assertThat(strategy.integration(Key.key("fand:mysql"))).isEmpty();
         assertThat(ExternalIntegrationStrategy.empty().integrations()).isEmpty();
-    }
-
-    @Test
-    @SuppressWarnings("deprecation")
-    void legacyHideEntitySignatureDelegatesToViewerReceiver() {
-        var viewer = new AtomicReference<Entity>();
-        var receiver = player("Viewer", 0, GameMode.SURVIVAL, (proxy, method, args) -> {
-            if (method.getName().equals("hideEntity") && method.getParameterCount() == 1) {
-                viewer.set((Entity) args[0]);
-                return Boolean.TRUE;
-            }
-            return null;
-        });
-        var target = new TestLivingEntity();
-
-        receiver.hideEntity(receiver, target);
-
-        assertThat(viewer).hasValue(target);
     }
 
     private record TestItemType(Key key, int maxStackSize) implements ItemType {

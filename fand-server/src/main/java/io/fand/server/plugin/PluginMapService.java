@@ -6,7 +6,6 @@ import io.fand.api.map.MapRenderer;
 import io.fand.api.map.MapScale;
 import io.fand.api.map.MapService;
 import io.fand.api.map.MapView;
-import io.fand.api.map.PlayerMapRenderer;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -30,12 +29,6 @@ public final class PluginMapService implements MapService {
     public MapView create(MapRenderer renderer) {
         Objects.requireNonNull(renderer, "renderer");
         return wrap(delegate.create(renderer), renderer);
-    }
-
-    @Override
-    public MapView create(PlayerMapRenderer renderer) {
-        Objects.requireNonNull(renderer, "renderer");
-        return create((MapRenderer) renderer);
     }
 
     private MapView wrap(MapView view) {
@@ -65,11 +58,6 @@ public final class PluginMapService implements MapService {
             Objects.requireNonNull(renderer, "renderer");
             delegateView.renderer(renderer);
             tracker.track(new PluginResourceTracker.MapRendererBinding(delegate, id(), renderer));
-        }
-
-        @Override
-        public void renderer(PlayerMapRenderer renderer) {
-            renderer((MapRenderer) renderer);
         }
 
         @Override
