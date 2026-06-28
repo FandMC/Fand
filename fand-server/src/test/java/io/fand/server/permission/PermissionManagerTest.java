@@ -3,8 +3,10 @@ package io.fand.server.permission;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.fand.api.permission.PermissionContext;
 import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
+import io.fand.api.permission.PermissionMeta;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -192,6 +194,22 @@ final class PermissionManagerTest {
         manager.recalculateAll();
 
         assertThat(manager.hasPermission(subject, "fand.command.reload")).isTrue();
+    }
+
+    @Test
+    void ecosystemMetadataQueriesDefaultToEmpty() {
+        var manager = new PermissionManager();
+        var subject = new PermissionSet(false);
+        var context = PermissionContext.of("world", "overworld");
+
+        assertThat(manager.meta(subject, context)).isEqualTo(PermissionMeta.empty());
+        assertThat(manager.prefix(subject, context)).isEmpty();
+        assertThat(manager.suffix(subject, context)).isEmpty();
+        assertThat(manager.metaValue(subject, context, "chat-color")).isEmpty();
+        assertThat(manager.primaryGroup(subject, context)).isEmpty();
+        assertThat(manager.groups(subject, context)).isEmpty();
+        assertThat(manager.group("default", context)).isEmpty();
+        assertThat(manager.groups(context)).isEmpty();
     }
 
     @Test

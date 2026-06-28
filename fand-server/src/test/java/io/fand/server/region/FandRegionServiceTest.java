@@ -52,6 +52,136 @@ final class FandRegionServiceTest {
         assertThat(Files.exists(regionFile)).isFalse();
     }
 
+    @Test
+    void priorityBeatsVolumeWhenSelectingApplicableRegion() {
+        var service = new FandRegionService(tempDir.resolve("priority-regions"));
+        var world = Key.key("minecraft:overworld");
+        var lowPrioritySmall = RegionDefinition.builder(
+                        Key.key("fand:small"),
+                        world,
+                        new BlockRegion(0, 0, 0, 2, 2, 2))
+                .build();
+        var highPriorityLarge = RegionDefinition.builder(
+                        Key.key("fand:large"),
+                        world,
+                        new BlockRegion(0, 0, 0, 10, 10, 10))
+                .priority(10)
+                .build();
+
+        service.register(lowPrioritySmall);
+        service.register(highPriorityLarge);
+
+        var location = new Location(new TestWorld(world), 1, 1, 1, 0.0F, 0.0F);
+
+        assertThat(service.applicableRegions(location))
+                .extracting(Region::key)
+                .containsExactly(Key.key("fand:large"), Key.key("fand:small"));
+        assertThat(service.applicableRegion(location)).map(Region::key).contains(Key.key("fand:large"));
+    }
+
+    @Test
+    void samePriorityUsesSmallerVolumeThenNewestRegistration() {
+        var service = new FandRegionService(tempDir.resolve("same-priority-regions"));
+        var world = Key.key("minecraft:overworld");
+        var large = RegionDefinition.builder(
+                        Key.key("fand:large"),
+                        world,
+                        new BlockRegion(0, 0, 0, 20, 20, 20))
+                .priority(5)
+                .build();
+        var olderSmall = RegionDefinition.builder(
+                        Key.key("fand:older-small"),
+                        world,
+                        new BlockRegion(0, 0, 0, 5, 5, 5))
+                .priority(5)
+                .build();
+        var newerSmall = RegionDefinition.builder(
+                        Key.key("fand:newer-small"),
+                        world,
+                        new BlockRegion(0, 0, 0, 5, 5, 5))
+                .priority(5)
+                .build();
+
+        service.register(large);
+        service.register(olderSmall);
+        service.register(newerSmall);
+
+        var location = new Location(new TestWorld(world), 1, 1, 1, 0.0F, 0.0F);
+
+        assertThat(service.applicableRegions(location))
+                .extracting(Region::key)
+                .containsExactly(
+                        Key.key("fand:newer-small"),
+                        Key.key("fand:older-small"),
+                        Key.key("fand:large"));
+    }
+
+    @Test
+    void resolvesFlagsThroughParentTraceBeforeLowerPriorityRegions() {
+        var service = new FandRegionService(tempDir.resolve("trace-regions"));
+        var world = Key.key("minecraft:overworld");
+        var flag = RegionFlag.bool(Key.key("fand:pvp"), false);
+        var parent = RegionDefinition.builder(
+                        Key.key("fand:parent"),
+                        world,
+                        new BlockRegion(100, 0, 100, 110, 10, 110))
+                .flag(flag, true)
+                .build();
+        var lower = RegionDefinition.builder(
+                        Key.key("fand:lower"),
+                        world,
+                        new BlockRegion(0, 0, 0, 10, 10, 10))
+                .flag(flag, false)
+                .build();
+        var child = RegionDefinition.builder(
+                        Key.key("fand:child"),
+                        world,
+                        new BlockRegion(0, 0, 0, 10, 10, 10))
+                .priority(5)
+                .parent(parent.key())
+                .build();
+
+        service.register(parent);
+        service.register(lower);
+        service.register(child);
+
+        var location = new Location(new TestWorld(world), 5, 5, 5, 0.0F, 0.0F);
+        var resolution = service.resolveFlag(location, flag);
+
+        assertThat(resolution.value()).contains(true);
+        assertThat(resolution.defaultValue()).isFalse();
+        assertThat(resolution.trace()).extracting(trace -> trace.region().key())
+                .containsExactly(Key.key("fand:child"), Key.key("fand:parent"));
+        assertThat(resolution.trace().get(0).inherited()).isFalse();
+        assertThat(resolution.trace().get(1).inherited()).isTrue();
+    }
+
+    @Test
+    void persistsAndReloadsProtectionMetadata() throws Exception {
+        var service = new FandRegionService(tempDir.resolve("protected-regions"));
+        var region = RegionDefinition.builder(
+                        Key.key("fand:protected"),
+                        Key.key("minecraft:overworld"),
+                        new BlockRegion(0, 0, 0, 10, 10, 10))
+                .priority(7)
+                .parent(Key.key("fand:parent"))
+                .owner("User:Alice")
+                .member("Group:Builders")
+                .build();
+
+        service.register(region);
+
+        var reloaded = new FandRegionService(tempDir.resolve("protected-regions"));
+        var loaded = reloaded.region(Key.key("fand:protected")).orElseThrow();
+
+        assertThat(loaded.protection().priority()).isEqualTo(7);
+        assertThat(loaded.protection().parent()).contains(Key.key("fand:parent"));
+        assertThat(loaded.protection().owner("user:alice")).isTrue();
+        assertThat(loaded.protection().member("group:builders")).isTrue();
+        assertThat(Files.readString(tempDir.resolve("protected-regions/fand/protected.json")))
+                .contains("\"protection\"", "\"priority\": 7");
+    }
+
     private record TestWorld(Key key) implements io.fand.api.world.World {
         @Override
         public long seed() {

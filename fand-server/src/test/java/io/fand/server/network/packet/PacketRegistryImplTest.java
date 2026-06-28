@@ -11,6 +11,7 @@ import io.fand.api.packet.PacketView;
 import io.fand.api.packet.view.ClientboundAddEntityPacketView;
 import io.fand.api.tablist.TabListEntry;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
@@ -102,6 +103,52 @@ final class PacketRegistryImplTest {
         assertThat(update.value("entries", List.class)).hasSize(1);
         assertThat(remove.packetType()).isEqualTo(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_REMOVE);
         assertThat(remove.value("profileIds", List.class)).containsExactly(entryId);
+    }
+
+    @Test
+    void exposesDirectPacketSenderIllusionsAndViewFactory() {
+        var registry = new PacketRegistryImpl();
+
+        var view = registry.packet(
+                PacketType.PLAY_CLIENTBOUND_BLOCK_CHANGED_ACK,
+                Map.of("sequence", 42));
+
+        assertThat(registry.sender()).isNotNull();
+        assertThat(registry.illusions()).isNotNull();
+        assertThat(view.packetType()).isEqualTo(PacketType.PLAY_CLIENTBOUND_BLOCK_CHANGED_ACK);
+        assertThat(view.value("sequence", Integer.class)).isEqualTo(42);
+    }
+
+    @Test
+    void exposesPacketBuildersAndHelpers() {
+        var registry = new PacketRegistryImpl();
+
+        var ack = registry.builder(PacketType.PLAY_CLIENTBOUND_BLOCK_CHANGED_ACK)
+                .field("sequence", 42)
+                .build();
+        var metadata = registry.helpers().entityMetadata(7, List.of("packed"))
+                .build();
+        var openScreen = registry.helpers().openScreen(3, "menu", "Title").build();
+
+        assertThat(ack.value("sequence", Integer.class)).isEqualTo(42);
+        assertThat(metadata.packetType()).isEqualTo(PacketType.PLAY_CLIENTBOUND_SET_ENTITY_DATA);
+        assertThat(metadata.value("id", Integer.class)).isEqualTo(7);
+        assertThat(metadata.value("packedItems", List.class)).containsExactly("packed");
+        assertThat(openScreen.packetType()).isEqualTo(PacketType.PLAY_CLIENTBOUND_OPEN_SCREEN);
+        assertThat(openScreen.value("containerId", Integer.class)).isEqualTo(3);
+    }
+
+    @Test
+    void bridgeRebuildsPacketViewsForDirectSends() {
+        var registry = new PacketRegistryImpl();
+        var view = registry.packet(
+                PacketType.PLAY_CLIENTBOUND_BLOCK_CHANGED_ACK,
+                Map.of("sequence", 42));
+
+        var vanilla = registry.vanillaPacket(view);
+
+        assertThat(vanilla).isInstanceOf(net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket.class);
+        assertThat(((net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket) vanilla).sequence()).isEqualTo(42);
     }
 
     private interface WrongPacketView extends PacketView {

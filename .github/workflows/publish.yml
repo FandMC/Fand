@@ -1,0 +1,101 @@
+name: Publish
+
+on:
+  push:
+    branches: [master]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version without v prefix, e.g. 0.1.2+build.1'
+        required: false
+        default: ''
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: publish-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive version
+        id: version
+        shell: bash
+        run: |
+          BASE="${{ vars.RELEASE_VERSION }}"
+          if [[ -z "$BASE" ]]; then
+            BASE="$(grep '^releaseVersion=' gradle.properties | cut -d= -f2)"
+          fi
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            RAW="${GITHUB_REF_NAME#v}"
+          else
+            RAW="${{ inputs.release_version }}"
+            if [[ -z "$RAW" ]]; then
+              RAW="${BASE}+build.${GITHUB_RUN_NUMBER}"
+            fi
+          fi
+          if [[ -z "$RAW" ]]; then
+            echo "release_version must be provided for workflow_dispatch" >&2
+            exit 1
+          fi
+          echo "Publishing Fand version: $RAW"
+          echo "value=$RAW" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Configure git for paperweight
+        run: |
+          git config --global user.email "ci@fand.local"
+          git config --global user.name "Fand CI"
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Cache paperweight downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/paperweight
+            ~/.gradle/caches/paper
+          key: paperweight-${{ runner.os }}-${{ hashFiles('gradle.properties', 'fand-server/build.gradle.kts') }}
+          restore-keys: |
+            paperweight-${{ runner.os }}-
+
+      - name: Apply patches
+        run: ./gradlew :fand-server:applyPatches --no-daemon --stacktrace -PreleaseVersion="${{ steps.version.outputs.value }}"
+
+      - name: Verify patches are clean
+        run: ./gradlew :fand-server:rebuildPatches --no-daemon --stacktrace -PreleaseVersion="${{ steps.version.outputs.value }}"
+
+      - name: Fail if rebuildPatches modified the tree
+        run: |
+          if ! git diff --exit-code -- fand-server/patches; then
+            echo "::error::rebuildPatches produced a diff. Commit the regenerated patches."
+            exit 1
+          fi
+
+      - name: Build and test
+        run: ./gradlew build --no-daemon --stacktrace -PreleaseVersion="${{ steps.version.outputs.value }}"
+
+      - name: Publish API, server, and server clip
+        env:
+          FAND_REPO_URL: ${{ secrets.FAND_REPO_URL }}
+          FAND_REPO_USER: ${{ secrets.FAND_REPO_USER }}
+          FAND_REPO_PASSWORD: ${{ secrets.FAND_REPO_PASSWORD }}
+        run: ./gradlew --no-daemon --stacktrace :fand-api:publish :fand-server:publish -PreleaseVersion="${{ steps.version.outputs.value }}"

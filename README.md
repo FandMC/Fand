@@ -19,8 +19,10 @@ end-to-end validation rather than initial runtime scaffolding.
 |---------------|----------------------------------------------------------------------|
 | `fand-api`    | Public plugin API. Stable surface, no implementation details.        |
 | `fand-server` | Server runtime. Hosts the patched vanilla code via paperweight.      |
-| `fandclip`    | End-user launcher. Downloads vanilla bundler on first run.           |
 | `fand-server/patches/` | Canonical paperweight patch set applied on top of vanilla. |
+
+Fandclip is maintained as a separate project and consumed by `fand-server`
+through Maven when assembling the runnable clip jar.
 
 ## Build pipeline
 

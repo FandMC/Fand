@@ -3,11 +3,15 @@ package io.fand.server.permission;
 import io.fand.api.event.EventBus;
 import io.fand.api.event.permission.PermissionCheckEvent;
 import io.fand.api.permission.PermissionAttachment;
+import io.fand.api.permission.PermissionContext;
 import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
+import io.fand.api.permission.PermissionGroup;
+import io.fand.api.permission.PermissionMeta;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.permission.PermissionSubject;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -136,6 +140,26 @@ public final class PermissionManager implements PermissionService {
         var normalized = normalizeAttachmentNode(node);
 
         return computePermission(subject, normalized);
+    }
+
+    @Override
+    public PermissionMeta meta(PermissionSubject subject, PermissionContext context) {
+        Objects.requireNonNull(subject, "subject");
+        Objects.requireNonNull(context, "context");
+        return PermissionMeta.empty();
+    }
+
+    @Override
+    public Optional<PermissionGroup> group(String name, PermissionContext context) {
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(context, "context");
+        return Optional.empty();
+    }
+
+    @Override
+    public Collection<PermissionGroup> groups(PermissionContext context) {
+        Objects.requireNonNull(context, "context");
+        return List.of();
     }
 
     @Override

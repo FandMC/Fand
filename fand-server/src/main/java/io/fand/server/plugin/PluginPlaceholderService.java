@@ -1,6 +1,7 @@
 package io.fand.server.plugin;
 
 import io.fand.api.entity.Player;
+import io.fand.api.placeholder.PlaceholderContext;
 import io.fand.api.placeholder.PlaceholderProvider;
 import io.fand.api.placeholder.PlaceholderRegistration;
 import io.fand.api.placeholder.PlaceholderService;
@@ -37,7 +38,17 @@ public final class PluginPlaceholderService implements PlaceholderService {
     }
 
     @Override
+    public Optional<String> resolve(String identifier, PlaceholderContext context) {
+        return delegate.resolve(identifier, context);
+    }
+
+    @Override
     public String replace(@Nullable Player viewer, String input) {
         return delegate.replace(viewer, input);
+    }
+
+    @Override
+    public String replace(String input, PlaceholderContext context) {
+        return delegate.replace(input, context);
     }
 }

@@ -64,14 +64,22 @@ jobs:
           fi
 
       - name: Build
-        run: ./gradlew build --no-daemon --stacktrace
+        env:
+          BASE_VERSION: ${{ vars.RELEASE_VERSION }}
+        run: |
+          BASE="${BASE_VERSION:-$(grep '^releaseVersion=' gradle.properties | cut -d= -f2)}"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${BASE}+build.${GITHUB_RUN_NUMBER}"
+          fi
+          ./gradlew build --no-daemon --stacktrace -PreleaseVersion="${VERSION}"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: fand-build-${{ github.sha }}
           path: |
-            fandclip/build/libs/*.jar
             fand-server/build/libs/*.jar
           if-no-files-found: error
           retention-days: 14

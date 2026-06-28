@@ -1,5 +1,6 @@
 plugins {
     `java-library`
+    `maven-publish`
 }
 
 description = "Fand Server plugin API"
@@ -61,4 +62,45 @@ dependencies {
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
     testImplementation("org.assertj:assertj-core:3.25.3")
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("mavenJava") {
+            from(components["java"])
+
+            pom {
+                name.set("Fand API")
+                description.set(project.description)
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = "fandLocal"
+            val snapshot = project.version.toString().endsWith("-SNAPSHOT")
+            val defaultUrl = if (snapshot) {
+                "https://repo.fandmc.cn/repository/maven-snapshots/"
+            } else {
+                "https://repo.fandmc.cn/repository/maven-releases/"
+            }
+            url = uri(
+                providers.gradleProperty("fandRepoUrl")
+                    .orElse(providers.environmentVariable("FAND_REPO_URL"))
+                    .orElse(defaultUrl)
+                    .get()
+            )
+            credentials {
+                username = providers.gradleProperty("fandRepoUser")
+                    .orElse(providers.environmentVariable("FAND_REPO_USER"))
+                    .orElse("")
+                    .get()
+                password = providers.gradleProperty("fandRepoPassword")
+                    .orElse(providers.environmentVariable("FAND_REPO_PASSWORD"))
+                    .orElse("")
+                    .get()
+            }
+        }
+    }
 }

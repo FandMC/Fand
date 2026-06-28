@@ -10,6 +10,9 @@
 
 ## 快速开始
 
+推荐使用独立发布的 `io.fand.plugin` Gradle 插件构建插件工程；它会自动配置 Fand API 依赖、
+校验或生成 `fand-plugin.json`，并给插件 jar 注入直接运行提示入口。
+
 插件 jar 根目录需要包含 `fand-plugin.json`：
 
 ```json
@@ -17,8 +20,14 @@
   "id": "example-plugin",
   "version": "0.1.0",
   "mainClass": "com.example.ExamplePlugin",
+  "description": "Example Fand plugin",
+  "website": "https://example.com",
+  "license": "MIT",
+  "apiVersion": "0.1.1",
   "authors": ["Example"],
   "depends": [],
+  "loadAfter": [],
+  "loadBefore": [],
   "permissions": [
     {
       "node": "example-plugin.admin",
@@ -33,6 +42,16 @@
 
 `mainClass` 指向一个实现 `io.fand.api.plugin.Plugin` 的类。运行时会用无参构造器实例化
 该类，并按顺序调用 `onLoad`、`onEnable`、`onDisable`。
+
+`description`、`website`、`license` 是展示和审计元信息，不影响加载顺序；`website` 非空时必须使用
+`http` 或 `https`。`apiVersion` 声明插件面向的 Fand API 版本，旧插件未声明时按当前 API 版本处理。
+只包含 `plugin.yml`、`paper-plugin.yml`、`fabric.mod.json`、`META-INF/mods.toml` 等其它加载器描述文件的
+jar 会被诊断为对应 Bukkit/Paper/Fabric/Forge 等插件，而不会作为 Fand 插件加载。
+
+`depends` 是硬依赖：目标插件必须存在并先加载，依赖插件也能通过 classloader 访问被依赖插件。
+`loadAfter` / `loadBefore` 是软加载顺序：只在目标插件同时存在时影响拓扑排序，目标缺失时忽略，
+不提供 classloader 可见性，也不会参与卸载级联依赖。软排序与硬依赖共同形成加载顺序图；出现循环时，
+严格模式报错，默认容错模式会跳过循环中的插件。
 
 ```java
 package com.example;
@@ -89,6 +108,7 @@ public final class ExamplePlugin implements Plugin {
 - `context.packets()`：包拦截和自定义 payload 通道。
 - `context.recipes()`：配方注册表。
 - `context.scoreboard()`：vanilla 计分板服务。
+- `context.services()`：跨插件 Java provider 注册表。
 - `context.customItems()` / `context.customBlocks()`：插件命名空间下的自定义物品和方块。
 
 `Fand.server()` 返回当前运行中的 `Server`。它适合读取全局状态、查找在线玩家、访问世界、
@@ -218,11 +238,20 @@ context.permissions().register(new PermissionDescriptor("example.hello", Permiss
 - 世界、实体、方块、物品类型通过 Adventure `Key` 或生成的 vanilla key 查询。
 - `RecipeRegistry.register` 会更新实时 vanilla 配方管理器，返回的注册句柄关闭后移除同一个配方。
 - `ScoreboardService` 操作持久 vanilla 计分板目标和队伍。
+- `ServiceRegistry.providers(type)` 按 `ServicePriority` 高到低返回；同优先级后注册者优先。
+  `provider(type)` 取排序后的第一个，当前 provider 注销后自然 fallback 到下一个仍 active 的 provider。
+- `RegionService.applicableRegions(location)` 按 protection priority 高到低、同优先级体积小优先、
+  再同则后注册优先。`resolveFlag` 按这个顺序解析；每个 region 先查自身显式 flag，再查 parent 链。
+  parent 命中后不会继续查低优先级重叠 region。
 - `LivingEntity` 暴露空气、冻结、无敌 tick、视线判断和睡眠/唤醒控制；玩家睡眠走 vanilla 床规则。
 - `FurnaceBlockEntity`、`BrewingStandBlockEntity`、`BeehiveBlockEntity`、`SculkSensorBlockEntity`
   暴露常用运行状态，插件可以读写计时、燃料、蜂巢释放和振动频率。
 - `GuiService.open(Player, Gui)` 打开轻量 GUI，并把库存事件路由到对应 `GuiView`。
 - `PacketRegistry` 支持 vanilla 包拦截和自定义 payload 通道；优先使用 `context.packets()`。
+  `builder(type)` 用字段 map 创建 `PacketView`，`helpers()` 提供 entity metadata、display/hologram entity、
+  scoreboard team/nameplate 和 open screen 等常见 clientbound 包的字段预填入口。
+- `PlaceholderService` 仍支持 `viewer + identifier` 的旧入口；需要 PAPI 风格关系上下文时，使用
+  `PlaceholderContext` 携带 viewer、target、world、entity 和任意上下文 map。
 - `Server.performance()` 返回最新 tick 性能快照，适合命令和监控展示。
 
 ## API 贡献规则

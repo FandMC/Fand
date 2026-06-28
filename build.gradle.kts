@@ -3,9 +3,11 @@ plugins {
     id("io.papermc.paperweight.core") version "2.0.0-SNAPSHOT" apply false
 }
 
+val releaseVersion = providers.gradleProperty("releaseVersion").orElse("0.1.2").get()
+
 allprojects {
     group = "io.fand"
-    version = "0.1.1"
+    version = releaseVersion
 }
 
 subprojects {
@@ -20,6 +22,7 @@ subprojects {
     }
 
     repositories {
+        maven("https://repo.fandmc.cn/repository/maven-public/")
         mavenCentral()
         maven("https://repo.papermc.io/repository/maven-public/")
     }

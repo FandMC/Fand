@@ -32,6 +32,7 @@ import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
+import io.fand.api.service.ServiceRegistry;
 import io.fand.api.structure.StructureService;
 import io.fand.api.tablist.TabListService;
 import io.fand.server.recipe.FandRecipeRegistry;
@@ -41,11 +42,13 @@ import io.fand.server.item.FandCustomItemRegistry;
 import io.fand.server.messaging.FandPluginMessaging;
 import io.fand.server.network.packet.PacketRegistryImpl;
 import io.fand.server.scoreboard.FandScoreboardService;
+import io.fand.server.service.FandServiceRegistry;
 import io.fand.server.text.FandMiniMessageService;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.lang.reflect.InvocationTargetException;
 import java.net.MalformedURLException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -76,6 +79,18 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private static final Pattern PLUGIN_ID = Pattern.compile("[a-z0-9]+(?:-[a-z0-9]+)*");
     private static final Pattern PERMISSION_NODE = Pattern.compile("[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\\.[a-z0-9]+(?:[._-][a-z0-9]+)*)*(?:\\.\\*)?");
     private static final String DESCRIPTOR_PATH = "fand-plugin.json";
+    private static final Map<String, String> FOREIGN_PLUGIN_DESCRIPTORS = Map.ofEntries(
+            Map.entry("plugin.yml", "Bukkit/Spigot/Paper"),
+            Map.entry("paper-plugin.yml", "Paper"),
+            Map.entry("bungee.yml", "BungeeCord"),
+            Map.entry("velocity-plugin.json", "Velocity"),
+            Map.entry("fabric.mod.json", "Fabric"),
+            Map.entry("quilt.mod.json", "Quilt"),
+            Map.entry("META-INF/mods.toml", "Forge"),
+            Map.entry("META-INF/neoforge.mods.toml", "NeoForge"),
+            Map.entry("META-INF/sponge_plugins.json", "Sponge"),
+            Map.entry("mcmod.info", "Legacy Forge")
+    );
 
     private final Path pluginsDirectory;
     private final Path dataDirectoryRoot;
@@ -100,6 +115,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final RegionService regionService;
     private final DataPackService dataPackService;
     private volatile ExternalIntegrationStrategy integrationStrategy = ExternalIntegrationStrategy.empty();
+    private volatile ServiceRegistry serviceRegistry = new FandServiceRegistry();
     private final CustomItemRegistry customItemRegistry;
     private final CustomBlockRegistry customBlockRegistry;
     private final GuiService guiService;
@@ -584,6 +600,15 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.integrationStrategy = Objects.requireNonNull(strategy, "strategy");
     }
 
+    public void serviceRegistry(ServiceRegistry registry) {
+        this.serviceRegistry = Objects.requireNonNull(registry, "registry");
+    }
+
+    @Override
+    public ServiceRegistry services() {
+        return serviceRegistry;
+    }
+
     public void loadPlugins() {
         synchronized (lifecycleLock) {
             ensureOpen();
@@ -1008,6 +1033,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new PluginRegionService(regionService, resources, id),
                 new PluginDataPackService(dataPackService, resources, id),
                 integrationStrategy,
+                new PluginServiceRegistry(serviceRegistry, resources, id),
                 new PluginCustomItemRegistry(customItemRegistry, resources, id),
                 new PluginCustomBlockRegistry(customBlockRegistry, resources, id),
                 new PluginGuiService(guiService, resources),
@@ -1351,7 +1377,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                         throw failure;
                     }
                     skipped++;
-                    LOGGER.warn("Skipping plugin jar {} after descriptor failure", jar, failure);
+                    LOGGER.warn("Skipping plugin jar {}: {}", jar, failure.getMessage(), failure);
                     continue;
                 }
                 var existing = seenIds.putIfAbsent(descriptor.id(), jar);
@@ -1382,7 +1408,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         try (var jar = new JarFile(jarPath.toFile())) {
             var entry = jar.getJarEntry(DESCRIPTOR_PATH);
             if (entry == null) {
-                throw new PluginLoadException("Plugin jar " + jarPath + " is missing " + DESCRIPTOR_PATH);
+                throw unsupportedPluginJar(jarPath, jar);
             }
             try (var reader = new InputStreamReader(jar.getInputStream(entry), StandardCharsets.UTF_8)) {
                 var file = GSON.fromJson(reader, DescriptorFile.class);
@@ -1391,9 +1417,20 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 }
                 return validateDescriptor(jarPath, file.toDescriptor());
             }
-        } catch (IOException | JsonParseException failure) {
+        } catch (IOException | JsonParseException | IllegalArgumentException failure) {
             throw new PluginLoadException("Failed to read descriptor from " + jarPath, failure);
         }
+    }
+
+    private static PluginLoadException unsupportedPluginJar(Path jarPath, JarFile jar) {
+        for (var descriptor : FOREIGN_PLUGIN_DESCRIPTORS.entrySet()) {
+            if (jar.getJarEntry(descriptor.getKey()) != null) {
+                return new PluginLoadException("Plugin jar " + jarPath + " contains " + descriptor.getKey()
+                        + " and appears to be a " + descriptor.getValue()
+                        + " plugin, not a Fand plugin. Fand plugins must declare " + DESCRIPTOR_PATH + ".");
+            }
+        }
+        return new PluginLoadException("Plugin jar " + jarPath + " is missing " + DESCRIPTOR_PATH);
     }
 
     private PluginDescriptor validateDescriptor(Path jarPath, PluginDescriptor descriptor) {
@@ -1409,15 +1446,40 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         if (descriptor.mainClass().isBlank()) {
             throw new PluginLoadException("Plugin jar " + jarPath + " must declare a non-empty mainClass");
         }
-        for (var dependency : descriptor.depends()) {
-            if (!PLUGIN_ID.matcher(dependency).matches()) {
-                throw new PluginLoadException("Plugin jar " + jarPath + " has invalid dependency id '" + dependency + "'");
-            }
+        if (descriptor.apiVersion().isBlank()) {
+            throw new PluginLoadException("Plugin jar " + jarPath + " must declare a non-empty apiVersion");
         }
+        validateWebsite(jarPath, descriptor.website());
+        validatePluginIds(jarPath, descriptor.depends(), "dependency");
+        validatePluginIds(jarPath, descriptor.loadAfter(), "loadAfter");
+        validatePluginIds(jarPath, descriptor.loadBefore(), "loadBefore");
         for (var permission : descriptor.permissions()) {
             validateDescriptorPermission(jarPath, descriptor.id(), permission);
         }
         return descriptor;
+    }
+
+    private static void validateWebsite(Path jarPath, String website) {
+        if (website.isBlank()) {
+            return;
+        }
+        try {
+            var uri = URI.create(website);
+            var scheme = uri.getScheme();
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                throw new IllegalArgumentException("unsupported scheme");
+            }
+        } catch (IllegalArgumentException failure) {
+            throw new PluginLoadException("Plugin jar " + jarPath + " has invalid website '" + website + "'", failure);
+        }
+    }
+
+    private static void validatePluginIds(Path jarPath, List<String> ids, String field) {
+        for (var id : ids) {
+            if (!PLUGIN_ID.matcher(id).matches()) {
+                throw new PluginLoadException("Plugin jar " + jarPath + " has invalid " + field + " id '" + id + "'");
+            }
+        }
     }
 
     private void registerDeclaredPermissions(PluginDescriptor descriptor, PluginResourceTracker resources) {
@@ -1478,10 +1540,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         }
 
         var incomingEdges = new LinkedHashMap<String, Integer>();
-        var dependents = new LinkedHashMap<String, List<String>>();
+        var dependents = new LinkedHashMap<String, LinkedHashSet<String>>();
         for (var artifact : artifacts) {
             incomingEdges.put(artifact.descriptor.id(), 0);
-            dependents.put(artifact.descriptor.id(), new ArrayList<>());
+            dependents.put(artifact.descriptor.id(), new LinkedHashSet<>());
         }
         for (var artifact : artifacts) {
             for (var dependency : artifact.descriptor.depends()) {
@@ -1491,8 +1553,17 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                     }
                     throw new PluginLoadException("Plugin '" + artifact.descriptor.id() + "' depends on missing plugin '" + dependency + "'");
                 }
-                dependents.get(dependency).add(artifact.descriptor.id());
-                incomingEdges.put(artifact.descriptor.id(), incomingEdges.get(artifact.descriptor.id()) + 1);
+                addLoadOrderEdge(dependency, artifact.descriptor.id(), incomingEdges, dependents);
+            }
+            for (var after : artifact.descriptor.loadAfter()) {
+                if (byId.containsKey(after)) {
+                    addLoadOrderEdge(after, artifact.descriptor.id(), incomingEdges, dependents);
+                }
+            }
+            for (var before : artifact.descriptor.loadBefore()) {
+                if (byId.containsKey(before)) {
+                    addLoadOrderEdge(artifact.descriptor.id(), before, incomingEdges, dependents);
+                }
             }
         }
         var ready = new ArrayDeque<PluginArtifact>();
@@ -1515,7 +1586,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         }
         if (ordered.size() != artifacts.size()) {
             if (!options.continueOnLoadFailure()) {
-                throw new PluginLoadException("Plugin dependency graph contains a cycle");
+                throw new PluginLoadException("Plugin load order graph contains a cycle");
             }
             for (var artifact : artifacts) {
                 if (!ordered.contains(artifact)) {
@@ -1526,13 +1597,24 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                             artifact.jarPath,
                             PluginLifecycle.ERROR,
                             "load",
-                            new PluginLoadException("Plugin dependency graph contains a cycle")
+                            new PluginLoadException("Plugin load order graph contains a cycle")
                     );
-                    LOGGER.warn("Skipping plugin {} because the dependency graph contains a cycle", artifact.descriptor.id());
+                    LOGGER.warn("Skipping plugin {} because the load order graph contains a cycle", artifact.descriptor.id());
                 }
             }
         }
         return new SortResult(ordered, skipped);
+    }
+
+    private static void addLoadOrderEdge(
+            String before,
+            String after,
+            LinkedHashMap<String, Integer> incomingEdges,
+            LinkedHashMap<String, LinkedHashSet<String>> dependents
+    ) {
+        if (dependents.get(before).add(after)) {
+            incomingEdges.put(after, incomingEdges.get(after) + 1);
+        }
     }
 
     private int removeUnavailableDependencyArtifacts(LinkedHashMap<String, PluginArtifact> byId) {
@@ -1812,8 +1894,14 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             String id,
             String version,
             String mainClass,
+            String description,
+            String website,
+            String license,
+            String apiVersion,
             List<String> authors,
             List<String> depends,
+            List<String> loadAfter,
+            List<String> loadBefore,
             List<PermissionFile> permissions
     ) {
         private PluginDescriptor toDescriptor() {
@@ -1821,8 +1909,14 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                     required(id, "id"),
                     required(version, "version"),
                     required(mainClass, "mainClass"),
+                    optional(description),
+                    optional(website),
+                    optional(license),
+                    apiVersion == null ? PluginDescriptor.CURRENT_API_VERSION : apiVersion.trim(),
                     authors == null ? List.of() : authors,
                     depends == null ? List.of() : depends,
+                    loadAfter == null ? List.of() : loadAfter,
+                    loadBefore == null ? List.of() : loadBefore,
                     permissions == null ? List.of() : permissions.stream().map(PermissionFile::toDescriptor).toList()
             );
         }
@@ -1832,6 +1926,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 throw new PluginLoadException("Plugin descriptor is missing '" + name + "'");
             }
             return value.trim();
+        }
+
+        private static String optional(String value) {
+            return value == null ? "" : value.trim();
         }
     }
 

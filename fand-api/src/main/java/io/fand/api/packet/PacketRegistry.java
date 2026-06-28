@@ -1,6 +1,7 @@
 package io.fand.api.packet;
 
 import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 import net.kyori.adventure.key.Key;
 
@@ -15,6 +16,26 @@ public interface PacketRegistry {
 
     default PlayerInfoPacketFactory playerInfo() {
         return PlayerInfoPacketFactory.unsupported();
+    }
+
+    default PacketSender sender() {
+        return PacketSender.unsupported();
+    }
+
+    default ViewerIllusionService illusions() {
+        return ViewerIllusionService.unsupported();
+    }
+
+    default PacketHelpers helpers() {
+        return new PacketHelpers(this);
+    }
+
+    default PacketBuilder builder(PacketType type) {
+        return helpers().builder(type);
+    }
+
+    default PacketView packet(PacketType type, Map<String, ?> fields) {
+        throw new UnsupportedOperationException("Packet view creation is not supported");
     }
 
     PacketRegistration intercept(PacketType type, PacketInterceptor<PacketView> interceptor);

@@ -12,13 +12,19 @@ public record RegionDefinition(
         Key key,
         Key world,
         BlockRegion region,
-        Map<Key, com.google.gson.JsonElement> flags
+        Map<Key, com.google.gson.JsonElement> flags,
+        RegionProtection protection
 ) {
+
+    public RegionDefinition(Key key, Key world, BlockRegion region, Map<Key, com.google.gson.JsonElement> flags) {
+        this(key, world, region, flags, RegionProtection.empty());
+    }
 
     public RegionDefinition {
         Objects.requireNonNull(key, "key");
         world = Objects.requireNonNull(world, "world");
         region = Objects.requireNonNull(region, "region");
+        protection = Objects.requireNonNull(protection, "protection");
         var copied = new java.util.LinkedHashMap<Key, com.google.gson.JsonElement>();
         for (var entry : Objects.requireNonNull(flags, "flags").entrySet()) {
             copied.put(Objects.requireNonNull(entry.getKey(), "flag key"),
@@ -40,6 +46,7 @@ public record RegionDefinition(
         private Key world;
         private BlockRegion region;
         private final java.util.LinkedHashMap<Key, com.google.gson.JsonElement> flags = new java.util.LinkedHashMap<>();
+        private RegionProtection protection = RegionProtection.empty();
 
         private Builder(Key key, Key world, BlockRegion region) {
             this.key = Objects.requireNonNull(key, "key");
@@ -52,6 +59,7 @@ public record RegionDefinition(
             this.world = definition.world;
             this.region = definition.region;
             this.flags.putAll(definition.flags);
+            this.protection = definition.protection;
         }
 
         public Builder key(Key key) {
@@ -75,8 +83,33 @@ public record RegionDefinition(
             return this;
         }
 
+        public Builder protection(RegionProtection protection) {
+            this.protection = Objects.requireNonNull(protection, "protection");
+            return this;
+        }
+
+        public Builder priority(int priority) {
+            this.protection = protection.toBuilder().priority(priority).build();
+            return this;
+        }
+
+        public Builder parent(Key parent) {
+            this.protection = protection.toBuilder().parent(parent).build();
+            return this;
+        }
+
+        public Builder owner(String owner) {
+            this.protection = protection.toBuilder().owner(owner).build();
+            return this;
+        }
+
+        public Builder member(String member) {
+            this.protection = protection.toBuilder().member(member).build();
+            return this;
+        }
+
         public RegionDefinition build() {
-            return new RegionDefinition(key, world, region, flags);
+            return new RegionDefinition(key, world, region, flags, protection);
         }
     }
 }

@@ -4,6 +4,7 @@ import io.fand.api.region.Region;
 import io.fand.api.region.RegionDefinition;
 import io.fand.api.region.RegionFlag;
 import io.fand.api.region.RegionFlagRegistration;
+import io.fand.api.region.RegionProtection;
 import io.fand.api.region.RegionRegistration;
 import io.fand.api.region.RegionService;
 import io.fand.api.world.Location;
@@ -57,8 +58,7 @@ public final class PluginRegionService implements RegionService {
 
     @Override
     public Optional<Region> applicableRegion(Location location) {
-        return delegate.applicableRegion(location)
-                .filter(region -> namespace.equals(region.key().namespace()));
+        return applicableRegions(location).stream().findFirst();
     }
 
     @Override
@@ -86,7 +86,8 @@ public final class PluginRegionService implements RegionService {
                 scopedKey(region.key()),
                 scopedWorld(region.world()),
                 region.region(),
-                region.flags())));
+                region.flags(),
+                scopedProtection(region.protection()))));
     }
 
     @Override
@@ -109,5 +110,13 @@ public final class PluginRegionService implements RegionService {
     private Key scopedWorld(Key key) {
         Objects.requireNonNull(key, "key");
         return key;
+    }
+
+    private RegionProtection scopedProtection(RegionProtection protection) {
+        Objects.requireNonNull(protection, "protection");
+        return protection.parent()
+                .map(this::scopedKey)
+                .map(parent -> protection.toBuilder().parent(parent).build())
+                .orElse(protection);
     }
 }

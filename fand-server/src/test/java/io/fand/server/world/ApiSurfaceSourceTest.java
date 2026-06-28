@@ -200,12 +200,41 @@ final class ApiSurfaceSourceTest {
         var manager = read("src/main/java/io/fand/server/permission/PermissionManager.java");
         var pluginService = read("src/main/java/io/fand/server/plugin/PluginPermissionService.java");
         var runtime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
+        var service = read("../fand-api/src/main/java/io/fand/api/permission/PermissionService.java");
+        var context = read("../fand-api/src/main/java/io/fand/api/permission/PermissionContext.java");
+        var meta = read("../fand-api/src/main/java/io/fand/api/permission/PermissionMeta.java");
+        var group = read("../fand-api/src/main/java/io/fand/api/permission/PermissionGroup.java");
         var descriptor = read("../fand-api/src/main/java/io/fand/api/permission/PermissionDescriptor.java");
 
         assertThat(descriptor).contains("Map<String, Boolean> children");
+        assertThat(service).contains(
+                "default PermissionMeta meta(PermissionSubject subject, PermissionContext context)",
+                "default Optional<String> prefix(PermissionSubject subject, PermissionContext context)",
+                "default Optional<String> suffix(PermissionSubject subject, PermissionContext context)",
+                "default Optional<String> metaValue(PermissionSubject subject, PermissionContext context, String key)",
+                "default Optional<String> primaryGroup(PermissionSubject subject, PermissionContext context)",
+                "default Collection<String> groups(PermissionSubject subject, PermissionContext context)",
+                "default Optional<PermissionGroup> group(String name, PermissionContext context)",
+                "default Collection<PermissionGroup> groups(PermissionContext context)");
+        assertThat(context).contains(
+                "public record PermissionContext",
+                "Optional<String> value(String key)",
+                "PermissionContext with(String key, String value)");
+        assertThat(meta).contains(
+                "public record PermissionMeta",
+                "Optional<String> primaryGroup",
+                "List<String> groups",
+                "public Optional<String> value(String key)");
+        assertThat(group).contains(
+                "public record PermissionGroup",
+                "List<String> parents",
+                "PermissionMeta meta");
         assertThat(manager).contains(
                 "public void recalculate(PermissionSubject subject)",
                 "public void recalculateAll()",
+                "public PermissionMeta meta(PermissionSubject subject, PermissionContext context)",
+                "public Optional<PermissionGroup> group(String name, PermissionContext context)",
+                "public Collection<PermissionGroup> groups(PermissionContext context)",
                 "descriptorChildValue",
                 "childParents",
                 "PermissionChildParent",
@@ -214,6 +243,9 @@ final class ApiSurfaceSourceTest {
                 "validatePluginPermissionNode(pluginId, descriptor.node())",
                 "validatePluginPermissionNode(pluginId, child)",
                 "delegate.register(descriptor)",
+                "delegate.meta(subject, context)",
+                "delegate.group(name, context)",
+                "delegate.groups(context)",
                 "delegate.recalculate(subject)",
                 "delegate.recalculateAll()");
         assertThat(runtime).contains(
@@ -221,6 +253,51 @@ final class ApiSurfaceSourceTest {
                 "registerDeclaredPermissions",
                 "permissions.register(permission)",
                 "permissionNamespaces(pluginId)");
+    }
+
+    @Test
+    void regionProtectionResolutionApiStaysImplemented() throws IOException {
+        var region = read("../fand-api/src/main/java/io/fand/api/region/Region.java");
+        var definition = read("../fand-api/src/main/java/io/fand/api/region/RegionDefinition.java");
+        var protection = read("../fand-api/src/main/java/io/fand/api/region/RegionProtection.java");
+        var resolution = read("../fand-api/src/main/java/io/fand/api/region/RegionFlagResolution.java");
+        var trace = read("../fand-api/src/main/java/io/fand/api/region/RegionFlagTrace.java");
+        var service = read("../fand-api/src/main/java/io/fand/api/region/RegionService.java");
+        var server = read("src/main/java/io/fand/server/region/FandRegionService.java");
+        var plugin = read("src/main/java/io/fand/server/plugin/PluginRegionService.java");
+
+        assertThat(region).contains(
+                "RegionProtection protection",
+                "public <T> Optional<T> explicitFlag(RegionFlag<T> flag)");
+        assertThat(definition).contains(
+                "RegionProtection protection",
+                "public Builder priority(int priority)",
+                "public Builder parent(Key parent)",
+                "public Builder owner(String owner)",
+                "public Builder member(String member)");
+        assertThat(protection).contains(
+                "public record RegionProtection",
+                "int priority",
+                "Optional<Key> parent",
+                "Set<String> owners",
+                "Set<String> members");
+        assertThat(resolution).contains(
+                "public record RegionFlagResolution",
+                "List<RegionFlagTrace<T>> trace");
+        assertThat(trace).contains(
+                "public record RegionFlagTrace",
+                "boolean inherited");
+        assertThat(service).contains(
+                "default <T> RegionFlagResolution<T> resolveFlag",
+                "resolveFlagFromRegion",
+                "region.protection().parent()");
+        assertThat(server).contains(
+                "entry.region().protection().priority()",
+                "readProtection",
+                "protectionToJson");
+        assertThat(plugin).contains(
+                "return applicableRegions(location).stream().findFirst()",
+                "scopedProtection(region.protection())");
     }
 
     @Test
@@ -482,6 +559,11 @@ final class ApiSurfaceSourceTest {
         var runtimeContext = read("src/main/java/io/fand/server/plugin/RuntimePluginContext.java");
         var runtime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
         var service = read("src/main/java/io/fand/server/text/FandMiniMessageService.java");
+        var placeholderContext = read("../fand-api/src/main/java/io/fand/api/placeholder/PlaceholderContext.java");
+        var placeholderProvider = read("../fand-api/src/main/java/io/fand/api/placeholder/PlaceholderProvider.java");
+        var placeholderService = read("../fand-api/src/main/java/io/fand/api/placeholder/PlaceholderService.java");
+        var serverPlaceholders = read("src/main/java/io/fand/server/placeholder/FandPlaceholderService.java");
+        var pluginPlaceholders = read("src/main/java/io/fand/server/plugin/PluginPlaceholderService.java");
 
         assertThat(context).contains(
                 "default MiniMessageService miniMessages()",
@@ -499,6 +581,21 @@ final class ApiSurfaceSourceTest {
                 "MiniMessage.miniMessage()",
                 "placeholders.replace(viewer, input)",
                 "parser.deserialize");
+        assertThat(placeholderContext).contains(
+                "public record PlaceholderContext",
+                "@Nullable Player viewer",
+                "@Nullable Player target",
+                "@Nullable World world",
+                "@Nullable Entity entity",
+                "Map<String, Object> values");
+        assertThat(placeholderProvider).contains(
+                "static PlaceholderProvider contextual",
+                "resolve(PlaceholderContext context, String identifier)");
+        assertThat(placeholderService).contains(
+                "default Optional<String> resolve(String identifier, PlaceholderContext context)",
+                "default String replace(String input, PlaceholderContext context)");
+        assertThat(serverPlaceholders).contains("provider.resolve(context, normalized)");
+        assertThat(pluginPlaceholders).contains("delegate.resolve(identifier, context)");
     }
 
     @Test
@@ -544,6 +641,67 @@ final class ApiSurfaceSourceTest {
     }
 
     @Test
+    void directPacketAndViewerIllusionApiStayExposed() throws IOException {
+        var packetRegistry = read("../fand-api/src/main/java/io/fand/api/packet/PacketRegistry.java");
+        var sender = read("../fand-api/src/main/java/io/fand/api/packet/PacketSender.java");
+        var illusions = read("../fand-api/src/main/java/io/fand/api/packet/ViewerIllusionService.java");
+        var builder = read("../fand-api/src/main/java/io/fand/api/packet/PacketBuilder.java");
+        var helpers = read("../fand-api/src/main/java/io/fand/api/packet/PacketHelpers.java");
+        var registry = read("src/main/java/io/fand/server/network/packet/PacketRegistryImpl.java");
+        var serverSender = read("src/main/java/io/fand/server/network/packet/FandPacketSender.java");
+        var serverIllusions = read("src/main/java/io/fand/server/network/packet/FandViewerIllusionService.java");
+        var bridge = read("src/main/java/io/fand/server/network/packet/VanillaPacketBridge.java");
+        var pluginPackets = read("src/main/java/io/fand/server/plugin/PluginPacketRegistry.java");
+
+        assertThat(packetRegistry).contains(
+                "default PacketSender sender()",
+                "default ViewerIllusionService illusions()",
+                "default PacketHelpers helpers()",
+                "default PacketBuilder builder(PacketType type)",
+                "default PacketView packet(PacketType type, Map<String, ?> fields)");
+        assertThat(builder).contains(
+                "public final class PacketBuilder",
+                "PacketView build()",
+                "boolean send(Player viewer)");
+        assertThat(helpers).contains(
+                "public final class PacketHelpers",
+                "entityMetadata",
+                "hologramEntity",
+                "scoreboardTeam",
+                "openScreen");
+        assertThat(sender).contains(
+                "interface PacketSender",
+                "boolean send(Player viewer, PacketView packet)");
+        assertThat(illusions).contains(
+                "interface ViewerIllusionService",
+                "boolean fakeBlock(Player viewer, Location location, BlockType type)",
+                "boolean fakeEntity(Player viewer, PacketView spawnPacket)",
+                "boolean removeFakeEntity(Player viewer, int entityId)");
+        assertThat(registry).contains(
+                "private final FandPacketSender sender",
+                "private final ViewerIllusionService illusions",
+                "public PacketView packet(PacketType type, Map<String, ?> fields)");
+        assertThat(serverSender).contains(
+                "Only clientbound packets can be sent to players",
+                "bridge.toVanilla(packet)",
+                "ServerThreading.run");
+        assertThat(serverIllusions).contains(
+                "new ClientboundBlockUpdatePacket",
+                "new ClientboundRemoveEntitiesPacket(entityId)",
+                "viewer.hideEntity(entity)",
+                "viewer.showEntity(entity)");
+        assertThat(bridge).contains(
+                "@Nullable Packet<?> toVanilla(PacketView view)",
+                "adaptValue",
+                "AdventureBridge.toVanilla",
+                "private static Class<?> packetClass(PacketType type)");
+        assertThat(pluginPackets).contains(
+                "public PacketSender sender()",
+                "public ViewerIllusionService illusions()",
+                "public PacketView packet(PacketType type, Map<String, ?> fields)");
+    }
+
+    @Test
     void externalIntegrationStrategyStaysWiredToServerAndPlugins() throws IOException {
         var serverApi = read("../fand-api/src/main/java/io/fand/api/Server.java");
         var context = read("../fand-api/src/main/java/io/fand/api/plugin/PluginContext.java");
@@ -572,6 +730,79 @@ final class ApiSurfaceSourceTest {
         assertThat(runtimeContext).contains(
                 "private final ExternalIntegrationStrategy integrations",
                 "public ExternalIntegrationStrategy integrations()");
+    }
+
+    @Test
+    void serviceRegistryStaysWiredToServerPluginsAndLifecycleCleanup() throws IOException {
+        var serverApi = read("../fand-api/src/main/java/io/fand/api/Server.java");
+        var managerApi = read("../fand-api/src/main/java/io/fand/api/plugin/PluginManager.java");
+        var context = read("../fand-api/src/main/java/io/fand/api/plugin/PluginContext.java");
+        var registryApi = read("../fand-api/src/main/java/io/fand/api/service/ServiceRegistry.java");
+        var serverRegistry = read("src/main/java/io/fand/server/service/FandServiceRegistry.java");
+        var pluginRegistry = read("src/main/java/io/fand/server/plugin/PluginServiceRegistry.java");
+        var runtime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
+        var runtimeContext = read("src/main/java/io/fand/server/plugin/RuntimePluginContext.java");
+        var tracker = read("src/main/java/io/fand/server/plugin/PluginResourceTracker.java");
+        var server = read("src/main/java/io/fand/server/FandServer.java");
+
+        assertThat(serverApi).contains("default ServiceRegistry services()");
+        assertThat(managerApi).contains("default ServiceRegistry services()");
+        assertThat(context).contains("default ServiceRegistry services()");
+        assertThat(registryApi).contains(
+                "interface ServiceRegistry",
+                "Collection<ServiceProvider<?>> providers()",
+                "ServiceRegistration<T> register");
+        assertThat(serverRegistry).contains(
+                "public final class FandServiceRegistry implements ServiceRegistry",
+                "ServiceProvider<>",
+                "register(");
+        assertThat(pluginRegistry).contains(
+                "final class PluginServiceRegistry implements ServiceRegistry",
+                "tracker.track",
+                "registry.register(key, type, service, priority, owner)");
+        assertThat(runtime).contains(
+                "private volatile ServiceRegistry serviceRegistry = new FandServiceRegistry()",
+                "public ServiceRegistry services()",
+                "new PluginServiceRegistry(serviceRegistry, resources, id)");
+        assertThat(runtimeContext).contains(
+                "private final ServiceRegistry services",
+                "public ServiceRegistry services()");
+        assertThat(tracker).contains(
+                "TrackedServiceRegistration",
+                "serviceRegistrationsToClose",
+                "registration.unregisterFromTracker()");
+        assertThat(server).contains(
+                "private final FandServiceRegistry services",
+                "this.services = new FandServiceRegistry()",
+                "this.plugins.serviceRegistry(services)",
+                "public ServiceRegistry services()",
+                "services.close()");
+    }
+
+    @Test
+    void pluginDescriptorManifestMetadataStaysWiredToRuntimeAndDocs() throws IOException {
+        var descriptor = read("../fand-api/src/main/java/io/fand/api/plugin/PluginDescriptor.java");
+        var runtime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
+        var docs = read("../docs/API_DEVELOPMENT.md");
+
+        assertThat(descriptor).contains(
+                "String description",
+                "String website",
+                "String license",
+                "String apiVersion",
+                "CURRENT_API_VERSION = \"0.1.1\"");
+        assertThat(runtime).contains(
+                "String description",
+                "String website",
+                "String license",
+                "String apiVersion",
+                "PluginDescriptor.CURRENT_API_VERSION",
+                "validateWebsite(jarPath, descriptor.website())");
+        assertThat(docs).contains(
+                "\"description\": \"Example Fand plugin\"",
+                "\"website\": \"https://example.com\"",
+                "\"license\": \"MIT\"",
+                "\"apiVersion\": \"0.1.1\"");
     }
 
     private static String read(String path) throws IOException {

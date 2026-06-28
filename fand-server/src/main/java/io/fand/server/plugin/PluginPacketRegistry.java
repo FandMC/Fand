@@ -7,10 +7,13 @@ import io.fand.api.packet.PacketInterceptor;
 import io.fand.api.packet.PacketProtocol;
 import io.fand.api.packet.PacketRegistration;
 import io.fand.api.packet.PacketRegistry;
+import io.fand.api.packet.PacketSender;
 import io.fand.api.packet.PacketType;
 import io.fand.api.packet.PacketView;
 import io.fand.api.packet.PlayerInfoPacketFactory;
+import io.fand.api.packet.ViewerIllusionService;
 import java.util.Collection;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import net.kyori.adventure.key.Key;
@@ -38,6 +41,21 @@ public final class PluginPacketRegistry implements PacketRegistry {
     @Override
     public PlayerInfoPacketFactory playerInfo() {
         return delegate.playerInfo();
+    }
+
+    @Override
+    public PacketSender sender() {
+        return delegate.sender();
+    }
+
+    @Override
+    public ViewerIllusionService illusions() {
+        return delegate.illusions();
+    }
+
+    @Override
+    public PacketView packet(PacketType type, Map<String, ?> fields) {
+        return delegate.packet(type, fields);
     }
 
     @Override

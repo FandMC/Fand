@@ -9,6 +9,7 @@ import io.fand.api.lifecycle.PluginEnableEvent;
 import io.fand.api.loot.LootContext;
 import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
+import io.fand.api.plugin.PluginDescriptor;
 import io.fand.server.command.CommandManager;
 import io.fand.server.event.EventDispatcher;
 import io.fand.server.loot.FandLootTableService;
@@ -89,6 +90,256 @@ final class PluginRuntimeTest {
             assertThat(pluginsDir.resolve("dependent")).isDirectory();
         } finally {
             PluginRuntimeTestSupport.restoreProperty("fand.plugin.test.log", previousLog);
+        }
+    }
+
+    @Test
+    void loadAfterAndLoadBeforeOrderPluginsWithoutHardDependency() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        var logFile = tempDir.resolve("plugin.log");
+        var previousLog = System.getProperty("fand.plugin.test.log");
+        System.setProperty("fand.plugin.test.log", logFile.toString());
+        try {
+            PluginRuntimeTestSupport.createPluginJar(
+                    tempDir,
+                    pluginsDir.resolve("a-middle.jar"),
+                    PluginRuntimeTestSupport.descriptorJson(
+                            "middle",
+                            "testplugins.middle.MiddlePlugin",
+                            List.of(),
+                            List.of("before"),
+                            List.of("after"),
+                            "[]"),
+                    Map.of("testplugins/middle/MiddlePlugin.java", pluginSource(
+                            "testplugins.middle",
+                            "MiddlePlugin",
+                            "log(\"middle-load\");",
+                            "log(\"middle-enable\");",
+                            "log(\"middle-disable\");")),
+                    List.of()
+            );
+            PluginRuntimeTestSupport.createPluginJar(
+                    tempDir,
+                    pluginsDir.resolve("b-after.jar"),
+                    PluginRuntimeTestSupport.descriptorJson("after", "testplugins.after.AfterPlugin", List.of()),
+                    Map.of("testplugins/after/AfterPlugin.java", pluginSource(
+                            "testplugins.after",
+                            "AfterPlugin",
+                            "log(\"after-load\");",
+                            "log(\"after-enable\");",
+                            "log(\"after-disable\");")),
+                    List.of()
+            );
+            PluginRuntimeTestSupport.createPluginJar(
+                    tempDir,
+                    pluginsDir.resolve("c-before.jar"),
+                    PluginRuntimeTestSupport.descriptorJson("before", "testplugins.before.BeforePlugin", List.of()),
+                    Map.of("testplugins/before/BeforePlugin.java", pluginSource(
+                            "testplugins.before",
+                            "BeforePlugin",
+                            "log(\"before-load\");",
+                            "log(\"before-enable\");",
+                            "log(\"before-disable\");")),
+                    List.of()
+            );
+
+            var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new CommandManager(), new EventDispatcher(), new PermissionManager(), new TaskScheduler());
+            try {
+                manager.loadPlugins();
+                manager.enablePlugins();
+            } finally {
+                manager.close();
+            }
+
+            assertThat(Files.readAllLines(logFile)).containsExactly(
+                    "before-load",
+                    "middle-load",
+                    "after-load",
+                    "before-enable",
+                    "middle-enable",
+                    "after-enable",
+                    "after-disable",
+                    "middle-disable",
+                    "before-disable"
+            );
+        } finally {
+            PluginRuntimeTestSupport.restoreProperty("fand.plugin.test.log", previousLog);
+        }
+    }
+
+    @Test
+    void loadAfterAndLoadBeforeIgnoreMissingSoftTargets() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("single.jar"),
+                PluginRuntimeTestSupport.descriptorJson(
+                        "single",
+                        "testplugins.single.SinglePlugin",
+                        List.of(),
+                        List.of("missing-before"),
+                        List.of("missing-after"),
+                        "[]"),
+                Map.of("testplugins/single/SinglePlugin.java", pluginSource("testplugins.single", "SinglePlugin", null, null, null)),
+                List.of()
+        );
+
+        var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new CommandManager(), new EventDispatcher(), new PermissionManager(), new TaskScheduler());
+        try {
+            manager.loadPlugins();
+
+            assertThat(manager.byId("single")).isPresent();
+        } finally {
+            manager.close();
+        }
+    }
+
+    @Test
+    void readsPluginDescriptorMetadataFromManifest() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("meta.jar"),
+                """
+                        {
+                          "id": "meta",
+                          "version": "1.2.3",
+                          "mainClass": "testplugins.meta.MetaPlugin",
+                          "description": "Metadata aware plugin",
+                          "website": "https://example.com/fand/meta",
+                          "license": "Apache-2.0",
+                          "apiVersion": "0.1.1",
+                          "authors": ["test"],
+                          "depends": [],
+                          "loadAfter": [],
+                          "loadBefore": [],
+                          "permissions": []
+                        }
+                        """,
+                Map.of("testplugins/meta/MetaPlugin.java", pluginSource("testplugins.meta", "MetaPlugin", null, null, null)),
+                List.of()
+        );
+
+        var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new CommandManager(), new EventDispatcher(), new PermissionManager(), new TaskScheduler());
+        try {
+            manager.loadPlugins();
+
+            var descriptor = manager.pluginStatus("meta").orElseThrow().descriptor();
+            assertThat(descriptor.description()).isEqualTo("Metadata aware plugin");
+            assertThat(descriptor.website()).isEqualTo("https://example.com/fand/meta");
+            assertThat(descriptor.license()).isEqualTo("Apache-2.0");
+            assertThat(descriptor.apiVersion()).isEqualTo("0.1.1");
+        } finally {
+            manager.close();
+        }
+    }
+
+    @Test
+    void defaultsPluginDescriptorMetadataForOlderManifest() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("legacy.jar"),
+                """
+                        {
+                          "id": "legacy",
+                          "version": "1.0.0",
+                          "mainClass": "testplugins.legacy.LegacyPlugin",
+                          "authors": ["test"],
+                          "depends": [],
+                          "permissions": []
+                        }
+                        """,
+                Map.of("testplugins/legacy/LegacyPlugin.java", pluginSource("testplugins.legacy", "LegacyPlugin", null, null, null)),
+                List.of()
+        );
+
+        var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new CommandManager(), new EventDispatcher(), new PermissionManager(), new TaskScheduler());
+        try {
+            manager.loadPlugins();
+
+            var descriptor = manager.pluginStatus("legacy").orElseThrow().descriptor();
+            assertThat(descriptor.description()).isEmpty();
+            assertThat(descriptor.website()).isEmpty();
+            assertThat(descriptor.license()).isEmpty();
+            assertThat(descriptor.apiVersion()).isEqualTo(PluginDescriptor.CURRENT_API_VERSION);
+        } finally {
+            manager.close();
+        }
+    }
+
+    @Test
+    void rejectsPluginDescriptorWebsiteWithoutHttpScheme() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("bad-site.jar"),
+                """
+                        {
+                          "id": "bad-site",
+                          "version": "1.0.0",
+                          "mainClass": "testplugins.badsite.BadSitePlugin",
+                          "website": "ftp://example.com/plugin",
+                          "authors": ["test"],
+                          "depends": [],
+                          "permissions": []
+                        }
+                        """,
+                Map.of("testplugins/badsite/BadSitePlugin.java", pluginSource("testplugins.badsite", "BadSitePlugin", null, null, null)),
+                List.of()
+        );
+
+        var manager = new PluginRuntime(
+                pluginsDir,
+                pluginsDir,
+                getClass().getClassLoader(),
+                new CommandManager(),
+                new EventDispatcher(),
+                new PermissionManager(),
+                new TaskScheduler(),
+                new PluginRuntime.Options(false, false, false)
+        );
+
+        assertThatThrownBy(manager::loadPlugins)
+                .isInstanceOf(PluginLoadException.class)
+                .hasMessageContaining("invalid website");
+    }
+
+    @Test
+    void reportsForeignPluginLoaderJarsAsNotFandPlugins() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        PluginRuntimeTestSupport.createJarWithEntries(
+                pluginsDir.resolve("bukkit.jar"),
+                Map.of("plugin.yml", "name: BukkitOnly\nmain: example.Plugin\nversion: 1.0.0\n")
+        );
+        PluginRuntimeTestSupport.createJarWithEntries(
+                pluginsDir.resolve("fabric.jar"),
+                Map.of("fabric.mod.json", "{\"schemaVersion\":1,\"id\":\"fabric_only\"}")
+        );
+        PluginRuntimeTestSupport.createJarWithEntries(
+                pluginsDir.resolve("forge.jar"),
+                Map.of("META-INF/mods.toml", "modLoader=\"javafml\"\n")
+        );
+
+        var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new CommandManager(), new EventDispatcher(), new PermissionManager(), new TaskScheduler());
+        try {
+            manager.loadPlugins();
+
+            assertThat(manager.loaded()).isEmpty();
+            assertThat(manager.pluginStatus("bukkit").orElseThrow().lastError().message())
+                    .contains("plugin.yml", "Bukkit/Spigot/Paper", "not a Fand plugin");
+            assertThat(manager.pluginStatus("fabric").orElseThrow().lastError().message())
+                    .contains("fabric.mod.json", "Fabric", "not a Fand plugin");
+            assertThat(manager.pluginStatus("forge").orElseThrow().lastError().message())
+                    .contains("META-INF/mods.toml", "Forge", "not a Fand plugin");
+        } finally {
+            manager.close();
         }
     }
 

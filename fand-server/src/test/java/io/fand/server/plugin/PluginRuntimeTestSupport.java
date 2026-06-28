@@ -60,21 +60,50 @@ final class PluginRuntimeTestSupport {
         return jarPath;
     }
 
+    static Path createJarWithEntries(Path jarPath, Map<String, String> entries) throws IOException {
+        Files.createDirectories(jarPath.getParent());
+        try (var out = new JarOutputStream(Files.newOutputStream(jarPath))) {
+            for (var entry : entries.entrySet()) {
+                out.putNextEntry(new JarEntry(entry.getKey()));
+                out.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
+                out.closeEntry();
+            }
+        }
+        return jarPath;
+    }
+
     static String descriptorJson(String id, String mainClass, List<String> depends) {
         return descriptorJson(id, mainClass, depends, "[]");
     }
 
     static String descriptorJson(String id, String mainClass, List<String> depends, String permissionsJson) {
+        return descriptorJson(id, mainClass, depends, List.of(), List.of(), permissionsJson);
+    }
+
+    static String descriptorJson(
+            String id,
+            String mainClass,
+            List<String> depends,
+            List<String> loadAfter,
+            List<String> loadBefore,
+            String permissionsJson
+    ) {
         return """
                 {
                   \"id\": \"%s\",
                   \"version\": \"1.0.0\",
                   \"mainClass\": \"%s\",
+                  \"description\": \"Test plugin\",
+                  \"website\": \"https://example.com\",
+                  \"license\": \"MIT\",
+                  \"apiVersion\": \"0.1.1\",
                   \"authors\": [\"test\"],
                   \"depends\": %s,
+                  \"loadAfter\": %s,
+                  \"loadBefore\": %s,
                   \"permissions\": %s
                 }
-                """.formatted(id, mainClass, dependsToJson(depends), permissionsJson);
+                """.formatted(id, mainClass, dependsToJson(depends), dependsToJson(loadAfter), dependsToJson(loadBefore), permissionsJson);
     }
 
     static void restoreProperty(String key, String value) {

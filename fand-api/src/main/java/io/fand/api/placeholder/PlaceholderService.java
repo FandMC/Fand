@@ -16,8 +16,18 @@ public interface PlaceholderService {
 
     Optional<String> resolve(@Nullable Player viewer, String identifier);
 
+    default Optional<String> resolve(String identifier, PlaceholderContext context) {
+        Objects.requireNonNull(context, "context");
+        return resolve(context.viewer(), identifier);
+    }
+
     default String replace(@Nullable Player viewer, String input) {
+        return replace(input, PlaceholderContext.viewer(viewer));
+    }
+
+    default String replace(String input, PlaceholderContext context) {
         Objects.requireNonNull(input, "input");
+        Objects.requireNonNull(context, "context");
         var output = new StringBuilder(input.length());
         int cursor = 0;
         while (cursor < input.length()) {
@@ -33,7 +43,7 @@ public interface PlaceholderService {
             }
             output.append(input, cursor, start);
             var identifier = input.substring(start + 1, end);
-            var replacement = identifier.isBlank() ? Optional.<String>empty() : resolve(viewer, identifier);
+            var replacement = identifier.isBlank() ? Optional.<String>empty() : resolve(identifier, context);
             output.append(replacement.orElseGet(() -> input.substring(start, end + 1)));
             cursor = end + 1;
         }

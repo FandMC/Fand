@@ -1,6 +1,12 @@
 import org.apache.logging.log4j.core.config.plugins.processor.PluginCache
 import java.io.File
 import java.net.URL
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+import org.gradle.api.artifacts.component.ComponentIdentifier
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 import java.util.Vector
 import java.util.zip.ZipFile
 
@@ -15,13 +21,21 @@ buildscript {
 
 plugins {
     `java-library`
+    `maven-publish`
     id("io.papermc.paperweight.core")
 }
 
 description = "Fand Server core implementation"
 
+val fandclipVersion = providers.gradleProperty("fandclipVersion").orElse("latest.release").get()
+val fandclipLauncher by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+
 dependencies {
     api(project(":fand-api"))
+    fandclipLauncher("io.fand:fandclip:$fandclipVersion")
 
     mache("io.papermc:mache:26.2-rc-2+build.2")
     paperclip("io.papermc:paperclip:3.0.4")
@@ -185,4 +199,184 @@ tasks.jar {
     exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
     exclude("META-INF/versions/*/module-info.class")
     exclude("**/module-info.class")
+}
+
+val bundledFandclipLayoutRoot = layout.buildDirectory.dir("generated/fandclip-layout")
+val bundledFandclipManifestFile = layout.buildDirectory.file("generated/fandclip-manifest/clip-manifest.properties")
+val serverRuntimeClasspath = configurations.named("runtimeClasspath")
+
+val prepareBundledFandclipLayout by tasks.registering {
+    val serverJar = tasks.named<Jar>("jar")
+
+    dependsOn(serverJar)
+    dependsOn(serverRuntimeClasspath)
+
+    inputs.file(serverJar.flatMap { it.archiveFile })
+    inputs.files(serverRuntimeClasspath)
+    outputs.dir(bundledFandclipLayoutRoot)
+    outputs.file(bundledFandclipManifestFile)
+
+    doLast {
+        val root = bundledFandclipLayoutRoot.get().asFile.toPath()
+        project.delete(root)
+
+        val serverVersionId = "fand-${project.version}"
+        val versionPath = "$serverVersionId/fand-server-$serverVersionId.jar"
+        val versionFile = root.resolve("META-INF/versions").resolve(versionPath)
+        Files.createDirectories(versionFile.parent)
+        Files.copy(serverJar.get().archiveFile.get().asFile.toPath(), versionFile)
+
+        val versionsList = listOf("${sha256(versionFile)}\t$serverVersionId\t$versionPath")
+
+        val librariesRoot = root.resolve("META-INF/libraries")
+        val libraries = serverRuntimeClasspath.get()
+            .incoming
+            .artifacts
+            .artifacts
+            .asSequence()
+            .filter { artifact -> artifact.file.isFile && artifact.file.name.endsWith(".jar") && !artifact.file.name.contains("mache") }
+            .map { artifact ->
+                val id = artifactId(artifact.id.componentIdentifier)
+                val path = artifactPath(artifact.id.componentIdentifier, artifact.file.name)
+                val output = librariesRoot.resolve(path)
+                Files.createDirectories(output.parent)
+                Files.copy(artifact.file.toPath(), output, StandardCopyOption.REPLACE_EXISTING)
+                "${sha256(output)}\t$id\t$path"
+            }
+            .distinct()
+            .sorted()
+            .toList()
+
+        val metaInf = root.resolve("META-INF")
+        Files.createDirectories(metaInf)
+        Files.writeString(metaInf.resolve("versions.list"), versionsList.joinToString(separator = "\n", postfix = "\n"))
+        Files.writeString(metaInf.resolve("libraries.list"), libraries.joinToString(separator = "\n", postfix = "\n"))
+        Files.writeString(metaInf.resolve("main-class"), "io.fand.server.Main")
+
+        val manifestFile = bundledFandclipManifestFile.get().asFile.toPath()
+        Files.createDirectories(manifestFile.parent)
+        Files.writeString(
+            manifestFile,
+            "fandVersion=${project.version}\nminecraftVersion=${providers.gradleProperty("minecraftVersion").get()}\n",
+        )
+    }
+}
+
+val fandclipJar by tasks.registering(Jar::class) {
+    group = BasePlugin.BUILD_GROUP
+    description = "Assembles a complete runnable Fandclip jar containing this Fand server build."
+
+    dependsOn(fandclipLauncher)
+    dependsOn(prepareBundledFandclipLayout)
+
+    archiveBaseName.set("fand-server")
+    archiveClassifier.set("clip")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    manifest {
+        attributes("Main-Class" to "io.fand.fandclip.Fandclip")
+    }
+
+    from({ zipTree(fandclipLauncher.singleFile) }) {
+        exclude(
+            "META-INF/MANIFEST.MF",
+            "META-INF/libraries/**",
+            "META-INF/versions/**",
+            "META-INF/libraries.list",
+            "META-INF/versions.list",
+            "META-INF/main-class",
+            "clip-manifest.properties",
+        )
+    }
+    from(prepareBundledFandclipLayout)
+}
+
+tasks.assemble {
+    dependsOn(fandclipJar)
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("mavenJava") {
+            from(components["java"])
+            artifact(fandclipJar)
+
+            pom {
+                name.set("Fand Server")
+                description.set(project.description)
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = "fandLocal"
+            val snapshot = project.version.toString().endsWith("-SNAPSHOT")
+            val defaultUrl = if (snapshot) {
+                "https://repo.fandmc.cn/repository/maven-snapshots/"
+            } else {
+                "https://repo.fandmc.cn/repository/maven-releases/"
+            }
+            url = uri(
+                providers.gradleProperty("fandRepoUrl")
+                    .orElse(providers.environmentVariable("FAND_REPO_URL"))
+                    .orElse(defaultUrl)
+                    .get()
+            )
+            credentials {
+                username = providers.gradleProperty("fandRepoUser")
+                    .orElse(providers.environmentVariable("FAND_REPO_USER"))
+                    .orElse("")
+                    .get()
+                password = providers.gradleProperty("fandRepoPassword")
+                    .orElse(providers.environmentVariable("FAND_REPO_PASSWORD"))
+                    .orElse("")
+                    .get()
+            }
+        }
+    }
+}
+
+fun artifactId(identifier: ComponentIdentifier): String {
+    return when (identifier) {
+        is ModuleComponentIdentifier -> "${identifier.group}:${identifier.module}:${identifier.version}"
+        is ProjectComponentIdentifier -> {
+            val dependency = project.findProject(identifier.projectPath)
+            "${dependency?.group ?: project.group}:${dependency?.name ?: identifier.projectName}:${dependency?.version ?: project.version}"
+        }
+        else -> identifier.displayName
+    }
+}
+
+fun artifactPath(identifier: ComponentIdentifier, fileName: String): String {
+    return when (identifier) {
+        is ModuleComponentIdentifier -> "${identifier.group.replace('.', '/')}/${identifier.module}/${identifier.version}/$fileName"
+        is ProjectComponentIdentifier -> {
+            val dependency = project.findProject(identifier.projectPath)
+            val group = (dependency?.group ?: project.group).toString().replace('.', '/')
+            val name = dependency?.name ?: identifier.projectName
+            val version = dependency?.version ?: project.version
+            "$group/$name/$version/$fileName"
+        }
+        else -> "unknown/${sanitizePathSegment(identifier.displayName)}/$fileName"
+    }
+}
+
+fun sanitizePathSegment(value: String): String {
+    return value.replace(Regex("[^A-Za-z0-9._-]"), "_")
+}
+
+fun sha256(path: java.nio.file.Path): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    Files.newInputStream(path).use { input ->
+        val buffer = ByteArray(16 * 1024)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) {
+                break
+            }
+            digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
 }

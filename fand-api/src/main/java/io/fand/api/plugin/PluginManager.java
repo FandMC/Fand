@@ -1,5 +1,6 @@
 package io.fand.api.plugin;
 
+import io.fand.api.service.ServiceRegistry;
 import java.util.Collection;
 import java.util.Optional;
 
@@ -15,4 +16,9 @@ public interface PluginManager {
 
     /** Whether the plugin with the given id is currently enabled. */
     boolean isEnabled(String id);
+
+    /** Cross-plugin Java service registry for provider discovery. */
+    default ServiceRegistry services() {
+        return ServiceRegistry.empty();
+    }
 }

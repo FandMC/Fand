@@ -8,6 +8,7 @@ import io.fand.api.packet.PacketType;
 import io.fand.api.packet.PacketView;
 import io.fand.api.player.PlayerProfile;
 import io.fand.api.tablist.TabListEntry;
+import io.fand.server.command.AdventureBridge;
 import io.fand.server.tablist.FandTabListPackets;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -25,6 +26,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.kyori.adventure.key.Key;
 import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.network.protocol.Packet;
@@ -154,14 +156,54 @@ final class VanillaPacketBridge {
             return packet;
         }
         try {
-            var rebuilt = rebuildPlayerInfo(currentView);
+            var rebuilt = toVanilla(currentView);
             if (rebuilt != null) {
                 return rebuilt;
             }
-            return shape.rebuild(currentView);
+            LOGGER.warn("Ignoring replacement for unsupported packet {}", packet.getClass().getName());
+            return packet;
         } catch (RuntimeException failure) {
             LOGGER.warn("Failed to rebuild vanilla packet {}", packet.getClass().getName(), failure);
             return packet;
+        }
+    }
+
+    @Nullable Packet<?> toVanilla(PacketView view) {
+        Objects.requireNonNull(view, "view");
+        var rebuilt = rebuildPlayerInfo(view);
+        if (rebuilt != null) {
+            return rebuilt;
+        }
+        try {
+            var packetClass = packetClass(view.packetType());
+            var shape = shape(packetClass);
+            if (!shape.replaceable()) {
+                return null;
+            }
+            return shape.rebuild(view);
+        } catch (ClassNotFoundException failure) {
+            LOGGER.warn("Unknown vanilla packet {}", view.packetType().vanillaClassName(), failure);
+            return null;
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Failed to rebuild vanilla packet {}", view.packetType().vanillaClassName(), failure);
+            return null;
+        }
+    }
+
+    private static Class<?> packetClass(PacketType type) throws ClassNotFoundException {
+        var name = type.vanillaClassName();
+        try {
+            return Class.forName(name);
+        } catch (ClassNotFoundException original) {
+            for (int dot = name.lastIndexOf('.'); dot >= 0; dot = name.lastIndexOf('.', dot - 1)) {
+                var candidate = name.substring(0, dot) + "$" + name.substring(dot + 1);
+                try {
+                    return Class.forName(candidate);
+                } catch (ClassNotFoundException ignored) {
+                    // Try the next dot; generated names use source form for nested packet classes.
+                }
+            }
+            throw original;
         }
     }
 
@@ -303,9 +345,10 @@ final class VanillaPacketBridge {
 
         Packet<?> rebuild(PacketView view) {
             if (canonicalConstructor != null) {
+                var parameterTypes = canonicalConstructor.getParameterTypes();
                 var arguments = new Object[recordComponentNames.size()];
                 for (int i = 0; i < recordComponentNames.size(); i++) {
-                    arguments[i] = view.value(recordComponentNames.get(i));
+                    arguments[i] = adaptValue(parameterTypes[i], view.value(recordComponentNames.get(i)));
                 }
                 try {
                     return (Packet<?>) canonicalConstructor.newInstance(arguments);
@@ -398,7 +441,7 @@ final class VanillaPacketBridge {
             var instance = allocate(packetClass);
             for (var writer : writers) {
                 if (view.has(writer.name())) {
-                    writer.write(instance, view.value(writer.name()));
+                    writer.write(instance, adaptValue(writer.type(), view.value(writer.name())));
                 }
             }
             return (Packet<?>) instance;
@@ -415,6 +458,8 @@ final class VanillaPacketBridge {
     private interface FieldWriter {
 
         String name();
+
+        Class<?> type();
 
         void write(Object packet, Object value);
     }
@@ -458,6 +503,11 @@ final class VanillaPacketBridge {
         }
 
         @Override
+        public Class<?> type() {
+            return field.getType();
+        }
+
+        @Override
         public void write(Object packet, Object value) {
             try {
                 field.set(packet, value);
@@ -465,6 +515,25 @@ final class VanillaPacketBridge {
                 throw new IllegalStateException("Failed to write packet field " + field.getName(), failure);
             }
         }
+    }
+
+    private static Object adaptValue(Class<?> targetType, Object value) {
+        if (value == null || targetType.isInstance(value)) {
+            return value;
+        }
+        if (value instanceof io.fand.api.entity.EntityType entityType
+                && net.minecraft.world.entity.EntityType.class.isAssignableFrom(targetType)) {
+            var key = entityType.key();
+            var id = Identifier.fromNamespaceAndPath(key.namespace(), key.value());
+            return BuiltInRegistries.ENTITY_TYPE.getOptional(id)
+                    .<Object>map(type -> type)
+                    .orElse(value);
+        }
+        if (value instanceof net.kyori.adventure.text.Component component
+                && net.minecraft.network.chat.Component.class.isAssignableFrom(targetType)) {
+            return AdventureBridge.toVanilla(component, null);
+        }
+        return value;
     }
 
     private static Object allocate(Class<?> type) {

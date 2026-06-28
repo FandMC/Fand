@@ -144,6 +144,10 @@ public final class PluginCommand implements CommandExecutor, CommandCompleter {
         sender.sendMessage(Component.text("  Status: " + status.lifecycle() + ", enabled=" + status.enabled(), NamedTextColor.GRAY));
         if (descriptor != null) {
             sender.sendMessage(Component.text("  Version: " + descriptor.version(), NamedTextColor.GRAY));
+            sender.sendMessage(Component.text("  API: " + descriptor.apiVersion(), NamedTextColor.GRAY));
+            sendOptionalInfo(sender, "  Description: ", descriptor.description());
+            sendOptionalInfo(sender, "  Website: ", descriptor.website());
+            sendOptionalInfo(sender, "  License: ", descriptor.license());
             sender.sendMessage(Component.text("  Main: " + descriptor.mainClass(), NamedTextColor.GRAY));
             sender.sendMessage(Component.text("  Authors: " + emptyJoin(descriptor.authors()), NamedTextColor.GRAY));
         }
@@ -153,6 +157,12 @@ public final class PluginCommand implements CommandExecutor, CommandCompleter {
         sender.sendMessage(Component.text("  Required by: " + emptyJoin(status.dependents()), NamedTextColor.GRAY));
         if (status.lastError() != null) {
             sender.sendMessage(Component.text("  Last error: [" + status.lastError().phase() + "] " + status.lastError().message(), NamedTextColor.RED));
+        }
+    }
+
+    private static void sendOptionalInfo(CommandSender sender, String label, String value) {
+        if (!value.isBlank()) {
+            sender.sendMessage(Component.text(label + value, NamedTextColor.GRAY));
         }
     }
 

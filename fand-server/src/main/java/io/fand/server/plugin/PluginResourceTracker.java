@@ -27,6 +27,7 @@ import io.fand.api.region.RegionRegistration;
 import io.fand.api.recipe.RecipeRegistration;
 import io.fand.api.scheduler.Task;
 import io.fand.api.scoreboard.ScoreboardRegistration;
+import io.fand.api.service.ServiceRegistration;
 import io.fand.api.structure.StructureRegistration;
 import io.fand.api.tablist.TabListRegistration;
 import io.fand.server.map.FandMapService;
@@ -68,6 +69,7 @@ final class PluginResourceTracker {
     private final Set<TrackedCustomBlockRegistration> customBlockRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCustomBlockItemBinding> customBlockItemBindings = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedGuiView> guiViews = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedServiceRegistration<?>> serviceRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedTask> tasks = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private volatile boolean closed;
 
@@ -549,6 +551,22 @@ final class PluginResourceTracker {
         return tracked;
     }
 
+    <T> TrackedServiceRegistration<T> track(ServiceRegistration<T> delegate) {
+        var tracked = new TrackedServiceRegistration<>(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                serviceRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.unregisterFromTracker();
+        }
+        return tracked;
+    }
+
     void release(TrackedSubscription subscription) {
         synchronized (lock) {
             subscriptions.remove(subscription);
@@ -705,6 +723,12 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedServiceRegistration<?> registration) {
+        synchronized (lock) {
+            serviceRegistrations.remove(registration);
+        }
+    }
+
     Optional<GuiView> trackedGuiView(GuiView delegate) {
         synchronized (lock) {
             return guiViews.stream()
@@ -766,6 +790,7 @@ final class PluginResourceTracker {
         List<TrackedCustomBlockRegistration> customBlockRegistrationsToClose;
         List<TrackedCustomBlockItemBinding> customBlockItemBindingsToClose;
         List<TrackedGuiView> guiViewsToClose;
+        List<TrackedServiceRegistration<?>> serviceRegistrationsToClose;
         List<TrackedTask> tasksToClose;
         synchronized (lock) {
             if (closed) {
@@ -798,6 +823,7 @@ final class PluginResourceTracker {
             customBlockRegistrationsToClose = new ArrayList<>(customBlockRegistrations);
             customBlockItemBindingsToClose = new ArrayList<>(customBlockItemBindings);
             guiViewsToClose = new ArrayList<>(guiViews);
+            serviceRegistrationsToClose = new ArrayList<>(serviceRegistrations);
             tasksToClose = new ArrayList<>(tasks);
             subscriptions.clear();
             commandRegistrations.clear();
@@ -826,6 +852,7 @@ final class PluginResourceTracker {
             customBlockRegistrations.clear();
             customBlockItemBindings.clear();
             guiViews.clear();
+            serviceRegistrations.clear();
             tasks.clear();
         }
         for (var subscription : subscriptionsToClose) {
@@ -905,6 +932,9 @@ final class PluginResourceTracker {
         }
         for (var view : guiViewsToClose) {
             view.closeFromTracker();
+        }
+        for (var registration : serviceRegistrationsToClose) {
+            registration.unregisterFromTracker();
         }
         for (var task : tasksToClose) {
             task.cancelFromTracker();
@@ -2155,6 +2185,67 @@ final class PluginResourceTracker {
         @Override
         public void removeState(String key) {
             delegate.removeState(key);
+        }
+    }
+
+    static final class TrackedServiceRegistration<T> implements ServiceRegistration<T> {
+
+        private final PluginResourceTracker owner;
+        private final ServiceRegistration<T> delegate;
+        private volatile boolean released;
+
+        TrackedServiceRegistration(PluginResourceTracker owner, ServiceRegistration<T> delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public net.kyori.adventure.key.Key key() {
+            return delegate.key();
+        }
+
+        @Override
+        public Class<T> type() {
+            return delegate.type();
+        }
+
+        @Override
+        public T service() {
+            return delegate.service();
+        }
+
+        @Override
+        public String owner() {
+            return delegate.owner();
+        }
+
+        @Override
+        public io.fand.api.service.ServicePriority priority() {
+            return delegate.priority();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void unregister() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.unregister();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void unregisterFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.unregister();
+            }
         }
     }
 }

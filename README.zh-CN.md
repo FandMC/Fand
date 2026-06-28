@@ -13,8 +13,9 @@
 |---------------|----------------------------------------------------------------------|
 | `fand-api`    | 公共插件 API。提供稳定的表面，不含任何实现细节。        |
 | `fand-server` | 服务端运行时。通过 paperweight 承载经过补丁的 vanilla 代码。      |
-| `fandclip`    | 最终用户启动器。首次运行时下载 vanilla bundler。           |
 | `fand-server/patches/` | 规范化的 paperweight 补丁集，应用于 vanilla 代码之上。 |
+
+Fandclip 已作为独立项目维护；`fand-server` 在组装可运行 clip jar 时通过 Maven 获取它。
 
 ## 构建管线
 

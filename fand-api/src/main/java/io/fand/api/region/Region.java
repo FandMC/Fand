@@ -13,14 +13,20 @@ public record Region(
         Key key,
         Key world,
         BlockRegion region,
-        Map<Key, com.google.gson.JsonElement> flags
+        Map<Key, com.google.gson.JsonElement> flags,
+        RegionProtection protection
 ) {
+
+    public Region(Key key, Key world, BlockRegion region, Map<Key, com.google.gson.JsonElement> flags) {
+        this(key, world, region, flags, RegionProtection.empty());
+    }
 
     public Region {
         Objects.requireNonNull(key, "key");
         world = Objects.requireNonNull(world, "world");
         region = Objects.requireNonNull(region, "region");
         flags = Map.copyOf(Objects.requireNonNull(flags, "flags"));
+        protection = Objects.requireNonNull(protection, "protection");
     }
 
     public static Region of(Key key, String world, BlockRegion region) {
@@ -46,6 +52,12 @@ public record Region(
         Objects.requireNonNull(flag, "flag");
         var value = flags.get(flag.key());
         return value == null ? Optional.ofNullable(flag.defaultValue()) : Optional.of(flag.decode(value));
+    }
+
+    public <T> Optional<T> explicitFlag(RegionFlag<T> flag) {
+        Objects.requireNonNull(flag, "flag");
+        var value = flags.get(flag.key());
+        return value == null ? Optional.empty() : Optional.of(flag.decode(value));
     }
 
     public boolean flag(RegionFlag<Boolean> flag, boolean fallback) {

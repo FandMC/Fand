@@ -3,6 +3,8 @@ package io.fand.server.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.fand.api.placeholder.PlaceholderContext;
+import io.fand.api.placeholder.PlaceholderProvider;
 import io.fand.server.placeholder.FandPlaceholderService;
 import org.junit.jupiter.api.Test;
 
@@ -23,6 +25,18 @@ final class PluginPlaceholderServiceTest {
 
         assertThat(registration.active()).isFalse();
         assertThat(delegate.resolve(null, "demo_value")).isEmpty();
+    }
+
+    @Test
+    void forwardsContextualResolutionThroughPluginScope() {
+        var delegate = new FandPlaceholderService();
+        var tracker = new PluginResourceTracker();
+        var service = new PluginPlaceholderService(delegate, tracker, "demo");
+        service.register("demo", PlaceholderProvider.contextual((context, identifier) ->
+                context.value("state", String.class).map(state -> identifier + ":" + state).orElse(null)));
+
+        assertThat(service.resolve("demo_value", PlaceholderContext.builder().value("state", "ok").build()))
+                .contains("demo_value:ok");
     }
 
     @Test

@@ -26,6 +26,7 @@ import io.fand.api.plugin.PluginDescriptor;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
+import io.fand.api.service.ServiceRegistry;
 import io.fand.api.storage.PluginStorage;
 import io.fand.api.structure.StructureService;
 import io.fand.api.tablist.TabListService;
@@ -68,6 +69,7 @@ public final class RuntimePluginContext implements PluginContext {
     private final RegionService regions;
     private final DataPackService dataPacks;
     private final ExternalIntegrationStrategy integrations;
+    private final ServiceRegistry services;
     private final CustomItemRegistry customItems;
     private final CustomBlockRegistry customBlocks;
     private final GuiService guis;
@@ -103,6 +105,7 @@ public final class RuntimePluginContext implements PluginContext {
             RegionService regions,
             DataPackService dataPacks,
             ExternalIntegrationStrategy integrations,
+            ServiceRegistry services,
             CustomItemRegistry customItems,
             CustomBlockRegistry customBlocks,
             GuiService guis,
@@ -134,6 +137,7 @@ public final class RuntimePluginContext implements PluginContext {
         this.regions = regions;
         this.dataPacks = dataPacks;
         this.integrations = integrations;
+        this.services = services;
         this.customItems = customItems;
         this.customBlocks = customBlocks;
         this.guis = guis;
@@ -256,6 +260,11 @@ public final class RuntimePluginContext implements PluginContext {
     @Override
     public ExternalIntegrationStrategy integrations() {
         return integrations;
+    }
+
+    @Override
+    public ServiceRegistry services() {
+        return services;
     }
 
     @Override

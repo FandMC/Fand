@@ -2,6 +2,7 @@ package io.fand.server.region;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -9,6 +10,7 @@ import io.fand.api.region.Region;
 import io.fand.api.region.RegionDefinition;
 import io.fand.api.region.RegionFlag;
 import io.fand.api.region.RegionFlagRegistration;
+import io.fand.api.region.RegionProtection;
 import io.fand.api.region.RegionRegistration;
 import io.fand.api.region.RegionService;
 import io.fand.api.world.BlockRegion;
@@ -90,7 +92,9 @@ public final class FandRegionService implements RegionService {
             return regions.values().stream()
                     .filter(entry -> entry.region().contains(location))
                     .sorted(Comparator
-                            .comparingLong((RegisteredRegion entry) -> entry.region().region().cappedVolume())
+                            .comparingInt((RegisteredRegion entry) -> entry.region().protection().priority())
+                            .reversed()
+                            .thenComparingLong(entry -> entry.region().region().cappedVolume())
                             .thenComparing(Comparator.comparingLong(RegisteredRegion::token).reversed()))
                     .map(RegisteredRegion::region)
                     .toList();
@@ -132,7 +136,7 @@ public final class FandRegionService implements RegionService {
     @Override
     public RegionRegistration register(RegionDefinition region) {
         Objects.requireNonNull(region, "region");
-        var copy = new Region(region.key(), region.world(), region.region(), region.flags());
+        var copy = new Region(region.key(), region.world(), region.region(), region.flags(), region.protection());
         long token;
         synchronized (lock) {
             token = ++sequence;
@@ -182,7 +186,12 @@ public final class FandRegionService implements RegionService {
             var definition = readDefinition(file, element.getAsJsonObject());
             synchronized (lock) {
                 regions.put(definition.key(), new RegisteredRegion(
-                        new Region(definition.key(), definition.world(), definition.region(), definition.flags()),
+                        new Region(
+                                definition.key(),
+                                definition.world(),
+                                definition.region(),
+                                definition.flags(),
+                                definition.protection()),
                         ++sequence));
             }
         } catch (IOException failure) {
@@ -199,7 +208,8 @@ public final class FandRegionService implements RegionService {
         var world = readKey(object, "world").orElseThrow(() -> new IllegalStateException("Region file is missing world: " + file));
         var region = readRegion(object, file);
         var flags = readFlags(object, file);
-        return new RegionDefinition(key, world, region, flags);
+        var protection = readProtection(object, file);
+        return new RegionDefinition(key, world, region, flags, protection);
     }
 
     private static Optional<Key> readKey(JsonObject object, String name) {
@@ -241,6 +251,41 @@ public final class FandRegionService implements RegionService {
         return Map.copyOf(flags);
     }
 
+    private static RegionProtection readProtection(JsonObject object, Path file) {
+        if (!object.has("protection") || object.get("protection").isJsonNull()) {
+            return RegionProtection.empty();
+        }
+        if (!object.get("protection").isJsonObject()) {
+            throw new IllegalStateException("Region file protection must be a JSON object: " + file);
+        }
+        var protection = object.getAsJsonObject("protection");
+        var builder = RegionProtection.builder();
+        if (protection.has("priority") && !protection.get("priority").isJsonNull()) {
+            builder.priority(protection.get("priority").getAsInt());
+        }
+        readKey(protection, "parent").ifPresent(builder::parent);
+        readSubjects(protection, "owners", file).forEach(builder::owner);
+        readSubjects(protection, "members", file).forEach(builder::member);
+        return builder.build();
+    }
+
+    private static Collection<String> readSubjects(JsonObject object, String name, Path file) {
+        if (!object.has(name) || object.get(name).isJsonNull()) {
+            return java.util.List.of();
+        }
+        if (!object.get(name).isJsonArray()) {
+            throw new IllegalStateException("Region file protection " + name + " must be an array: " + file);
+        }
+        var result = new ArrayList<String>();
+        for (var element : object.getAsJsonArray(name)) {
+            if (!element.isJsonPrimitive()) {
+                throw new IllegalStateException("Region file protection " + name + " must contain strings: " + file);
+            }
+            result.add(element.getAsString());
+        }
+        return result;
+    }
+
     private void persistRegion(Region region) {
         var file = regionFile(region.key());
         try {
@@ -268,7 +313,33 @@ public final class FandRegionService implements RegionService {
         var flagsObject = new JsonObject();
         region.flags().forEach((key, value) -> flagsObject.add(key.asString(), value));
         object.add("flags", flagsObject);
+        if (!region.protection().emptyMetadata()) {
+            object.add("protection", protectionToJson(region.protection()));
+        }
         return object;
+    }
+
+    private static JsonObject protectionToJson(RegionProtection protection) {
+        var object = new JsonObject();
+        if (protection.priority() != 0) {
+            object.addProperty("priority", protection.priority());
+        }
+        protection.parent().ifPresent(parent -> object.addProperty("parent", parent.asString()));
+        if (!protection.owners().isEmpty()) {
+            object.add("owners", subjectsToJson(protection.owners()));
+        }
+        if (!protection.members().isEmpty()) {
+            object.add("members", subjectsToJson(protection.members()));
+        }
+        return object;
+    }
+
+    private static JsonArray subjectsToJson(Collection<String> subjects) {
+        var array = new JsonArray();
+        for (var subject : subjects) {
+            array.add(subject);
+        }
+        return array;
     }
 
     private static JsonObject regionToJson(BlockRegion region) {

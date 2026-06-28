@@ -1,6 +1,7 @@
 package io.fand.server.placeholder;
 
 import io.fand.api.entity.Player;
+import io.fand.api.placeholder.PlaceholderContext;
 import io.fand.api.placeholder.PlaceholderProvider;
 import io.fand.api.placeholder.PlaceholderRegistration;
 import io.fand.api.placeholder.PlaceholderService;
@@ -27,12 +28,18 @@ public final class FandPlaceholderService implements PlaceholderService, AutoClo
 
     @Override
     public Optional<String> resolve(@Nullable Player viewer, String identifier) {
+        return resolve(identifier, PlaceholderContext.viewer(viewer));
+    }
+
+    @Override
+    public Optional<String> resolve(String identifier, PlaceholderContext context) {
+        Objects.requireNonNull(context, "context");
         var normalized = normalizeIdentifier(identifier);
         var provider = provider(normalized).orElse(null);
         if (provider == null) {
             return Optional.empty();
         }
-        return Optional.ofNullable(provider.resolve(viewer, normalized));
+        return Optional.ofNullable(provider.resolve(context, normalized));
     }
 
     @Override

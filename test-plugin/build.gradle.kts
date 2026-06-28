@@ -1,13 +1,15 @@
 plugins {
-    `java-library`
+    id("io.fand.plugin") version "latest.release"
 }
 
 description = "Sample plugin used for end-to-end runtime smoke testing"
 
-dependencies {
-    compileOnly(project(":fand-api"))
+fandPlugin {
+    mainClass.set("io.fand.testplugin.TestPlugin")
+    directRunGuard.set(true)
+}
 
-    testImplementation(project(":fand-api"))
+dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
     testImplementation("org.assertj:assertj-core:3.25.3")
 }

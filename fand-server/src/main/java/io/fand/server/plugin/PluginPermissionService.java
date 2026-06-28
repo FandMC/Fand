@@ -1,9 +1,13 @@
 package io.fand.server.plugin;
 
 import io.fand.api.permission.PermissionAttachment;
+import io.fand.api.permission.PermissionContext;
 import io.fand.api.permission.PermissionDescriptor;
+import io.fand.api.permission.PermissionGroup;
+import io.fand.api.permission.PermissionMeta;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.permission.PermissionSubject;
+import java.util.Collection;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -37,6 +41,21 @@ final class PluginPermissionService implements PermissionService {
     @Override
     public boolean hasPermission(PermissionSubject subject, String node) {
         return delegate.hasPermission(subject, node);
+    }
+
+    @Override
+    public PermissionMeta meta(PermissionSubject subject, PermissionContext context) {
+        return delegate.meta(subject, context);
+    }
+
+    @Override
+    public Optional<PermissionGroup> group(String name, PermissionContext context) {
+        return delegate.group(name, context);
+    }
+
+    @Override
+    public Collection<PermissionGroup> groups(PermissionContext context) {
+        return delegate.groups(context);
     }
 
     @Override

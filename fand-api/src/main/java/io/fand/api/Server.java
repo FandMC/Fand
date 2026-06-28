@@ -32,6 +32,7 @@ import io.fand.api.region.RegionService;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
+import io.fand.api.service.ServiceRegistry;
 import io.fand.api.structure.StructureService;
 import io.fand.api.tag.Tag;
 import io.fand.api.tag.TagRegistry;
@@ -159,6 +160,10 @@ public interface Server extends ForwardingAudience {
 
     default ExternalIntegrationStrategy integrations() {
         return ExternalIntegrationStrategy.empty();
+    }
+
+    default ServiceRegistry services() {
+        return ServiceRegistry.empty();
     }
 
     /** Lightweight GUI routing service. */

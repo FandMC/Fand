@@ -24,6 +24,7 @@ import io.fand.api.region.RegionService;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
+import io.fand.api.service.ServiceRegistry;
 import io.fand.api.storage.PluginStorage;
 import io.fand.api.structure.StructureService;
 import io.fand.api.tablist.TabListService;
@@ -132,6 +133,11 @@ public interface PluginContext {
     /** External integration strategy visible to this plugin. */
     default ExternalIntegrationStrategy integrations() {
         return ExternalIntegrationStrategy.empty();
+    }
+
+    /** Cross-plugin service registry scoped to this plugin's lifecycle for registrations. */
+    default ServiceRegistry services() {
+        return ServiceRegistry.empty();
     }
 
     /** Custom item registry scoped to this plugin's lifecycle and namespace. */

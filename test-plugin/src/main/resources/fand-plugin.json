@@ -2,6 +2,10 @@
   "id": "fand-test-plugin",
   "version": "0.1.0",
   "mainClass": "io.fand.testplugin.TestPlugin",
+  "description": "Built-in Fand API demonstration plugin",
+  "website": "https://github.com/FandServer/FandServer",
+  "license": "GPL-3.0-only",
+  "apiVersion": "0.1.1",
   "authors": ["Fand"],
   "depends": [],
   "permissions": [

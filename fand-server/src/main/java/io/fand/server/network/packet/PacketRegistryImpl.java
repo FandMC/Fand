@@ -7,14 +7,17 @@ import io.fand.api.packet.PacketInterceptor;
 import io.fand.api.packet.PacketProtocol;
 import io.fand.api.packet.PacketRegistration;
 import io.fand.api.packet.PacketRegistry;
+import io.fand.api.packet.PacketSender;
 import io.fand.api.packet.PacketType;
 import io.fand.api.packet.PacketView;
 import io.fand.api.packet.PlayerInfoPacketFactory;
+import io.fand.api.packet.ViewerIllusionService;
 import io.fand.api.entity.Player;
 import io.fand.api.player.PlayerProfile;
 import java.net.SocketAddress;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,6 +40,9 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
     private final Supplier<@Nullable MinecraftServer> server;
     private final VanillaPacketBridge bridge = new VanillaPacketBridge(this);
     private final PlayerInfoPacketFactory playerInfo = new FandPlayerInfoPacketFactory();
+    private final PacketViewFactory viewFactory = new PacketViewFactory();
+    private final FandPacketSender sender = new FandPacketSender(bridge);
+    private final ViewerIllusionService illusions = new FandViewerIllusionService(sender);
 
     public PacketRegistryImpl() {
         this(() -> null);
@@ -59,6 +65,21 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
     @Override
     public PlayerInfoPacketFactory playerInfo() {
         return playerInfo;
+    }
+
+    @Override
+    public PacketSender sender() {
+        return sender;
+    }
+
+    @Override
+    public ViewerIllusionService illusions() {
+        return illusions;
+    }
+
+    @Override
+    public PacketView packet(PacketType type, Map<String, ?> fields) {
+        return viewFactory.view(type, fields);
     }
 
     @Override
@@ -131,6 +152,10 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
 
     Optional<MinecraftServer> server() {
         return Optional.ofNullable(server.get());
+    }
+
+    @Nullable Packet<?> vanillaPacket(PacketView view) {
+        return bridge.toVanilla(view);
     }
 
     public @Nullable Packet<?> interceptInbound(
