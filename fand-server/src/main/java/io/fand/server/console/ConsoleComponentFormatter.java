@@ -2,8 +2,10 @@ package io.fand.server.console;
 
 import java.util.Optional;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.ComponentContents;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
+import net.minecraft.network.chat.contents.TranslatableContents;
 
 public final class ConsoleComponentFormatter {
 
@@ -14,13 +16,46 @@ public final class ConsoleComponentFormatter {
 
     public static String ansi(Component message) {
         StringBuilder builder = new StringBuilder();
-        message.visit((style, text) -> {
-            appendStyle(builder, style);
-            builder.append(text);
-            builder.append(RESET);
-            return Optional.empty();
-        }, Style.EMPTY);
+        appendComponent(builder, message, Style.EMPTY);
         return builder.toString();
+    }
+
+    private static void appendComponent(StringBuilder builder, Component component, Style parentStyle) {
+        var style = component.getStyle().applyTo(parentStyle);
+        appendContents(builder, component.getContents(), style);
+        for (var sibling : component.getSiblings()) {
+            appendComponent(builder, sibling, style);
+        }
+    }
+
+    private static void appendContents(StringBuilder builder, ComponentContents contents, Style style) {
+        if (contents instanceof TranslatableContents translatable) {
+            appendTranslatable(builder, translatable, style);
+            return;
+        }
+
+        contents.visit((ignored, text) -> {
+            appendText(builder, style, text);
+            return Optional.empty();
+        }, style);
+    }
+
+    private static void appendTranslatable(StringBuilder builder, TranslatableContents translatable, Style style) {
+        ConsoleLanguage.current()
+                .format(translatable)
+                .visit((partStyle, text) -> {
+                    appendText(builder, partStyle.applyTo(style), text);
+                    return Optional.empty();
+                }, Style.EMPTY);
+    }
+
+    private static void appendText(StringBuilder builder, Style style, String text) {
+        if (text.isEmpty()) {
+            return;
+        }
+        appendStyle(builder, style);
+        builder.append(text);
+        builder.append(RESET);
     }
 
     private static void appendStyle(StringBuilder builder, Style style) {

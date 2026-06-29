@@ -9,6 +9,7 @@ import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 import java.util.Vector
 import java.util.zip.ZipFile
+import groovy.json.JsonSlurper
 
 buildscript {
     repositories {
@@ -136,12 +137,62 @@ val generateBuildInfo by tasks.registering(WriteProperties::class) {
     property("minecraftVersion", providers.gradleProperty("minecraftVersion").get())
 }
 
+val generatedConsoleLanguageResources = layout.buildDirectory.dir("generated/console-language-resources")
+val syncConsoleLanguages by tasks.registering {
+    group = "fand"
+    description = "Downloads bundled Minecraft language files used by the Fand console."
+
+    val minecraftVersion = providers.gradleProperty("mcVersion")
+    val outputDir = generatedConsoleLanguageResources
+
+    inputs.property("minecraftVersion", minecraftVersion)
+    outputs.dir(outputDir)
+
+    doLast {
+        val version = minecraftVersion.get()
+        val manifest = JsonSlurper().parse(
+            uri("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json").toURL()
+        ) as Map<*, *>
+        val versionEntry = (manifest["versions"] as List<*>)
+            .filterIsInstance<Map<*, *>>()
+            .firstOrNull { it["id"] == version }
+            ?: error("Minecraft version '$version' was not found in Mojang version manifest")
+        val versionMetadata = JsonSlurper().parse(
+            uri(versionEntry["url"].toString()).toURL()
+        ) as Map<*, *>
+        val assetIndex = versionMetadata["assetIndex"] as Map<*, *>
+        val assetIndexMetadata = JsonSlurper().parse(
+            uri(assetIndex["url"].toString()).toURL()
+        ) as Map<*, *>
+        val objects = assetIndexMetadata["objects"] as Map<*, *>
+
+        val languagePath = "minecraft/lang/zh_cn.json"
+        val languageObject = objects[languagePath] as? Map<*, *>
+            ?: error("Asset index for Minecraft $version does not contain $languagePath")
+        val hash = languageObject["hash"].toString()
+        val url = "https://resources.download.minecraft.net/${hash.substring(0, 2)}/$hash"
+
+        val output = outputDir.get().asFile.toPath()
+            .resolve("assets/minecraft/lang/zh_cn.json")
+        Files.createDirectories(output.parent)
+        uri(url).toURL().openStream().use { input ->
+            Files.copy(input, output, StandardCopyOption.REPLACE_EXISTING)
+        }
+    }
+}
+
 sourceSets.named("main") {
     resources.srcDir(generateBuildInfo.map { it.destinationFile.get().asFile.parentFile })
+    resources.srcDir(generatedConsoleLanguageResources)
 }
 
 tasks.named("processResources") {
     dependsOn(generateBuildInfo)
+    dependsOn(syncConsoleLanguages)
+}
+
+tasks.named<Jar>("sourcesJar") {
+    dependsOn(syncConsoleLanguages)
 }
 
 val log4jPluginsCachePath = "META-INF/org/apache/logging/log4j/core/config/plugins/Log4j2Plugins.dat"
