@@ -20,6 +20,8 @@ public final class FandConsole extends SimpleTerminalConsole {
         builder
                 .appName("Fand")
                 .variable(LineReader.HISTORY_FILE, Paths.get(".console_history"))
+                .completer(new FandConsoleCommandCompleter(server))
+                .parser(FandConsoleCommandLine::parse)
                 .option(LineReader.Option.COMPLETE_IN_WORD, true);
         return super.buildReader(builder);
     }

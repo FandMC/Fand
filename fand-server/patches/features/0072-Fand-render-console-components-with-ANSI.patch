@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Mon, 29 Jun 2026 10:22:05 +0800
+Subject: [PATCH] Fand: render console components with ANSI
+
+
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index 170c965a253eebec8eb3951149629904d6d8ce31..1561e1ef33e2c3ee144484fc0bef9ba54f9dfc29 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -10,6 +10,7 @@ import com.mojang.datafixers.DataFixer;
+ import com.mojang.jtracy.DiscontinuousFrame;
+ import com.mojang.jtracy.TracyClient;
+ import com.mojang.logging.LogUtils;
++import io.fand.server.console.ConsoleComponentFormatter;
+ import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+ import it.unimi.dsi.fastutil.objects.ObjectArraySet;
+ import java.io.File;
+@@ -1396,7 +1397,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+ 
+     @Override
+     public void sendSystemMessage(final Component message) {
+-        LOGGER.info(message.getString());
++        LOGGER.info(ConsoleComponentFormatter.ansi(message));
+     }
+ 
+     public KeyPair getKeyPair() {
