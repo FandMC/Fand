@@ -160,6 +160,7 @@ final class DemoSupport {
             "fand.testplugin.tab",
             "fand.testplugin.recipe",
             "fand.testplugin.components",
+            "fand.testplugin.nms",
             "fand.testplugin.selftest"
     );
     static final DataComponentKey<String> DEMO_BLOCK_LABEL =

@@ -43,10 +43,12 @@ public final class TestPlugin implements Plugin {
     @Override
     public void onEnable(PluginContext context) {
         Set<UUID> demoGuiViewers = ConcurrentHashMap.newKeySet();
+        var nmsDemo = new NmsDemo(context);
         registerPermissions(context);
         context.loginAuthenticators().register(
                 Key.key("fand-test-plugin:offline-cn"),
                 TestPlugin::authenticateOfflineForNonAsciiName);
+        nmsDemo.registerHooks();
         context.commands().register(new HelloCommand(context));
         context.commands().register(new DemoCommand(context));
         context.commands().register(new KitCommand(context, demoGuiViewers));
@@ -71,12 +73,15 @@ public final class TestPlugin implements Plugin {
         context.commands().register(new RecipeCommand(context));
         context.commands().register(new ComponentsCommand());
         context.commands().register(new SelfTestCommand(context));
+        context.commands().register(new NmsCommand(nmsDemo));
         context.commands().register(new GuiCommand(context, demoGuiViewers));
         registerDemoRecipes(context);
         registerCustomRegistries(context);
-        context.events().subscribe(ServerStartedEvent.class, event ->
-                context.logger().info("Server started; Fand brand={} version={} minecraft={}",
-                        event.server().brand(), event.server().version(), event.server().minecraftVersion()));
+        context.events().subscribe(ServerStartedEvent.class, event -> {
+            context.logger().info("Server started; Fand brand={} version={} minecraft={}",
+                    event.server().brand(), event.server().version(), event.server().minecraftVersion());
+            nmsDemo.runStartupSelfTest(event);
+        });
         context.events().subscribe(WorldLoadEvent.class, event ->
                 context.logger().info("World loaded: {}", event.world().key().asString()));
         context.events().subscribe(WorldUnloadEvent.class, event ->

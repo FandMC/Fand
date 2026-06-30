@@ -241,6 +241,7 @@ final class TestPluginTest {
                 TabCommand.class,
                 RecipeCommand.class,
                 ComponentsCommand.class,
+                NmsCommand.class,
                 SelfTestCommand.class,
                 GuiCommand.class
         )).allSatisfy(type -> assertThat(type.getAnnotation(CommandSpec.class))
