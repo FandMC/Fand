@@ -1,11 +1,10 @@
 package io.fand.server.console;
 
+import java.nio.file.Paths;
 import net.minecraft.server.dedicated.DedicatedServer;
 import net.minecrell.terminalconsole.SimpleTerminalConsole;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
-
-import java.nio.file.Paths;
 
 public final class FandConsole extends SimpleTerminalConsole {
 
@@ -22,7 +21,10 @@ public final class FandConsole extends SimpleTerminalConsole {
                 .variable(LineReader.HISTORY_FILE, Paths.get(".console_history"))
                 .completer(new FandConsoleCommandCompleter(server))
                 .parser(FandConsoleCommandLine::parse)
-                .option(LineReader.Option.COMPLETE_IN_WORD, true);
+                .option(LineReader.Option.COMPLETE_IN_WORD, true)
+                .option(LineReader.Option.MENU_COMPLETE, true)
+                .option(LineReader.Option.AUTO_MENU, true)
+                .option(LineReader.Option.AUTO_MENU_LIST, true);
         return super.buildReader(builder);
     }
 

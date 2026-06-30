@@ -36,7 +36,7 @@ final class FandConsoleCommandCompleter implements Completer {
         if (Main.runtimeOrNull() != null) {
             addFandSuggestions(source, fullLine, input, suggestions);
         }
-        suggestions.forEach(value -> candidates.add(new Candidate(value)));
+        rootLocalFirst(input, List.copyOf(suggestions)).forEach(value -> candidates.add(new Candidate(value)));
     }
 
     private void addMinecraftSuggestions(CommandSourceStack source, String fullLine, String input, LinkedHashSet<String> suggestions) {
@@ -82,6 +82,53 @@ final class FandConsoleCommandCompleter implements Completer {
             return new NormalizedCommand(input.substring(leading + 1), leading + 1, true);
         }
         return new NormalizedCommand(input.substring(leading), leading, false);
+    }
+
+    static List<String> rootLocalFirst(String input, List<String> suggestions) {
+        if (suggestions.size() < 2 || !isCompletingRoot(input)) {
+            return suggestions;
+        }
+        var prefix = firstToken(normalize(input).command());
+        if (prefix.contains(":")) {
+            return suggestions;
+        }
+        var hasLocalCandidate = suggestions.stream()
+                .map(FandConsoleCommandCompleter::rootToken)
+                .anyMatch(root -> !root.contains(":") && root.startsWith(prefix));
+        if (!hasLocalCandidate) {
+            return suggestions;
+        }
+        return suggestions.stream()
+                .filter(candidate -> !rootToken(candidate).contains(":"))
+                .toList();
+    }
+
+    private static boolean isCompletingRoot(String input) {
+        var command = normalize(input).command();
+        return currentTokenStart(command) == 0;
+    }
+
+    private static int currentTokenStart(String command) {
+        var trimmed = command.stripTrailing();
+        if (trimmed.length() != command.length()) {
+            return command.length();
+        }
+        var separator = Math.max(command.lastIndexOf(' '), command.lastIndexOf('\t'));
+        return separator < 0 ? 0 : separator + 1;
+    }
+
+    private static String rootToken(String commandLine) {
+        return firstToken(normalize(commandLine).command());
+    }
+
+    private static String firstToken(String command) {
+        var trimmed = command.stripLeading();
+        for (int i = 0; i < trimmed.length(); i++) {
+            if (Character.isWhitespace(trimmed.charAt(i))) {
+                return trimmed.substring(0, i);
+            }
+        }
+        return trimmed;
     }
 
     record NormalizedCommand(String command, int prefixLength, boolean hasSlash) {

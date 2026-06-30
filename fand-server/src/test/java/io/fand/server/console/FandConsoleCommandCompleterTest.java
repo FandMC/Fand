@@ -44,4 +44,38 @@ final class FandConsoleCommandCompleterTest {
         assertThat(FandConsoleCommandCompleter.toFandCandidate("plugin r tail", result, "reload"))
                 .isEqualTo("plugin reload tail");
     }
+
+    @Test
+    void hidesNamespacedRootSuggestionsWhenLocalRootsMatch() {
+        assertThat(FandConsoleCommandCompleter.rootLocalFirst("fand", List.of(
+                "fand-test-plugin:fanddemo",
+                "fanddemo",
+                "fand:fand",
+                "fandtitle"
+        ))).containsExactly("fanddemo", "fandtitle");
+    }
+
+    @Test
+    void keepsNamespacedRootSuggestionsAfterNamespaceSeparator() {
+        assertThat(FandConsoleCommandCompleter.rootLocalFirst("fand:", List.of(
+                "fand:fand",
+                "fand:mspt"
+        ))).containsExactly("fand:fand", "fand:mspt");
+    }
+
+    @Test
+    void keepsNamespacedRootSuggestionsWhenNoLocalRootMatches() {
+        assertThat(FandConsoleCommandCompleter.rootLocalFirst("fand", List.of(
+                "fand:fand",
+                "fand:mspt"
+        ))).containsExactly("fand:fand", "fand:mspt");
+    }
+
+    @Test
+    void keepsNamespacedArgumentSuggestionsOutsideRootToken() {
+        assertThat(FandConsoleCommandCompleter.rootLocalFirst("give ", List.of(
+                "give minecraft:stone",
+                "give minecraft:dirt"
+        ))).containsExactly("give minecraft:stone", "give minecraft:dirt");
+    }
 }
