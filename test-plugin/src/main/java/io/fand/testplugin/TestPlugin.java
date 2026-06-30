@@ -4,6 +4,7 @@ import static io.fand.testplugin.DemoSupport.*;
 
 import io.fand.api.Fand;
 import io.fand.api.Server;
+import io.fand.api.player.PlayerProfile;
 import io.fand.api.advancement.CustomAdvancement;
 import io.fand.api.enchantment.CustomEnchantment;
 import io.fand.api.event.player.PlayerJoinEvent;
@@ -15,6 +16,8 @@ import io.fand.api.event.world.WorldLoadEvent;
 import io.fand.api.event.world.WorldSaveEvent;
 import io.fand.api.event.world.WorldUnloadEvent;
 import io.fand.api.lifecycle.ServerStartedEvent;
+import io.fand.api.auth.LoginAuthenticationRequest;
+import io.fand.api.auth.LoginAuthenticationResult;
 import io.fand.api.plugin.Plugin;
 import io.fand.api.plugin.PluginContext;
 import io.fand.api.world.World;
@@ -23,11 +26,14 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
 public final class TestPlugin implements Plugin {
+
+    private static final Pattern ASCII_USERNAME = Pattern.compile("[A-Za-z0-9_]{1,16}");
 
     @Override
     public void onLoad(PluginContext context) {
@@ -38,6 +44,9 @@ public final class TestPlugin implements Plugin {
     public void onEnable(PluginContext context) {
         Set<UUID> demoGuiViewers = ConcurrentHashMap.newKeySet();
         registerPermissions(context);
+        context.loginAuthenticators().register(
+                Key.key("fand-test-plugin:offline-cn"),
+                TestPlugin::authenticateOfflineForNonAsciiName);
         context.commands().register(new HelloCommand(context));
         context.commands().register(new DemoCommand(context));
         context.commands().register(new KitCommand(context, demoGuiViewers));
@@ -147,5 +156,15 @@ public final class TestPlugin implements Plugin {
                 plunder.key().asString(), plunder.active());
         context.logger().info("Registered custom advancement {} active={}",
                 firstStep.key().asString(), firstStep.active());
+    }
+
+    static LoginAuthenticationResult authenticateOfflineForNonAsciiName(LoginAuthenticationRequest request) {
+        if (ASCII_USERNAME.matcher(request.name()).matches()) {
+            return LoginAuthenticationResult.pass();
+        }
+        return LoginAuthenticationResult.allow(
+                new PlayerProfile(
+                        request.requestedProfileId().orElseGet(() -> UUID.nameUUIDFromBytes(request.name().getBytes(java.nio.charset.StandardCharsets.UTF_8))),
+                        request.name()));
     }
 }

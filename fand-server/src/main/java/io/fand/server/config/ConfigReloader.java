@@ -42,6 +42,16 @@ public final class ConfigReloader {
             field("players.speedCheck", (FandConfig.Players config) -> config.speedCheck),
             field("players.logCommands", (FandConfig.Players config) -> config.logCommands)
     );
+    private static final List<ReloadField<FandConfig.Authentication, ?>> HOT_AUTHENTICATION_FIELDS = List.of(
+            field("authentication.validateUsernames", (FandConfig.Authentication config) -> config.validateUsernames)
+    );
+    private static final List<ReloadField<FandConfig.Authentication, ?>> RESTART_AUTHENTICATION_FIELDS = List.of(
+            field("authentication.mode", (FandConfig.Authentication config) -> config.mode),
+            field("authentication.sessionHost", (FandConfig.Authentication config) -> config.sessionHost),
+            field("authentication.servicesHost", (FandConfig.Authentication config) -> config.servicesHost),
+            field("authentication.profilesHost", (FandConfig.Authentication config) -> config.profilesHost),
+            field("authentication.environmentName", (FandConfig.Authentication config) -> config.environmentName)
+    );
     private static final List<ReloadField<FandConfig.Chunks, ?>> HOT_CHUNK_FIELDS = List.of(
             field("chunks.workerThreads", (FandConfig.Chunks config) -> config.workerThreads),
             field("chunks.trackingDiffApplyBudget", (FandConfig.Chunks config) -> config.trackingDiffApplyBudget),
@@ -242,6 +252,9 @@ public final class ConfigReloader {
         markRestart(changes, RESTART_PLUGIN_FIELDS, previous.plugins, reloaded.plugins);
         markHot(changes, HOT_PLAYER_FIELDS, previous.players, reloaded.players);
         apply("players config", () -> io.fand.server.hooks.FandHooks.applyPlayerConfig(reloaded.players));
+        markHot(changes, HOT_AUTHENTICATION_FIELDS, previous.authentication, reloaded.authentication);
+        markRestart(changes, RESTART_AUTHENTICATION_FIELDS, previous.authentication, reloaded.authentication);
+        apply("authentication config", () -> io.fand.server.hooks.FandHooks.applyAuthenticationConfig(reloaded.authentication));
         if (changed(previous.scheduler.asyncThreads, reloaded.scheduler.asyncThreads)) {
             changes.hot("scheduler.asyncThreads");
             apply("scheduler.asyncThreads", () -> scheduler.reconfigureAsyncThreads(reloaded.scheduler.asyncThreads));

@@ -1,0 +1,152 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Tue, 30 Jun 2026 17:28:07 +0800
+Subject: [PATCH] Add Fand login authentication hooks
+
+
+diff --git a/net/minecraft/server/Main.java b/net/minecraft/server/Main.java
+index eb1e6c8a0bf7abd6fc066704f2358354b33ad0e6..1f6a666a51d94f06403e7a4afae3f642a936a2f8 100644
+--- a/net/minecraft/server/Main.java
++++ b/net/minecraft/server/Main.java
+@@ -123,7 +123,14 @@ public class Main {
+             }
+ 
+             File universePath = new File(options.valueOf(universe));
+-            Services services = Services.create(new YggdrasilAuthenticationService(Proxy.NO_PROXY), universePath);
++            var fandRuntime = io.fand.server.Main.runtimeOrNull();
++            YggdrasilAuthenticationService authenticationService;
++            if (fandRuntime == null || fandRuntime.authEnvironment() == null) {
++                authenticationService = new YggdrasilAuthenticationService(Proxy.NO_PROXY);
++            } else {
++                authenticationService = new YggdrasilAuthenticationService(Proxy.NO_PROXY, fandRuntime.authEnvironment());
++            }
++            Services services = Services.create(authenticationService, universePath);
+             NotificationManager notificationManager = new NotificationManager();
+             ManagementServer jsonRpcServer = JsonRpc.create(settings, notificationManager);
+             String levelName = Optional.ofNullable(options.valueOf(worldName)).orElse(settings.getProperties().levelName);
+diff --git a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+index 5b157a9a64a7c04369885acf1489b45d6b4e79da..d3c6df683cf2968da73dba0b86c66d13744840a4 100644
+--- a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+@@ -1,9 +1,7 @@
+ package net.minecraft.server.network;
+ 
+-import com.google.common.primitives.Ints;
+ import com.mojang.authlib.GameProfile;
+-import com.mojang.authlib.exceptions.AuthenticationUnavailableException;
+-import com.mojang.authlib.yggdrasil.ProfileResult;
++import com.google.common.primitives.Ints;
+ import com.mojang.logging.LogUtils;
+ import io.fand.server.hooks.FandHooks;
+ import io.fand.server.network.ForwardedPlayerInfo;
+@@ -16,6 +14,7 @@ import java.net.InetAddress;
+ import java.net.InetSocketAddress;
+ import java.security.PrivateKey;
+ import java.util.Objects;
++import java.util.UUID;
+ import java.util.concurrent.atomic.AtomicInteger;
+ import javax.crypto.Cipher;
+ import javax.crypto.SecretKey;
+@@ -43,7 +42,6 @@ import net.minecraft.network.protocol.login.ServerboundKeyPacket;
+ import net.minecraft.network.protocol.login.ServerboundLoginAcknowledgedPacket;
+ import net.minecraft.server.MinecraftServer;
+ import net.minecraft.server.notifications.ServerActivityMonitor;
+-import net.minecraft.server.players.NameAndId;
+ import net.minecraft.server.players.PlayerList;
+ import net.minecraft.util.Crypt;
+ import net.minecraft.util.CryptException;
+@@ -64,6 +62,7 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+     private volatile ServerLoginPacketListenerImpl.State state = ServerLoginPacketListenerImpl.State.HELLO;
+     private int tick;
+     private @Nullable String requestedUsername;
++    private @Nullable UUID requestedProfileId;
+     private @Nullable GameProfile authenticatedProfile;
+     private final String serverId = "";
+     private final boolean transferred;
+@@ -139,8 +138,11 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+     @Override
+     public void handleHello(final ServerboundHelloPacket packet) {
+         Validate.validState(this.state == ServerLoginPacketListenerImpl.State.HELLO, "Unexpected hello packet");
+-        Validate.validState(StringUtil.isValidPlayerName(packet.name()), "Invalid characters in username");
++        Validate.validState(
++                !FandHooks.validateLoginUsernames() || StringUtil.isValidPlayerName(packet.name()),
++                "Invalid characters in username");
+         this.requestedUsername = packet.name();
++        this.requestedProfileId = packet.profileId();
+         ProxyForwardingMode forwardingMode = FandHooks.proxyForwardingMode();
+         if (forwardingMode == ProxyForwardingMode.BUNGEE_LEGACY) {
+             this.handleBungeeForwarding(packet.name());
+@@ -157,6 +159,28 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+             this.startClientVerification(singleplayerProfile);
+         } else {
+             if (this.server.usesAuthentication() && !this.connection.isMemoryConnection()) {
++                var pluginAttempt = FandHooks.authenticateLoginPlugins(new io.fand.api.auth.LoginAuthenticationRequest(
++                        this.requestedUsername,
++                        this.serverId,
++                        this.connection.getRemoteAddress(),
++                        null,
++                        this.requestedProfileId
++                ));
++                switch (pluginAttempt.status()) {
++                    case PASS -> {
++                    }
++                    case DENY -> {
++                        this.disconnect(Objects.requireNonNull(pluginAttempt.reason(), "Login denial reason missing"));
++                        return;
++                    }
++                    case ALLOW -> {
++                        GameProfile profile = Objects.requireNonNull(pluginAttempt.profile(), "Login allow result missing profile");
++                        LOGGER.info("UUID of player {} is {}", profile.name(), profile.id());
++                        this.serverActivityMonitor.reportLoginActivity();
++                        this.startClientVerification(profile);
++                        return;
++                    }
++                }
+                 this.state = ServerLoginPacketListenerImpl.State.KEY;
+                 this.connection.send(new ClientboundHelloPacket("", this.server.getKeyPair().getPublic().getEncoded(), this.challenge, true));
+             } else {
+@@ -277,31 +301,22 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+             @Override
+             public void run() {
+                 String name = Objects.requireNonNull(ServerLoginPacketListenerImpl.this.requestedUsername, "Player name not initialized");
+-
+-                try {
+-                    ProfileResult result = ServerLoginPacketListenerImpl.this.server
+-                        .services()
+-                        .sessionService()
+-                        .hasJoinedServer(name, digest, this.getAddress());
+-                    if (result != null) {
+-                        GameProfile profile = result.profile();
++                var request = new io.fand.api.auth.LoginAuthenticationRequest(
++                        name,
++                        digest,
++                        ServerLoginPacketListenerImpl.this.connection.getRemoteAddress(),
++                        this.getAddress(),
++                        ServerLoginPacketListenerImpl.this.requestedProfileId
++                );
++                var attempt = FandHooks.authenticateLogin(request);
++                switch (attempt.status()) {
++                    case PASS -> ServerLoginPacketListenerImpl.this.disconnect(Component.translatable("multiplayer.disconnect.unverified_username"));
++                    case DENY -> ServerLoginPacketListenerImpl.this.disconnect(Objects.requireNonNull(attempt.reason(), "Login denial reason missing"));
++                    case ALLOW -> {
++                        GameProfile profile = Objects.requireNonNull(attempt.profile(), "Login allow result missing profile");
+                         ServerLoginPacketListenerImpl.LOGGER.info("UUID of player {} is {}", profile.name(), profile.id());
+                         ServerLoginPacketListenerImpl.this.serverActivityMonitor.reportLoginActivity();
+                         ServerLoginPacketListenerImpl.this.startClientVerification(profile);
+-                    } else if (ServerLoginPacketListenerImpl.this.server.isSingleplayer()) {
+-                        ServerLoginPacketListenerImpl.LOGGER.warn("Failed to verify username but will let them in anyway!");
+-                        ServerLoginPacketListenerImpl.this.startClientVerification(UUIDUtil.createOfflineProfile(name));
+-                    } else {
+-                        ServerLoginPacketListenerImpl.this.disconnect(Component.translatable("multiplayer.disconnect.unverified_username"));
+-                        ServerLoginPacketListenerImpl.LOGGER.error("Username '{}' tried to join with an invalid session", name);
+-                    }
+-                } catch (AuthenticationUnavailableException ignored) {
+-                    if (ServerLoginPacketListenerImpl.this.server.isSingleplayer()) {
+-                        ServerLoginPacketListenerImpl.LOGGER.warn("Authentication servers are down but will let them in anyway!");
+-                        ServerLoginPacketListenerImpl.this.startClientVerification(UUIDUtil.createOfflineProfile(name));
+-                    } else {
+-                        ServerLoginPacketListenerImpl.this.disconnect(Component.translatable("multiplayer.disconnect.authservers_down"));
+-                        ServerLoginPacketListenerImpl.LOGGER.error("Couldn't verify username because servers are unavailable");
+                     }
+                 }
+             }

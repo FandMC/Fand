@@ -1,6 +1,7 @@
 package io.fand.server.plugin;
 
 import io.fand.api.advancement.AdvancementRegistry;
+import io.fand.api.auth.LoginAuthenticationService;
 import io.fand.api.bossbar.BossBarService;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.config.Configuration;
@@ -16,6 +17,7 @@ import io.fand.api.integration.ExternalIntegrationStrategy;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
+import io.fand.api.nms.NmsService;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.permission.PermissionService;
@@ -70,6 +72,8 @@ public final class RuntimePluginContext implements PluginContext {
     private final DataPackService dataPacks;
     private final ExternalIntegrationStrategy integrations;
     private final ServiceRegistry services;
+    private final NmsService nms;
+    private final LoginAuthenticationService loginAuthenticators;
     private final CustomItemRegistry customItems;
     private final CustomBlockRegistry customBlocks;
     private final GuiService guis;
@@ -106,6 +110,8 @@ public final class RuntimePluginContext implements PluginContext {
             DataPackService dataPacks,
             ExternalIntegrationStrategy integrations,
             ServiceRegistry services,
+            NmsService nms,
+            LoginAuthenticationService loginAuthenticators,
             CustomItemRegistry customItems,
             CustomBlockRegistry customBlocks,
             GuiService guis,
@@ -138,6 +144,8 @@ public final class RuntimePluginContext implements PluginContext {
         this.dataPacks = dataPacks;
         this.integrations = integrations;
         this.services = services;
+        this.nms = nms;
+        this.loginAuthenticators = loginAuthenticators;
         this.customItems = customItems;
         this.customBlocks = customBlocks;
         this.guis = guis;
@@ -265,6 +273,16 @@ public final class RuntimePluginContext implements PluginContext {
     @Override
     public ServiceRegistry services() {
         return services;
+    }
+
+    @Override
+    public NmsService nms() {
+        return nms;
+    }
+
+    @Override
+    public LoginAuthenticationService loginAuthenticators() {
+        return loginAuthenticators;
     }
 
     @Override

@@ -116,6 +116,7 @@ public final class FandHooks {
     // default config.
     private static volatile boolean playerSpeedCheck = true;
     private static volatile boolean playerCommandLogging = true;
+    private static volatile boolean validateLoginUsernames = true;
     private static volatile boolean explosionDensityCacheEnabled = true;
     private static volatile boolean collisionTeamCacheEnabled = true;
     private static volatile boolean explosionBlockCacheEnabled = true;
@@ -229,6 +230,10 @@ public final class FandHooks {
         playerCommandLogging = players.logCommands;
     }
 
+    public static void applyAuthenticationConfig(io.fand.server.config.FandConfig.Authentication authentication) {
+        validateLoginUsernames = authentication.validateUsernames;
+    }
+
     public static void applyChunkConfig(io.fand.server.config.FandConfig.Chunks chunks) {
         chunkWorldgenParallelism = chunks.worldgenParallelism;
         chunkDedicatedLightThread = chunks.dedicatedLightThread;
@@ -247,6 +252,10 @@ public final class FandHooks {
 
     public static boolean playerCommandLoggingEnabled() {
         return playerCommandLogging;
+    }
+
+    public static boolean validateLoginUsernames() {
+        return validateLoginUsernames;
     }
 
     public static java.util.concurrent.Executor chunkBackgroundExecutor() {
@@ -747,6 +756,36 @@ public final class FandHooks {
 
     public static ForwardedPlayerInfo parseVelocityModernForwarding(VelocityForwardingQueryAnswerPayload payload) {
         return ProxyForwarding.parseVelocityModern(Main.runtime().proxyForwarding().secret(), payload);
+    }
+
+    public static io.fand.server.auth.FandLoginAuthenticationService.LoginAttempt authenticateLogin(
+            io.fand.api.auth.LoginAuthenticationRequest request
+    ) {
+        var runtime = activeRuntime();
+        return runtime == null
+                ? io.fand.server.auth.FandLoginAuthenticationService.LoginAttempt.pass()
+                : runtime.loginAuthenticators().authenticate(request);
+    }
+
+    public static io.fand.server.auth.FandLoginAuthenticationService.LoginAttempt authenticateLoginPlugins(
+            io.fand.api.auth.LoginAuthenticationRequest request
+    ) {
+        var runtime = activeRuntime();
+        return runtime == null
+                ? io.fand.server.auth.FandLoginAuthenticationService.LoginAttempt.pass()
+                : runtime.loginAuthenticators().authenticatePlugins(request);
+    }
+
+    public static io.fand.api.nms.NmsHookResult dispatchNmsHook(
+            net.kyori.adventure.key.Key hook,
+            Object instance,
+            Object... arguments
+    ) {
+        var runtime = activeRuntime();
+        if (runtime == null || !(runtime.nms() instanceof io.fand.server.nms.FandNmsService nms)) {
+            return io.fand.api.nms.NmsHookResult.pass();
+        }
+        return nms.dispatch(hook, instance, arguments);
     }
 
     public static @Nullable Packet<?> interceptInboundPacket(

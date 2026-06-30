@@ -3,6 +3,7 @@ package io.fand.server.plugin;
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import io.fand.api.advancement.AdvancementRegistry;
+import io.fand.api.auth.LoginAuthenticationService;
 import io.fand.api.bossbar.BossBarService;
 import io.fand.api.command.CommandDescriptor;
 import io.fand.api.command.CommandRegistry;
@@ -19,6 +20,7 @@ import io.fand.api.lifecycle.PluginEnableEvent;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
+import io.fand.api.nms.NmsService;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.permission.PermissionDefault;
@@ -116,6 +118,8 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final DataPackService dataPackService;
     private volatile ExternalIntegrationStrategy integrationStrategy = ExternalIntegrationStrategy.empty();
     private volatile ServiceRegistry serviceRegistry = new FandServiceRegistry();
+    private volatile NmsService nmsService = NmsService.empty();
+    private volatile LoginAuthenticationService loginAuthenticationService = LoginAuthenticationService.empty();
     private final CustomItemRegistry customItemRegistry;
     private final CustomBlockRegistry customBlockRegistry;
     private final GuiService guiService;
@@ -604,6 +608,14 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.serviceRegistry = Objects.requireNonNull(registry, "registry");
     }
 
+    public void nmsService(NmsService service) {
+        this.nmsService = Objects.requireNonNull(service, "service");
+    }
+
+    public void loginAuthenticationService(LoginAuthenticationService service) {
+        this.loginAuthenticationService = Objects.requireNonNull(service, "service");
+    }
+
     @Override
     public ServiceRegistry services() {
         return serviceRegistry;
@@ -1034,6 +1046,8 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new PluginDataPackService(dataPackService, resources, id),
                 integrationStrategy,
                 new PluginServiceRegistry(serviceRegistry, resources, id),
+                new PluginNmsService(nmsService, resources, id),
+                new PluginLoginAuthenticationService(loginAuthenticationService, resources, id),
                 new PluginCustomItemRegistry(customItemRegistry, resources, id),
                 new PluginCustomBlockRegistry(customBlockRegistry, resources, id),
                 new PluginGuiService(guiService, resources),

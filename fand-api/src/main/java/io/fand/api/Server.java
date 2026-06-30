@@ -21,6 +21,7 @@ import io.fand.api.lifecycle.LifecyclePhase;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
+import io.fand.api.nms.NmsService;
 import io.fand.api.performance.ServerPerformance;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.placeholder.PlaceholderService;
@@ -164,6 +165,10 @@ public interface Server extends ForwardingAudience {
 
     default ServiceRegistry services() {
         return ServiceRegistry.empty();
+    }
+
+    default NmsService nms() {
+        return NmsService.empty();
     }
 
     /** Lightweight GUI routing service. */

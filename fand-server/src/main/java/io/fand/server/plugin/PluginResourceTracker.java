@@ -1,6 +1,7 @@
 package io.fand.server.plugin;
 
 import io.fand.api.advancement.AdvancementRegistration;
+import io.fand.api.auth.LoginAuthenticationRegistration;
 import io.fand.api.bossbar.BossBarHandle;
 import io.fand.api.bossbar.BossBarRegistration;
 import io.fand.api.command.CommandDescriptor;
@@ -17,6 +18,7 @@ import io.fand.api.loot.LootTableRegistration;
 import io.fand.api.map.MapRenderer;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessageRegistration;
+import io.fand.api.nms.NmsHookRegistration;
 import io.fand.api.packet.PacketRegistration;
 import io.fand.api.placeholder.PlaceholderRegistration;
 import io.fand.api.permission.PermissionAttachment;
@@ -70,6 +72,8 @@ final class PluginResourceTracker {
     private final Set<TrackedCustomBlockItemBinding> customBlockItemBindings = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedGuiView> guiViews = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedServiceRegistration<?>> serviceRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedNmsHookRegistration> nmsHookRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedLoginAuthenticationRegistration> loginAuthenticationRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedTask> tasks = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private volatile boolean closed;
 
@@ -567,6 +571,38 @@ final class PluginResourceTracker {
         return tracked;
     }
 
+    TrackedNmsHookRegistration track(NmsHookRegistration delegate) {
+        var tracked = new TrackedNmsHookRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                nmsHookRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.unregisterFromTracker();
+        }
+        return tracked;
+    }
+
+    TrackedLoginAuthenticationRegistration track(LoginAuthenticationRegistration delegate) {
+        var tracked = new TrackedLoginAuthenticationRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                loginAuthenticationRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.unregisterFromTracker();
+        }
+        return tracked;
+    }
+
     void release(TrackedSubscription subscription) {
         synchronized (lock) {
             subscriptions.remove(subscription);
@@ -729,6 +765,18 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedNmsHookRegistration registration) {
+        synchronized (lock) {
+            nmsHookRegistrations.remove(registration);
+        }
+    }
+
+    void release(TrackedLoginAuthenticationRegistration registration) {
+        synchronized (lock) {
+            loginAuthenticationRegistrations.remove(registration);
+        }
+    }
+
     Optional<GuiView> trackedGuiView(GuiView delegate) {
         synchronized (lock) {
             return guiViews.stream()
@@ -791,6 +839,8 @@ final class PluginResourceTracker {
         List<TrackedCustomBlockItemBinding> customBlockItemBindingsToClose;
         List<TrackedGuiView> guiViewsToClose;
         List<TrackedServiceRegistration<?>> serviceRegistrationsToClose;
+        List<TrackedNmsHookRegistration> nmsHookRegistrationsToClose;
+        List<TrackedLoginAuthenticationRegistration> loginAuthenticationRegistrationsToClose;
         List<TrackedTask> tasksToClose;
         synchronized (lock) {
             if (closed) {
@@ -824,6 +874,8 @@ final class PluginResourceTracker {
             customBlockItemBindingsToClose = new ArrayList<>(customBlockItemBindings);
             guiViewsToClose = new ArrayList<>(guiViews);
             serviceRegistrationsToClose = new ArrayList<>(serviceRegistrations);
+            nmsHookRegistrationsToClose = new ArrayList<>(nmsHookRegistrations);
+            loginAuthenticationRegistrationsToClose = new ArrayList<>(loginAuthenticationRegistrations);
             tasksToClose = new ArrayList<>(tasks);
             subscriptions.clear();
             commandRegistrations.clear();
@@ -853,6 +905,8 @@ final class PluginResourceTracker {
             customBlockItemBindings.clear();
             guiViews.clear();
             serviceRegistrations.clear();
+            nmsHookRegistrations.clear();
+            loginAuthenticationRegistrations.clear();
             tasks.clear();
         }
         for (var subscription : subscriptionsToClose) {
@@ -934,6 +988,12 @@ final class PluginResourceTracker {
             view.closeFromTracker();
         }
         for (var registration : serviceRegistrationsToClose) {
+            registration.unregisterFromTracker();
+        }
+        for (var registration : nmsHookRegistrationsToClose) {
+            registration.unregisterFromTracker();
+        }
+        for (var registration : loginAuthenticationRegistrationsToClose) {
             registration.unregisterFromTracker();
         }
         for (var task : tasksToClose) {
@@ -2212,6 +2272,118 @@ final class PluginResourceTracker {
         @Override
         public T service() {
             return delegate.service();
+        }
+
+        @Override
+        public String owner() {
+            return delegate.owner();
+        }
+
+        @Override
+        public io.fand.api.service.ServicePriority priority() {
+            return delegate.priority();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void unregister() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.unregister();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void unregisterFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.unregister();
+            }
+        }
+    }
+
+    static final class TrackedNmsHookRegistration implements NmsHookRegistration {
+
+        private final PluginResourceTracker owner;
+        private final NmsHookRegistration delegate;
+        private volatile boolean released;
+
+        TrackedNmsHookRegistration(PluginResourceTracker owner, NmsHookRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public net.kyori.adventure.key.Key hook() {
+            return delegate.hook();
+        }
+
+        @Override
+        public io.fand.api.nms.NmsHook hookHandler() {
+            return delegate.hookHandler();
+        }
+
+        @Override
+        public String owner() {
+            return delegate.owner();
+        }
+
+        @Override
+        public io.fand.api.service.ServicePriority priority() {
+            return delegate.priority();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void unregister() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.unregister();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void unregisterFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.unregister();
+            }
+        }
+    }
+
+    static final class TrackedLoginAuthenticationRegistration implements LoginAuthenticationRegistration {
+
+        private final PluginResourceTracker owner;
+        private final LoginAuthenticationRegistration delegate;
+        private volatile boolean released;
+
+        TrackedLoginAuthenticationRegistration(PluginResourceTracker owner, LoginAuthenticationRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public net.kyori.adventure.key.Key key() {
+            return delegate.key();
+        }
+
+        @Override
+        public io.fand.api.auth.LoginAuthenticator authenticator() {
+            return delegate.authenticator();
         }
 
         @Override

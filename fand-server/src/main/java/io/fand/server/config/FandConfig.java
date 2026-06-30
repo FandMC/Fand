@@ -23,6 +23,9 @@ public final class FandConfig {
     @ConfigComment("Network and proxy settings.")
     public final Network network = new Network();
 
+    @ConfigComment("Login authentication provider settings.")
+    public final Authentication authentication = new Authentication();
+
     @ConfigComment("Compatibility shims for mod-side protocols.")
     public final Compat compat = new Compat();
 
@@ -60,6 +63,26 @@ public final class FandConfig {
         io.fand.server.console.gui.GuiTheme.fromConfig(config.console.gui.theme);
         validateTripwireBehavior(config.technical.tripwireBehavior);
         validateServux(config.compat.modProtocols.servux);
+        validateAuthentication(config.authentication);
+    }
+
+    private static void validateAuthentication(Authentication config) {
+        switch (config.mode) {
+            case "mojang", "third-party" -> {
+            }
+            default -> throw new ConfigException("authentication.mode must be one of: mojang, third-party");
+        }
+        if ("third-party".equals(config.mode)) {
+            if (config.sessionHost.isBlank()) {
+                throw new ConfigException("authentication.sessionHost must be set when authentication.mode is third-party");
+            }
+            if (config.servicesHost.isBlank()) {
+                throw new ConfigException("authentication.servicesHost must be set when authentication.mode is third-party");
+            }
+            if (config.profilesHost.isBlank()) {
+                throw new ConfigException("authentication.profilesHost must be set when authentication.mode is third-party");
+            }
+        }
     }
 
     private static void validateTripwireBehavior(String value) {
@@ -808,6 +831,34 @@ public final class FandConfig {
 
         @ConfigComment("Shared secret used by velocity-modern forwarding.")
         public String secret = "";
+    }
+
+    public static final class Authentication {
+
+        @ConfigComment({
+                "Login authentication source.",
+                "Supported values: mojang, third-party.",
+                "third-party uses the configured Yggdrasil API root."
+        })
+        public String mode = "mojang";
+
+        @ConfigComment({
+                "Validate login usernames with vanilla's 16-character printable ASCII rule.",
+                "Disable this only when a login authenticator or offline-mode setup intentionally accepts names such as Chinese usernames."
+        })
+        public volatile boolean validateUsernames = true;
+
+        @ConfigComment("Yggdrasil session server host when authentication.mode is third-party.")
+        public String sessionHost = "";
+
+        @ConfigComment("Yggdrasil services host when authentication.mode is third-party.")
+        public String servicesHost = "";
+
+        @ConfigComment("Yggdrasil profiles host when authentication.mode is third-party.")
+        public String profilesHost = "";
+
+        @ConfigComment("Optional environment name reported to authlib.")
+        public String environmentName = "fand";
     }
 }
 

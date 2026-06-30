@@ -1,6 +1,7 @@
 package io.fand.api.plugin;
 
 import io.fand.api.advancement.AdvancementRegistry;
+import io.fand.api.auth.LoginAuthenticationService;
 import io.fand.api.bossbar.BossBarService;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.config.Configuration;
@@ -16,6 +17,7 @@ import io.fand.api.integration.ExternalIntegrationStrategy;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
+import io.fand.api.nms.NmsService;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.placeholder.PlaceholderService;
 import io.fand.api.permission.PermissionService;
@@ -138,6 +140,16 @@ public interface PluginContext {
     /** Cross-plugin service registry scoped to this plugin's lifecycle for registrations. */
     default ServiceRegistry services() {
         return ServiceRegistry.empty();
+    }
+
+    /** Low-level Minecraft internals access scoped to this plugin's lifecycle. */
+    default NmsService nms() {
+        return NmsService.empty();
+    }
+
+    /** Login authentication entry points scoped to this plugin's lifecycle. */
+    default LoginAuthenticationService loginAuthenticators() {
+        return LoginAuthenticationService.empty();
     }
 
     /** Custom item registry scoped to this plugin's lifecycle and namespace. */

@@ -11,6 +11,8 @@ import io.fand.api.command.CommandSender;
 import io.fand.api.command.CommandSpec;
 import io.fand.api.command.RegisteredCommand;
 import io.fand.api.command.ResolvedCommand;
+import io.fand.api.auth.LoginAuthenticationRequest;
+import io.fand.api.auth.LoginAuthenticationResult;
 import io.fand.api.event.Event;
 import io.fand.api.event.EventBus;
 import io.fand.api.event.EventListener;
@@ -45,6 +47,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import net.kyori.adventure.key.Key;
@@ -80,6 +83,33 @@ final class TestPluginTest {
     void recognisesCommandAliasDemo() {
         assertThat(DemoSupport.isCommandAliasDemo(" fwhere ")).isTrue();
         assertThat(DemoSupport.isCommandAliasDemo("fanddemo")).isFalse();
+    }
+
+    @Test
+    void offlineChineseLoginUsesClientProfileId() {
+        var requestedProfileId = UUID.fromString("11111111-2222-3333-4444-555555555555");
+        var result = TestPlugin.authenticateOfflineForNonAsciiName(new LoginAuthenticationRequest(
+                "20019a啊",
+                "server-id",
+                new java.net.InetSocketAddress("127.0.0.1", 25565),
+                null,
+                requestedProfileId));
+
+        assertThat(result.action()).isEqualTo(LoginAuthenticationResult.Action.ALLOW);
+        assertThat(result.profileOrNull()).isNotNull();
+        assertThat(result.profileOrNull().uniqueId()).isEqualTo(requestedProfileId);
+        assertThat(result.profileOrNull().name()).isEqualTo("20019a啊");
+    }
+
+    @Test
+    void asciiLoginFallsThroughToMojangAuthentication() {
+        var result = TestPlugin.authenticateOfflineForNonAsciiName(new LoginAuthenticationRequest(
+                "20019a",
+                "server-id",
+                new java.net.InetSocketAddress("127.0.0.1", 25565),
+                null));
+
+        assertThat(result.action()).isEqualTo(LoginAuthenticationResult.Action.PASS);
     }
 
     @Test

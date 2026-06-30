@@ -1,5 +1,9 @@
 package io.fand.server;
 
+import com.mojang.authlib.Environment;
+import com.mojang.authlib.GameProfile;
+import com.mojang.authlib.exceptions.AuthenticationUnavailableException;
+import com.mojang.authlib.yggdrasil.ProfileResult;
 import io.fand.api.Fand;
 import io.fand.api.Server;
 import io.fand.api.advancement.AdvancementRegistry;
@@ -26,6 +30,7 @@ import io.fand.api.lifecycle.LifecyclePhase;
 import io.fand.api.lifecycle.ServerStartedEvent;
 import io.fand.api.lifecycle.ServerStartingEvent;
 import io.fand.api.lifecycle.ServerStoppingEvent;
+import io.fand.api.nms.NmsService;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.placeholder.PlaceholderService;
@@ -48,6 +53,8 @@ import io.fand.api.world.generation.GenerationMode;
 import io.fand.api.world.generation.VanillaBiomeSource;
 import io.fand.server.block.FandCustomBlockRegistry;
 import io.fand.server.advancement.FandAdvancementRegistry;
+import io.fand.server.auth.FandLoginAuthenticationService;
+import io.fand.server.auth.FandAuthEnvironment;
 import io.fand.server.bossbar.FandBossBarService;
 import io.fand.server.command.BuiltinCommands;
 import io.fand.server.chunk.ChunkSendScheduler;
@@ -70,6 +77,7 @@ import io.fand.server.loot.FandLootTableService;
 import io.fand.server.map.FandMapService;
 import io.fand.server.messaging.FandPluginMessaging;
 import io.fand.server.network.ProxyForwardingSettings;
+import io.fand.server.nms.FandNmsService;
 import io.fand.server.network.packet.PacketRegistryImpl;
 import io.fand.server.placeholder.FandPlaceholderService;
 import io.fand.server.permission.PermissionManager;
@@ -89,6 +97,7 @@ import io.fand.server.tablist.FandTabListService;
 import io.fand.server.text.FandMiniMessageService;
 import io.fand.server.world.WorldRegistry;
 import java.nio.file.Path;
+import java.net.InetAddress;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
@@ -98,6 +107,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
@@ -112,6 +122,7 @@ import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
+import net.minecraft.network.chat.Component;
 import net.kyori.adventure.key.Key;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -138,6 +149,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final FandDataPackService dataPacks;
     private final ExternalIntegrationStrategy integrations;
     private final FandServiceRegistry services;
+    private final FandNmsService nms;
     private final ModProtocolCompatibility modProtocols;
     private final EventSubscription pluginChannelAdvertisement;
     private final EventSubscription simulatedPlayerCleanup;
@@ -158,6 +170,8 @@ public final class FandServer implements Server, AutoCloseable {
     private final PlayerRegistry players;
     private final FandPlayerAccessService playerAccess;
     private final FandSimulatedPlayerService simulatedPlayers;
+    private final FandLoginAuthenticationService loginAuthenticators;
+    private final @Nullable Environment authEnvironment;
     private final ServerPerformanceTracker performance;
     private final ConfigReloader configReloader;
     private final ProxyForwardingSettings proxyForwarding;
@@ -202,6 +216,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.dataPacks = new FandDataPackService(Path.of("datapacks"), minecraftServer::get);
         this.integrations = ExternalIntegrationStrategy.empty();
         this.services = new FandServiceRegistry();
+        this.nms = new FandNmsService(minecraftServer::get);
         this.pluginChannelAdvertisement = events.subscribe(
                 PlayerJoinEvent.class,
                 EventPriority.OBSERVER,
@@ -221,6 +236,11 @@ public final class FandServer implements Server, AutoCloseable {
         this.tags = new FandTagRegistry();
         this.playerAccess = new FandPlayerAccessService(minecraftServer::get);
         this.simulatedPlayers = new FandSimulatedPlayerService(minecraftServer::get, players, events);
+        this.loginAuthenticators = new FandLoginAuthenticationService();
+        this.loginAuthenticators.builtin(this::verifyLoginSession);
+        this.authEnvironment = "third-party".equals(initialConfig.authentication.mode)
+                ? FandAuthEnvironment.fromConfig(initialConfig.authentication)
+                : null;
         this.simulatedPlayerCleanup = events.subscribe(
                 PlayerQuitEvent.class,
                 EventPriority.OBSERVER,
@@ -258,8 +278,11 @@ public final class FandServer implements Server, AutoCloseable {
         this.plugins.gameRuleService(gameRules);
         this.plugins.integrations(integrations);
         this.plugins.serviceRegistry(services);
+        this.plugins.nmsService(nms);
+        this.plugins.loginAuthenticationService(loginAuthenticators);
         this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, chunks, chunkTasks, guiThemes);
         io.fand.server.hooks.FandHooks.applyPlayerConfig(initialConfig.players);
+        io.fand.server.hooks.FandHooks.applyAuthenticationConfig(initialConfig.authentication);
         io.fand.server.hooks.FandHooks.applyChunkConfig(initialConfig.chunks);
         io.fand.server.hooks.FandHooks.applyPerformanceConfig(initialConfig.performance);
         io.fand.server.hooks.FandHooks.applyTechnicalConfig(initialConfig.technical);
@@ -314,6 +337,49 @@ public final class FandServer implements Server, AutoCloseable {
 
     public FandConfig config() {
         return config.get();
+    }
+
+    public FandLoginAuthenticationService loginAuthenticators() {
+        return loginAuthenticators;
+    }
+
+    public @Nullable Environment authEnvironment() {
+        return authEnvironment;
+    }
+
+    private FandLoginAuthenticationService.LoginAttempt verifyLoginSession(io.fand.api.auth.LoginAuthenticationRequest request) {
+        var server = minecraftServer.get();
+        if (server == null) {
+            return FandLoginAuthenticationService.LoginAttempt.pass();
+        }
+
+        var name = request.name();
+        try {
+            ProfileResult result = server.services()
+                    .sessionService()
+                    .hasJoinedServer(name, request.serverId(), request.authenticationAddressOrNull());
+            if (result != null) {
+                return acceptAuthenticatedProfile(result.profile());
+            }
+            if (server.isSingleplayer()) {
+                LOGGER.warn("Failed to verify username but will let them in anyway!");
+                return acceptAuthenticatedProfile(UUIDUtil.createOfflineProfile(name));
+            }
+            LOGGER.error("Username '{}' tried to join with an invalid session", name);
+            return FandLoginAuthenticationService.LoginAttempt.deny(Component.translatable("multiplayer.disconnect.unverified_username"));
+        } catch (AuthenticationUnavailableException ignored) {
+            if (server.isSingleplayer()) {
+                LOGGER.warn("Authentication servers are down but will let them in anyway!");
+                return acceptAuthenticatedProfile(UUIDUtil.createOfflineProfile(name));
+            }
+            LOGGER.error("Couldn't verify username because servers are unavailable");
+            return FandLoginAuthenticationService.LoginAttempt.deny(Component.translatable("multiplayer.disconnect.authservers_down"));
+        }
+    }
+
+    private FandLoginAuthenticationService.LoginAttempt acceptAuthenticatedProfile(GameProfile profile) {
+        LOGGER.info("UUID of player {} is {}", profile.name(), profile.id());
+        return FandLoginAuthenticationService.LoginAttempt.allow(profile);
     }
 
     public boolean consoleGuiEnabled() {
@@ -495,6 +561,11 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public ServiceRegistry services() {
         return services;
+    }
+
+    @Override
+    public NmsService nms() {
+        return nms;
     }
 
     @Override
