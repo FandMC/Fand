@@ -704,6 +704,23 @@ public final class FandConfig {
         })
         public volatile boolean outboundPacketQueueCoalescing = true;
 
+        @ConfigComment({
+                "Maximum charged projectile entries kept on crossbow-like item",
+                "components. Oversized component lists are truncated instead of",
+                "throwing during construction, preventing malformed or extreme",
+                "plugin-created items from crashing the server."
+        })
+        @ConfigRange(min = 1, max = 1_000_000)
+        public volatile int chargedProjectilesSoftLimit = 1024;
+
+        @ConfigComment({
+                "Maximum item entries kept in bundle contents. Oversized component",
+                "lists are truncated instead of throwing during construction,",
+                "while normal bundle weight and insertion rules still apply."
+        })
+        @ConfigRange(min = 1, max = 1_000_000)
+        public volatile int bundleContentsSoftLimit = 256;
+
     }
 
     public static final class Technical {
