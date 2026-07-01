@@ -67,12 +67,7 @@ jobs:
         env:
           BASE_VERSION: ${{ vars.RELEASE_VERSION }}
         run: |
-          BASE="${BASE_VERSION:-$(grep '^releaseVersion=' gradle.properties | cut -d= -f2)}"
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION="${BASE}+build.${GITHUB_RUN_NUMBER}"
-          fi
+          VERSION="$(bash .github/scripts/derive-release-version.sh)"
           ./gradlew build --no-daemon --stacktrace -PreleaseVersion="${VERSION}"
 
       - name: Upload build artifacts
