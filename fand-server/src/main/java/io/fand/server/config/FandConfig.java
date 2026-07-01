@@ -330,6 +330,15 @@ public final class FandConfig {
         public int trackingDiffApplyBudget = 256;
 
         @ConfigComment({
+                "Prepare full chunk packets on a small background executor before",
+                "they are sent to players. Packet batch order and vanilla pacing",
+                "stay unchanged; only chunk-section serialization is moved off",
+                "the server tick thread. Disabled by default because it changes",
+                "which thread reads chunk packet data."
+        })
+        public volatile boolean asyncChunkPacketPreparation = false;
+
+        @ConfigComment({
                 "Maximum chunk-generation batches allowed to run at the same",
                 "time. Set to 1 for vanilla's serialized worldgen dispatcher,",
                 "or 0 to derive a conservative value from available processors.",
