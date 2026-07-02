@@ -22,7 +22,7 @@ final class FandAsyncChunkSystemTest {
     }
 
     @Test
-    void keepsSameLaneTaskQueuedWhileLaneIsRunning() {
+    void submitsSameLaneTasksTogether() {
         try (var lanes = new RegionizedChunkTaskScheduler(2, "test"); var dispatcher = new RecordingDispatcher()) {
             var system = new FandAsyncChunkSystem(null, dispatcher, lanes);
             long firstChunk = ChunkPos.pack(0, 0);
@@ -36,10 +36,6 @@ final class FandAsyncChunkSystemTest {
             system.enqueueReadyTaskForTesting(sameLane, sameLaneChunk);
 
             system.runGenerationTasks();
-
-            assertThat(dispatcher.submittedPositions()).containsExactly(firstChunk);
-
-            dispatcher.submittedTasks().get(0).run();
 
             assertThat(dispatcher.submittedPositions()).containsExactly(firstChunk, sameLaneChunk);
         }
@@ -62,15 +58,40 @@ final class FandAsyncChunkSystemTest {
         }
     }
 
+    @Test
+    void coalescesNestedDrainRequestsWithoutDroppingReadyTasks() {
+        try (var lanes = new RegionizedChunkTaskScheduler(2, "test"); var dispatcher = new RecordingDispatcher()) {
+            var system = new FandAsyncChunkSystem(null, dispatcher, lanes);
+            long firstChunk = ChunkPos.pack(0, 0);
+            long nestedChunk = ChunkPos.pack(RegionizedChunkTaskScheduler.REGION_SIZE_CHUNKS, 0);
+
+            system.enqueueReadyTaskForTesting(new TestTask(firstChunk, null, () -> {
+                    system.enqueueReadyTaskForTesting(new TestTask(nestedChunk, null), nestedChunk);
+                    system.runGenerationTasks();
+            }), firstChunk);
+
+            system.runGenerationTasks();
+
+            assertThat(dispatcher.submittedPositions()).containsExactly(firstChunk, nestedChunk);
+        }
+    }
+
     private static final class TestTask implements FandAsyncChunkSystem.TaskHandle {
         private final ChunkPos pos;
         private final GenerationChunkHolder center;
         private final @Nullable CompletableFuture<?> waitFor;
+        private final Runnable beforeWait;
 
         private TestTask(final long chunkPos, final @Nullable CompletableFuture<?> waitFor) {
+            this(chunkPos, waitFor, () -> {
+            });
+        }
+
+        private TestTask(final long chunkPos, final @Nullable CompletableFuture<?> waitFor, final Runnable beforeWait) {
             this.pos = ChunkPos.unpack(chunkPos);
             this.center = new TestChunkHolder(this.pos);
             this.waitFor = waitFor;
+            this.beforeWait = beforeWait;
         }
 
         @Override
@@ -85,6 +106,7 @@ final class FandAsyncChunkSystemTest {
 
         @Override
         public @Nullable CompletableFuture<?> runUntilWait() {
+            this.beforeWait.run();
             return this.waitFor;
         }
     }
@@ -121,10 +143,7 @@ final class FandAsyncChunkSystemTest {
         public void submit(final Runnable task, final long pos, final java.util.function.IntSupplier level) {
             this.submittedTasks.add(task);
             this.submittedPositions.add(pos);
-        }
-
-        private List<Runnable> submittedTasks() {
-            return this.submittedTasks;
+            task.run();
         }
 
         private List<Long> submittedPositions() {
