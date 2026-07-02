@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 2 Jul 2026 23:05:29 +0800
+Subject: [PATCH] Log each world during server startup
+
+
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index 1561e1ef33e2c3ee144484fc0bef9ba54f9dfc29..75d2e8c7f19da5985bbbcabfe61738bfe1f0cf7c 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -436,6 +436,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+             new PhantomSpawner(), new PatrolSpawner(), new CatSpawner(), new VillageSiege(), new WanderingTraderSpawner(this.savedDataStorage)
+         );
+         LevelStem overworldData = dimensions.getValue(LevelStem.OVERWORLD);
++        this.logWorldLoad(Level.OVERWORLD);
+         ServerLevel overworld = new ServerLevel(
+             this, this.executor, this.storageSource, levelData, Level.OVERWORLD, overworldData, isDebug, biomeZoomSeed, overworldCustomSpawners, true
+         );
+@@ -473,6 +474,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+             if (name != LevelStem.OVERWORLD) {
+                 ResourceKey<Level> dimension = ResourceKey.create(Registries.DIMENSION, name.identifier());
+                 DerivedLevelData derivedLevelData = new DerivedLevelData(this.worldData, levelData);
++                this.logWorldLoad(dimension);
+                 level = new ServerLevel(
+                     this, this.executor, this.storageSource, derivedLevelData, dimension, entry.getValue(), isDebug, biomeZoomSeed, ImmutableList.of(), false
+                 );
+@@ -486,6 +488,23 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         }
+     }
+ 
++    private void logWorldLoad(final ResourceKey<Level> dimension) {
++        LOGGER.info("Loading world \"{}\" ({})", this.getWorldLogName(dimension), dimension.identifier());
++    }
++
++    private String getWorldLogName(final ResourceKey<Level> dimension) {
++        if (dimension == Level.OVERWORLD) {
++            return this.storageSource.getLevelId();
++        }
++        if (dimension == Level.NETHER) {
++            return this.storageSource.getLevelId() + "_nether";
++        }
++        if (dimension == Level.END) {
++            return this.storageSource.getLevelId() + "_the_end";
++        }
++        return dimension.identifier().toString();
++    }
++
+     private static void setInitialSpawn(
+         final ServerLevel level,
+         final ServerLevelData levelData,
