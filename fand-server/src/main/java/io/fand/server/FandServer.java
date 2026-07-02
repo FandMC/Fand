@@ -381,7 +381,6 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     private FandLoginAuthenticationService.LoginAttempt acceptAuthenticatedProfile(GameProfile profile) {
-        LOGGER.info("UUID of player {} is {}", profile.name(), profile.id());
         return FandLoginAuthenticationService.LoginAttempt.allow(profile);
     }
 
