@@ -60,62 +60,20 @@ final class ChunkTaskPriorityQueueTest {
     }
 
     @Test
-    void popAvoidingSkipsOverlappingWorldgenWriteEnvelopes() {
+    void popAvoidingSkipsUnavailableChunkPositions() {
         var queue = new ChunkTaskPriorityQueue("test");
         long activeChunk = net.minecraft.world.level.ChunkPos.pack(0, 0);
         long distanceOne = net.minecraft.world.level.ChunkPos.pack(1, 0);
-        long distanceFour = net.minecraft.world.level.ChunkPos.pack(4, 4);
         long distanceFive = net.minecraft.world.level.ChunkPos.pack(5, 0);
 
+        queue.submit(() -> {}, activeChunk, 1);
         queue.submit(() -> {}, distanceOne, 1);
-        queue.submit(() -> {}, distanceFour, 1);
         queue.submit(() -> {}, distanceFive, 1);
 
-        var farEnough = queue.popAvoiding(candidate -> ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(activeChunk, candidate));
+        var next = queue.popAvoiding(candidate -> candidate == activeChunk || candidate == distanceOne);
 
-        assertThat(farEnough).isNotNull();
-        assertThat(farEnough.chunkPos()).isEqualTo(distanceFive);
-        assertThat(queue.popAvoiding(candidate -> ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(activeChunk, candidate))).isNull();
-    }
-
-    @Test
-    void parallelWorldgenWriteEnvelopesOnlyOverlapWithinFourChunks() {
-        long center = net.minecraft.world.level.ChunkPos.pack(0, 0);
-
-        assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(center, net.minecraft.world.level.ChunkPos.pack(0, 0))).isTrue();
-        assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(center, net.minecraft.world.level.ChunkPos.pack(2, 2))).isTrue();
-        assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(center, net.minecraft.world.level.ChunkPos.pack(4, 4))).isTrue();
-        assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(center, net.minecraft.world.level.ChunkPos.pack(5, 0))).isFalse();
-        assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(center, net.minecraft.world.level.ChunkPos.pack(0, 5))).isFalse();
-    }
-
-    @Test
-    void writeEnvelopeTrackerKeepsSharedCoverageUntilEveryOwnerCompletes() {
-        var tracker = new ParallelChunkTaskDispatcher.WriteEnvelopeTracker();
-        long firstActive = net.minecraft.world.level.ChunkPos.pack(0, 0);
-        long secondActive = net.minecraft.world.level.ChunkPos.pack(5, 0);
-        long sharedCandidate = net.minecraft.world.level.ChunkPos.pack(3, 0);
-        long firstOnlyCandidate = net.minecraft.world.level.ChunkPos.pack(-4, 0);
-        long secondOnlyCandidate = net.minecraft.world.level.ChunkPos.pack(9, 0);
-
-        assertThat(ParallelChunkTaskDispatcher.hasOverlappingWriteEnvelope(firstActive, secondActive)).isFalse();
-
-        tracker.add(firstActive);
-        tracker.add(secondActive);
-
-        assertThat(tracker.contains(sharedCandidate)).isTrue();
-        assertThat(tracker.contains(firstOnlyCandidate)).isTrue();
-        assertThat(tracker.contains(secondOnlyCandidate)).isTrue();
-
-        tracker.remove(firstActive);
-
-        assertThat(tracker.contains(sharedCandidate)).isTrue();
-        assertThat(tracker.contains(firstOnlyCandidate)).isFalse();
-        assertThat(tracker.contains(secondOnlyCandidate)).isTrue();
-
-        tracker.remove(secondActive);
-
-        assertThat(tracker.contains(sharedCandidate)).isFalse();
-        assertThat(tracker.contains(secondOnlyCandidate)).isFalse();
+        assertThat(next).isNotNull();
+        assertThat(next.chunkPos()).isEqualTo(distanceFive);
+        assertThat(queue.popAvoiding(candidate -> candidate == activeChunk || candidate == distanceOne)).isNull();
     }
 }

@@ -341,11 +341,12 @@ public final class FandConfig {
         @ConfigComment({
                 "Maximum chunk-generation batches allowed to run at the same",
                 "time. Set to 1 for vanilla's serialized worldgen dispatcher,",
-                "or 0 to derive a conservative value from available processors.",
+                "or 0 to derive an aggressive value from available processors",
+                "(roughly 2x CPU threads, capped).",
                 "Values above 1 run on dedicated Fand worldgen worker lanes.",
-                "Parallel batches are limited to non-overlapping block-write",
-                "envelopes, preserving vanilla chunk status dependencies and",
-                "generated content. Existing worlds need a restart to replace",
+                "Block writes are guarded per generation status by Fand's",
+                "FlowSched-style chunk step scheduler, using each status' real",
+                "write radius instead of a full-task envelope. Existing worlds need a restart to replace",
                 "their dispatcher."
         })
         @ConfigRange(min = 0, max = 64)

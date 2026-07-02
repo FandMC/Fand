@@ -465,7 +465,7 @@ public final class FandHooks {
             return configured;
         }
         int processors = Runtime.getRuntime().availableProcessors();
-        return Math.max(2, Math.min(8, processors / 2));
+        return Math.max(8, Math.min(64, processors * 2));
     }
 
     public static boolean chunkDedicatedLightThreadEnabled() {

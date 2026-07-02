@@ -1,0 +1,278 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 2 Jul 2026 19:11:53 +0800
+Subject: [PATCH] Optimize runtime hot paths
+
+
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index 4c7c3e3949749f103bd6ed587be9a8ee72648ba8..83547b853af6c24617e58b7f82aa619e6ab96597 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -624,7 +624,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+         int minZ = chunkPos.getMinBlockZ();
+         ProfilerFiller profiler = Profiler.get();
+         profiler.push("thunder");
+-        if (raining && this.isThundering() && this.random.nextInt(100000) == 0) {
++        if (raining && this.isThundering() && chunk.shouldDoLightning(this.random)) {
+             BlockPos pos = this.findLightningTargetAround(this.getBlockRandomPos(minX, 0, minZ, 15));
+             if (this.isRainingAt(pos)) {
+                 DifficultyInstance difficulty = this.getCurrentDifficultyAt(pos);
+diff --git a/net/minecraft/world/entity/ai/goal/MoveToBlockGoal.java b/net/minecraft/world/entity/ai/goal/MoveToBlockGoal.java
+index d46e0e3a4a7fc3bb3f1dd695d4cc563778b99db0..9f0f030b97ced991b89a6e33f83cc02a63948aa9 100644
+--- a/net/minecraft/world/entity/ai/goal/MoveToBlockGoal.java
++++ b/net/minecraft/world/entity/ai/goal/MoveToBlockGoal.java
+@@ -111,7 +111,7 @@ public abstract class MoveToBlockGoal extends Goal {
+                 for (int x = 0; x <= r; x = x > 0 ? -x : 1 - x) {
+                     for (int z = x < r && x > -r ? r : 0; z <= r; z = z > 0 ? -z : 1 - z) {
+                         pos.setWithOffset(mobPos, x, y - 1, z);
+-                        if (this.mob.isWithinHome(pos) && this.isValidTarget(this.mob.level(), pos)) {
++                        if (this.mob.level().hasChunkAt(pos) && this.mob.isWithinHome(pos) && this.isValidTarget(this.mob.level(), pos)) {
+                             this.blockPos = pos;
+                             return true;
+                         }
+diff --git a/net/minecraft/world/entity/ai/goal/RandomStrollGoal.java b/net/minecraft/world/entity/ai/goal/RandomStrollGoal.java
+index 7e4fb5bb4e1df8e09ad7b08ca482ce44a47d0b28..d6fe858df8655df403f3f866a8325fcf0e6eab3b 100644
+--- a/net/minecraft/world/entity/ai/goal/RandomStrollGoal.java
++++ b/net/minecraft/world/entity/ai/goal/RandomStrollGoal.java
+@@ -1,6 +1,8 @@
+ package net.minecraft.world.entity.ai.goal;
+ 
+ import java.util.EnumSet;
++import net.minecraft.core.BlockPos;
++import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.world.entity.PathfinderMob;
+ import net.minecraft.world.entity.ai.util.DefaultRandomPos;
+ import net.minecraft.world.phys.Vec3;
+@@ -50,7 +52,7 @@ public class RandomStrollGoal extends Goal {
+         }
+ 
+         Vec3 pos = this.getPosition();
+-        if (pos == null) {
++        if (pos == null || this.mob.level() instanceof ServerLevel level && !level.isPositionEntityTicking(BlockPos.containing(pos))) {
+             return false;
+         }
+ 
+diff --git a/net/minecraft/world/entity/monster/EnderMan.java b/net/minecraft/world/entity/monster/EnderMan.java
+index cd77e10efdd82e5a8a5051b77a3264d4305d9cff..c8766e782b789baadd4e2b36e1780a0d99aabb32 100644
+--- a/net/minecraft/world/entity/monster/EnderMan.java
++++ b/net/minecraft/world/entity/monster/EnderMan.java
+@@ -54,6 +54,7 @@ import net.minecraft.world.level.LevelReader;
+ import net.minecraft.world.level.block.Block;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.chunk.LevelChunk;
+ import net.minecraft.world.level.gameevent.GameEvent;
+ import net.minecraft.world.level.gamerules.GameRules;
+ import net.minecraft.world.level.pathfinder.PathType;
+@@ -276,12 +277,16 @@ public class EnderMan extends Monster implements NeutralMob {
+ 
+     private boolean teleport(final double x, final double y, final double z) {
+         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos(x, y, z);
++        LevelChunk chunk = this.level().getChunkIfLoaded(pos);
++        if (chunk == null) {
++            return false;
++        }
+ 
+-        while (pos.getY() > this.level().getMinY() && !this.level().getBlockState(pos).blocksMotion()) {
++        while (pos.getY() > this.level().getMinY() && !chunk.getBlockState(pos).blocksMotion()) {
+             pos.move(Direction.DOWN);
+         }
+ 
+-        BlockState blockState = this.level().getBlockState(pos);
++        BlockState blockState = chunk.getBlockState(pos);
+         boolean couldStandOn = blockState.blocksMotion();
+         boolean isWet = blockState.getFluidState().is(FluidTags.WATER);
+         if (couldStandOn && !isWet) {
+diff --git a/net/minecraft/world/entity/monster/zombie/Zombie.java b/net/minecraft/world/entity/monster/zombie/Zombie.java
+index 6f1982978082577718b31051af81d4671265e75e..9bbf28dc4a36e94636312f86cdaf12a6b260e924 100644
+--- a/net/minecraft/world/entity/monster/zombie/Zombie.java
++++ b/net/minecraft/world/entity/monster/zombie/Zombie.java
+@@ -312,6 +312,10 @@ public class Zombie extends Monster {
+                 int yt = y + Mth.nextInt(this.random, 7, 40) * Mth.nextInt(this.random, -1, 1);
+                 int zt = z + Mth.nextInt(this.random, 7, 40) * Mth.nextInt(this.random, -1, 1);
+                 BlockPos spawnPos = new BlockPos(xt, yt, zt);
++                if (level.getChunkIfLoaded(spawnPos) == null) {
++                    continue;
++                }
++
+                 if (SpawnPlacements.isSpawnPositionOk(type, level, spawnPos)
+                     && SpawnPlacements.checkSpawnRules(type, level, EntitySpawnReason.REINFORCEMENT, spawnPos, level.getRandom())) {
+                     reinforcement.setPos(xt, yt, zt);
+diff --git a/net/minecraft/world/level/block/Block.java b/net/minecraft/world/level/block/Block.java
+index 56537e132fc7f6f1ccf2d027cf333bb293b6f76e..492e9f064643bd1fcff52e9c481868bbe52b4448 100644
+--- a/net/minecraft/world/level/block/Block.java
++++ b/net/minecraft/world/level/block/Block.java
+@@ -1,8 +1,5 @@
+ package net.minecraft.world.level.block;
+ 
+-import com.google.common.cache.CacheBuilder;
+-import com.google.common.cache.CacheLoader;
+-import com.google.common.cache.LoadingCache;
+ import com.google.common.collect.ImmutableMap;
+ import com.mojang.logging.LogUtils;
+ import com.mojang.serialization.MapCodec;
+@@ -80,15 +77,6 @@ public class Block extends BlockBehaviour implements ItemLike {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private final Holder.Reference<Block> builtInRegistryHolder = BuiltInRegistries.BLOCK.createIntrusiveHolder(this);
+     public static final IdMapper<BlockState> BLOCK_STATE_REGISTRY = new IdMapper<>();
+-    private static final LoadingCache<VoxelShape, Boolean> SHAPE_FULL_BLOCK_CACHE = CacheBuilder.newBuilder()
+-        .maximumSize(512L)
+-        .weakKeys()
+-        .build(new CacheLoader<VoxelShape, Boolean>() {
+-            @Override
+-            public Boolean load(final VoxelShape shape) {
+-                return !Shapes.joinIsNotEmpty(Shapes.block(), shape, BooleanOp.NOT_SAME);
+-            }
+-        });
+     public static final int UPDATE_NEIGHBORS = 1;
+     public static final int UPDATE_CLIENTS = 2;
+     public static final int UPDATE_INVISIBLE = 4;
+@@ -119,6 +107,15 @@ public class Block extends BlockBehaviour implements ItemLike {
+         map.defaultReturnValue((byte)127);
+         return map;
+     });
++    private static final ThreadLocal<Object2ByteLinkedOpenHashMap<VoxelShape>> SHAPE_FULL_BLOCK_CACHE = ThreadLocal.withInitial(() -> {
++        Object2ByteLinkedOpenHashMap<VoxelShape> map = new Object2ByteLinkedOpenHashMap<VoxelShape>(256, 0.25F) {
++            @Override
++            protected void rehash(final int newN) {
++            }
++        };
++        map.defaultReturnValue((byte)127);
++        return map;
++    });
+ 
+     @Override
+     protected MapCodec<? extends Block> codec() {
+@@ -349,7 +346,19 @@ public class Block extends BlockBehaviour implements ItemLike {
+     }
+ 
+     public static boolean isShapeFullBlock(final VoxelShape shape) {
+-        return SHAPE_FULL_BLOCK_CACHE.getUnchecked(shape);
++        Object2ByteLinkedOpenHashMap<VoxelShape> cache = SHAPE_FULL_BLOCK_CACHE.get();
++        byte cached = cache.getAndMoveToFirst(shape);
++        if (cached != 127) {
++            return cached != 0;
++        }
++
++        boolean result = !Shapes.joinIsNotEmpty(Shapes.block(), shape, BooleanOp.NOT_SAME);
++        if (cache.size() == 256) {
++            cache.removeLastByte();
++        }
++
++        cache.putAndMoveToFirst(shape, (byte)(result ? 1 : 0));
++        return result;
+     }
+ 
+     public void animateTick(final BlockState state, final Level level, final BlockPos pos, final RandomSource random) {
+diff --git a/net/minecraft/world/level/block/SpreadingSnowyBlock.java b/net/minecraft/world/level/block/SpreadingSnowyBlock.java
+index cd61e2bde1be61eca8434e96f69b2e0bc1c9739c..71637aa4f4473dcd2edfa0348ab00d32167008c4 100644
+--- a/net/minecraft/world/level/block/SpreadingSnowyBlock.java
++++ b/net/minecraft/world/level/block/SpreadingSnowyBlock.java
+@@ -13,6 +13,7 @@ import net.minecraft.util.RandomSource;
+ import net.minecraft.world.level.LevelReader;
+ import net.minecraft.world.level.block.state.BlockBehaviour;
+ import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.chunk.LevelChunk;
+ import net.minecraft.world.level.lighting.LightEngine;
+ 
+ public abstract class SpreadingSnowyBlock extends SnowyBlock {
+@@ -28,7 +29,10 @@ public abstract class SpreadingSnowyBlock extends SnowyBlock {
+ 
+     private static boolean canStayAlive(final BlockState state, final LevelReader level, final BlockPos pos) {
+         BlockPos above = pos.above();
+-        BlockState aboveState = level.getBlockState(above);
++        return canStayAlive(state, level, pos, level.getBlockState(above));
++    }
++
++    private static boolean canStayAlive(final BlockState state, final LevelReader level, final BlockPos pos, final BlockState aboveState) {
+         if (aboveState.is(Blocks.SNOW) && aboveState.getValue(SnowLayerBlock.LAYERS) == 1) {
+             return true;
+         }
+@@ -41,9 +45,8 @@ public abstract class SpreadingSnowyBlock extends SnowyBlock {
+         return lightDampeningTopFace < 15;
+     }
+ 
+-    private static boolean canPropagate(final BlockState state, final LevelReader level, final BlockPos pos) {
+-        BlockPos above = pos.above();
+-        return canStayAlive(state, level, pos) && !level.getFluidState(above).is(FluidTags.WATER);
++    private static boolean canPropagate(final BlockState state, final LevelReader level, final BlockPos pos, final BlockState aboveState) {
++        return canStayAlive(state, level, pos, aboveState) && !aboveState.getFluidState().is(FluidTags.WATER);
+     }
+ 
+     @Override
+@@ -59,8 +62,17 @@ public abstract class SpreadingSnowyBlock extends SnowyBlock {
+ 
+                     for (int i = 0; i < 4; i++) {
+                         BlockPos testPos = pos.offset(random.nextInt(3) - 1, random.nextInt(5) - 3, random.nextInt(3) - 1);
+-                        if (level.getBlockState(testPos).is(baseBlock.get()) && canPropagate(defaultBlockState, level, testPos)) {
+-                            BlockState spreadState = defaultBlockState.setValue(SNOWY, isSnowySetting(level.getBlockState(testPos.above())));
++                        int testX = testPos.getX();
++                        int testY = testPos.getY();
++                        int testZ = testPos.getZ();
++                        LevelChunk chunk = level.getChunkIfLoaded(testPos);
++                        if (chunk == null) {
++                            continue;
++                        }
++
++                        BlockState aboveState = chunk.getBlockStateFinal(testX, testY + 1, testZ);
++                        if (chunk.getBlockStateFinal(testX, testY, testZ).is(baseBlock.get()) && canPropagate(defaultBlockState, level, testPos, aboveState)) {
++                            BlockState spreadState = defaultBlockState.setValue(SNOWY, isSnowySetting(aboveState));
+                             if (io.fand.server.event.BlockEvents.fireSpread(
+                                 level,
+                                 pos,
+diff --git a/net/minecraft/world/level/chunk/LevelChunk.java b/net/minecraft/world/level/chunk/LevelChunk.java
+index e382411103841dad64a43ade232160baea355cd6..74ff8a449b538c6940b945e1caaa706054eaddae 100644
+--- a/net/minecraft/world/level/chunk/LevelChunk.java
++++ b/net/minecraft/world/level/chunk/LevelChunk.java
+@@ -24,6 +24,7 @@ import net.minecraft.network.FriendlyByteBuf;
+ import net.minecraft.network.protocol.game.ClientboundLevelChunkPacketData;
+ import net.minecraft.server.level.FullChunkStatus;
+ import net.minecraft.server.level.ServerLevel;
++import net.minecraft.util.RandomSource;
+ import net.minecraft.util.ProblemReporter;
+ import net.minecraft.util.debug.DebugStructureInfo;
+ import net.minecraft.util.debug.DebugSubscriptions;
+@@ -94,6 +95,7 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+     private final LevelChunkTicks<Block> blockTicks;
+     private final LevelChunkTicks<Fluid> fluidTicks;
+     private LevelChunk.UnsavedListener unsavedListener = chunkPos -> {};
++    private int lightningTick;
+ 
+     public LevelChunk(final Level level, final ChunkPos pos) {
+         this(level, pos, UpgradeData.EMPTY, new LevelChunkTicks<>(), new LevelChunkTicks<>(), 0L, null, null, null);
+@@ -123,6 +125,16 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+         this.postLoad = postLoad;
+         this.blockTicks = blockTicks;
+         this.fluidTicks = fluidTicks;
++        this.lightningTick = this.level.getRandom().nextInt(100000) << 1;
++    }
++
++    public final boolean shouldDoLightning(final RandomSource random) {
++        if (this.lightningTick-- <= 0) {
++            this.lightningTick = random.nextInt(100000) << 1;
++            return true;
++        }
++
++        return false;
+     }
+ 
+     public LevelChunk(final ServerLevel level, final ProtoChunk protoChunk, final LevelChunk.@Nullable PostLoadProcessor postLoad) {
+diff --git a/net/minecraft/world/level/levelgen/PhantomSpawner.java b/net/minecraft/world/level/levelgen/PhantomSpawner.java
+index 89cec2e217e23bfdc2c4b2e057c32320ccbab180..3014962c4b5293fb6eafc33b9d3c1119469d8fe5 100644
+--- a/net/minecraft/world/level/levelgen/PhantomSpawner.java
++++ b/net/minecraft/world/level/levelgen/PhantomSpawner.java
+@@ -43,8 +43,12 @@ public class PhantomSpawner implements CustomSpawner {
+                                             BlockPos spawnPos = playerPos.above(20 + random.nextInt(15))
+                                                 .east(-10 + random.nextInt(21))
+                                                 .south(-10 + random.nextInt(21));
+-                                            BlockState blockState = level.getBlockState(spawnPos);
+-                                            FluidState fluidState = level.getFluidState(spawnPos);
++                                            BlockState blockState = level.getBlockStateIfLoaded(spawnPos);
++                                            if (blockState == null) {
++                                                continue;
++                                            }
++
++                                            FluidState fluidState = blockState.getFluidState();
+                                             if (NaturalSpawner.isValidEmptySpawnBlock(level, spawnPos, blockState, fluidState, EntityTypes.PHANTOM)) {
+                                                 SpawnGroupData groupData = null;
+                                                 int groupSize = 1 + random.nextInt(difficulty.getDifficulty().getId() + 1);
