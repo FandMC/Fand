@@ -56,12 +56,23 @@ public final class ConfigReloader {
             field("chunks.workerThreads", (FandConfig.Chunks config) -> config.workerThreads),
             field("chunks.trackingDiffApplyBudget", (FandConfig.Chunks config) -> config.trackingDiffApplyBudget),
             field("chunks.asyncChunkPacketPreparation", (FandConfig.Chunks config) -> config.asyncChunkPacketPreparation),
+            field("chunks.asyncChunkPacketPreparationBatches", (FandConfig.Chunks config) -> config.asyncChunkPacketPreparationBatches),
             field("chunks.teleportPreload", (FandConfig.Chunks config) -> config.teleportPreload),
             field("chunks.teleportPreloadExtraRadius", (FandConfig.Chunks config) -> config.teleportPreloadExtraRadius),
             field("chunks.teleportPreloadSimulation", (FandConfig.Chunks config) -> config.teleportPreloadSimulation),
             field("chunks.teleportChunkSendBurstTicks", (FandConfig.Chunks config) -> config.teleportChunkSendBurstTicks),
             field("chunks.teleportChunkSendBurstChunksPerTick", (FandConfig.Chunks config) -> config.teleportChunkSendBurstChunksPerTick),
-            field("chunks.teleportChunkSendBurstBatches", (FandConfig.Chunks config) -> config.teleportChunkSendBurstBatches)
+            field("chunks.teleportChunkSendBurstBatches", (FandConfig.Chunks config) -> config.teleportChunkSendBurstBatches),
+            field("chunks.movementPreload", (FandConfig.Chunks config) -> config.movementPreload),
+            field("chunks.movementPreloadLookaheadChunks", (FandConfig.Chunks config) -> config.movementPreloadLookaheadChunks),
+            field("chunks.movementPreloadWidthChunks", (FandConfig.Chunks config) -> config.movementPreloadWidthChunks),
+            field(
+                    "chunks.movementPreloadMinHorizontalDistanceBlocks",
+                    (FandConfig.Chunks config) -> config.movementPreloadMinHorizontalDistanceBlocks),
+            field(
+                    "chunks.movementChunkSendBurstChunksPerTick",
+                    (FandConfig.Chunks config) -> config.movementChunkSendBurstChunksPerTick),
+            field("chunks.movementChunkSendBurstBatches", (FandConfig.Chunks config) -> config.movementChunkSendBurstBatches)
     );
     private static final List<ReloadField<FandConfig.Chunks, ?>> RESTART_CHUNK_FIELDS = List.of(
             field("chunks.worldgenParallelism", (FandConfig.Chunks config) -> config.worldgenParallelism),

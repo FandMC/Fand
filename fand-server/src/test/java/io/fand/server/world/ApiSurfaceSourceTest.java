@@ -97,6 +97,8 @@ final class ApiSurfaceSourceTest {
     @Test
     void worldControlApiDoesNotFallBackToDefaultUnsupportedPaths() throws IOException {
         var world = read("src/main/java/io/fand/server/world/FandWorld.java");
+        var block = read("src/main/java/io/fand/server/block/FandBlock.java");
+        var apiWorld = read("../fand-api/src/main/java/io/fand/api/world/World.java");
 
         assertThat(world).contains(
                 "public Location spawnLocation()",
@@ -116,8 +118,26 @@ final class ApiSurfaceSourceTest {
                 "handle.setChunkForced(chunkX, chunkZ, forceLoaded)",
                 "public CompletableFuture<BlockBatchResult> setBlocks(",
                 "new BlockBatchRunner(requested, changes, options, future)",
+                "public CompletableFuture<BlockScanResult> replaceFluids(",
+                "new FluidScanRunner(clamped, matcher, replacement, options, future)",
+                "public CompletableFuture<BlockScanResult> clearFluids(",
+                "new FluidScanRunner(clamped, matcher, null, options, future)",
+                "public CompletableFuture<BlockScanResult> replaceConnectedFluids(",
+                "new ConnectedFluidReplaceRunner(",
+                "public CompletableFuture<BlockScanResult> clearConnectedFluids(",
+                "clearFluidAt(pos, options.batchOptions())",
+                "BlockComponentStorage.empty(handle, pos)",
                 "private PlayerRegistry fallbackPlayerRegistry()",
                 "new FandScoreboardService(handle.getServer())");
+        assertThat(block).contains(
+                "level.getFluidIfLoaded(pos)",
+                "public boolean water()",
+                "public boolean lava()");
+        assertThat(apiWorld).contains(
+                "default CompletableFuture<BlockScanResult> replaceFluids(",
+                "default CompletableFuture<BlockScanResult> clearFluids(",
+                "default CompletableFuture<BlockScanResult> replaceConnectedFluids(",
+                "default CompletableFuture<BlockScanResult> clearConnectedFluids(");
     }
 
     @Test

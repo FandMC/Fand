@@ -1,6 +1,10 @@
 package io.fand.server.world;
 
 import io.fand.api.block.Block;
+import io.fand.api.block.BlockPhysics;
+import io.fand.api.block.FluidState;
+import io.fand.api.block.FluidType;
+import io.fand.api.block.FluidTypes;
 import io.fand.api.component.DataComponentKey;
 import io.fand.api.component.DataComponentMap;
 import io.fand.api.entity.Entity;
@@ -23,6 +27,7 @@ import io.fand.api.world.Chunk;
 import io.fand.api.world.ChunkSnapshot;
 import io.fand.api.world.Difficulty;
 import io.fand.api.world.EntityRayTraceResult;
+import io.fand.api.world.FluidBatchOptions;
 import io.fand.api.world.HeightmapType;
 import io.fand.api.world.Location;
 import io.fand.api.world.RayTraceBlockMode;
@@ -71,11 +76,14 @@ import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
@@ -868,6 +876,62 @@ public final class FandWorld implements World {
     }
 
     @Override
+    public CompletableFuture<BlockScanResult> replaceFluids(
+            BlockRegion region,
+            Predicate<FluidType> matcher,
+            io.fand.api.block.BlockType replacement,
+            FluidBatchOptions options
+    ) {
+        Objects.requireNonNull(region, "region");
+        Objects.requireNonNull(matcher, "matcher");
+        Objects.requireNonNull(replacement, "replacement");
+        Objects.requireNonNull(options, "options");
+        var clamped = clampToBuildHeight(region);
+        if (clamped.isEmpty()) {
+            return CompletableFuture.completedFuture(BlockScanResult.empty());
+        }
+        var future = new CompletableFuture<BlockScanResult>();
+        var runner = new FluidScanRunner(clamped, matcher, replacement, options, future);
+        try {
+            if (scheduler != null) {
+                scheduler.runMain(runner);
+            } else {
+                runOnServerThread(runner);
+            }
+        } catch (RejectedExecutionException failure) {
+            future.completeExceptionally(failure);
+        }
+        return future;
+    }
+
+    @Override
+    public CompletableFuture<BlockScanResult> clearFluids(
+            BlockRegion region,
+            Predicate<FluidType> matcher,
+            FluidBatchOptions options
+    ) {
+        Objects.requireNonNull(region, "region");
+        Objects.requireNonNull(matcher, "matcher");
+        Objects.requireNonNull(options, "options");
+        var clamped = clampToBuildHeight(region);
+        if (clamped.isEmpty()) {
+            return CompletableFuture.completedFuture(BlockScanResult.empty());
+        }
+        var future = new CompletableFuture<BlockScanResult>();
+        var runner = new FluidScanRunner(clamped, matcher, null, options, future);
+        try {
+            if (scheduler != null) {
+                scheduler.runMain(runner);
+            } else {
+                runOnServerThread(runner);
+            }
+        } catch (RejectedExecutionException failure) {
+            future.completeExceptionally(failure);
+        }
+        return future;
+    }
+
+    @Override
     public CompletableFuture<BlockScanResult> replaceConnectedBlocks(
             Location origin,
             Predicate<io.fand.api.block.BlockType> matcher,
@@ -892,6 +956,84 @@ public final class FandWorld implements World {
                 checkedOrigin.blockZ(),
                 matcher,
                 replacement,
+                maxDistance,
+                options,
+                future);
+        try {
+            if (scheduler != null) {
+                scheduler.runMain(runner);
+            } else {
+                runOnServerThread(runner);
+            }
+        } catch (RejectedExecutionException failure) {
+            future.completeExceptionally(failure);
+        }
+        return future;
+    }
+
+    @Override
+    public CompletableFuture<BlockScanResult> replaceConnectedFluids(
+            Location origin,
+            Predicate<FluidType> matcher,
+            io.fand.api.block.BlockType replacement,
+            int maxDistance,
+            FluidBatchOptions options
+    ) {
+        var checkedOrigin = requireThisWorld(origin);
+        Objects.requireNonNull(matcher, "matcher");
+        Objects.requireNonNull(replacement, "replacement");
+        Objects.requireNonNull(options, "options");
+        if (maxDistance < 0) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("maxDistance must not be negative"));
+        }
+        if (checkedOrigin.blockY() < handle.getMinY() || checkedOrigin.blockY() > handle.getMaxY()) {
+            return CompletableFuture.completedFuture(BlockScanResult.empty());
+        }
+        var future = new CompletableFuture<BlockScanResult>();
+        var runner = new ConnectedFluidReplaceRunner(
+                checkedOrigin.blockX(),
+                checkedOrigin.blockY(),
+                checkedOrigin.blockZ(),
+                matcher,
+                replacement,
+                maxDistance,
+                options,
+                future);
+        try {
+            if (scheduler != null) {
+                scheduler.runMain(runner);
+            } else {
+                runOnServerThread(runner);
+            }
+        } catch (RejectedExecutionException failure) {
+            future.completeExceptionally(failure);
+        }
+        return future;
+    }
+
+    @Override
+    public CompletableFuture<BlockScanResult> clearConnectedFluids(
+            Location origin,
+            Predicate<FluidType> matcher,
+            int maxDistance,
+            FluidBatchOptions options
+    ) {
+        var checkedOrigin = requireThisWorld(origin);
+        Objects.requireNonNull(matcher, "matcher");
+        Objects.requireNonNull(options, "options");
+        if (maxDistance < 0) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("maxDistance must not be negative"));
+        }
+        if (checkedOrigin.blockY() < handle.getMinY() || checkedOrigin.blockY() > handle.getMaxY()) {
+            return CompletableFuture.completedFuture(BlockScanResult.empty());
+        }
+        var future = new CompletableFuture<BlockScanResult>();
+        var runner = new ConnectedFluidReplaceRunner(
+                checkedOrigin.blockX(),
+                checkedOrigin.blockY(),
+                checkedOrigin.blockZ(),
+                matcher,
+                null,
                 maxDistance,
                 options,
                 future);
@@ -1010,7 +1152,7 @@ public final class FandWorld implements World {
         Objects.requireNonNull(change, "change");
         var block = FandBlockType.unwrap(change.type());
         var state = block.defaultBlockState();
-        return applyBlockChangeAt(new BlockPos(change.x(), change.y(), change.z()), state, block, change.components(), options);
+        return applyBlockChangeAt(new BlockPos.MutableBlockPos(change.x(), change.y(), change.z()), state, block, change.components(), options);
     }
 
     private boolean applyBlockChangeAt(
@@ -1021,8 +1163,14 @@ public final class FandWorld implements World {
             BlockBatchOptions options
     ) {
         if (options.skipUnchanged()) {
-            var currentState = handle.getBlockState(pos);
-            if (currentState.getBlock() == block && BlockComponentStorage.snapshot(handle, pos).equals(components)) {
+            var currentState = blockStateIfLoaded(pos);
+            if (currentState == null) {
+                currentState = handle.getBlockState(pos);
+            }
+            boolean sameComponents = components.isEmpty()
+                    ? BlockComponentStorage.empty(handle, pos)
+                    : BlockComponentStorage.snapshot(handle, pos).equals(components);
+            if (currentState.getBlock() == block && sameComponents) {
                 return false;
             }
         }
@@ -1043,6 +1191,82 @@ public final class FandWorld implements World {
             case CLIENTS_ONLY -> net.minecraft.world.level.block.Block.UPDATE_CLIENTS;
             case SILENT -> net.minecraft.world.level.block.Block.UPDATE_NONE;
         };
+    }
+
+    private @Nullable BlockState blockStateIfLoaded(BlockPos pos) {
+        var chunk = handle.getChunkIfLoaded(pos);
+        return chunk == null ? null : chunk.getBlockState(pos);
+    }
+
+    private net.minecraft.world.level.material.FluidState fluidStateIfLoaded(BlockPos pos) {
+        var chunk = handle.getChunkIfLoaded(pos);
+        return chunk == null ? null : chunk.getFluidState(pos);
+    }
+
+    private static FluidType fluidType(net.minecraft.world.level.material.FluidState state) {
+        if (state == null || state.isEmpty()) {
+            return FluidTypes.EMPTY;
+        }
+        var id = BuiltInRegistries.FLUID.getKey(state.getType());
+        return FluidTypes.of(Key.key(id.getNamespace(), id.getPath()));
+    }
+
+    private static FluidState localFluidSnapshot(net.minecraft.world.level.material.FluidState state) {
+        if (state.isEmpty()) {
+            return FluidState.none();
+        }
+        var id = BuiltInRegistries.FLUID.getKey(state.getType());
+        var falling = state.hasProperty(FlowingFluid.FALLING) && state.getValue(FlowingFluid.FALLING);
+        return new FluidState(
+                FluidTypes.of(Key.key(id.getNamespace(), id.getPath())),
+                state.isSource(),
+                state.isFull(),
+                falling,
+                state.getAmount(),
+                state.getOwnHeight(),
+                state.getOwnHeight(),
+                state.getExplosionResistance(),
+                Vector3.ZERO);
+    }
+
+    private static BlockPhysics physics(ServerLevel level, BlockPos pos, BlockState state) {
+        var block = state.getBlock();
+        return new BlockPhysics(
+                state.getDestroySpeed(level, pos),
+                block.getExplosionResistance(),
+                state.getLightEmission(),
+                state.getLightDampening(),
+                block.getFriction(),
+                block.getSpeedFactor(),
+                block.getJumpFactor(),
+                state.isSolid(),
+                state.liquid(),
+                state.canBeReplaced(),
+                state.ignitedByLava(),
+                state.isAir(),
+                state.requiresCorrectToolForDrops(),
+                state.hasBlockEntity(),
+                state.canSurvive(level, pos),
+                state.isRedstoneConductor(level, pos));
+    }
+
+    private boolean clearFluidAt(BlockPos pos, BlockBatchOptions options) {
+        var state = blockStateIfLoaded(pos);
+        if (state == null) {
+            return false;
+        }
+        int flags = blockUpdateFlags(options);
+        if (state.hasProperty(BlockStateProperties.WATERLOGGED) && state.getValue(BlockStateProperties.WATERLOGGED)) {
+            return handle.setBlock(pos, state.setValue(BlockStateProperties.WATERLOGGED, false), flags);
+        }
+        if (!state.getFluidState().isEmpty()) {
+            if (!handle.setBlock(pos, Blocks.AIR.defaultBlockState(), flags)) {
+                return false;
+            }
+            BlockComponentStorage.clear(handle, pos);
+            return true;
+        }
+        return false;
     }
 
     private ScanRegion clampToBuildHeight(BlockRegion region) {
@@ -1898,6 +2122,416 @@ public final class FandWorld implements World {
         }
     }
 
+    private final class FluidScanRunner implements Runnable {
+
+        private final ScanRegion region;
+        private final Predicate<FluidType> matcher;
+        private final FluidBatchOptions options;
+        private final CompletableFuture<BlockScanResult> future;
+        private final int minChunkX;
+        private final int maxChunkX;
+        private final int minChunkZ;
+        private final int maxChunkZ;
+        private final int minSectionY;
+        private final int maxSectionY;
+        private final BlockState replacementState;
+        private final net.minecraft.world.level.block.Block replacementBlock;
+        private int chunkX;
+        private int chunkZ;
+        private int sectionY;
+        private int minX;
+        private int minY;
+        private int minZ;
+        private int maxX;
+        private int maxY;
+        private int maxZ;
+        private int x;
+        private int y;
+        private int z;
+        private LevelChunkSection currentSection;
+        private boolean sectionReady;
+        private boolean done;
+        private long scanned;
+        private long matched;
+        private long changed;
+        private long skipped;
+        private long failed;
+
+        private FluidScanRunner(
+                ScanRegion region,
+                Predicate<FluidType> matcher,
+                io.fand.api.block.BlockType replacement,
+                FluidBatchOptions options,
+                CompletableFuture<BlockScanResult> future
+        ) {
+            this.region = region;
+            this.matcher = matcher;
+            this.options = options;
+            this.future = future;
+            this.minChunkX = Math.floorDiv(region.minX, 16);
+            this.maxChunkX = Math.floorDiv(region.maxX, 16);
+            this.minChunkZ = Math.floorDiv(region.minZ, 16);
+            this.maxChunkZ = Math.floorDiv(region.maxZ, 16);
+            this.minSectionY = SectionPos.blockToSectionCoord(region.minY);
+            this.maxSectionY = SectionPos.blockToSectionCoord(region.maxY);
+            this.replacementBlock = replacement == null ? null : FandBlockType.unwrap(replacement);
+            this.replacementState = replacementBlock == null ? null : replacementBlock.defaultBlockState();
+            this.chunkX = minChunkX;
+            this.chunkZ = minChunkZ;
+            this.sectionY = minSectionY;
+        }
+
+        @Override
+        public void run() {
+            if (future.isDone()) {
+                return;
+            }
+            try {
+                scanSlice();
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+                return;
+            }
+            if (done) {
+                future.complete(new BlockScanResult(scanned, matched, changed, skipped, failed));
+                return;
+            }
+            scheduleNextSlice();
+        }
+
+        private void scanSlice() {
+            int scanBudget = options.maxBlocksPerTick();
+            int changeBudget = Math.min(options.maxChangesPerBatch(), options.batchOptions().maxBlocksPerTick());
+            int structuralBudget = options.maxBlocksPerTick();
+            while (scanBudget > 0 && changeBudget > 0) {
+                if (!ensureSection(structuralBudget)) {
+                    return;
+                }
+                var fluid = currentSection.getFluidState(x & 15, y & 15, z & 15);
+                scanned++;
+                scanBudget--;
+                if (!fluid.isEmpty() && matcher.test(fluidType(fluid))) {
+                    matched++;
+                    changeBudget--;
+                    try {
+                        if (applyFluidChange(x, y, z, fluid)) {
+                            changed++;
+                        } else {
+                            skipped++;
+                        }
+                    } catch (RuntimeException failure) {
+                        failed++;
+                    }
+                }
+                advanceBlock();
+            }
+        }
+
+        private boolean ensureSection(int structuralBudget) {
+            int remainingStructuralChecks = structuralBudget;
+            while (!done && !sectionReady) {
+                if (remainingStructuralChecks-- <= 0) {
+                    return false;
+                }
+                var chunk = handle.getChunk(chunkX, chunkZ, ChunkStatus.FULL, !options.loadedChunksOnly());
+                if (chunk == null) {
+                    advanceChunk();
+                    continue;
+                }
+                prepareSectionBounds();
+                LevelChunkSection section = chunk.getSection(chunk.getSectionIndexFromSectionY(sectionY));
+                if (!section.maybeHas(state -> !state.getFluidState().isEmpty() && matcher.test(fluidType(state.getFluidState())))) {
+                    scanned += sectionVolume();
+                    advanceSection();
+                    continue;
+                }
+                this.currentSection = section;
+                this.x = minX;
+                this.y = minY;
+                this.z = minZ;
+                this.sectionReady = true;
+            }
+            return !done;
+        }
+
+        private boolean applyFluidChange(int x, int y, int z, net.minecraft.world.level.material.FluidState fluid) {
+            var pos = new BlockPos.MutableBlockPos(x, y, z);
+            if (replacementState == null || replacementBlock == null) {
+                return clearFluidAt(pos, options.batchOptions());
+            }
+            if (options.batchOptions().skipUnchanged()) {
+                var currentState = blockStateIfLoaded(pos);
+                if (currentState == null) {
+                    return false;
+                }
+                if (currentState.getBlock() == replacementBlock && currentState.getFluidState().getType() == fluid.getType()) {
+                    return false;
+                }
+            }
+            if (!handle.setBlock(pos, replacementState, blockUpdateFlags(options.batchOptions()))) {
+                throw new IllegalStateException("Failed to set block at " + pos.toShortString());
+            }
+            BlockComponentStorage.clear(handle, pos);
+            return true;
+        }
+
+        private void prepareSectionBounds() {
+            int chunkMinX = chunkX << 4;
+            int chunkMinZ = chunkZ << 4;
+            int sectionMinY = SectionPos.sectionToBlockCoord(sectionY);
+            this.minX = Math.max(region.minX, chunkMinX);
+            this.maxX = Math.min(region.maxX, chunkMinX + 15);
+            this.minY = Math.max(region.minY, sectionMinY);
+            this.maxY = Math.min(region.maxY, sectionMinY + 15);
+            this.minZ = Math.max(region.minZ, chunkMinZ);
+            this.maxZ = Math.min(region.maxZ, chunkMinZ + 15);
+        }
+
+        private int sectionVolume() {
+            return (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+        }
+
+        private void advanceBlock() {
+            if (x < maxX) {
+                x++;
+                return;
+            }
+            x = minX;
+            if (z < maxZ) {
+                z++;
+                return;
+            }
+            z = minZ;
+            if (y < maxY) {
+                y++;
+                return;
+            }
+            clearSection();
+            advanceSection();
+        }
+
+        private void advanceSection() {
+            if (sectionY < maxSectionY) {
+                sectionY++;
+                return;
+            }
+            sectionY = minSectionY;
+            if (chunkZ < maxChunkZ) {
+                chunkZ++;
+                return;
+            }
+            chunkZ = minChunkZ;
+            if (chunkX < maxChunkX) {
+                chunkX++;
+                return;
+            }
+            done = true;
+        }
+
+        private void advanceChunk() {
+            clearSection();
+            sectionY = minSectionY;
+            if (chunkZ < maxChunkZ) {
+                chunkZ++;
+                return;
+            }
+            chunkZ = minChunkZ;
+            if (chunkX < maxChunkX) {
+                chunkX++;
+                return;
+            }
+            done = true;
+        }
+
+        private void clearSection() {
+            sectionReady = false;
+            currentSection = null;
+        }
+
+        private void scheduleNextSlice() {
+            if (scheduler != null) {
+                try {
+                    scheduler.runMainAfterTicks(this, 0L);
+                } catch (RejectedExecutionException failure) {
+                    future.completeExceptionally(failure);
+                }
+                return;
+            }
+            runOnServerThread(this);
+        }
+    }
+
+    private final class ConnectedFluidReplaceRunner implements Runnable {
+
+        private final int originX;
+        private final int originY;
+        private final int originZ;
+        private final Predicate<FluidType> matcher;
+        private final long maxDistanceSquared;
+        private final FluidBatchOptions options;
+        private final CompletableFuture<BlockScanResult> future;
+        private final LongArrayFIFOQueue queue = new LongArrayFIFOQueue();
+        private final LongOpenHashSet visited = new LongOpenHashSet();
+        private final LongOpenHashSet loadedChunkCache = new LongOpenHashSet();
+        private final BlockState replacementState;
+        private final net.minecraft.world.level.block.Block replacementBlock;
+        private long scanned;
+        private long matched;
+        private long changed;
+        private long skipped;
+        private long failed;
+
+        private ConnectedFluidReplaceRunner(
+                int originX,
+                int originY,
+                int originZ,
+                Predicate<FluidType> matcher,
+                io.fand.api.block.BlockType replacement,
+                int maxDistance,
+                FluidBatchOptions options,
+                CompletableFuture<BlockScanResult> future
+        ) {
+            this.originX = originX;
+            this.originY = originY;
+            this.originZ = originZ;
+            this.matcher = matcher;
+            this.maxDistanceSquared = (long) maxDistance * maxDistance;
+            this.options = options;
+            this.future = future;
+            this.replacementBlock = replacement == null ? null : FandBlockType.unwrap(replacement);
+            this.replacementState = replacementBlock == null ? null : replacementBlock.defaultBlockState();
+            var start = BlockPos.asLong(originX, originY, originZ);
+            this.queue.enqueue(start);
+            this.visited.add(start);
+        }
+
+        @Override
+        public void run() {
+            if (future.isDone()) {
+                return;
+            }
+            try {
+                scanSlice();
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+                return;
+            }
+            if (queue.isEmpty()) {
+                future.complete(new BlockScanResult(scanned, matched, changed, skipped, failed));
+                return;
+            }
+            scheduleNextSlice();
+        }
+
+        private void scanSlice() {
+            int scanBudget = options.maxBlocksPerTick();
+            int changeBudget = Math.min(options.maxChangesPerBatch(), options.batchOptions().maxBlocksPerTick());
+            while (scanBudget > 0 && changeBudget > 0 && !queue.isEmpty()) {
+                long packed = queue.dequeueLong();
+                int x = BlockPos.getX(packed);
+                int y = BlockPos.getY(packed);
+                int z = BlockPos.getZ(packed);
+                scanned++;
+                scanBudget--;
+                if (!withinDistance(x, y, z) || !isLoadedEnough(x, z)) {
+                    continue;
+                }
+                var pos = new BlockPos.MutableBlockPos(x, y, z);
+                var fluid = fluidStateIfLoaded(pos);
+                if (fluid == null || fluid.isEmpty() || !matcher.test(fluidType(fluid))) {
+                    continue;
+                }
+                matched++;
+                changeBudget--;
+                try {
+                    if (applyConnectedFluidChange(pos, fluid)) {
+                        changed++;
+                    } else {
+                        skipped++;
+                    }
+                    enqueueNeighbors(x, y, z);
+                } catch (RuntimeException failure) {
+                    failed++;
+                }
+            }
+        }
+
+        private boolean applyConnectedFluidChange(BlockPos.MutableBlockPos pos, net.minecraft.world.level.material.FluidState fluid) {
+            if (replacementState == null || replacementBlock == null) {
+                return clearFluidAt(pos, options.batchOptions());
+            }
+            if (options.batchOptions().skipUnchanged()) {
+                var currentState = blockStateIfLoaded(pos);
+                if (currentState == null) {
+                    return false;
+                }
+                if (currentState.getBlock() == replacementBlock && currentState.getFluidState().getType() == fluid.getType()) {
+                    return false;
+                }
+            }
+            if (!handle.setBlock(pos, replacementState, blockUpdateFlags(options.batchOptions()))) {
+                throw new IllegalStateException("Failed to set block at " + pos.toShortString());
+            }
+            BlockComponentStorage.clear(handle, pos);
+            return true;
+        }
+
+        private void enqueueNeighbors(int x, int y, int z) {
+            enqueue(x + 1, y, z);
+            enqueue(x - 1, y, z);
+            enqueue(x, y + 1, z);
+            enqueue(x, y - 1, z);
+            enqueue(x, y, z + 1);
+            enqueue(x, y, z - 1);
+        }
+
+        private void enqueue(int x, int y, int z) {
+            if (y < handle.getMinY() || y > handle.getMaxY() || !withinDistance(x, y, z)) {
+                return;
+            }
+            long packed = BlockPos.asLong(x, y, z);
+            if (visited.add(packed)) {
+                queue.enqueue(packed);
+            }
+        }
+
+        private boolean withinDistance(int x, int y, int z) {
+            long dx = (long) x - originX;
+            long dy = (long) y - originY;
+            long dz = (long) z - originZ;
+            return dx * dx + dy * dy + dz * dz <= maxDistanceSquared;
+        }
+
+        private boolean isLoadedEnough(int x, int z) {
+            if (!options.loadedChunksOnly()) {
+                return true;
+            }
+            int chunkX = Math.floorDiv(x, 16);
+            int chunkZ = Math.floorDiv(z, 16);
+            long packedChunk = ChunkPos.pack(chunkX, chunkZ);
+            if (loadedChunkCache.contains(packedChunk)) {
+                return true;
+            }
+            if (handle.getChunk(chunkX, chunkZ, ChunkStatus.FULL, false) == null) {
+                return false;
+            }
+            loadedChunkCache.add(packedChunk);
+            return true;
+        }
+
+        private void scheduleNextSlice() {
+            if (scheduler != null) {
+                try {
+                    scheduler.runMainAfterTicks(this, 0L);
+                } catch (RejectedExecutionException failure) {
+                    future.completeExceptionally(failure);
+                }
+                return;
+            }
+            runOnServerThread(this);
+        }
+    }
+
     private final class ScannedBlock implements Block {
 
         private final int x;
@@ -1935,6 +2569,31 @@ public final class FandWorld implements World {
         @Override
         public io.fand.api.block.BlockType type() {
             return FandBlockType.of(state.getBlock());
+        }
+
+        @Override
+        public FluidType fluid() {
+            return fluidType(state.getFluidState());
+        }
+
+        @Override
+        public FluidState fluidState() {
+            return localFluidSnapshot(state.getFluidState());
+        }
+
+        @Override
+        public boolean water() {
+            return fluidType(state.getFluidState()).water();
+        }
+
+        @Override
+        public boolean lava() {
+            return fluidType(state.getFluidState()).lava();
+        }
+
+        @Override
+        public BlockPhysics physics() {
+            return FandWorld.physics(handle, new BlockPos(x, y, z), state);
         }
 
         @Override
@@ -2066,6 +2725,7 @@ public final class FandWorld implements World {
         private final DataComponentMap components;
         private final BlockBatchOptions options;
         private @Nullable CompletableFuture<BlockBatchResult> future;
+        private final BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
         private int x;
         private int y;
         private int z;
@@ -2139,7 +2799,7 @@ public final class FandWorld implements World {
 
         private void applyOne() {
             try {
-                if (applyBlockChangeAt(new BlockPos(x, y, z), state, block, components, options)) {
+                if (applyBlockChangeAt(mutablePos.set(x, y, z), state, block, components, options)) {
                     changed++;
                 } else {
                     skipped++;

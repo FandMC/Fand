@@ -82,16 +82,32 @@ public final class FandBlock implements Block {
 
     @Override
     public FluidType fluid() {
-        return fluidState().type();
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> fluidType(level.getFluidIfLoaded(pos)));
     }
 
     @Override
     public FluidState fluidState() {
         ServerLevel level = world.handle();
         return callOnServerThread(() -> {
-            var state = level.getFluidState(pos);
+            var state = level.getFluidIfLoaded(pos);
+            if (state == null) {
+                return FluidState.none();
+            }
             return fluidState(level, pos, state);
         });
+    }
+
+    @Override
+    public boolean water() {
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> fluidType(level.getFluidIfLoaded(pos)).water());
+    }
+
+    @Override
+    public boolean lava() {
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> fluidType(level.getFluidIfLoaded(pos)).lava());
     }
 
     @Override
@@ -392,6 +408,14 @@ public final class FandBlock implements Block {
                 state.getOwnHeight(),
                 state.getExplosionResistance(),
                 new Vector3(flow.x, flow.y, flow.z));
+    }
+
+    private static FluidType fluidType(net.minecraft.world.level.material.FluidState state) {
+        if (state == null || state.isEmpty()) {
+            return FluidTypes.EMPTY;
+        }
+        var id = BuiltInRegistries.FLUID.getKey(state.getType());
+        return FluidTypes.of(Key.key(id.getNamespace(), id.getPath()));
     }
 
     private static net.minecraft.world.level.material.FluidState vanillaFluidState(FluidState state) {

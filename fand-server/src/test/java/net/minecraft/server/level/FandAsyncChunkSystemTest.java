@@ -76,6 +76,22 @@ final class FandAsyncChunkSystemTest {
         }
     }
 
+    @Test
+    void drainsHigherPriorityReadyTasksFirst() {
+        try (var lanes = new RegionizedChunkTaskScheduler(1, "test"); var dispatcher = new RecordingDispatcher()) {
+            var system = new FandAsyncChunkSystem(null, dispatcher, lanes);
+            long lowPriorityChunk = ChunkPos.pack(0, 0);
+            long highPriorityChunk = ChunkPos.pack(1, 0);
+
+            system.enqueueReadyTaskForTesting(new TestTask(lowPriorityChunk, null, 20), lowPriorityChunk);
+            system.enqueueReadyTaskForTesting(new TestTask(highPriorityChunk, null, 1), highPriorityChunk);
+
+            system.runGenerationTasks();
+
+            assertThat(dispatcher.submittedPositions()).containsExactly(highPriorityChunk, lowPriorityChunk);
+        }
+    }
+
     private static final class TestTask implements FandAsyncChunkSystem.TaskHandle {
         private final ChunkPos pos;
         private final GenerationChunkHolder center;
@@ -83,13 +99,21 @@ final class FandAsyncChunkSystemTest {
         private final Runnable beforeWait;
 
         private TestTask(final long chunkPos, final @Nullable CompletableFuture<?> waitFor) {
-            this(chunkPos, waitFor, () -> {
-            });
+            this(chunkPos, waitFor, 1);
         }
 
         private TestTask(final long chunkPos, final @Nullable CompletableFuture<?> waitFor, final Runnable beforeWait) {
+            this(chunkPos, waitFor, 1, beforeWait);
+        }
+
+        private TestTask(final long chunkPos, final @Nullable CompletableFuture<?> waitFor, final int queueLevel) {
+            this(chunkPos, waitFor, queueLevel, () -> {
+            });
+        }
+
+        private TestTask(final long chunkPos, final @Nullable CompletableFuture<?> waitFor, final int queueLevel, final Runnable beforeWait) {
             this.pos = ChunkPos.unpack(chunkPos);
-            this.center = new TestChunkHolder(this.pos);
+            this.center = new TestChunkHolder(this.pos, queueLevel);
             this.waitFor = waitFor;
             this.beforeWait = beforeWait;
         }
@@ -112,8 +136,11 @@ final class FandAsyncChunkSystemTest {
     }
 
     private static final class TestChunkHolder extends GenerationChunkHolder {
-        private TestChunkHolder(final ChunkPos pos) {
+        private final int queueLevel;
+
+        private TestChunkHolder(final ChunkPos pos, final int queueLevel) {
             super(pos);
+            this.queueLevel = queueLevel;
         }
 
         @Override
@@ -127,7 +154,7 @@ final class FandAsyncChunkSystemTest {
 
         @Override
         public int getQueueLevel() {
-            return 1;
+            return this.queueLevel;
         }
     }
 

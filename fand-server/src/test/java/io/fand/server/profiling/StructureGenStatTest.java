@@ -64,15 +64,15 @@ final class StructureGenStatTest {
         private static final String EVENT_NAME = "minecraft.StructureGeneration";
 
         @Name("chunkPosX")
-        private final int chunkPosX;
+        public final int chunkPosX;
         @Name("chunkPosZ")
-        private final int chunkPosZ;
+        public final int chunkPosZ;
         @Name("structure")
-        private final String structure;
+        public final String structure;
         @Name("level")
-        private final String level;
+        public final String level;
         @Name("success")
-        private final boolean success;
+        public final boolean success;
 
         private TestStructureGenerationEvent(ChunkPos chunkPos, String structure, String level, boolean success) {
             this.chunkPosX = chunkPos.x();

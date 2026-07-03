@@ -134,4 +134,93 @@ final class FandChunkStepSchedulerTest {
             executor.shutdownNow();
         }
     }
+
+    @Test
+    void radiusZeroStepDoesNotWaitForOtherChunkWriteRadius() throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try (var scheduler = new FandChunkStepScheduler(executor, 2)) {
+            var firstStarted = new CountDownLatch(1);
+            var releaseFirst = new CompletableFuture<Void>();
+            var parallelStarted = new CountDownLatch(1);
+
+            scheduler.schedule(new ChunkPos(0, 0), 1, () -> {
+                firstStarted.countDown();
+                return releaseFirst;
+            });
+            assertThat(firstStarted.await(5L, TimeUnit.SECONDS)).isTrue();
+
+            scheduler.schedule(new ChunkPos(3, 0), 0, 0, 0, true, () -> {
+                parallelStarted.countDown();
+                return CompletableFuture.completedFuture(null);
+            });
+
+            assertThat(parallelStarted.await(5L, TimeUnit.SECONDS)).isTrue();
+            releaseFirst.complete(null);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void radiusZeroStepsForSameChunkDoNotOverlap() throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try (var scheduler = new FandChunkStepScheduler(executor, 2)) {
+            var firstStarted = new CountDownLatch(1);
+            var releaseFirst = new CompletableFuture<Void>();
+            var secondStarted = new CountDownLatch(1);
+
+            scheduler.schedule(new ChunkPos(0, 0), 0, 0, 0, true, () -> {
+                firstStarted.countDown();
+                return releaseFirst;
+            });
+            assertThat(firstStarted.await(5L, TimeUnit.SECONDS)).isTrue();
+
+            scheduler.schedule(new ChunkPos(0, 0), 0, 0, 0, true, () -> {
+                secondStarted.countDown();
+                return CompletableFuture.completedFuture(null);
+            });
+
+            assertThat(secondStarted.await(100L, TimeUnit.MILLISECONDS)).isFalse();
+            releaseFirst.complete(null);
+            assertThat(secondStarted.await(5L, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void queuedStepsRunHigherPriorityFirst() throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try (var scheduler = new FandChunkStepScheduler(executor, 1)) {
+            var firstStarted = new CountDownLatch(1);
+            var releaseFirst = new CompletableFuture<Void>();
+            var releaseHigh = new CompletableFuture<Void>();
+            var lowStarted = new CountDownLatch(1);
+            var highStarted = new CountDownLatch(1);
+
+            scheduler.schedule(new ChunkPos(0, 0), 1, () -> {
+                firstStarted.countDown();
+                return releaseFirst;
+            });
+            assertThat(firstStarted.await(5L, TimeUnit.SECONDS)).isTrue();
+
+            scheduler.schedule(new ChunkPos(4, 0), 0, 0, 20, false, () -> {
+                lowStarted.countDown();
+                return CompletableFuture.completedFuture(null);
+            });
+            scheduler.schedule(new ChunkPos(8, 0), 0, 0, 1, false, () -> {
+                highStarted.countDown();
+                return releaseHigh;
+            });
+
+            releaseFirst.complete(null);
+            assertThat(highStarted.await(5L, TimeUnit.SECONDS)).isTrue();
+            assertThat(lowStarted.await(100L, TimeUnit.MILLISECONDS)).isFalse();
+            releaseHigh.complete(null);
+            assertThat(lowStarted.await(5L, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
 }

@@ -332,11 +332,29 @@ public final class FandConfig {
         @ConfigComment({
                 "Prepare full chunk packets on a small background executor before",
                 "they are sent to players. Packet batch order and vanilla pacing",
-                "stay unchanged; only chunk-section serialization is moved off",
-                "the server tick thread. Disabled by default because it changes",
-                "which thread reads chunk packet data."
+                "stay unchanged; chunk data is snapshotted on the tick thread,",
+                "then packet object creation and protocol encoding happen on",
+                "background workers."
         })
-        public volatile boolean asyncChunkPacketPreparation = false;
+        public volatile boolean asyncChunkPacketPreparation = true;
+
+        @ConfigComment({
+                "Maximum chunk-send batches per player that may be prepared",
+                "concurrently while asyncChunkPacketPreparation is enabled.",
+                "Higher values keep packet encoding ahead of fast worldgen,",
+                "but increase short-lived per-player memory use."
+        })
+        @ConfigRange(min = 1, max = 128)
+        public volatile int asyncChunkPacketPreparationBatches = 32;
+
+        @ConfigComment({
+                "Pre-compress and frame async chunk packets on background workers",
+                "when no outbound packet hook needs to inspect or rewrite them.",
+                "This moves the expensive chunk-packet compression path away",
+                "from the Netty event loop, which helps high-RTT remote players",
+                "keep receiving terrain during fast exploration."
+        })
+        public volatile boolean preparedChunkPacketFrames = true;
 
         @ConfigComment({
                 "Maximum chunk-generation batches allowed to run at the same",
@@ -409,7 +427,7 @@ public final class FandConfig {
                 "servers with enough CPU/network push the first view faster."
         })
         @ConfigRange(min = 1, max = 1024)
-        public volatile int teleportChunkSendBurstChunksPerTick = 64;
+        public volatile int teleportChunkSendBurstChunksPerTick = 192;
 
         @ConfigComment({
                 "Maximum unacknowledged chunk batches allowed during the",
@@ -417,7 +435,55 @@ public final class FandConfig {
                 "can increase per-player network memory under packet loss."
         })
         @ConfigRange(min = 1, max = 64)
-        public volatile int teleportChunkSendBurstBatches = 10;
+        public volatile int teleportChunkSendBurstBatches = 24;
+
+        @ConfigComment({
+                "Preload chunks in front of fast-moving players before they",
+                "enter the normal player view-distance ticket area. This is",
+                "aggressive and CPU-heavy, but lets terrain generation lead",
+                "spectator-speed movement instead of only catching up to it."
+        })
+        public volatile boolean movementPreload = true;
+
+        @ConfigComment({
+                "Extra chunks beyond the player's effective view distance to",
+                "preload in the current movement direction."
+        })
+        @ConfigRange(min = 0, max = 64)
+        public volatile int movementPreloadLookaheadChunks = 16;
+
+        @ConfigComment({
+                "Half-width, in chunks, of the movement preload strip. Higher",
+                "values cover diagonal movement and steering changes better,",
+                "but add more generation pressure."
+        })
+        @ConfigRange(min = 0, max = 16)
+        public volatile int movementPreloadWidthChunks = 3;
+
+        @ConfigComment({
+                "Minimum horizontal movement, in blocks, before refreshing the",
+                "movement preload strip. Set 0 to refresh on every move packet."
+        })
+        @ConfigRange(min = 0, max = 64)
+        public volatile int movementPreloadMinHorizontalDistanceBlocks = 1;
+
+        @ConfigComment({
+                "Chunk send target while movement preload is active. This lets",
+                "ready chunks in front of fast-moving players reach the client",
+                "before sideways or behind chunks consume the vanilla-paced",
+                "send window."
+        })
+        @ConfigRange(min = 1, max = 1024)
+        public volatile int movementChunkSendBurstChunksPerTick = 256;
+
+        @ConfigComment({
+                "Maximum unacknowledged chunk batches allowed while movement",
+                "preload is active. Higher values reduce visible holes during",
+                "fast spectator flight but can increase per-player network",
+                "memory under packet loss."
+        })
+        @ConfigRange(min = 1, max = 64)
+        public volatile int movementChunkSendBurstBatches = 32;
     }
 
     public static final class Watchdog {

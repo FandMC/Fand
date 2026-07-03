@@ -153,6 +153,8 @@ public final class FandHooks {
     private static volatile int chargedProjectilesSoftLimit = 1024;
     private static volatile int bundleContentsSoftLimit = 256;
     private static volatile boolean asyncChunkPacketPreparation = false;
+    private static volatile int asyncChunkPacketPreparationBatches = 4;
+    private static volatile boolean preparedChunkPacketFrames = true;
     private static volatile int chunkWorldgenParallelism = 0;
     private static volatile boolean chunkDedicatedLightThread = true;
     private static volatile boolean chunkLightTaskQueueFastPath = true;
@@ -160,8 +162,14 @@ public final class FandHooks {
     private static volatile int chunkTeleportPreloadExtraRadius = 3;
     private static volatile boolean chunkTeleportPreloadSimulation = true;
     private static volatile int chunkTeleportChunkSendBurstTicks = 40;
-    private static volatile int chunkTeleportChunkSendBurstChunksPerTick = 64;
-    private static volatile int chunkTeleportChunkSendBurstBatches = 10;
+    private static volatile int chunkTeleportChunkSendBurstChunksPerTick = 192;
+    private static volatile int chunkTeleportChunkSendBurstBatches = 24;
+    private static volatile boolean chunkMovementPreload = true;
+    private static volatile int chunkMovementPreloadLookaheadChunks = 16;
+    private static volatile int chunkMovementPreloadWidthChunks = 3;
+    private static volatile int chunkMovementPreloadMinHorizontalDistanceBlocks = 1;
+    private static volatile int chunkMovementChunkSendBurstChunksPerTick = 256;
+    private static volatile int chunkMovementChunkSendBurstBatches = 32;
     private static volatile boolean zeroTickPlants = false;
     private static volatile boolean oldHopperSuckInBehavior = false;
     private static volatile boolean shearsInDispenserCanZeroAmount = false;
@@ -242,6 +250,8 @@ public final class FandHooks {
 
     public static void applyChunkConfig(io.fand.server.config.FandConfig.Chunks chunks) {
         asyncChunkPacketPreparation = chunks.asyncChunkPacketPreparation;
+        asyncChunkPacketPreparationBatches = chunks.asyncChunkPacketPreparationBatches;
+        preparedChunkPacketFrames = chunks.preparedChunkPacketFrames;
         chunkWorldgenParallelism = chunks.worldgenParallelism;
         chunkDedicatedLightThread = chunks.dedicatedLightThread;
         chunkLightTaskQueueFastPath = chunks.lightTaskQueueFastPath;
@@ -251,6 +261,12 @@ public final class FandHooks {
         chunkTeleportChunkSendBurstTicks = chunks.teleportChunkSendBurstTicks;
         chunkTeleportChunkSendBurstChunksPerTick = chunks.teleportChunkSendBurstChunksPerTick;
         chunkTeleportChunkSendBurstBatches = chunks.teleportChunkSendBurstBatches;
+        chunkMovementPreload = chunks.movementPreload;
+        chunkMovementPreloadLookaheadChunks = chunks.movementPreloadLookaheadChunks;
+        chunkMovementPreloadWidthChunks = chunks.movementPreloadWidthChunks;
+        chunkMovementPreloadMinHorizontalDistanceBlocks = chunks.movementPreloadMinHorizontalDistanceBlocks;
+        chunkMovementChunkSendBurstChunksPerTick = chunks.movementChunkSendBurstChunksPerTick;
+        chunkMovementChunkSendBurstBatches = chunks.movementChunkSendBurstBatches;
         var runtime = activeRuntime();
         if (runtime != null) {
             runtime.asyncChunkPackets().reconfigure(chunks.asyncChunkPacketPreparation);
@@ -459,6 +475,23 @@ public final class FandHooks {
         return sender.enabled() ? sender : null;
     }
 
+    public static int asyncChunkPacketPreparationBatches() {
+        return Math.max(1, asyncChunkPacketPreparationBatches);
+    }
+
+    public static boolean preparedChunkPacketFramesEnabled() {
+        return preparedChunkPacketFrames;
+    }
+
+    public static boolean canBypassOutboundPacketHooks() {
+        var runtime = activeRuntime();
+        if (runtime == null) {
+            return true;
+        }
+        return !runtime.packetRegistry().hasRegistrations()
+                && !runtime.tabListService().hasPacketOverrides();
+    }
+
     public static int chunkWorldgenParallelism() {
         int configured = chunkWorldgenParallelism;
         if (configured > 0) {
@@ -499,6 +532,30 @@ public final class FandHooks {
 
     public static int chunkTeleportChunkSendBurstBatches() {
         return chunkTeleportChunkSendBurstBatches;
+    }
+
+    public static boolean chunkMovementPreloadEnabled() {
+        return chunkMovementPreload;
+    }
+
+    public static int chunkMovementPreloadLookaheadChunks() {
+        return Math.max(0, chunkMovementPreloadLookaheadChunks);
+    }
+
+    public static int chunkMovementPreloadWidthChunks() {
+        return Math.max(0, chunkMovementPreloadWidthChunks);
+    }
+
+    public static int chunkMovementPreloadMinHorizontalDistanceBlocks() {
+        return Math.max(0, chunkMovementPreloadMinHorizontalDistanceBlocks);
+    }
+
+    public static int chunkMovementChunkSendBurstChunksPerTick() {
+        return Math.max(1, chunkMovementChunkSendBurstChunksPerTick);
+    }
+
+    public static int chunkMovementChunkSendBurstBatches() {
+        return Math.max(1, chunkMovementChunkSendBurstBatches);
     }
 
     public static boolean zeroTickPlantsEnabled() {

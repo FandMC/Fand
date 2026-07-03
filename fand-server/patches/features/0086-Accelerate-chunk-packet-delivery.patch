@@ -1,0 +1,607 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Fri, 3 Jul 2026 18:52:29 +0800
+Subject: [PATCH] Accelerate chunk packet delivery
+
+
+diff --git a/net/minecraft/network/Connection.java b/net/minecraft/network/Connection.java
+index 671eda4cfd4e2a309ce7e07ad8874e55d4e7cc70..6914f643feb45923d630ae7bd2a2a2d98a53f358 100644
+--- a/net/minecraft/network/Connection.java
++++ b/net/minecraft/network/Connection.java
+@@ -3,6 +3,7 @@ package net.minecraft.network;
+ import com.google.common.collect.Queues;
+ import com.mojang.logging.LogUtils;
+ import io.netty.bootstrap.Bootstrap;
++import io.netty.buffer.Unpooled;
+ import io.netty.channel.Channel;
+ import io.netty.channel.ChannelException;
+ import io.netty.channel.ChannelFuture;
+@@ -334,13 +335,40 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+             }
+             this.doSendPacket(intercepted, listener, flush);
+         } else if (io.fand.server.hooks.FandHooks.outboundPacketQueueCoalescingEnabled()) {
+-            this.outboundPackets.add(new Connection.QueuedOutboundPacket(intercepted, listener, flush));
++            this.outboundPackets.add(Connection.QueuedOutboundPacket.packet(intercepted, listener, flush));
+             this.requestOutboundDrain();
+         } else {
+             this.channel.eventLoop().execute(() -> this.doSendPacket(intercepted, listener, flush));
+         }
+     }
+ 
++    public boolean fand$sendPreparedFrame(final byte @Nullable [] preparedFrame) {
++        if (preparedFrame == null || preparedFrame.length == 0 || !this.canSendPreparedFrame()) {
++            return false;
++        }
++        this.sentPackets++;
++        byte[] frame = preparedFrame.clone();
++        if (this.channel.eventLoop().inEventLoop()) {
++            if (!this.outboundPackets.isEmpty()) {
++                this.drainOutboundPackets();
++            }
++            this.doSendPreparedFrame(frame);
++        } else {
++            this.outboundPackets.add(Connection.QueuedOutboundPacket.preparedFrame(frame));
++            this.requestOutboundDrain();
++        }
++        return true;
++    }
++
++    private boolean canSendPreparedFrame() {
++        return this.isConnected()
++            && !this.isMemoryConnection()
++            && this.currentOutboundProtocol == ConnectionProtocol.PLAY
++            && this.channel.pipeline().get(HandlerNames.COMPRESS) instanceof CompressionEncoder compression
++            && compression.getThreshold() == 256
++            && io.fand.server.hooks.FandHooks.canBypassOutboundPacketHooks();
++    }
++
+     private void requestOutboundDrain() {
+         if (this.channel == null || !this.channel.isOpen() || !this.outboundDrainScheduled.compareAndSet(false, true)) {
+             return;
+@@ -354,7 +382,11 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+ 
+         Connection.QueuedOutboundPacket queued;
+         while ((queued = this.outboundPackets.poll()) != null) {
+-            this.doSendPacket(queued.packet, queued.listener, queued.flush);
++            if (queued.preparedFrame != null) {
++                this.doSendPreparedFrame(queued.preparedFrame);
++            } else {
++                this.doSendPacket(Objects.requireNonNull(queued.packet), queued.listener, queued.flush);
++            }
+         }
+ 
+         if (!this.outboundPackets.isEmpty()) {
+@@ -376,6 +408,14 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         }
+     }
+ 
++    private void doSendPreparedFrame(final byte[] preparedFrame) {
++        if (!this.isConnected()) {
++            return;
++        }
++        this.channel.pipeline().context(HandlerNames.PREPENDER).write(Unpooled.wrappedBuffer(preparedFrame), this.channel.voidPromise());
++        this.requestFlush();
++    }
++
+     private void requestFlush() {
+         if (this.channel == null || !this.channel.isOpen() || !this.flushScheduled.compareAndSet(false, true)) {
+             return;
+@@ -420,7 +460,19 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         }
+     }
+ 
+-    private record QueuedOutboundPacket(Packet<?> packet, @Nullable ChannelFutureListener listener, boolean flush) {
++    private record QueuedOutboundPacket(
++        @Nullable Packet<?> packet,
++        @Nullable ChannelFutureListener listener,
++        boolean flush,
++        byte @Nullable [] preparedFrame
++    ) {
++        private static QueuedOutboundPacket packet(Packet<?> packet, @Nullable ChannelFutureListener listener, boolean flush) {
++            return new QueuedOutboundPacket(packet, listener, flush, null);
++        }
++
++        private static QueuedOutboundPacket preparedFrame(byte[] preparedFrame) {
++            return new QueuedOutboundPacket(null, null, true, preparedFrame);
++        }
+     }
+ 
+     public void tick() {
+diff --git a/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java b/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java
+index c7e6b630803e78625600a99b31807385d21921f4..d4991151fdb04961fae5de9d59fdbee51e286397 100644
+--- a/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java
++++ b/net/minecraft/network/protocol/game/ClientboundLevelChunkPacketData.java
+@@ -34,13 +34,12 @@ public class ClientboundLevelChunkPacketData {
+     private final List<ClientboundLevelChunkPacketData.BlockEntityInfo> blockEntitiesData;
+ 
+     public ClientboundLevelChunkPacketData(final LevelChunk levelChunk) {
+-        this(levelChunk, fand$snapshot(levelChunk));
++        this(fand$snapshot(levelChunk));
+     }
+ 
+-    public ClientboundLevelChunkPacketData(final LevelChunk levelChunk, final ClientboundLevelChunkPacketData.FandSnapshot snapshot) {
++    public ClientboundLevelChunkPacketData(final ClientboundLevelChunkPacketData.FandSnapshot snapshot) {
+         this.heightmaps = snapshot.heightmaps;
+-        this.buffer = new byte[calculateChunkSize(levelChunk)];
+-        extractChunkData(new FriendlyByteBuf(this.getWriteBuffer()), levelChunk);
++        this.buffer = snapshot.buffer;
+         this.blockEntitiesData = snapshot.blockEntitiesData;
+     }
+ 
+@@ -124,18 +123,26 @@ public class ClientboundLevelChunkPacketData {
+         for (Entry<BlockPos, BlockEntity> entry : levelChunk.getBlockEntities().entrySet()) {
+             blockEntitiesData.add(ClientboundLevelChunkPacketData.BlockEntityInfo.create(entry.getValue()));
+         }
+-        return new ClientboundLevelChunkPacketData.FandSnapshot(heightmaps, List.copyOf(blockEntitiesData));
++
++        byte[] buffer = new byte[calculateChunkSize(levelChunk)];
++        ByteBuf writeBuffer = Unpooled.wrappedBuffer(buffer);
++        writeBuffer.writerIndex(0);
++        extractChunkData(new FriendlyByteBuf(writeBuffer), levelChunk);
++        return new ClientboundLevelChunkPacketData.FandSnapshot(heightmaps, buffer, List.copyOf(blockEntitiesData));
+     }
+ 
+     public static final class FandSnapshot {
+         private final Map<Heightmap.Types, long[]> heightmaps;
++        private final byte[] buffer;
+         private final List<ClientboundLevelChunkPacketData.BlockEntityInfo> blockEntitiesData;
+ 
+         private FandSnapshot(
+             final Map<Heightmap.Types, long[]> heightmaps,
++            final byte[] buffer,
+             final List<ClientboundLevelChunkPacketData.BlockEntityInfo> blockEntitiesData
+         ) {
+             this.heightmaps = heightmaps;
++            this.buffer = buffer;
+             this.blockEntitiesData = blockEntitiesData;
+         }
+     }
+diff --git a/net/minecraft/network/protocol/game/ClientboundLevelChunkWithLightPacket.java b/net/minecraft/network/protocol/game/ClientboundLevelChunkWithLightPacket.java
+index 7aaf068104af0cddbdf411e88addd841c9b35da3..6a74e9ef0a67b1ac4b8235b449aa5a6a112004b1 100644
+--- a/net/minecraft/network/protocol/game/ClientboundLevelChunkWithLightPacket.java
++++ b/net/minecraft/network/protocol/game/ClientboundLevelChunkWithLightPacket.java
+@@ -1,16 +1,18 @@
+ package net.minecraft.network.protocol.game;
+ 
+ import java.util.BitSet;
++import net.minecraft.network.ConnectionProtocol;
+ import net.minecraft.network.RegistryFriendlyByteBuf;
+ import net.minecraft.network.codec.StreamCodec;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.PacketType;
++import net.minecraft.network.protocol.ReusablePacketEncoding;
+ import net.minecraft.world.level.ChunkPos;
+ import net.minecraft.world.level.chunk.LevelChunk;
+ import net.minecraft.world.level.lighting.LevelLightEngine;
+ import org.jspecify.annotations.Nullable;
+ 
+-public class ClientboundLevelChunkWithLightPacket implements Packet<ClientGamePacketListener> {
++public class ClientboundLevelChunkWithLightPacket implements Packet<ClientGamePacketListener>, ReusablePacketEncoding {
+     public static final StreamCodec<RegistryFriendlyByteBuf, ClientboundLevelChunkWithLightPacket> STREAM_CODEC = Packet.codec(
+         ClientboundLevelChunkWithLightPacket::write, ClientboundLevelChunkWithLightPacket::new
+     );
+@@ -18,6 +20,8 @@ public class ClientboundLevelChunkWithLightPacket implements Packet<ClientGamePa
+     private final int z;
+     private final ClientboundLevelChunkPacketData chunkData;
+     private final ClientboundLightUpdatePacketData lightData;
++    private volatile byte @Nullable [] cachedPlayEncoding;
++    private volatile byte @Nullable [] fandPreparedFrame;
+ 
+     public ClientboundLevelChunkWithLightPacket(
+         final LevelChunk levelChunk,
+@@ -37,10 +41,17 @@ public class ClientboundLevelChunkWithLightPacket implements Packet<ClientGamePa
+         final ClientboundLevelChunkPacketData.FandSnapshot chunkSnapshot,
+         final ClientboundLightUpdatePacketData lightData
+     ) {
+-        ChunkPos chunkPos = levelChunk.getPos();
++        this(levelChunk.getPos(), chunkSnapshot, lightData);
++    }
++
++    public ClientboundLevelChunkWithLightPacket(
++        final ChunkPos chunkPos,
++        final ClientboundLevelChunkPacketData.FandSnapshot chunkSnapshot,
++        final ClientboundLightUpdatePacketData lightData
++    ) {
+         this.x = chunkPos.x();
+         this.z = chunkPos.z();
+-        this.chunkData = new ClientboundLevelChunkPacketData(levelChunk, chunkSnapshot);
++        this.chunkData = new ClientboundLevelChunkPacketData(chunkSnapshot);
+         this.lightData = lightData;
+     }
+ 
+@@ -83,4 +94,24 @@ public class ClientboundLevelChunkWithLightPacket implements Packet<ClientGamePa
+     public ClientboundLightUpdatePacketData getLightData() {
+         return this.lightData;
+     }
++
++    @Override
++    public byte @Nullable [] fand$cachedEncoding(final ConnectionProtocol protocol) {
++        return protocol == ConnectionProtocol.PLAY ? this.cachedPlayEncoding : null;
++    }
++
++    @Override
++    public void fand$cacheEncoding(final ConnectionProtocol protocol, final byte[] encoded) {
++        if (protocol == ConnectionProtocol.PLAY) {
++            this.cachedPlayEncoding = encoded;
++        }
++    }
++
++    public byte @Nullable [] fand$preparedFrame() {
++        return this.fandPreparedFrame;
++    }
++
++    public void fand$cachePreparedFrame(final byte[] preparedFrame) {
++        this.fandPreparedFrame = preparedFrame;
++    }
+ }
+diff --git a/net/minecraft/server/network/PlayerChunkSender.java b/net/minecraft/server/network/PlayerChunkSender.java
+index 2e42fe61a4e59c6fa9bc53f492888b2c59dce9a1..b714951ca57d975beb36e05a531eb65a603bf676 100644
+--- a/net/minecraft/server/network/PlayerChunkSender.java
++++ b/net/minecraft/server/network/PlayerChunkSender.java
+@@ -4,9 +4,11 @@ import com.google.common.collect.Comparators;
+ import com.mojang.logging.LogUtils;
+ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+ import it.unimi.dsi.fastutil.longs.LongSet;
++import java.util.ArrayDeque;
+ import java.util.Comparator;
+ import java.util.List;
+ import java.util.Objects;
++import java.util.stream.Stream;
+ import net.minecraft.SharedConstants;
+ import net.minecraft.network.protocol.game.ClientboundChunkBatchFinishedPacket;
+ import net.minecraft.network.protocol.game.ClientboundChunkBatchStartPacket;
+@@ -18,6 +20,7 @@ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.level.ChunkPos;
+ import net.minecraft.world.level.chunk.LevelChunk;
++import net.minecraft.world.phys.Vec3;
+ import org.slf4j.Logger;
+ 
+ public class PlayerChunkSender {
+@@ -32,7 +35,8 @@ public class PlayerChunkSender {
+     private float batchQuota;
+     private int unacknowledgedBatches;
+     private int maxUnacknowledgedBatches = 1;
+-    private io.fand.server.chunk.AsyncChunkPacketSender.PendingBatch fand$pendingAsyncChunkBatch;
++    private int fand$teleportChunkSendBurstTicks;
++    private final ArrayDeque<io.fand.server.chunk.AsyncChunkPacketSender.PendingBatch> fand$pendingAsyncChunkBatches = new ArrayDeque<>();
+ 
+     public PlayerChunkSender(final boolean memoryConnection) {
+         this.memoryConnection = memoryConnection;
+@@ -44,74 +48,121 @@ public class PlayerChunkSender {
+ 
+     public void dropChunk(final ServerPlayer player, final ChunkPos pos) {
+         long key = pos.pack();
+-        if (this.fand$pendingAsyncChunkBatch != null) {
+-            this.fand$pendingAsyncChunkBatch.drop(key);
+-            if (this.fand$pendingAsyncChunkBatch.empty()) {
+-                this.fand$pendingAsyncChunkBatch = null;
+-            }
+-        }
++        this.fand$dropPendingAsyncChunk(key);
+         if (!this.pendingChunks.remove(key) && player.isAlive()) {
+             player.connection.send(new ClientboundForgetLevelChunkPacket(pos));
+         }
+     }
+ 
+     public void sendNextChunks(final ServerPlayer player) {
+-        if (this.unacknowledgedBatches < this.maxUnacknowledgedBatches) {
+-            float maxBatchSize = Math.max(1.0F, this.desiredChunksPerTick);
+-            this.batchQuota = Math.min(this.batchQuota + this.desiredChunksPerTick, maxBatchSize);
+-            if (!(this.batchQuota < 1.0F)) {
+-                io.fand.server.chunk.AsyncChunkPacketSender asyncChunkPackets = io.fand.server.hooks.FandHooks.asyncChunkPacketSender();
+-                if (asyncChunkPackets != null) {
+-                    this.fand$pollAsyncChunkBatch(player.connection, asyncChunkPackets);
+-                } else if (this.fand$pendingAsyncChunkBatch != null) {
+-                    this.fand$pendingAsyncChunkBatch.restoreTo(this.pendingChunks);
+-                    this.fand$pendingAsyncChunkBatch = null;
+-                }
+-                if (!this.pendingChunks.isEmpty() && this.fand$pendingAsyncChunkBatch == null) {
+-                    ServerLevel level = player.level();
+-                    ChunkMap chunkMap = level.getChunkSource().chunkMap;
+-                    List<LevelChunk> chunksToSend = this.collectChunksToSend(chunkMap, player.chunkPosition());
+-                    if (!chunksToSend.isEmpty()) {
+-                        ServerGamePacketListenerImpl connection = player.connection;
+-                        if (asyncChunkPackets != null) {
+-                            this.fand$pendingAsyncChunkBatch = asyncChunkPackets.submit(player, chunksToSend);
+-                        }
+-                        if (this.fand$pendingAsyncChunkBatch == null) {
+-                            this.unacknowledgedBatches++;
+-                            connection.send(ClientboundChunkBatchStartPacket.INSTANCE);
+-
+-                            for (LevelChunk chunk : chunksToSend) {
+-                                sendChunk(connection, level, chunk);
+-                            }
+-
+-                            connection.send(new ClientboundChunkBatchFinishedPacket(chunksToSend.size()));
+-                        }
+-                        this.batchQuota = this.batchQuota - chunksToSend.size();
++        boolean teleportBurst = this.fand$teleportChunkSendBurstTicks > 0;
++        boolean movementBurst = fand$movementChunkSendBurstActive(player);
++        try {
++            int effectiveMaxUnacknowledgedBatches = this.fand$effectiveMaxUnacknowledgedBatches(teleportBurst, movementBurst);
++            if (this.unacknowledgedBatches < effectiveMaxUnacknowledgedBatches) {
++                float desiredChunks = this.fand$effectiveDesiredChunksPerTick(teleportBurst, movementBurst);
++                float maxBatchSize = Math.max(1.0F, desiredChunks);
++                this.batchQuota = Math.min(this.batchQuota + desiredChunks, maxBatchSize);
++                if (!(this.batchQuota < 1.0F)) {
++                    io.fand.server.chunk.AsyncChunkPacketSender asyncChunkPackets = io.fand.server.hooks.FandHooks.asyncChunkPacketSender();
++                    if (asyncChunkPackets != null) {
++                        this.fand$sendReadyAsyncChunkBatches(player.connection, asyncChunkPackets, effectiveMaxUnacknowledgedBatches);
++                    } else if (!this.fand$pendingAsyncChunkBatches.isEmpty()) {
++                        this.fand$restorePendingAsyncChunks();
+                     }
++                    this.fand$submitChunkBatches(player, asyncChunkPackets);
+                 }
+             }
++        } finally {
++            if (this.fand$teleportChunkSendBurstTicks > 0) {
++                this.fand$teleportChunkSendBurstTicks--;
++            }
+         }
+     }
+ 
+-    private void fand$pollAsyncChunkBatch(
++    private void fand$sendReadyAsyncChunkBatches(
+         final ServerGamePacketListenerImpl connection,
+-        final io.fand.server.chunk.AsyncChunkPacketSender asyncChunkPackets
++        final io.fand.server.chunk.AsyncChunkPacketSender asyncChunkPackets,
++        final int effectiveMaxUnacknowledgedBatches
+     ) {
+-        io.fand.server.chunk.AsyncChunkPacketSender.PendingBatch batch = this.fand$pendingAsyncChunkBatch;
+-        if (batch == null || !batch.ready()) {
+-            return;
++        while (this.unacknowledgedBatches < effectiveMaxUnacknowledgedBatches) {
++            io.fand.server.chunk.AsyncChunkPacketSender.PendingBatch batch = this.fand$pendingAsyncChunkBatches.peekFirst();
++            if (batch == null || !batch.ready()) {
++                return;
++            }
++
++            this.fand$pendingAsyncChunkBatches.removeFirst();
++            if (batch.failed()) {
++                batch.restoreTo(this.pendingChunks);
++                continue;
++            }
++
++            int sent = asyncChunkPackets.sendIfReady(connection, batch);
++            if (sent > 0) {
++                this.unacknowledgedBatches++;
++            }
+         }
+-        this.fand$pendingAsyncChunkBatch = null;
+-        if (batch.failed()) {
+-            batch.restoreTo(this.pendingChunks);
+-            return;
++    }
++
++    private void fand$submitChunkBatches(final ServerPlayer player, final io.fand.server.chunk.AsyncChunkPacketSender asyncChunkPackets) {
++        ServerLevel level = player.level();
++        ChunkMap chunkMap = level.getChunkSource().chunkMap;
++        int maxPreparedBatches = asyncChunkPackets == null ? 0 : io.fand.server.hooks.FandHooks.asyncChunkPacketPreparationBatches();
++
++        while (!this.pendingChunks.isEmpty() && this.batchQuota >= 1.0F) {
++            int maxBatchSize = Mth.floor(this.batchQuota);
++            if (asyncChunkPackets != null) {
++                int remainingSlots = maxPreparedBatches - this.fand$pendingAsyncChunkBatches.size();
++                if (remainingSlots <= 0) {
++                    return;
++                }
++
++                maxBatchSize = Math.max(1, Mth.ceil(this.batchQuota / remainingSlots));
++            }
++
++            List<LevelChunk> chunksToSend = this.collectChunksToSend(chunkMap, player, maxBatchSize);
++            if (chunksToSend.isEmpty()) {
++                return;
++            }
++
++            ServerGamePacketListenerImpl connection = player.connection;
++            io.fand.server.chunk.AsyncChunkPacketSender.PendingBatch pendingBatch = asyncChunkPackets == null
++                ? null
++                : asyncChunkPackets.submit(player, chunksToSend);
++            if (pendingBatch == null) {
++                this.unacknowledgedBatches++;
++                connection.send(ClientboundChunkBatchStartPacket.INSTANCE);
++
++                for (LevelChunk chunk : chunksToSend) {
++                    sendChunk(connection, level, chunk);
++                }
++
++                connection.send(new ClientboundChunkBatchFinishedPacket(chunksToSend.size()));
++            } else {
++                this.fand$pendingAsyncChunkBatches.addLast(pendingBatch);
++            }
++
++            this.batchQuota = this.batchQuota - chunksToSend.size();
++            if (asyncChunkPackets == null) {
++                return;
++            }
+         }
+-        int sent = asyncChunkPackets.sendIfReady(connection, batch);
+-        if (sent > 0) {
+-            this.unacknowledgedBatches++;
++    }
++
++    private void fand$restorePendingAsyncChunks() {
++        io.fand.server.chunk.AsyncChunkPacketSender.PendingBatch batch;
++        while ((batch = this.fand$pendingAsyncChunkBatches.pollFirst()) != null) {
++            batch.restoreTo(this.pendingChunks);
+         }
+     }
+ 
++    private void fand$dropPendingAsyncChunk(final long key) {
++        this.fand$pendingAsyncChunkBatches.removeIf(batch -> {
++            batch.drop(key);
++            return batch.empty();
++        });
++    }
++
+     private static void sendChunk(final ServerGamePacketListenerImpl connection, final ServerLevel level, final LevelChunk chunk) {
+         connection.send(new ClientboundLevelChunkWithLightPacket(chunk, level.getLightEngine(), null, null));
+         ChunkPos pos = chunk.getPos();
+@@ -122,26 +173,17 @@ public class PlayerChunkSender {
+         level.debugSynchronizers().startTrackingChunk(connection.player, chunk.getPos());
+     }
+ 
+-    private List<LevelChunk> collectChunksToSend(final ChunkMap chunkMap, final ChunkPos playerPos) {
+-        int maxBatchSize = Mth.floor(this.batchQuota);
+-        List<LevelChunk> chunks;
+-        if (!this.memoryConnection && this.pendingChunks.size() > maxBatchSize) {
+-            chunks = this.pendingChunks
+-                .stream()
+-                .collect(Comparators.least(maxBatchSize, Comparator.comparingInt(playerPos::distanceSquared)))
+-                .stream()
+-                .mapToLong(Long::longValue)
+-                .mapToObj(chunkMap::getChunkToSend)
+-                .filter(Objects::nonNull)
+-                .toList();
+-        } else {
+-            chunks = this.pendingChunks
+-                .longStream()
+-                .mapToObj(chunkMap::getChunkToSend)
+-                .filter(Objects::nonNull)
+-                .sorted(Comparator.comparingInt(chunkx -> playerPos.distanceSquared(chunkx.getPos())))
+-                .toList();
+-        }
++    private List<LevelChunk> collectChunksToSend(final ChunkMap chunkMap, final ServerPlayer player, final int maxBatchSize) {
++        ChunkPos playerPos = player.chunkPosition();
++        Vec3 direction = sendPriorityDirection(player);
++        Comparator<LevelChunk> comparator = Comparator
++            .comparingInt((LevelChunk chunk) -> sendPriorityBand(playerPos, direction, chunk.getPos()))
++            .thenComparingInt(chunk -> Math.abs(lateralDistance(playerPos, direction, chunk.getPos())))
++            .thenComparingInt(chunk -> playerPos.distanceSquared(chunk.getPos()));
++        Stream<LevelChunk> readyChunks = this.pendingChunks.longStream().mapToObj(chunkMap::getChunkToSend).filter(Objects::nonNull);
++        List<LevelChunk> chunks = this.memoryConnection
++            ? readyChunks.sorted(comparator).toList()
++            : readyChunks.collect(Comparators.least(maxBatchSize, comparator));
+ 
+         for (LevelChunk chunk : chunks) {
+             this.pendingChunks.remove(chunk.getPos().pack());
+@@ -150,6 +192,87 @@ public class PlayerChunkSender {
+         return chunks;
+     }
+ 
++    public void fand$startTeleportChunkSendBurst() {
++        int ticks = io.fand.server.hooks.FandHooks.chunkTeleportChunkSendBurstTicks();
++        if (ticks > 0) {
++            this.fand$teleportChunkSendBurstTicks = Math.max(this.fand$teleportChunkSendBurstTicks, ticks);
++        }
++    }
++
++    private float fand$effectiveDesiredChunksPerTick(final boolean teleportBurst, final boolean movementBurst) {
++        float desiredChunks = this.desiredChunksPerTick;
++        if (teleportBurst) {
++            desiredChunks = Math.max(desiredChunks, io.fand.server.hooks.FandHooks.chunkTeleportChunkSendBurstChunksPerTick());
++        }
++        if (movementBurst) {
++            desiredChunks = Math.max(desiredChunks, io.fand.server.hooks.FandHooks.chunkMovementChunkSendBurstChunksPerTick());
++        }
++
++        return Math.max(1.0F, desiredChunks);
++    }
++
++    private int fand$effectiveMaxUnacknowledgedBatches(final boolean teleportBurst, final boolean movementBurst) {
++        int batches = this.maxUnacknowledgedBatches;
++        if (teleportBurst) {
++            batches = Math.max(batches, io.fand.server.hooks.FandHooks.chunkTeleportChunkSendBurstBatches());
++        }
++        if (movementBurst) {
++            batches = Math.max(batches, io.fand.server.hooks.FandHooks.chunkMovementChunkSendBurstBatches());
++        }
++
++        return Math.max(1, batches);
++    }
++
++    private static boolean fand$movementChunkSendBurstActive(final ServerPlayer player) {
++        if (!io.fand.server.hooks.FandHooks.chunkMovementPreloadEnabled()) {
++            return false;
++        }
++
++        Vec3 movement = player.getKnownMovement();
++        double horizontalDistanceSqr = movement.x * movement.x + movement.z * movement.z;
++        double minDistance = io.fand.server.hooks.FandHooks.chunkMovementPreloadMinHorizontalDistanceBlocks();
++        return horizontalDistanceSqr >= minDistance * minDistance;
++    }
++
++    private static Vec3 sendPriorityDirection(final ServerPlayer player) {
++        Vec3 movement = player.getKnownMovement();
++        double horizontalSpeedSqr = movement.x * movement.x + movement.z * movement.z;
++        if (horizontalSpeedSqr > 1.0E-4) {
++            double horizontalSpeed = Math.sqrt(horizontalSpeedSqr);
++            return new Vec3(movement.x / horizontalSpeed, 0.0, movement.z / horizontalSpeed);
++        }
++
++        Vec3 look = player.getLookAngle();
++        double horizontalLookSqr = look.x * look.x + look.z * look.z;
++        if (horizontalLookSqr > 1.0E-4) {
++            double horizontalLook = Math.sqrt(horizontalLookSqr);
++            return new Vec3(look.x / horizontalLook, 0.0, look.z / horizontalLook);
++        }
++
++        return Vec3.ZERO;
++    }
++
++    private static int sendPriorityBand(final ChunkPos playerPos, final Vec3 direction, final ChunkPos chunkPos) {
++        double forward = forwardDistance(playerPos, direction, chunkPos);
++        if (forward >= 1.0) {
++            return 0;
++        }
++
++        return forward >= -1.0 ? 1 : 2;
++    }
++
++    private static double forwardDistance(final ChunkPos playerPos, final Vec3 direction, final ChunkPos chunkPos) {
++        int dx = chunkPos.x() - playerPos.x();
++        int dz = chunkPos.z() - playerPos.z();
++        return dx * direction.x + dz * direction.z;
++    }
++
++    private static int lateralDistance(final ChunkPos playerPos, final Vec3 direction, final ChunkPos chunkPos) {
++        int dx = chunkPos.x() - playerPos.x();
++        int dz = chunkPos.z() - playerPos.z();
++        return Mth.floor(dx * -direction.z + dz * direction.x + 0.5);
++    }
++
+     public void onChunkBatchReceivedByClient(final float desiredChunksPerTick) {
+         this.unacknowledgedBatches--;
+         if (this.unacknowledgedBatches < 0) {
+@@ -165,7 +288,16 @@ public class PlayerChunkSender {
+     }
+ 
+     public boolean isPending(final long pos) {
+-        return this.pendingChunks.contains(pos)
+-            || this.fand$pendingAsyncChunkBatch != null && this.fand$pendingAsyncChunkBatch.contains(pos);
++        if (this.pendingChunks.contains(pos)) {
++            return true;
++        }
++
++        for (io.fand.server.chunk.AsyncChunkPacketSender.PendingBatch batch : this.fand$pendingAsyncChunkBatches) {
++            if (batch.contains(pos)) {
++                return true;
++            }
++        }
++
++        return false;
+     }
+ }
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 2e88f818d32ed15a2143b0923ca9d83875f8ecb6..eb1a2e54906aa4b452b620665a6512f21d51462f 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -1341,6 +1341,7 @@ public class ServerGamePacketListenerImpl
+ 
+         this.player.teleportSetPosition(destination, relatives);
+         this.awaitingPositionFromClient = this.player.position();
++        this.chunkSender.fand$startTeleportChunkSendBurst();
+         this.send(ClientboundPlayerPositionPacket.of(this.awaitingTeleport, destination, relatives));
+     }
+ 
+@@ -2450,4 +2451,8 @@ public class ServerGamePacketListenerImpl
+         this.waitingForRespawn = false;
+         this.clientLoadedTimeoutTimer = 60;
+     }
++
++    public boolean fand$sendPreparedChunkFrame(final byte @Nullable [] preparedFrame) {
++        return this.connection.fand$sendPreparedFrame(preparedFrame);
++    }
+ }

@@ -62,8 +62,8 @@ final class ChunkGenerationTaskTest {
         chunkMap.failBlockedEmpty();
 
         assertThat(waitFor).isDone();
-        assertThat(chunkMap.holder(center).fand$getStatusFutureForTesting(ChunkStatus.BIOMES)).succeedsWithin(java.time.Duration.ofSeconds(1))
-            .satisfies(result -> assertThat(result.isSuccess()).isFalse());
+        assertThat(waitFor.getNow(null)).isInstanceOfSatisfying(ChunkResult.class, result -> assertThat(result.isSuccess()).isFalse());
+        assertThat(chunkMap.holder(center).fand$getStatusFutureForTesting(ChunkStatus.BIOMES)).isNull();
         assertThat(task.runUntilWait()).isNull();
     }
 
@@ -94,10 +94,59 @@ final class ChunkGenerationTaskTest {
         );
     }
 
+    @Test
+    void holderCanRetryStatusAfterTemporaryGenerationFailure() {
+        ChunkPos center = new ChunkPos(0, 0);
+        var chunkMap = new GraphTestChunkMap(new ChunkPos(99, 99));
+        TestChunkHolder holder = chunkMap.holderOrCreate(center);
+
+        GenerationChunkHolder.StatusGenerationClaim firstClaim = holder.claimGenerationStatus(ChunkStatus.FULL);
+        holder.failGenerationStatus(ChunkStatus.FULL, GenerationChunkHolder.UNLOADED_CHUNK);
+        GenerationChunkHolder.StatusGenerationClaim secondClaim = holder.claimGenerationStatus(ChunkStatus.FULL);
+
+        assertThat(firstClaim.owner()).isTrue();
+        assertThat(firstClaim.future()).isDone();
+        assertThat(secondClaim.owner()).isTrue();
+        assertThat(secondClaim.future()).isNotSameAs(firstClaim.future());
+    }
+
+    @Test
+    void holderContinuesHigherGenerationTargetAfterActiveTaskCompletes() {
+        ChunkPos center = new ChunkPos(0, 0);
+        var chunkMap = new GraphTestChunkMap(new ChunkPos(99, 99));
+        TestChunkHolder holder = chunkMap.holderOrCreate(center);
+
+        CompletableFuture<ChunkResult<ChunkAccess>> biomes = holder.scheduleChunkGenerationTask(ChunkStatus.BIOMES, chunkMap);
+        CompletableFuture<ChunkResult<ChunkAccess>> surface = holder.scheduleChunkGenerationTask(ChunkStatus.SURFACE, chunkMap);
+        chunkMap.runGenerationTasks();
+
+        assertThat(biomes).isDone();
+        assertThat(surface).isDone();
+        assertThat(holder.startedStatuses()).contains(ChunkStatus.BIOMES, ChunkStatus.NOISE, ChunkStatus.SURFACE);
+        assertThat(chunkMap.scheduledTasks()).isEqualTo(2);
+    }
+
+    @Test
+    void holderContinuesHigherTargetWhenActiveTaskCacheIsTooSmall() {
+        ChunkPos center = new ChunkPos(0, 0);
+        var chunkMap = new GraphTestChunkMap(new ChunkPos(99, 99));
+        TestChunkHolder holder = chunkMap.holderOrCreate(center);
+
+        CompletableFuture<ChunkResult<ChunkAccess>> biomes = holder.scheduleChunkGenerationTask(ChunkStatus.BIOMES, chunkMap);
+        CompletableFuture<ChunkResult<ChunkAccess>> features = holder.scheduleChunkGenerationTask(ChunkStatus.FEATURES, chunkMap);
+        chunkMap.runGenerationTasks();
+
+        assertThat(biomes).isDone();
+        assertThat(features).isDone();
+        assertThat(holder.startedStatuses()).contains(ChunkStatus.BIOMES, ChunkStatus.FEATURES);
+        assertThat(chunkMap.scheduledTasks()).isEqualTo(2);
+    }
+
     private static final class GraphTestChunkMap implements GeneratingChunkMap {
         private final Map<Long, TestChunkHolder> holders = new ConcurrentHashMap<>();
         private final ChunkPos blockedEmptyPos;
         private final CompletableFuture<ChunkResult<ChunkAccess>> blockedEmpty = new CompletableFuture<>();
+        private final List<ChunkGenerationTask> tasks = new ArrayList<>();
 
         private GraphTestChunkMap(final ChunkPos blockedEmptyPos) {
             this.blockedEmptyPos = blockedEmptyPos;
@@ -134,11 +183,26 @@ final class ChunkGenerationTaskTest {
 
         @Override
         public ChunkGenerationTask scheduleGenerationTask(final ChunkStatus targetStatus, final ChunkPos pos) {
-            throw new UnsupportedOperationException();
+            ChunkGenerationTask task = ChunkGenerationTask.create(this, targetStatus, pos);
+            this.tasks.add(task);
+            return task;
         }
 
         @Override
         public void runGenerationTasks() {
+            for (int taskIndex = 0; taskIndex < this.tasks.size(); taskIndex++) {
+                ChunkGenerationTask task = this.tasks.get(taskIndex);
+                while (true) {
+                    CompletableFuture<?> wait = task.runUntilWait();
+                    if (wait == null || !wait.isDone()) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        private int scheduledTasks() {
+            return this.tasks.size();
         }
 
         private TestChunkHolder holder(final ChunkPos pos) {

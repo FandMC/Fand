@@ -32,6 +32,15 @@ public final class BlockComponentStorage {
         return data == null ? DataComponentMap.EMPTY : data.get(Long.toString(pos.asLong()));
     }
 
+    public static boolean empty(ServerLevel level, BlockPos pos) {
+        var server = level.getServer();
+        if (server == null || !server.isSameThread()) {
+            return true;
+        }
+        var data = level.getDataStorage().get(PersistentComponentData.blockType());
+        return data == null || data.empty(Long.toString(pos.asLong()));
+    }
+
     public static Collection<BlockPos> positionsWith(ServerLevel level, DataComponentKey<?> key) {
         Objects.requireNonNull(key, "key");
         return positionsWith(level, key, null);

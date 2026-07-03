@@ -1,0 +1,303 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Fri, 3 Jul 2026 18:52:14 +0800
+Subject: [PATCH] Preload chunks in player movement direction
+
+
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index 6ff22cfc7bbda3df8104d58c13e3056e26ec538e..59818137a62ec239f4568165e9f1ae5464fea5ca 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -13,6 +13,7 @@ import it.unimi.dsi.fastutil.longs.Long2ByteMap;
+ import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
+ import it.unimi.dsi.fastutil.longs.Long2LongMap;
+ import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
++import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
+ import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
+ import it.unimi.dsi.fastutil.longs.LongIterator;
+ import it.unimi.dsi.fastutil.longs.LongLinkedOpenHashSet;
+@@ -129,6 +130,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     private static final int EAGER_CHUNK_SAVE_COOLDOWN_IN_MILLIS = 10000;
+     private static final int MAX_ACTIVE_CHUNK_WRITES = 128;
+     private static final AtomicLong FAND_CHUNK_TRACKING_SEQUENCE = new AtomicLong();
++    private static final int FAND_MOVEMENT_PRELOAD_TICKET_LEVEL = ChunkLevel.byStatus(FullChunkStatus.FULL);
+     public static final int MIN_VIEW_DISTANCE = 2;
+     public static final int MAX_VIEW_DISTANCE = 32;
+     public static final int FORCED_TICKET_LEVEL = ChunkLevel.byStatus(FullChunkStatus.ENTITY_TICKING);
+@@ -159,6 +161,9 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     private final Long2ByteMap chunkTypeCache = new Long2ByteOpenHashMap();
+     private final Long2LongMap nextChunkSaveTime = new Long2LongOpenHashMap();
+     private final LongSet chunksToEagerlySave = new LongLinkedOpenHashSet();
++    private final Map<UUID, LongSet> fandMovementPreloadByPlayer = new HashMap<>();
++    private final Long2IntOpenHashMap fandMovementPreloadRefs = new Long2IntOpenHashMap();
++    private final LongLinkedOpenHashSet fandMovementPreloadGenerationQueue = new LongLinkedOpenHashSet();
+     private final Queue<Runnable> unloadQueue = Queues.newConcurrentLinkedQueue();
+     private final AtomicInteger activeChunkWrites = new AtomicInteger();
+     private int serverViewDistance;
+@@ -728,9 +733,25 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+ 
+     @Override
+     public void runGenerationTasks() {
++        this.runMovementPreloadGeneration();
+         this.asyncChunkSystem.runGenerationTasks();
+     }
+ 
++    private void runMovementPreloadGeneration() {
++        int budget = Math.max(64, io.fand.server.hooks.FandHooks.chunkWorldgenParallelism() * 8);
++        while (budget-- > 0 && !this.fandMovementPreloadGenerationQueue.isEmpty()) {
++            long chunkPos = this.fandMovementPreloadGenerationQueue.removeFirstLong();
++            if (!this.fandMovementPreloadRefs.containsKey(chunkPos)) {
++                continue;
++            }
++
++            ChunkHolder holder = this.updatingChunkMap.get(chunkPos);
++            if (holder != null) {
++                holder.scheduleChunkGenerationTask(ChunkStatus.FULL, this);
++            }
++        }
++    }
++
+     public CompletableFuture<ChunkResult<LevelChunk>> prepareTickingChunk(final ChunkHolder chunk) {
+         CompletableFuture<ChunkResult<List<ChunkAccess>>> future = this.getChunkRangeFuture(chunk, 1, distance -> ChunkStatus.FULL);
+         return future.thenApplyAsync(listResult -> listResult.map(list -> {
+@@ -1103,6 +1124,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+ 
+             player.setChunkTrackingView(ChunkTrackingView.EMPTY);
+             this.updateChunkTracking(player);
++            this.updateMovementPreload(player);
+         } else {
+             SectionPos lastPos = player.getLastSectionPos();
+             this.playerMap.removePlayer(player);
+@@ -1110,6 +1132,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+                 this.distanceManager.removePlayer(lastPos, player);
+             }
+ 
++            this.clearMovementPreload(player);
+             this.applyChunkTrackingView(player, ChunkTrackingView.EMPTY);
+         }
+     }
+@@ -1120,6 +1143,11 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     }
+ 
+     public void move(final ServerPlayer player) {
++        this.movePlayerTracking(player);
++        this.updateMovementPreload(player);
++    }
++
++    private void movePlayerTracking(final ServerPlayer player) {
+         for (ChunkMap.TrackedEntity trackedEntity : this.entityMap.values()) {
+             if (trackedEntity.entity == player) {
+                 trackedEntity.updatePlayers(this.level.players());
+@@ -1137,7 +1165,8 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+ 
+     public void move(final ServerPlayer player, final double oldX, final double oldY, final double oldZ) {
+         if (!io.fand.server.hooks.FandHooks.entityTrackerFastPathEnabled()) {
+-            this.move(player);
++            this.movePlayerTracking(player);
++            this.updateMovementPreload(player, oldX, oldZ);
+             return;
+         }
+ 
+@@ -1179,6 +1208,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         this.locallyUpdatedMovedPlayers.add(player);
+ 
+         this.updateMovedPlayerStatus(player);
++        this.updateMovementPreload(player, oldX, oldZ);
+     }
+ 
+     private void updateMovedPlayerStatus(final ServerPlayer player) {
+@@ -1209,6 +1239,182 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         }
+     }
+ 
++    private void updateMovementPreload(final ServerPlayer player) {
++        Vec3 movement = player.getDeltaMovement();
++        this.updateMovementPreload(player, player.getX() - movement.x, player.getZ() - movement.z);
++    }
++
++    private void updateMovementPreload(final ServerPlayer player, final double oldX, final double oldZ) {
++        if (!io.fand.server.hooks.FandHooks.chunkMovementPreloadEnabled() || this.skipPlayer(player)) {
++            this.clearMovementPreload(player);
++            return;
++        }
++
++        double dx = player.getX() - oldX;
++        double dz = player.getZ() - oldZ;
++        double minDistance = io.fand.server.hooks.FandHooks.chunkMovementPreloadMinHorizontalDistanceBlocks();
++        double distanceSqr = dx * dx + dz * dz;
++        if (distanceSqr < minDistance * minDistance) {
++            LongSet previous = this.fandMovementPreloadByPlayer.get(player.getUUID());
++            if (previous != null && !previous.isEmpty()) {
++                this.refreshMovementPreloadTickets(previous);
++            }
++            return;
++        }
++
++        LongSet next = this.buildMovementPreloadChunks(player, dx, dz);
++        this.applyMovementPreload(player, next);
++    }
++
++    private LongSet buildMovementPreloadChunks(final ServerPlayer player, final double dx, final double dz) {
++        int lookahead = io.fand.server.hooks.FandHooks.chunkMovementPreloadLookaheadChunks();
++        int width = io.fand.server.hooks.FandHooks.chunkMovementPreloadWidthChunks();
++        if (lookahead <= 0) {
++            return new LongOpenHashSet();
++        }
++
++        double length = Math.sqrt(dx * dx + dz * dz);
++        if (length < 1.0E-6) {
++            return new LongOpenHashSet();
++        }
++
++        int viewDistance = this.getPlayerViewDistance(player);
++        ChunkPos center = player.chunkPosition();
++        double forwardX = dx / length;
++        double forwardZ = dz / length;
++        double sideX = -forwardZ;
++        double sideZ = forwardX;
++        LongLinkedOpenHashSet chunks = new LongLinkedOpenHashSet();
++        for (int forward = viewDistance + 1; forward <= viewDistance + lookahead; forward++) {
++            this.addMovementPreloadColumn(chunks, center, viewDistance, forwardX, forwardZ, sideX, sideZ, forward, width);
++        }
++
++        return chunks;
++    }
++
++    private void addMovementPreloadColumn(
++        final LongLinkedOpenHashSet chunks,
++        final ChunkPos center,
++        final int viewDistance,
++        final double forwardX,
++        final double forwardZ,
++        final double sideX,
++        final double sideZ,
++        final int forward,
++        final int width
++    ) {
++        for (int side = 0; side <= width; side++) {
++            if (side == 0) {
++                this.addMovementPreloadChunk(chunks, center, viewDistance, forwardX, forwardZ, sideX, sideZ, forward, 0);
++            } else {
++                this.addMovementPreloadChunk(chunks, center, viewDistance, forwardX, forwardZ, sideX, sideZ, forward, side);
++                this.addMovementPreloadChunk(chunks, center, viewDistance, forwardX, forwardZ, sideX, sideZ, forward, -side);
++            }
++        }
++    }
++
++    private void addMovementPreloadChunk(
++        final LongLinkedOpenHashSet chunks,
++        final ChunkPos center,
++        final int viewDistance,
++        final double forwardX,
++        final double forwardZ,
++        final double sideX,
++        final double sideZ,
++        final int forward,
++        final int side
++    ) {
++        int chunkX = center.x() + Mth.floor(forwardX * forward + sideX * side + 0.5);
++        int chunkZ = center.z() + Mth.floor(forwardZ * forward + sideZ * side + 0.5);
++        if (ChunkPos.isValid(chunkX, chunkZ) && !ChunkTrackingView.isInViewDistance(center.x(), center.z(), viewDistance, chunkX, chunkZ)) {
++            chunks.add(ChunkPos.pack(chunkX, chunkZ));
++        }
++    }
++
++    private void applyMovementPreload(final ServerPlayer player, final LongSet next) {
++        UUID playerId = player.getUUID();
++        LongSet previous = this.fandMovementPreloadByPlayer.get(playerId);
++        if (previous == null) {
++            previous = new LongOpenHashSet();
++        }
++
++        LongIterator previousIterator = previous.iterator();
++        while (previousIterator.hasNext()) {
++            long chunkPos = previousIterator.nextLong();
++            if (!next.contains(chunkPos)) {
++                this.releaseMovementPreload(chunkPos);
++            }
++        }
++
++        LongIterator nextIterator = next.iterator();
++        while (nextIterator.hasNext()) {
++            long chunkPos = nextIterator.nextLong();
++            if (previous.contains(chunkPos)) {
++                this.refreshMovementPreloadTicket(chunkPos);
++            } else {
++                this.retainMovementPreload(chunkPos);
++            }
++        }
++
++        if (next.isEmpty()) {
++            this.fandMovementPreloadByPlayer.remove(playerId);
++        } else {
++            this.fandMovementPreloadByPlayer.put(playerId, next);
++        }
++    }
++
++    private void retainMovementPreload(final long chunkPos) {
++        int references = this.fandMovementPreloadRefs.addTo(chunkPos, 1);
++        if (references == 0) {
++            this.ticketStorage.addTicket(chunkPos, movementPreloadTicket());
++            this.scheduleMovementPreloadGeneration(chunkPos);
++        } else {
++            this.refreshMovementPreloadTicket(chunkPos);
++        }
++    }
++
++    private void releaseMovementPreload(final long chunkPos) {
++        int references = this.fandMovementPreloadRefs.get(chunkPos);
++        if (references <= 1) {
++            this.fandMovementPreloadRefs.remove(chunkPos);
++            this.fandMovementPreloadGenerationQueue.remove(chunkPos);
++            this.ticketStorage.removeTicket(chunkPos, movementPreloadTicket());
++        } else {
++            this.fandMovementPreloadRefs.put(chunkPos, references - 1);
++        }
++    }
++
++    private void clearMovementPreload(final ServerPlayer player) {
++        LongSet previous = this.fandMovementPreloadByPlayer.remove(player.getUUID());
++        if (previous == null) {
++            return;
++        }
++
++        LongIterator iterator = previous.iterator();
++        while (iterator.hasNext()) {
++            this.releaseMovementPreload(iterator.nextLong());
++        }
++    }
++
++    private void refreshMovementPreloadTickets(final LongSet chunks) {
++        LongIterator iterator = chunks.iterator();
++        while (iterator.hasNext()) {
++            this.refreshMovementPreloadTicket(iterator.nextLong());
++        }
++    }
++
++    private void refreshMovementPreloadTicket(final long chunkPos) {
++        this.ticketStorage.addTicket(chunkPos, movementPreloadTicket());
++    }
++
++    private void scheduleMovementPreloadGeneration(final long chunkPos) {
++        this.fandMovementPreloadGenerationQueue.add(chunkPos);
++    }
++
++    private static Ticket movementPreloadTicket() {
++        return new Ticket(TicketType.MOVEMENT_PRELOAD, FAND_MOVEMENT_PRELOAD_TICKET_LEVEL);
++    }
++
+     private AABB playerTrackingRange(final ServerPlayer player, final double x, final double y, final double z) {
+         double range = Math.max(this.level.getServer().getScaledTrackingDistance(player.getType().clientTrackingRange() * 16), this.getPlayerViewDistance(player) * 16.0);
+         return new AABB(x - range, this.level.getMinY(), z - range, x + range, this.level.getMaxY(), z + range);
+diff --git a/net/minecraft/server/level/TicketType.java b/net/minecraft/server/level/TicketType.java
+index 11f3ff58c97a71d00733f1f92bdb38f3b48779f8..caab64603098260ae58eccc4eb7abd09716df419 100644
+--- a/net/minecraft/server/level/TicketType.java
++++ b/net/minecraft/server/level/TicketType.java
+@@ -18,6 +18,7 @@ public record TicketType(long timeout, @TicketType.Flags int flags) {
+     public static final TicketType SPAWN_SEARCH = register("spawn_search", 1L, FLAG_LOADING);
+     public static final TicketType DRAGON = register("dragon", NO_TIMEOUT, FLAG_LOADING | FLAG_SIMULATION);
+     public static final TicketType PLAYER_LOADING = register("player_loading", NO_TIMEOUT, FLAG_LOADING);
++    public static final TicketType MOVEMENT_PRELOAD = register("movement_preload", 40L, FLAG_LOADING);
+     public static final TicketType PLAYER_SIMULATION = register("player_simulation", NO_TIMEOUT, FLAG_SIMULATION | FLAG_KEEP_DIMENSION_ACTIVE);
+     public static final TicketType FORCED = register("forced", NO_TIMEOUT, FLAG_PERSIST | FLAG_LOADING | FLAG_SIMULATION | FLAG_KEEP_DIMENSION_ACTIVE);
+     public static final TicketType PORTAL = register("portal", 300L, FLAG_PERSIST | FLAG_LOADING | FLAG_SIMULATION | FLAG_KEEP_DIMENSION_ACTIVE);

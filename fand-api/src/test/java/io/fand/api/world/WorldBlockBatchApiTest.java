@@ -31,6 +31,14 @@ final class WorldBlockBatchApiTest {
                 .isCompletedExceptionally();
         assertThat(world.replaceConnectedBlocks(world.at(0, 64, 0), type -> true, AIR, 8))
                 .isCompletedExceptionally();
+        assertThat(world.replaceFluids(new BlockRegion(0, 0, 0, 0, 0, 0), type -> true, AIR))
+                .isCompletedExceptionally();
+        assertThat(world.clearFluids(new BlockRegion(0, 0, 0, 0, 0, 0), type -> true))
+                .isCompletedExceptionally();
+        assertThat(world.replaceConnectedFluids(world.at(0, 64, 0), type -> true, AIR, 8))
+                .isCompletedExceptionally();
+        assertThat(world.clearConnectedFluids(world.at(0, 64, 0), type -> true, 8))
+                .isCompletedExceptionally();
     }
 
     @Test
@@ -38,6 +46,10 @@ final class WorldBlockBatchApiTest {
         var world = new TestWorld();
 
         assertThat(world.replaceConnectedBlocks(world.at(0, 64, 0), type -> true, AIR, -1))
+                .isCompletedExceptionally();
+        assertThat(world.replaceConnectedFluids(world.at(0, 64, 0), type -> true, AIR, -1))
+                .isCompletedExceptionally();
+        assertThat(world.clearConnectedFluids(world.at(0, 64, 0), type -> true, -1))
                 .isCompletedExceptionally();
     }
 

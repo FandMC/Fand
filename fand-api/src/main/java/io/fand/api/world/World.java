@@ -1,6 +1,7 @@
 package io.fand.api.world;
 
 import io.fand.api.block.BlockType;
+import io.fand.api.block.FluidType;
 import io.fand.api.component.DataComponentMap;
 import io.fand.api.entity.Player;
 import io.fand.api.entity.Entity;
@@ -722,6 +723,49 @@ public interface World extends ForwardingAudience {
         return scanBlocks(region, BlockTransform.replaceMatching(matcher, replacement), options);
     }
 
+    /** Replaces matching fluids in {@code region} over multiple ticks. */
+    default CompletableFuture<BlockScanResult> replaceFluids(
+            BlockRegion region,
+            Predicate<FluidType> matcher,
+            BlockType replacement
+    ) {
+        return replaceFluids(region, matcher, replacement, FluidBatchOptions.defaults());
+    }
+
+    /** Replaces matching fluids in {@code region} over multiple ticks. */
+    default CompletableFuture<BlockScanResult> replaceFluids(
+            BlockRegion region,
+            Predicate<FluidType> matcher,
+            BlockType replacement,
+            FluidBatchOptions options
+    ) {
+        java.util.Objects.requireNonNull(region, "region");
+        java.util.Objects.requireNonNull(matcher, "matcher");
+        java.util.Objects.requireNonNull(replacement, "replacement");
+        java.util.Objects.requireNonNull(options, "options");
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Fluid replacement is not supported"));
+    }
+
+    /** Clears matching fluids in {@code region} over multiple ticks. */
+    default CompletableFuture<BlockScanResult> clearFluids(
+            BlockRegion region,
+            Predicate<FluidType> matcher
+    ) {
+        return clearFluids(region, matcher, FluidBatchOptions.defaults());
+    }
+
+    /** Clears matching fluids in {@code region} over multiple ticks. */
+    default CompletableFuture<BlockScanResult> clearFluids(
+            BlockRegion region,
+            Predicate<FluidType> matcher,
+            FluidBatchOptions options
+    ) {
+        java.util.Objects.requireNonNull(region, "region");
+        java.util.Objects.requireNonNull(matcher, "matcher");
+        java.util.Objects.requireNonNull(options, "options");
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Fluid clearing is not supported"));
+    }
+
     /** Replaces the matching block component connected to {@code origin}. */
     default CompletableFuture<BlockScanResult> replaceConnectedBlocks(
             Location origin,
@@ -748,6 +792,59 @@ public interface World extends ForwardingAudience {
             return CompletableFuture.failedFuture(new IllegalArgumentException("maxDistance must not be negative"));
         }
         return CompletableFuture.failedFuture(new UnsupportedOperationException("Connected block replacement is not supported"));
+    }
+
+    /** Replaces the matching connected fluid component around {@code origin}. */
+    default CompletableFuture<BlockScanResult> replaceConnectedFluids(
+            Location origin,
+            Predicate<FluidType> matcher,
+            BlockType replacement,
+            int maxDistance
+    ) {
+        return replaceConnectedFluids(origin, matcher, replacement, maxDistance, FluidBatchOptions.defaults());
+    }
+
+    /** Replaces the matching connected fluid component around {@code origin}. */
+    default CompletableFuture<BlockScanResult> replaceConnectedFluids(
+            Location origin,
+            Predicate<FluidType> matcher,
+            BlockType replacement,
+            int maxDistance,
+            FluidBatchOptions options
+    ) {
+        requireSameWorld(origin, this, "origin");
+        java.util.Objects.requireNonNull(matcher, "matcher");
+        java.util.Objects.requireNonNull(replacement, "replacement");
+        java.util.Objects.requireNonNull(options, "options");
+        if (maxDistance < 0) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("maxDistance must not be negative"));
+        }
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Connected fluid replacement is not supported"));
+    }
+
+    /** Clears the matching connected fluid component around {@code origin}. */
+    default CompletableFuture<BlockScanResult> clearConnectedFluids(
+            Location origin,
+            Predicate<FluidType> matcher,
+            int maxDistance
+    ) {
+        return clearConnectedFluids(origin, matcher, maxDistance, FluidBatchOptions.defaults());
+    }
+
+    /** Clears the matching connected fluid component around {@code origin}. */
+    default CompletableFuture<BlockScanResult> clearConnectedFluids(
+            Location origin,
+            Predicate<FluidType> matcher,
+            int maxDistance,
+            FluidBatchOptions options
+    ) {
+        requireSameWorld(origin, this, "origin");
+        java.util.Objects.requireNonNull(matcher, "matcher");
+        java.util.Objects.requireNonNull(options, "options");
+        if (maxDistance < 0) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("maxDistance must not be negative"));
+        }
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Connected fluid clearing is not supported"));
     }
 
     /** Builds a {@link Location} in this world. */
