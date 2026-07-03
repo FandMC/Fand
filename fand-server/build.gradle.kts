@@ -52,6 +52,7 @@ dependencies {
     implementation("org.jline:jline-terminal:3.27.0")
     implementation("org.jline:jline-terminal-jni:3.27.0")
     implementation("org.jline:jline-reader:3.27.0")
+    runtimeOnly("net.kyori:option:1.1.0")
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
     testImplementation("org.assertj:assertj-core:3.25.3")
