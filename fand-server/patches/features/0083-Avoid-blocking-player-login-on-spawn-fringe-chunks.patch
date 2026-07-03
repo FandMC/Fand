@@ -1,0 +1,112 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Fri, 3 Jul 2026 18:50:44 +0800
+Subject: [PATCH] Avoid blocking player login on spawn fringe chunks
+
+
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index 83547b853af6c24617e58b7f82aa619e6ab96597..feb5cda3411d991d8e38c9b4ed87e696c5ff4042 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -189,6 +189,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     private static final IntProvider THUNDER_DELAY = UniformInt.of(12000, 180000);
+     public static final IntProvider THUNDER_DURATION = UniformInt.of(3600, 15600);
+     private static final Logger LOGGER = LogUtils.getLogger();
++    private static final long FAND_ENTITY_LOAD_WAIT_TIMEOUT_NANOS = 5_000_000_000L;
+     private static final int EMPTY_TIME_NO_TICK = 300;
+     private static final int MAX_SCHEDULED_TICKS_PER_TICK = 65536;
+     private static final AtomicInteger ENTITY_COUNTER = new AtomicInteger();
+@@ -1874,12 +1875,24 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+ 
+     public void waitForEntities(final ChunkPos centerChunk, final int radius) {
+         List<ChunkPos> chunks = ChunkPos.rangeClosed(centerChunk, radius).toList();
++        chunks.forEach(this.entityManager::ensureChunkQueuedForLoad);
++        long deadlineNanos = Util.getNanos() + FAND_ENTITY_LOAD_WAIT_TIMEOUT_NANOS;
+         this.server.managedBlock(() -> {
+             this.entityManager.processPendingLoads();
+ 
+             for (ChunkPos chunk : chunks) {
+                 if (!this.areEntitiesLoaded(chunk.pack())) {
+-                    return false;
++                    if (Util.getNanos() < deadlineNanos) {
++                        return false;
++                    }
++
++                    LOGGER.warn(
++                        "Timed out waiting for entity chunks around {} in {} after {} ms; continuing player spawn to avoid watchdog shutdown",
++                        centerChunk,
++                        this.dimension().identifier(),
++                        FAND_ENTITY_LOAD_WAIT_TIMEOUT_NANOS / 1_000_000L
++                    );
++                    return true;
+                 }
+             }
+ 
+diff --git a/net/minecraft/server/network/config/PrepareSpawnTask.java b/net/minecraft/server/network/config/PrepareSpawnTask.java
+index 5fa612e512d8a1f58734f9fe9c638618e05e8f08..ac70466e06aaf9897afc2c297d77852c0cb25261 100644
+--- a/net/minecraft/server/network/config/PrepareSpawnTask.java
++++ b/net/minecraft/server/network/config/PrepareSpawnTask.java
+@@ -113,6 +113,7 @@ public class PrepareSpawnTask implements ConfigurationTask {
+         private final ServerLevel spawnLevel;
+         private final CompletableFuture<Vec3> spawnPosition;
+         private final Vec2 spawnAngle;
++        private @Nullable ChunkPos spawnChunk;
+         private @Nullable CompletableFuture<?> chunkLoadFuture;
+         private final ChunkLoadCounter chunkLoadCounter = new ChunkLoadCounter();
+ 
+@@ -134,13 +135,19 @@ public class PrepareSpawnTask implements ConfigurationTask {
+             Vec3 spawnPosition = this.spawnPosition.join();
+             if (this.chunkLoadFuture == null) {
+                 ChunkPos spawnChunk = ChunkPos.containing(BlockPos.containing(spawnPosition));
++                this.spawnChunk = spawnChunk;
+                 this.chunkLoadCounter
+                     .track(
+                         this.spawnLevel,
+-                        () -> this.chunkLoadFuture = this.spawnLevel.getChunkSource().addTicketAndLoadWithRadius(TicketType.PLAYER_SPAWN, spawnChunk, 3)
++                        () -> {
++                            this.keepSpawnAreaWarm(spawnChunk);
++                            this.chunkLoadFuture = this.spawnLevel.getChunkSource().addTicketAndLoadWithRadius(TicketType.PLAYER_SPAWN, spawnChunk, 0);
++                        }
+                     );
+                 PrepareSpawnTask.this.loadListener.start(LevelLoadListener.Stage.LOAD_PLAYER_CHUNKS, this.chunkLoadCounter.totalChunks());
+                 PrepareSpawnTask.this.loadListener.updateFocus(this.spawnLevel.dimension(), spawnChunk);
++            } else if (this.spawnChunk != null) {
++                this.keepSpawnAreaWarm(this.spawnChunk);
+             }
+ 
+             PrepareSpawnTask.this.loadListener
+@@ -152,6 +159,10 @@ public class PrepareSpawnTask implements ConfigurationTask {
+             PrepareSpawnTask.this.loadListener.finish(LevelLoadListener.Stage.LOAD_PLAYER_CHUNKS);
+             return PrepareSpawnTask.this.new Ready(this.spawnLevel, spawnPosition, this.spawnAngle);
+         }
++
++        private void keepSpawnAreaWarm(final ChunkPos spawnChunk) {
++            this.spawnLevel.getChunkSource().addTicketWithRadius(TicketType.PLAYER_SPAWN, spawnChunk, PREPARE_CHUNK_RADIUS);
++        }
+     }
+ 
+     private final class Ready implements PrepareSpawnTask.State {
+@@ -171,7 +182,7 @@ public class PrepareSpawnTask implements ConfigurationTask {
+ 
+         public ServerPlayer spawn(final Connection connection, final CommonListenerCookie cookie) {
+             ChunkPos spawnChunk = ChunkPos.containing(BlockPos.containing(this.spawnPosition));
+-            this.spawnLevel.waitForEntities(spawnChunk, 3);
++            this.spawnLevel.waitForEntities(spawnChunk, 0);
+             ServerPlayer player = new ServerPlayer(PrepareSpawnTask.this.server, this.spawnLevel, cookie.gameProfile(), cookie.clientInformation());
+ 
+             try (ProblemReporter.ScopedCollector reporter = new ProblemReporter.ScopedCollector(player.problemPath(), PrepareSpawnTask.LOGGER)) {
+diff --git a/net/minecraft/world/level/entity/PersistentEntitySectionManager.java b/net/minecraft/world/level/entity/PersistentEntitySectionManager.java
+index c96cf6c5e1b779375e6400d017b280be0f501029..02dd6a56fba85d684a5ceda664fb3113b4722453 100644
+--- a/net/minecraft/world/level/entity/PersistentEntitySectionManager.java
++++ b/net/minecraft/world/level/entity/PersistentEntitySectionManager.java
+@@ -175,6 +175,10 @@ public class PersistentEntitySectionManager<T extends EntityAccess> implements A
+         }
+     }
+ 
++    public void ensureChunkQueuedForLoad(final ChunkPos pos) {
++        this.ensureChunkQueuedForLoad(pos.pack());
++    }
++
+     private boolean storeChunkSections(final long chunkPos, final Consumer<T> savedEntityVisitor) {
+         PersistentEntitySectionManager.ChunkLoadStatus chunkLoadStatus = this.chunkLoadStatuses.get(chunkPos);
+         if (chunkLoadStatus == PersistentEntitySectionManager.ChunkLoadStatus.PENDING) {

@@ -1,0 +1,210 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Fri, 3 Jul 2026 18:50:29 +0800
+Subject: [PATCH] Optimize server bootstrap loading
+
+
+diff --git a/net/minecraft/server/Main.java b/net/minecraft/server/Main.java
+index a610a801eabce412df0098ddfae7236b85475754..197262d35841d3f15418f6745d6cf35149398575 100644
+--- a/net/minecraft/server/Main.java
++++ b/net/minecraft/server/Main.java
+@@ -15,6 +15,7 @@ import java.nio.file.Path;
+ import java.nio.file.Paths;
+ import java.util.List;
+ import java.util.Optional;
++import java.util.concurrent.CompletableFuture;
+ import java.util.function.BooleanSupplier;
+ import joptsimple.OptionParser;
+ import joptsimple.OptionSet;
+@@ -108,6 +109,24 @@ public class Main {
+                 writePidFile(pidFilePath);
+             }
+ 
++            Path eulaFile = Paths.get("eula.txt");
++            Path settingsFile = Paths.get("server.properties");
++            if (options.has(initSettings)) {
++                DedicatedServerSettings settings = new DedicatedServerSettings(settingsFile);
++                settings.forceSave();
++                new Eula(eulaFile);
++                LOGGER.info("Initialized '{}' and '{}'", settingsFile.toAbsolutePath(), eulaFile.toAbsolutePath());
++                return;
++            }
++
++            Eula eula = new Eula(eulaFile);
++            if (!eula.hasAgreedToEULA()) {
++                LOGGER.info("You need to agree to the EULA in order to run the server. Go to eula.txt for more info.");
++                return;
++            }
++
++            File universePath = new File(options.valueOf(universe));
++            CompletableFuture<Services> servicesFuture = createServicesAsync(universePath);
+             CrashReport.preload();
+             if (options.has(jfrProfilingOption)) {
+                 JvmProfiler.INSTANCE.start(Environment.SERVER);
+@@ -116,7 +135,6 @@ public class Main {
+             Bootstrap.bootStrap();
+             Bootstrap.validate();
+             Util.startTimerHackThread();
+-            Path settingsFile = Paths.get("server.properties");
+             DedicatedServerSettings settings = new DedicatedServerSettings(settingsFile);
+             settings.forceSave();
+             String selectedRegionFileCompression = Optional.ofNullable(options.valueOf(regionFileCompression))
+@@ -124,27 +142,7 @@ public class Main {
+             RegionFileVersion.configure(selectedRegionFileCompression);
+             String selectedRegionFileFormat = Optional.ofNullable(options.valueOf(regionFileFormat)).orElse(settings.getProperties().regionFileFormat);
+             RegionFileFormat.configure(selectedRegionFileFormat);
+-            Path eulaFile = Paths.get("eula.txt");
+-            Eula eula = new Eula(eulaFile);
+-            if (options.has(initSettings)) {
+-                LOGGER.info("Initialized '{}' and '{}'", settingsFile.toAbsolutePath(), eulaFile.toAbsolutePath());
+-                return;
+-            }
+-
+-            if (!eula.hasAgreedToEULA()) {
+-                LOGGER.info("You need to agree to the EULA in order to run the server. Go to eula.txt for more info.");
+-                return;
+-            }
+-
+-            File universePath = new File(options.valueOf(universe));
+-            var fandRuntime = io.fand.server.Main.runtimeOrNull();
+-            YggdrasilAuthenticationService authenticationService;
+-            if (fandRuntime == null || fandRuntime.authEnvironment() == null) {
+-                authenticationService = new YggdrasilAuthenticationService(Proxy.NO_PROXY);
+-            } else {
+-                authenticationService = new YggdrasilAuthenticationService(Proxy.NO_PROXY, fandRuntime.authEnvironment());
+-            }
+-            Services services = Services.create(authenticationService, universePath);
++            Services services = servicesFuture.join();
+             NotificationManager notificationManager = new NotificationManager();
+             ManagementServer jsonRpcServer = JsonRpc.create(settings, notificationManager);
+             String levelName = Optional.ofNullable(options.valueOf(worldName)).orElse(settings.getProperties().levelName);
+@@ -309,6 +307,32 @@ public class Main {
+         }
+     }
+ 
++    private static CompletableFuture<Services> createServicesAsync(final File universePath) {
++        CompletableFuture<Services> future = new CompletableFuture<>();
++        Thread thread = new Thread(() -> {
++            try {
++                future.complete(createServices(universePath));
++            } catch (Throwable throwable) {
++                future.completeExceptionally(throwable);
++            }
++        }, "Fand Services Bootstrap");
++        thread.setDaemon(true);
++        thread.setUncaughtExceptionHandler(new DefaultUncaughtExceptionHandler(LOGGER));
++        thread.start();
++        return future;
++    }
++
++    private static Services createServices(final File universePath) {
++        var fandRuntime = io.fand.server.Main.runtimeOrNull();
++        YggdrasilAuthenticationService authenticationService;
++        if (fandRuntime == null || fandRuntime.authEnvironment() == null) {
++            authenticationService = new YggdrasilAuthenticationService(Proxy.NO_PROXY);
++        } else {
++            authenticationService = new YggdrasilAuthenticationService(Proxy.NO_PROXY, fandRuntime.authEnvironment());
++        }
++        return Services.create(authenticationService, universePath);
++    }
++
+     private static WorldLoader.InitConfig loadOrCreateConfig(
+         final DedicatedServerProperties properties, final @Nullable Dynamic<?> levelDataTag, final boolean safeModeEnabled, final PackRepository packRepository
+     ) {
+diff --git a/net/minecraft/server/packs/resources/SimpleJsonResourceReloadListener.java b/net/minecraft/server/packs/resources/SimpleJsonResourceReloadListener.java
+index 2c6f6df71a0a22e0bcfb1f81154e49e326eeaa4c..90172a5b7136181579a7ada7e7fd4ffb389c7909 100644
+--- a/net/minecraft/server/packs/resources/SimpleJsonResourceReloadListener.java
++++ b/net/minecraft/server/packs/resources/SimpleJsonResourceReloadListener.java
+@@ -8,9 +8,12 @@ import com.mojang.serialization.DynamicOps;
+ import com.mojang.serialization.JsonOps;
+ import java.io.IOException;
+ import java.io.Reader;
++import java.util.Comparator;
+ import java.util.HashMap;
++import java.util.List;
+ import java.util.Map;
+ import java.util.Map.Entry;
++import java.util.Optional;
+ import net.minecraft.core.HolderLookup;
+ import net.minecraft.core.Registry;
+ import net.minecraft.resources.FileToIdConverter;
+@@ -22,6 +25,7 @@ import org.slf4j.Logger;
+ 
+ public abstract class SimpleJsonResourceReloadListener<T> extends SimplePreparableReloadListener<Map<Identifier, T>> {
+     private static final Logger LOGGER = LogUtils.getLogger();
++    private static final int PARALLEL_SCAN_THRESHOLD = 128;
+     private final DynamicOps<JsonElement> ops;
+     private final Codec<T> codec;
+     private final FileToIdConverter lister;
+@@ -62,19 +66,64 @@ public abstract class SimpleJsonResourceReloadListener<T> extends SimplePreparab
+     public static <T> void scanDirectory(
+         final ResourceManager manager, final FileToIdConverter lister, final DynamicOps<JsonElement> ops, final Codec<T> codec, final Map<Identifier, T> result
+     ) {
+-        for (Entry<Identifier, Resource> entry : lister.listMatchingResources(manager).entrySet()) {
++        List<Entry<Identifier, Resource>> entries = lister.listMatchingResources(manager)
++            .entrySet()
++            .stream()
++            .sorted(Comparator.comparing(entry -> entry.getKey().toString()))
++            .toList();
++        if (entries.size() < PARALLEL_SCAN_THRESHOLD) {
++            scanDirectorySequential(lister, ops, codec, result, entries);
++            return;
++        }
++
++        List<ParsedResource<T>> parsedResources = entries.parallelStream()
++            .map(entry -> parseResource(lister, ops, codec, entry))
++            .flatMap(Optional::stream)
++            .toList();
++        mergeParsedResources(result, parsedResources);
++    }
++
++    private static <T> void scanDirectorySequential(
++        final FileToIdConverter lister,
++        final DynamicOps<JsonElement> ops,
++        final Codec<T> codec,
++        final Map<Identifier, T> result,
++        final List<Entry<Identifier, Resource>> entries
++    ) {
++        for (Entry<Identifier, Resource> entry : entries) {
++            parseResource(lister, ops, codec, entry).ifPresent(parsed -> mergeParsedResource(result, parsed));
++        }
++    }
++
++    private static <T> void mergeParsedResources(final Map<Identifier, T> result, final List<ParsedResource<T>> parsedResources) {
++        parsedResources.stream()
++            .sorted(Comparator.comparing(parsed -> parsed.id().toString()))
++            .forEach(parsed -> mergeParsedResource(result, parsed));
++    }
++
++    private static <T> void mergeParsedResource(final Map<Identifier, T> result, final ParsedResource<T> parsed) {
++        if (result.putIfAbsent(parsed.id(), parsed.value()) != null) {
++            throw new IllegalStateException("Duplicate data file ignored with ID " + parsed.id());
++        }
++    }
++
++    private static <T> Optional<ParsedResource<T>> parseResource(
++        final FileToIdConverter lister, final DynamicOps<JsonElement> ops, final Codec<T> codec, final Entry<Identifier, Resource> entry
++    ) {
+             Identifier location = entry.getKey();
+             Identifier id = lister.fileToId(location);
+ 
+             try (Reader reader = entry.getValue().openAsReader()) {
+-                codec.parse(ops, StrictJsonParser.parse(reader)).ifSuccess(parsed -> {
+-                    if (result.putIfAbsent(id, (T)parsed) != null) {
+-                        throw new IllegalStateException("Duplicate data file ignored with ID " + id);
+-                    }
+-                }).ifError(error -> LOGGER.error("Couldn't parse data file '{}' from '{}': {}", id, location, error));
++                return codec.parse(ops, StrictJsonParser.parse(reader))
++                    .map(parsed -> Optional.of(new ParsedResource<>(id, (T)parsed)))
++                    .resultOrPartial(error -> LOGGER.error("Couldn't parse data file '{}' from '{}': {}", id, location, error))
++                    .orElse(Optional.empty());
+             } catch (JsonParseException | IllegalArgumentException | IOException e) {
+                 LOGGER.error("Couldn't parse data file '{}' from '{}'", id, location, e);
++                return Optional.empty();
+             }
+-        }
++    }
++
++    private record ParsedResource<T>(Identifier id, T value) {
+     }
+ }

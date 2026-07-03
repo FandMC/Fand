@@ -330,13 +330,41 @@ public final class FandConfig {
         public int trackingDiffApplyBudget = 256;
 
         @ConfigComment({
+                "Prepare full chunk packets on a small background executor before",
+                "they are sent to players. Packet batch order and vanilla pacing",
+                "stay unchanged; chunk data is snapshotted on the tick thread,",
+                "then packet object creation and protocol encoding happen on",
+                "background workers."
+        })
+        public volatile boolean asyncChunkPacketPreparation = true;
+
+        @ConfigComment({
+                "Maximum chunk-send batches per player that may be prepared",
+                "concurrently while asyncChunkPacketPreparation is enabled.",
+                "Higher values keep packet encoding ahead of fast worldgen,",
+                "but increase short-lived per-player memory use."
+        })
+        @ConfigRange(min = 1, max = 128)
+        public volatile int asyncChunkPacketPreparationBatches = 32;
+
+        @ConfigComment({
+                "Pre-compress and frame async chunk packets on background workers",
+                "when no outbound packet hook needs to inspect or rewrite them.",
+                "This moves the expensive chunk-packet compression path away",
+                "from the Netty event loop, which helps high-RTT remote players",
+                "keep receiving terrain during fast exploration."
+        })
+        public volatile boolean preparedChunkPacketFrames = true;
+
+        @ConfigComment({
                 "Maximum chunk-generation batches allowed to run at the same",
                 "time. Set to 1 for vanilla's serialized worldgen dispatcher,",
-                "or 0 to derive a conservative value from available processors.",
+                "or 0 to derive an aggressive value from available processors",
+                "(roughly 2x CPU threads, capped).",
                 "Values above 1 run on dedicated Fand worldgen worker lanes.",
-                "Parallel batches are limited to non-overlapping block-write",
-                "envelopes, preserving vanilla chunk status dependencies and",
-                "generated content. Existing worlds need a restart to replace",
+                "Block writes are guarded per generation status by Fand's",
+                "FlowSched-style chunk step scheduler, using each status' real",
+                "write radius instead of a full-task envelope. Existing worlds need a restart to replace",
                 "their dispatcher."
         })
         @ConfigRange(min = 0, max = 64)
@@ -399,7 +427,7 @@ public final class FandConfig {
                 "servers with enough CPU/network push the first view faster."
         })
         @ConfigRange(min = 1, max = 1024)
-        public volatile int teleportChunkSendBurstChunksPerTick = 64;
+        public volatile int teleportChunkSendBurstChunksPerTick = 192;
 
         @ConfigComment({
                 "Maximum unacknowledged chunk batches allowed during the",
@@ -407,7 +435,55 @@ public final class FandConfig {
                 "can increase per-player network memory under packet loss."
         })
         @ConfigRange(min = 1, max = 64)
-        public volatile int teleportChunkSendBurstBatches = 10;
+        public volatile int teleportChunkSendBurstBatches = 24;
+
+        @ConfigComment({
+                "Preload chunks in front of fast-moving players before they",
+                "enter the normal player view-distance ticket area. This is",
+                "aggressive and CPU-heavy, but lets terrain generation lead",
+                "spectator-speed movement instead of only catching up to it."
+        })
+        public volatile boolean movementPreload = true;
+
+        @ConfigComment({
+                "Extra chunks beyond the player's effective view distance to",
+                "preload in the current movement direction."
+        })
+        @ConfigRange(min = 0, max = 64)
+        public volatile int movementPreloadLookaheadChunks = 16;
+
+        @ConfigComment({
+                "Half-width, in chunks, of the movement preload strip. Higher",
+                "values cover diagonal movement and steering changes better,",
+                "but add more generation pressure."
+        })
+        @ConfigRange(min = 0, max = 16)
+        public volatile int movementPreloadWidthChunks = 3;
+
+        @ConfigComment({
+                "Minimum horizontal movement, in blocks, before refreshing the",
+                "movement preload strip. Set 0 to refresh on every move packet."
+        })
+        @ConfigRange(min = 0, max = 64)
+        public volatile int movementPreloadMinHorizontalDistanceBlocks = 1;
+
+        @ConfigComment({
+                "Chunk send target while movement preload is active. This lets",
+                "ready chunks in front of fast-moving players reach the client",
+                "before sideways or behind chunks consume the vanilla-paced",
+                "send window."
+        })
+        @ConfigRange(min = 1, max = 1024)
+        public volatile int movementChunkSendBurstChunksPerTick = 256;
+
+        @ConfigComment({
+                "Maximum unacknowledged chunk batches allowed while movement",
+                "preload is active. Higher values reduce visible holes during",
+                "fast spectator flight but can increase per-player network",
+                "memory under packet loss."
+        })
+        @ConfigRange(min = 1, max = 64)
+        public volatile int movementChunkSendBurstBatches = 32;
     }
 
     public static final class Watchdog {
@@ -703,6 +779,23 @@ public final class FandConfig {
                 "one drain task during dense player/entity fanout."
         })
         public volatile boolean outboundPacketQueueCoalescing = true;
+
+        @ConfigComment({
+                "Maximum charged projectile entries kept on crossbow-like item",
+                "components. Oversized component lists are truncated instead of",
+                "throwing during construction, preventing malformed or extreme",
+                "plugin-created items from crashing the server."
+        })
+        @ConfigRange(min = 1, max = 1_000_000)
+        public volatile int chargedProjectilesSoftLimit = 1024;
+
+        @ConfigComment({
+                "Maximum item entries kept in bundle contents. Oversized component",
+                "lists are truncated instead of throwing during construction,",
+                "while normal bundle weight and insertion rules still apply."
+        })
+        @ConfigRange(min = 1, max = 1_000_000)
+        public volatile int bundleContentsSoftLimit = 256;
 
     }
 

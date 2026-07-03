@@ -72,6 +72,18 @@ final class BlockBatchModelsTest {
     }
 
     @Test
+    void fluidBatchOptionsValidateBudgets() {
+        assertThat(FluidBatchOptions.defaults().maxBlocksPerTick())
+                .isEqualTo(FluidBatchOptions.DEFAULT_MAX_BLOCKS_PER_TICK);
+        assertThat(FluidBatchOptions.defaults().loadedChunksOnly()).isTrue();
+        assertThat(FluidBatchOptions.defaults().batchOptions().updateMode()).isEqualTo(BlockUpdateMode.CLIENTS_ONLY);
+        assertThatThrownBy(() -> new FluidBatchOptions(0, 1, true, BlockBatchOptions.defaults()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new FluidBatchOptions(1, 0, true, BlockBatchOptions.defaults()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void clipboardKeepsRelativeBlocksWithinDeclaredSize() {
         var clipboard = BlockClipboard.of(2, 1, 2, List.of(
                 BlockBatchChange.of(0, 0, 0, STONE),

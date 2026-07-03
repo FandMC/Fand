@@ -1,0 +1,1591 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 2 Jul 2026 19:11:19 +0800
+Subject: [PATCH] Optimize worldgen hot paths
+
+
+diff --git a/net/minecraft/world/level/biome/TheEndBiomeSource.java b/net/minecraft/world/level/biome/TheEndBiomeSource.java
+index c0c541e364e695e7b7eb0a05fbed8a2f1e14cd90..67faef25bac68af22a90ce5fa1814d881738d14e 100644
+--- a/net/minecraft/world/level/biome/TheEndBiomeSource.java
++++ b/net/minecraft/world/level/biome/TheEndBiomeSource.java
+@@ -2,12 +2,14 @@ package net.minecraft.world.level.biome;
+ 
+ import com.mojang.serialization.MapCodec;
+ import com.mojang.serialization.codecs.RecordCodecBuilder;
++import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
+ import java.util.stream.Stream;
+ import net.minecraft.core.Holder;
+ import net.minecraft.core.HolderGetter;
+ import net.minecraft.core.QuartPos;
+ import net.minecraft.core.SectionPos;
+ import net.minecraft.resources.RegistryOps;
++import net.minecraft.world.level.ChunkPos;
+ import net.minecraft.world.level.levelgen.DensityFunction;
+ 
+ public class TheEndBiomeSource extends BiomeSource {
+@@ -26,6 +28,7 @@ public class TheEndBiomeSource extends BiomeSource {
+     private final Holder<Biome> midlands;
+     private final Holder<Biome> islands;
+     private final Holder<Biome> barrens;
++    private final ThreadLocal<Long2ObjectLinkedOpenHashMap<Holder<Biome>>> fand$biomeCache = ThreadLocal.withInitial(Long2ObjectLinkedOpenHashMap::new);
+ 
+     public static TheEndBiomeSource create(final HolderGetter<Biome> biomes) {
+         return new TheEndBiomeSource(
+@@ -59,6 +62,25 @@ public class TheEndBiomeSource extends BiomeSource {
+ 
+     @Override
+     public Holder<Biome> getNoiseBiome(final int quartX, final int quartY, final int quartZ, final Climate.Sampler sampler) {
++        long cacheKey = ChunkPos.pack(quartX, quartZ);
++        Long2ObjectLinkedOpenHashMap<Holder<Biome>> cache = this.fand$biomeCache.get();
++        Holder<Biome> cachedBiome = cache.get(cacheKey);
++        if (cachedBiome != null) {
++            return cachedBiome;
++        }
++
++        Holder<Biome> biome = this.fand$getNoiseBiomeUncached(quartX, quartY, quartZ, sampler);
++        cache.putAndMoveToLast(cacheKey, biome);
++        if (cache.size() > 1024) {
++            for (int i = 0; i < 64; i++) {
++                cache.removeFirst();
++            }
++        }
++
++        return biome;
++    }
++
++    private Holder<Biome> fand$getNoiseBiomeUncached(final int quartX, final int quartY, final int quartZ, final Climate.Sampler sampler) {
+         int blockX = QuartPos.toBlock(quartX);
+         int blockY = QuartPos.toBlock(quartY);
+         int blockZ = QuartPos.toBlock(quartZ);
+diff --git a/net/minecraft/world/level/chunk/ChunkGenerator.java b/net/minecraft/world/level/chunk/ChunkGenerator.java
+index cd9c7c881ac5e1e4a648152e772f252677d55e4e..d5d80bf5155a2a76fac9279aae3b349da905f80f 100644
+--- a/net/minecraft/world/level/chunk/ChunkGenerator.java
++++ b/net/minecraft/world/level/chunk/ChunkGenerator.java
+@@ -39,7 +39,6 @@ import net.minecraft.resources.Identifier;
+ import net.minecraft.resources.ResourceKey;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.server.level.WorldGenRegion;
+-import net.minecraft.util.Util;
+ import net.minecraft.util.random.WeightedList;
+ import net.minecraft.world.entity.MobCategory;
+ import net.minecraft.world.level.ChunkPos;
+@@ -58,9 +57,9 @@ import net.minecraft.world.level.biome.MobSpawnSettings;
+ import net.minecraft.world.level.chunk.status.ChunkStatus;
+ import net.minecraft.world.level.levelgen.GenerationStep;
+ import net.minecraft.world.level.levelgen.Heightmap;
+-import net.minecraft.world.level.levelgen.LegacyRandomSource;
+ import net.minecraft.world.level.levelgen.RandomState;
+ import net.minecraft.world.level.levelgen.RandomSupport;
++import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
+ import net.minecraft.world.level.levelgen.WorldgenRandom;
+ import net.minecraft.world.level.levelgen.XoroshiroRandomSource;
+ import net.minecraft.world.level.levelgen.blending.Blender;
+@@ -116,10 +115,8 @@ public abstract class ChunkGenerator {
+     public CompletableFuture<ChunkAccess> createBiomes(
+         final RandomState randomState, final Blender blender, final StructureManager structureManager, final ChunkAccess protoChunk
+     ) {
+-        return CompletableFuture.supplyAsync(() -> {
+-            protoChunk.fillBiomesFromNoise(this.biomeSource, randomState.sampler());
+-            return protoChunk;
+-        }, Util.backgroundExecutor().forName("init_biomes"));
++        protoChunk.fillBiomesFromNoise(this.biomeSource, randomState.sampler());
++        return CompletableFuture.completedFuture(protoChunk);
+     }
+ 
+     public abstract void applyCarvers(
+@@ -514,7 +511,7 @@ public abstract class ChunkGenerator {
+                                 );
+                             } else {
+                                 ArrayList<StructureSet.StructureSelectionEntry> options = new ArrayList<>(structures);
+-                                WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(0L));
++                                WorldgenRandom random = new WorldgenRandom(new SingleThreadedRandomSource(0L));
+                                 random.setLargeFeatureSeed(state.getLevelSeed(), sourceChunkPos.x(), sourceChunkPos.z());
+                                 int total = generationStep.totalWeight();
+ 
+diff --git a/net/minecraft/world/level/levelgen/Aquifer.java b/net/minecraft/world/level/levelgen/Aquifer.java
+index 49b6cb4835365baba15e2fcdad02807042a4767c..e738633e90f753a96efd1546b9b24e33daf136cc 100644
+--- a/net/minecraft/world/level/levelgen/Aquifer.java
++++ b/net/minecraft/world/level/levelgen/Aquifer.java
+@@ -1,6 +1,5 @@
+ package net.minecraft.world.level.levelgen;
+ 
+-import java.util.Arrays;
+ import net.minecraft.SharedConstants;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.SectionPos;
+@@ -11,7 +10,6 @@ import net.minecraft.world.level.biome.OverworldBiomeBuilder;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.dimension.DimensionType;
+-import org.apache.commons.lang3.mutable.MutableDouble;
+ import org.jspecify.annotations.Nullable;
+ 
+ public interface Aquifer {
+@@ -86,11 +84,15 @@ public interface Aquifer {
+         private final PositionalRandomFactory positionalRandomFactory;
+         private final Aquifer.@Nullable FluidStatus[] aquiferCache;
+         private final long[] aquiferLocationCache;
++        private final short[] aquiferOffsetCache;
+         private final Aquifer.FluidPicker globalFluidPicker;
+         private final DensityFunction erosion;
+         private final DensityFunction depth;
+         private boolean shouldScheduleFluidUpdate;
+         private final int skipSamplingAboveY;
++        private double barrierNoiseValue = Double.NaN;
++        private final MutableSinglePointContext surfaceLevelContext = new MutableSinglePointContext();
++        private final MutableSinglePointContext fluidTypeContext = new MutableSinglePointContext();
+         private final int minGridX;
+         private final int minGridY;
+         private final int minGridZ;
+@@ -130,7 +132,8 @@ public interface Aquifer {
+             int totalGridSize = this.gridSizeX * gridSizeY * this.gridSizeZ;
+             this.aquiferCache = new Aquifer.FluidStatus[totalGridSize];
+             this.aquiferLocationCache = new long[totalGridSize];
+-            Arrays.fill(this.aquiferLocationCache, Long.MAX_VALUE);
++            this.aquiferOffsetCache = new short[totalGridSize];
++            this.preloadAquiferLocations(gridSizeY);
+             int maxAdjustedSurfaceLevel = this.adjustSurfaceLevel(
+                 noiseChunk.maxPreliminarySurfaceLevel(fromGridX(this.minGridX, 0), fromGridZ(this.minGridZ, 0), fromGridX(maxGridX, 9), fromGridZ(maxGridZ, 9))
+             );
+@@ -145,6 +148,41 @@ public interface Aquifer {
+             return (y * this.gridSizeZ + z) * this.gridSizeX + x;
+         }
+ 
++        private void preloadAquiferLocations(final int gridSizeY) {
++            for (int y = 0; y < gridSizeY; y++) {
++                int gridY = this.minGridY + y;
++                for (int z = 0; z < this.gridSizeZ; z++) {
++                    int gridZ = this.minGridZ + z;
++                    for (int x = 0; x < this.gridSizeX; x++) {
++                        int gridX = this.minGridX + x;
++                        RandomSource random = this.positionalRandomFactory.at(gridX, gridY, gridZ);
++                        int offsetX = random.nextInt(10);
++                        int offsetY = random.nextInt(9);
++                        int offsetZ = random.nextInt(10);
++                        int index = (y * this.gridSizeZ + z) * this.gridSizeX + x;
++                        this.aquiferOffsetCache[index] = packOffset(offsetX, offsetY, offsetZ);
++                        this.aquiferLocationCache[index] = BlockPos.asLong(fromGridX(gridX, offsetX), fromGridY(gridY, offsetY), fromGridZ(gridZ, offsetZ));
++                    }
++                }
++            }
++        }
++
++        private static short packOffset(final int x, final int y, final int z) {
++            return (short)((x << 8) | (y << 4) | z);
++        }
++
++        private static int unpackOffsetX(final short packed) {
++            return (packed & 0xFFFF) >> 8;
++        }
++
++        private static int unpackOffsetY(final short packed) {
++            return (packed >> 4) & 15;
++        }
++
++        private static int unpackOffsetZ(final short packed) {
++            return packed & 15;
++        }
++
+         @Override
+         public @Nullable BlockState computeSubstance(final DensityFunction.FunctionContext context, final double density) {
+             if (density > 0.0) {
+@@ -185,23 +223,10 @@ public interface Aquifer {
+                         int spacedGridY = yAnchor + y1;
+                         int spacedGridZ = zAnchor + z1;
+                         int index = this.getIndex(spacedGridX, spacedGridY, spacedGridZ);
+-                        long existingLocation = this.aquiferLocationCache[index];
+-                        long location;
+-                        if (existingLocation != Long.MAX_VALUE) {
+-                            location = existingLocation;
+-                        } else {
+-                            RandomSource random = this.positionalRandomFactory.at(spacedGridX, spacedGridY, spacedGridZ);
+-                            location = BlockPos.asLong(
+-                                fromGridX(spacedGridX, random.nextInt(10)),
+-                                fromGridY(spacedGridY, random.nextInt(9)),
+-                                fromGridZ(spacedGridZ, random.nextInt(10))
+-                            );
+-                            this.aquiferLocationCache[index] = location;
+-                        }
+-
+-                        int dx = BlockPos.getX(location) - posX;
+-                        int dy = BlockPos.getY(location) - posY;
+-                        int dz = BlockPos.getZ(location) - posZ;
++                        short packedOffset = this.aquiferOffsetCache[index];
++                        int dx = fromGridX(spacedGridX, unpackOffsetX(packedOffset)) - posX;
++                        int dy = fromGridY(spacedGridY, unpackOffsetY(packedOffset)) - posY;
++                        int dz = fromGridZ(spacedGridZ, unpackOffsetZ(packedOffset)) - posZ;
+                         int newDistance = dx * dx + dy * dy + dz * dz;
+                         if (distanceSqr1 >= newDistance) {
+                             closestIndex4 = closestIndex3;
+@@ -251,9 +276,9 @@ public interface Aquifer {
+                     return actualFluidState;
+                 }
+ 
+-                MutableDouble barrierNoiseValue = new MutableDouble(Double.NaN);
++                this.barrierNoiseValue = Double.NaN;
+                 Aquifer.FluidStatus closestStatus2 = this.getAquiferStatus(closestIndex2);
+-                double barrier12 = similarity12 * this.calculatePressure(context, barrierNoiseValue, closestStatus1, closestStatus2);
++                double barrier12 = similarity12 * this.calculatePressure(context, closestStatus1, closestStatus2);
+                 if (density + barrier12 > 0.0) {
+                     this.shouldScheduleFluidUpdate = false;
+                     return null;
+@@ -262,7 +287,7 @@ public interface Aquifer {
+                 Aquifer.FluidStatus closestStatus3 = this.getAquiferStatus(closestIndex3);
+                 double similarity13 = similarity(distanceSqr1, distanceSqr3);
+                 if (similarity13 > 0.0) {
+-                    double barrier13 = similarity12 * similarity13 * this.calculatePressure(context, barrierNoiseValue, closestStatus1, closestStatus3);
++                    double barrier13 = similarity12 * similarity13 * this.calculatePressure(context, closestStatus1, closestStatus3);
+                     if (density + barrier13 > 0.0) {
+                         this.shouldScheduleFluidUpdate = false;
+                         return null;
+@@ -271,7 +296,7 @@ public interface Aquifer {
+ 
+                 double similarity23 = similarity(distanceSqr2, distanceSqr3);
+                 if (similarity23 > 0.0) {
+-                    double barrier23 = similarity12 * similarity23 * this.calculatePressure(context, barrierNoiseValue, closestStatus2, closestStatus3);
++                    double barrier23 = similarity12 * similarity23 * this.calculatePressure(context, closestStatus2, closestStatus3);
+                     if (density + barrier23 > 0.0) {
+                         this.shouldScheduleFluidUpdate = false;
+                         return null;
+@@ -305,7 +330,6 @@ public interface Aquifer {
+ 
+         private double calculatePressure(
+             final DensityFunction.FunctionContext context,
+-            final MutableDouble barrierNoiseValue,
+             final Aquifer.FluidStatus statusClosest1,
+             final Aquifer.FluidStatus statusClosest2
+         ) {
+@@ -348,10 +372,10 @@ public interface Aquifer {
+                 double amplitude = 2.0;
+                 double noiseValue;
+                 if (!(gradient < -2.0) && !(gradient > 2.0)) {
+-                    double currentNoiseValue = barrierNoiseValue.doubleValue();
++                    double currentNoiseValue = this.barrierNoiseValue;
+                     if (Double.isNaN(currentNoiseValue)) {
+                         double barrierNoise = this.barrierNoise.compute(context);
+-                        barrierNoiseValue.setValue(barrierNoise);
++                        this.barrierNoiseValue = barrierNoise;
+                         noiseValue = barrierNoise;
+                     } else {
+                         noiseValue = currentNoiseValue;
+@@ -452,17 +476,17 @@ public interface Aquifer {
+             final int lowestPreliminarySurface,
+             final boolean surfaceAtCenterIsUnderGlobalFluidLevel
+         ) {
+-            DensityFunction.SinglePointContext context = new DensityFunction.SinglePointContext(x, y, z);
++            this.surfaceLevelContext.set(x, y, z);
+             double partiallyFloodedness;
+             double fullyFloodidness;
+-            if (OverworldBiomeBuilder.isDeepDarkRegion(this.erosion, this.depth, context)) {
++            if (OverworldBiomeBuilder.isDeepDarkRegion(this.erosion, this.depth, this.surfaceLevelContext)) {
+                 partiallyFloodedness = -1.0;
+                 fullyFloodidness = -1.0;
+             } else {
+                 int distanceBelowSurface = lowestPreliminarySurface + 8 - y;
+                 int floodednessMaxDepth = 64;
+                 double floodednessFactor = surfaceAtCenterIsUnderGlobalFluidLevel ? Mth.clampedMap(distanceBelowSurface, 0.0, 64.0, 1.0, 0.0) : 0.0;
+-                double floodednessNoiseValue = Mth.clamp(this.fluidLevelFloodednessNoise.compute(context), -1.0, 1.0);
++                double floodednessNoiseValue = Mth.clamp(this.fluidLevelFloodednessNoise.compute(this.surfaceLevelContext), -1.0, 1.0);
+                 double fullyFloodedThreshold = Mth.map(floodednessFactor, 1.0, 0.0, -0.3, 0.8);
+                 double partiallyFloodedThreshold = Mth.map(floodednessFactor, 1.0, 0.0, -0.8, 0.4);
+                 partiallyFloodedness = floodednessNoiseValue - partiallyFloodedThreshold;
+@@ -489,8 +513,9 @@ public interface Aquifer {
+             int fluidLevelCellZ = Math.floorDiv(z, 16);
+             int fluidCellMiddleY = fluidLevelCellY * 40 + 20;
+             int maxSpread = 10;
++            this.surfaceLevelContext.set(fluidLevelCellX, fluidLevelCellY, fluidLevelCellZ);
+             double fluidLevelSpread = this.fluidLevelSpreadNoise
+-                    .compute(new DensityFunction.SinglePointContext(fluidLevelCellX, fluidLevelCellY, fluidLevelCellZ))
++                    .compute(this.surfaceLevelContext)
+                 * 10.0;
+             int fluidLevelSpreadQuantized = Mth.quantize(fluidLevelSpread, 3);
+             int targetFluidSurfaceLevel = fluidCellMiddleY + fluidLevelSpreadQuantized;
+@@ -505,7 +530,8 @@ public interface Aquifer {
+                 int fluidTypeCellX = Math.floorDiv(x, 64);
+                 int fluidTypeCellY = Math.floorDiv(y, 40);
+                 int fluidTypeCellZ = Math.floorDiv(z, 64);
+-                double lavaNoiseValue = this.lavaNoise.compute(new DensityFunction.SinglePointContext(fluidTypeCellX, fluidTypeCellY, fluidTypeCellZ));
++                this.fluidTypeContext.set(fluidTypeCellX, fluidTypeCellY, fluidTypeCellZ);
++                double lavaNoiseValue = this.lavaNoise.compute(this.fluidTypeContext);
+                 if (Math.abs(lavaNoiseValue) > 0.3) {
+                     fluidType = Blocks.LAVA.defaultBlockState();
+                 }
+@@ -513,5 +539,32 @@ public interface Aquifer {
+ 
+             return fluidType;
+         }
++
++        private static final class MutableSinglePointContext implements DensityFunction.FunctionContext {
++            private int blockX;
++            private int blockY;
++            private int blockZ;
++
++            private void set(final int blockX, final int blockY, final int blockZ) {
++                this.blockX = blockX;
++                this.blockY = blockY;
++                this.blockZ = blockZ;
++            }
++
++            @Override
++            public int blockX() {
++                return this.blockX;
++            }
++
++            @Override
++            public int blockY() {
++                return this.blockY;
++            }
++
++            @Override
++            public int blockZ() {
++                return this.blockZ;
++            }
++        }
+     }
+ }
+diff --git a/net/minecraft/world/level/levelgen/Beardifier.java b/net/minecraft/world/level/levelgen/Beardifier.java
+index 6781da6102df878da9db986f2687fbc47efcc8be..11173d4f3db03015a9f8b3ef5b62be0932f56e28 100644
+--- a/net/minecraft/world/level/levelgen/Beardifier.java
++++ b/net/minecraft/world/level/levelgen/Beardifier.java
+@@ -31,8 +31,8 @@ public class Beardifier implements DensityFunctions.BeardifierOrMarker {
+         }
+     });
+     public static final Beardifier EMPTY = new Beardifier(List.of(), List.of(), null);
+-    private final List<Beardifier.Rigid> pieces;
+-    private final List<JigsawJunction> junctions;
++    private final Beardifier.Rigid[] pieces;
++    private final JigsawJunction[] junctions;
+     private final @Nullable BoundingBox affectedBox;
+ 
+     public static Beardifier forStructuresInChunk(final StructureManager structureManager, final ChunkPos chunkPos) {
+@@ -93,8 +93,8 @@ public class Beardifier implements DensityFunctions.BeardifierOrMarker {
+ 
+     @VisibleForTesting
+     public Beardifier(final List<Beardifier.Rigid> pieces, final List<JigsawJunction> junctions, final @Nullable BoundingBox affectedBox) {
+-        this.pieces = pieces;
+-        this.junctions = junctions;
++        this.pieces = pieces.toArray(Beardifier.Rigid[]::new);
++        this.junctions = junctions.toArray(JigsawJunction[]::new);
+         this.affectedBox = affectedBox;
+     }
+ 
+@@ -166,8 +166,8 @@ public class Beardifier implements DensityFunctions.BeardifierOrMarker {
+     }
+ 
+     private static double getBuryContribution(final double dx, final double dy, final double dz) {
+-        double distance = Mth.length(dx, dy, dz);
+-        return Mth.clampedMap(distance, 0.0, 6.0, 1.0, 0.0);
++        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
++        return distance > 6.0 ? 0.0 : 1.0 - distance / 6.0;
+     }
+ 
+     private static double getBeardContribution(final int dx, final int dy, final int dz, final int yToGround) {
+diff --git a/net/minecraft/world/level/levelgen/DensityFunctions.java b/net/minecraft/world/level/levelgen/DensityFunctions.java
+index edd4d88563514a4eff9da5c867acbebce9906635..19803596cd835fcc95e2904704b461da4a887c7d 100644
+--- a/net/minecraft/world/level/levelgen/DensityFunctions.java
++++ b/net/minecraft/world/level/levelgen/DensityFunctions.java
+@@ -501,7 +501,7 @@ public final class DensityFunctions {
+         private final SimplexNoise islandNoise;
+ 
+         public EndIslandDensityFunction(final long seed) {
+-            RandomSource islandRandom = new LegacyRandomSource(seed);
++            RandomSource islandRandom = new SingleThreadedRandomSource(seed);
+             islandRandom.consumeCount(17292);
+             this.islandNoise = new SimplexNoise(islandRandom);
+         }
+@@ -554,6 +554,9 @@ public final class DensityFunctions {
+     }
+ 
+     private record FindTopSurface(DensityFunction density, DensityFunction upperBound, int lowerBound, int cellHeight) implements DensityFunction {
++        private static final ThreadLocal<DensityFunctions.MutableSinglePointContext> MUTABLE_CONTEXT = ThreadLocal.withInitial(
++            DensityFunctions.MutableSinglePointContext::new
++        );
+         private static final MapCodec<DensityFunctions.FindTopSurface> DATA_CODEC = RecordCodecBuilder.mapCodec(
+             i -> i.group(
+                     DensityFunction.CODEC.fieldOf("density").forGetter(DensityFunctions.FindTopSurface::density),
+@@ -574,8 +577,10 @@ public final class DensityFunctions {
+                 return this.lowerBound;
+             }
+ 
++            DensityFunctions.MutableSinglePointContext mutableContext = MUTABLE_CONTEXT.get();
+             for (int blockY = topY; blockY >= this.lowerBound; blockY -= this.cellHeight) {
+-                if (this.density.compute(new DensityFunction.SinglePointContext(context.blockX(), blockY, context.blockZ())) > 0.0) {
++                mutableContext.set(context.blockX(), blockY, context.blockZ());
++                if (this.density.compute(mutableContext) > 0.0) {
+                     return blockY;
+                 }
+             }
+@@ -609,6 +614,33 @@ public final class DensityFunctions {
+         }
+     }
+ 
++    private static final class MutableSinglePointContext implements DensityFunction.FunctionContext {
++        private int blockX;
++        private int blockY;
++        private int blockZ;
++
++        private void set(final int blockX, final int blockY, final int blockZ) {
++            this.blockX = blockX;
++            this.blockY = blockY;
++            this.blockZ = blockZ;
++        }
++
++        @Override
++        public int blockX() {
++            return this.blockX;
++        }
++
++        @Override
++        public int blockY() {
++            return this.blockY;
++        }
++
++        @Override
++        public int blockZ() {
++            return this.blockZ;
++        }
++    }
++
+     @VisibleForDebug
+     public record HolderHolder(Holder<DensityFunction> function) implements DensityFunction {
+         @Override
+diff --git a/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java b/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java
+index bcaeec31c5f521a4c1bb0f5658cf5994ad517fec..b8fa5fab69d1c828ae1d3bf4f6126c9ea951c2dc 100644
+--- a/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java
++++ b/net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java
+@@ -2,7 +2,6 @@ package net.minecraft.world.level.levelgen;
+ 
+ import com.google.common.annotations.VisibleForTesting;
+ import com.google.common.base.Suppliers;
+-import com.google.common.collect.Sets;
+ import com.mojang.serialization.MapCodec;
+ import com.mojang.serialization.codecs.RecordCodecBuilder;
+ import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
+@@ -22,7 +21,6 @@ import net.minecraft.core.QuartPos;
+ import net.minecraft.resources.ResourceKey;
+ import net.minecraft.server.level.WorldGenRegion;
+ import net.minecraft.util.Mth;
+-import net.minecraft.util.Util;
+ import net.minecraft.world.level.ChunkPos;
+ import net.minecraft.world.level.LevelHeightAccessor;
+ import net.minecraft.world.level.NaturalSpawner;
+@@ -33,6 +31,7 @@ import net.minecraft.world.level.biome.BiomeGenerationSettings;
+ import net.minecraft.world.level.biome.BiomeManager;
+ import net.minecraft.world.level.biome.BiomeResolver;
+ import net.minecraft.world.level.biome.BiomeSource;
++import net.minecraft.world.level.biome.Climate;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.chunk.CarvingMask;
+@@ -85,10 +84,8 @@ public final class NoiseBasedChunkGenerator extends ChunkGenerator {
+     public CompletableFuture<ChunkAccess> createBiomes(
+         final RandomState randomState, final Blender blender, final StructureManager structureManager, final ChunkAccess protoChunk
+     ) {
+-        return CompletableFuture.supplyAsync(() -> {
+-            this.doCreateBiomes(blender, randomState, structureManager, protoChunk);
+-            return protoChunk;
+-        }, Util.backgroundExecutor().forName("init_biomes"));
++        this.doCreateBiomes(blender, randomState, structureManager, protoChunk);
++        return CompletableFuture.completedFuture(protoChunk);
+     }
+ 
+     private void doCreateBiomes(final Blender blender, final RandomState randomState, final StructureManager structureManager, final ChunkAccess protoChunk) {
+@@ -315,8 +312,7 @@ public final class NoiseBasedChunkGenerator extends ChunkGenerator {
+             BiomeManager correctBiomeManager = biomeManager.withDifferentSource(
+                 (quartX, quartY, quartZ) -> this.biomeSource.getNoiseBiome(quartX, quartY, quartZ, randomState.sampler())
+             );
+-            WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(RandomSupport.generateUniqueSeed()));
+-            int range = 8;
++            WorldgenRandom random = new WorldgenRandom(new SingleThreadedRandomSource(RandomSupport.generateUniqueSeed()));
+             ChunkPos pos = chunk.getPos();
+             NoiseChunk noiseChunk = chunk.getOrCreateNoiseChunk(c -> this.createNoiseChunk(c, structureManager, Blender.of(region), randomState));
+             Aquifer aquifer = noiseChunk.aquifer();
+@@ -324,16 +320,19 @@ public final class NoiseBasedChunkGenerator extends ChunkGenerator {
+                 this, region.registryAccess(), chunk.getHeightAccessorForGeneration(), noiseChunk, randomState, this.settings.value().surfaceRule()
+             );
+             CarvingMask mask = ((ProtoChunk)chunk).getOrCreateCarvingMask();
++            Climate.Sampler sampler = randomState.sampler();
+ 
+             for (int dx = -8; dx <= 8; dx++) {
+                 for (int dz = -8; dz <= 8; dz++) {
+-                    ChunkPos sourcePos = new ChunkPos(pos.x() + dx, pos.z() + dz);
+-                    ChunkAccess carverCenterChunk = region.getChunk(sourcePos.x(), sourcePos.z());
++                    int sourceX = pos.x() + dx;
++                    int sourceZ = pos.z() + dz;
++                    ChunkPos sourcePos = new ChunkPos(sourceX, sourceZ);
++                    ChunkAccess carverCenterChunk = region.getChunk(sourceX, sourceZ);
+                     BiomeGenerationSettings sourceBiomeGenerationSettings = carverCenterChunk.carverBiome(
+                         () -> this.getBiomeGenerationSettings(
+                             this.biomeSource
+                                 .getNoiseBiome(
+-                                    QuartPos.fromBlock(sourcePos.getMinBlockX()), 0, QuartPos.fromBlock(sourcePos.getMinBlockZ()), randomState.sampler()
++                                    QuartPos.fromSection(sourceX), 0, QuartPos.fromSection(sourceZ), sampler
+                                 )
+                         )
+                     );
+@@ -342,7 +341,7 @@ public final class NoiseBasedChunkGenerator extends ChunkGenerator {
+ 
+                     for (Holder<ConfiguredWorldCarver<?>> carverHolder : carvers) {
+                         ConfiguredWorldCarver<?> carver = carverHolder.value();
+-                        random.setLargeFeatureSeed(seed + index, sourcePos.x(), sourcePos.z());
++                        random.setLargeFeatureSeed(seed + index, sourceX, sourceZ);
+                         if (carver.isStartChunk(random)) {
+                             carver.carve(context, chunk, correctBiomeManager::getBiome, random, aquifer, sourcePos, mask);
+                         }
+@@ -362,25 +361,29 @@ public final class NoiseBasedChunkGenerator extends ChunkGenerator {
+         int minY = noiseSettings.minY();
+         int cellYMin = Mth.floorDiv(minY, noiseSettings.getCellHeight());
+         int cellCountY = Mth.floorDiv(noiseSettings.height(), noiseSettings.getCellHeight());
+-        return cellCountY <= 0 ? CompletableFuture.completedFuture(centerChunk) : CompletableFuture.supplyAsync(() -> {
+-            int topSectionIndex = centerChunk.getSectionIndex(cellCountY * noiseSettings.getCellHeight() - 1 + minY);
+-            int bottomSectionIndex = centerChunk.getSectionIndex(minY);
+-            Set<LevelChunkSection> sections = Sets.newHashSet();
+-
+-            for (int sectionIndex = topSectionIndex; sectionIndex >= bottomSectionIndex; sectionIndex--) {
+-                LevelChunkSection section = centerChunk.getSection(sectionIndex);
+-                section.acquire();
+-                sections.add(section);
+-            }
++        if (cellCountY <= 0) {
++            return CompletableFuture.completedFuture(centerChunk);
++        }
++
++        int topSectionIndex = centerChunk.getSectionIndex(cellCountY * noiseSettings.getCellHeight() - 1 + minY);
++        int bottomSectionIndex = centerChunk.getSectionIndex(minY);
++        LevelChunkSection[] sections = new LevelChunkSection[topSectionIndex - bottomSectionIndex + 1];
+ 
+-            try {
+-                return this.doFill(blender, structureManager, randomState, centerChunk, cellYMin, cellCountY);
+-            } finally {
+-                for (LevelChunkSection section : sections) {
++        for (int sectionIndex = topSectionIndex; sectionIndex >= bottomSectionIndex; sectionIndex--) {
++            LevelChunkSection section = centerChunk.getSection(sectionIndex);
++            section.acquire();
++            sections[topSectionIndex - sectionIndex] = section;
++        }
++
++        try {
++            return CompletableFuture.completedFuture(this.doFill(blender, structureManager, randomState, centerChunk, cellYMin, cellCountY));
++        } finally {
++            for (LevelChunkSection section : sections) {
++                if (section != null) {
+                     section.release();
+                 }
+             }
+-        }, Util.backgroundExecutor().forName("wgen_fill_noise"));
++        }
+     }
+ 
+     private ChunkAccess doFill(
+@@ -398,6 +401,8 @@ public final class NoiseBasedChunkGenerator extends ChunkGenerator {
+         int chunkStartBlockX = chunkPos.getMinBlockX();
+         int chunkStartBlockZ = chunkPos.getMinBlockZ();
+         Aquifer aquifer = noiseChunk.aquifer();
++        BlockState defaultBlock = this.settings.value().defaultBlock();
++        boolean debugVoidTerrain = SharedConstants.debugVoidTerrain(chunkPos);
+         noiseChunk.initializeForFirstCellX();
+         BlockPos.MutableBlockPos blockPos = new BlockPos.MutableBlockPos();
+         int cellWidth = noiseChunk.cellWidth();
+@@ -440,11 +445,11 @@ public final class NoiseBasedChunkGenerator extends ChunkGenerator {
+                                 noiseChunk.updateForZ(posZ, factorZ);
+                                 BlockState state = noiseChunk.getInterpolatedState();
+                                 if (state == null) {
+-                                    state = this.settings.value().defaultBlock();
++                                    state = defaultBlock;
+                                 }
+ 
+                                 state = this.debugPreliminarySurfaceLevel(noiseChunk, posX, posY, posZ, state);
+-                                if (state != AIR && !SharedConstants.debugVoidTerrain(centerChunk.getPos())) {
++                                if (state != AIR && !debugVoidTerrain) {
+                                     section.setBlockState(xInSection, yInSection, zInSection, state, false);
+                                     oceanFloor.update(xInSection, posY, zInSection, state);
+                                     worldSurface.update(xInSection, posY, zInSection, state);
+@@ -505,7 +510,7 @@ public final class NoiseBasedChunkGenerator extends ChunkGenerator {
+         if (!this.settings.value().disableMobGeneration()) {
+             ChunkPos center = worldGenRegion.getCenter();
+             Holder<Biome> biome = worldGenRegion.getBiome(center.getWorldPosition().atY(worldGenRegion.getMaxY()));
+-            WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(RandomSupport.generateUniqueSeed()));
++            WorldgenRandom random = new WorldgenRandom(new SingleThreadedRandomSource(RandomSupport.generateUniqueSeed()));
+             random.setDecorationSeed(worldGenRegion.getSeed(), center.getMinBlockX(), center.getMinBlockZ());
+             NaturalSpawner.spawnMobsForChunkGeneration(worldGenRegion, biome, center, random);
+         }
+diff --git a/net/minecraft/world/level/levelgen/NoiseChunk.java b/net/minecraft/world/level/levelgen/NoiseChunk.java
+index 117c3e33d49b92ca0807c576237fe135e40c524d..b9af1d506f22d714fe32eafb8b7e92cbf83ff6ac 100644
+--- a/net/minecraft/world/level/levelgen/NoiseChunk.java
++++ b/net/minecraft/world/level/levelgen/NoiseChunk.java
+@@ -31,8 +31,11 @@ public class NoiseChunk implements DensityFunction.FunctionContext, DensityFunct
+     private final int firstNoiseZ;
+     private final List<NoiseChunk.NoiseInterpolator> interpolators;
+     private final List<NoiseChunk.CacheAllInCell> cellCaches;
++    private NoiseChunk.NoiseInterpolator[] interpolatorsArray = new NoiseChunk.NoiseInterpolator[0];
++    private NoiseChunk.CacheAllInCell[] cellCachesArray = new NoiseChunk.CacheAllInCell[0];
+     private final Map<DensityFunction, DensityFunction> wrapped = new HashMap<>();
+     private final Long2IntMap preliminarySurfaceLevelCache = new Long2IntOpenHashMap();
++    private final NoiseChunk.MutableSinglePointContext preliminarySurfaceLevelContext = new NoiseChunk.MutableSinglePointContext();
+     private final Aquifer aquifer;
+     private final DensityFunction preliminarySurfaceLevel;
+     private final DensityFunction fullNoiseDensity;
+@@ -225,7 +228,8 @@ public class NoiseChunk implements DensityFunction.FunctionContext, DensityFunct
+     private int computePreliminarySurfaceLevel(final long key) {
+         int blockX = ColumnPos.getX(key);
+         int blockZ = ColumnPos.getZ(key);
+-        return Mth.floor(this.preliminarySurfaceLevel.compute(new DensityFunction.SinglePointContext(blockX, 0, blockZ)));
++        this.preliminarySurfaceLevelContext.set(blockX, 0, blockZ);
++        return Mth.floor(this.preliminarySurfaceLevel.compute(this.preliminarySurfaceLevelContext));
+     }
+ 
+     private void fillSlice(final boolean slice0, final int cellX) {
+@@ -238,7 +242,7 @@ public class NoiseChunk implements DensityFunction.FunctionContext, DensityFunct
+             this.inCellZ = 0;
+             this.arrayInterpolationCounter++;
+ 
+-            for (NoiseChunk.NoiseInterpolator noiseInterpolator : this.interpolators) {
++            for (NoiseChunk.NoiseInterpolator noiseInterpolator : this.interpolatorsArray()) {
+                 double[] slice = (slice0 ? noiseInterpolator.slice0 : noiseInterpolator.slice1)[cellZIndex];
+                 noiseInterpolator.fillArray(slice, this.sliceFillingContextProvider);
+             }
+@@ -294,7 +298,7 @@ public class NoiseChunk implements DensityFunction.FunctionContext, DensityFunct
+     }
+ 
+     public void selectCellYZ(final int cellYIndex, final int cellZIndex) {
+-        for (NoiseChunk.NoiseInterpolator i : this.interpolators) {
++        for (NoiseChunk.NoiseInterpolator i : this.interpolatorsArray()) {
+             i.selectCellYZ(cellYIndex, cellZIndex);
+         }
+ 
+@@ -303,7 +307,7 @@ public class NoiseChunk implements DensityFunction.FunctionContext, DensityFunct
+         this.cellStartBlockZ = (this.firstCellZ + cellZIndex) * this.cellWidth;
+         this.arrayInterpolationCounter++;
+ 
+-        for (NoiseChunk.CacheAllInCell cellCache : this.cellCaches) {
++        for (NoiseChunk.CacheAllInCell cellCache : this.cellCachesArray()) {
+             cellCache.noiseFiller.fillArray(cellCache.values, this);
+         }
+ 
+@@ -314,7 +318,7 @@ public class NoiseChunk implements DensityFunction.FunctionContext, DensityFunct
+     public void updateForY(final int posY, final double factorY) {
+         this.inCellY = posY - this.cellStartBlockY;
+ 
+-        for (NoiseChunk.NoiseInterpolator i : this.interpolators) {
++        for (NoiseChunk.NoiseInterpolator i : this.interpolatorsArray()) {
+             i.updateForY(factorY);
+         }
+     }
+@@ -322,7 +326,7 @@ public class NoiseChunk implements DensityFunction.FunctionContext, DensityFunct
+     public void updateForX(final int posX, final double factorX) {
+         this.inCellX = posX - this.cellStartBlockX;
+ 
+-        for (NoiseChunk.NoiseInterpolator i : this.interpolators) {
++        for (NoiseChunk.NoiseInterpolator i : this.interpolatorsArray()) {
+             i.updateForX(factorX);
+         }
+     }
+@@ -331,7 +335,7 @@ public class NoiseChunk implements DensityFunction.FunctionContext, DensityFunct
+         this.inCellZ = posZ - this.cellStartBlockZ;
+         this.interpolationCounter++;
+ 
+-        for (NoiseChunk.NoiseInterpolator i : this.interpolators) {
++        for (NoiseChunk.NoiseInterpolator i : this.interpolatorsArray()) {
+             i.updateForZ(factorZ);
+         }
+     }
+@@ -345,7 +349,9 @@ public class NoiseChunk implements DensityFunction.FunctionContext, DensityFunct
+     }
+ 
+     public void swapSlices() {
+-        this.interpolators.forEach(NoiseChunk.NoiseInterpolator::swapSlices);
++        for (NoiseChunk.NoiseInterpolator i : this.interpolatorsArray()) {
++            i.swapSlices();
++        }
+     }
+ 
+     public Aquifer aquifer() {
+@@ -360,6 +366,22 @@ public class NoiseChunk implements DensityFunction.FunctionContext, DensityFunct
+         return this.cellHeight;
+     }
+ 
++    private NoiseChunk.NoiseInterpolator[] interpolatorsArray() {
++        if (this.interpolatorsArray.length != this.interpolators.size()) {
++            this.interpolatorsArray = this.interpolators.toArray(NoiseChunk.NoiseInterpolator[]::new);
++        }
++
++        return this.interpolatorsArray;
++    }
++
++    private NoiseChunk.CacheAllInCell[] cellCachesArray() {
++        if (this.cellCachesArray.length != this.cellCaches.size()) {
++            this.cellCachesArray = this.cellCaches.toArray(NoiseChunk.CacheAllInCell[]::new);
++        }
++
++        return this.cellCachesArray;
++    }
++
+     private Blender.BlendingOutput getOrComputeBlendingOutput(final int blockX, final int blockZ) {
+         long pos2D = ChunkPos.pack(blockX, blockZ);
+         if (this.lastBlendingDataPos == pos2D) {
+@@ -681,6 +703,7 @@ public class NoiseChunk implements DensityFunction.FunctionContext, DensityFunct
+             this.sizeXZ = NoiseChunk.this.noiseSizeXZ + 1;
+             this.values = new double[this.sizeXZ * this.sizeXZ];
+             if (fill) {
++                NoiseChunk.MutableSinglePointContext context = new NoiseChunk.MutableSinglePointContext();
+                 for (int x = 0; x <= NoiseChunk.this.noiseSizeXZ; x++) {
+                     int quartX = NoiseChunk.this.firstNoiseX + x;
+                     int blockX = QuartPos.toBlock(quartX);
+@@ -688,7 +711,8 @@ public class NoiseChunk implements DensityFunction.FunctionContext, DensityFunct
+                     for (int z = 0; z <= NoiseChunk.this.noiseSizeXZ; z++) {
+                         int quartZ = NoiseChunk.this.firstNoiseZ + z;
+                         int blockZ = QuartPos.toBlock(quartZ);
+-                        this.values[x + z * this.sizeXZ] = noiseFiller.compute(new DensityFunction.SinglePointContext(blockX, 0, blockZ));
++                        context.set(blockX, 0, blockZ);
++                        this.values[x + z * this.sizeXZ] = noiseFiller.compute(context);
+                     }
+                 }
+             }
+@@ -849,4 +873,31 @@ public class NoiseChunk implements DensityFunction.FunctionContext, DensityFunct
+             return DensityFunctions.Marker.Type.Interpolated;
+         }
+     }
++
++    private static final class MutableSinglePointContext implements DensityFunction.FunctionContext {
++        private int blockX;
++        private int blockY;
++        private int blockZ;
++
++        private void set(final int blockX, final int blockY, final int blockZ) {
++            this.blockX = blockX;
++            this.blockY = blockY;
++            this.blockZ = blockZ;
++        }
++
++        @Override
++        public int blockX() {
++            return this.blockX;
++        }
++
++        @Override
++        public int blockY() {
++            return this.blockY;
++        }
++
++        @Override
++        public int blockZ() {
++            return this.blockZ;
++        }
++    }
+ }
+diff --git a/net/minecraft/world/level/levelgen/SingleThreadedRandomSource.java b/net/minecraft/world/level/levelgen/SingleThreadedRandomSource.java
+index a9d0d3acbef5b875b37ca211d9719eca19ba9737..8ac68d160a909def8cb53887eb338f0e811768c9 100644
+--- a/net/minecraft/world/level/levelgen/SingleThreadedRandomSource.java
++++ b/net/minecraft/world/level/levelgen/SingleThreadedRandomSource.java
+@@ -1,5 +1,7 @@
+ package net.minecraft.world.level.levelgen;
+ 
++import com.google.common.annotations.VisibleForTesting;
++import net.minecraft.util.Mth;
+ import net.minecraft.util.RandomSource;
+ import org.jspecify.annotations.Nullable;
+ 
+@@ -22,7 +24,7 @@ public class SingleThreadedRandomSource implements BitRandomSource {
+ 
+     @Override
+     public PositionalRandomFactory forkPositional() {
+-        return new LegacyRandomSource.LegacyPositionalRandomFactory(this.nextLong());
++        return new SingleThreadedPositionalRandomFactory(this.nextLong());
+     }
+ 
+     @Override
+@@ -48,4 +50,36 @@ public class SingleThreadedRandomSource implements BitRandomSource {
+ 
+         return this.gaussianSource.nextGaussian();
+     }
++
++    public static class SingleThreadedPositionalRandomFactory implements PositionalRandomFactory {
++        private final long seed;
++
++        public SingleThreadedPositionalRandomFactory(final long seed) {
++            this.seed = seed;
++        }
++
++        @Override
++        public RandomSource at(final int x, final int y, final int z) {
++            long positionalSeed = Mth.getSeed(x, y, z);
++            long randomSeed = positionalSeed ^ this.seed;
++            return new SingleThreadedRandomSource(randomSeed);
++        }
++
++        @Override
++        public RandomSource fromHashOf(final String name) {
++            int positionalSeed = name.hashCode();
++            return new SingleThreadedRandomSource(positionalSeed ^ this.seed);
++        }
++
++        @Override
++        public RandomSource fromSeed(final long seed) {
++            return new SingleThreadedRandomSource(seed);
++        }
++
++        @VisibleForTesting
++        @Override
++        public void parityConfigString(final StringBuilder sb) {
++            sb.append("SingleThreadedPositionalRandomFactory{").append(this.seed).append("}");
++        }
++    }
+ }
+diff --git a/net/minecraft/world/level/levelgen/WorldgenRandom.java b/net/minecraft/world/level/levelgen/WorldgenRandom.java
+index cbdaf188c5fe8450e2b7cb493308fe5829e9c8a9..d2cce6516e42fbb53473a2cc84df1586fb5706b9 100644
+--- a/net/minecraft/world/level/levelgen/WorldgenRandom.java
++++ b/net/minecraft/world/level/levelgen/WorldgenRandom.java
+@@ -29,8 +29,8 @@ public class WorldgenRandom extends LegacyRandomSource {
+     @Override
+     public int next(final int bits) {
+         this.count++;
+-        return this.randomSource instanceof LegacyRandomSource legacyRandomSource
+-            ? legacyRandomSource.next(bits)
++        return this.randomSource instanceof BitRandomSource bitRandomSource
++            ? bitRandomSource.next(bits)
+             : (int)(this.randomSource.nextLong() >>> 64 - bits);
+     }
+ 
+diff --git a/net/minecraft/world/level/levelgen/carver/WorldCarver.java b/net/minecraft/world/level/levelgen/carver/WorldCarver.java
+index 21a16ffeb2f8d917e8fde916f17a4ca7e8d544b0..73dc737e5c731675c5b9060759776ce92da867bf 100644
+--- a/net/minecraft/world/level/levelgen/carver/WorldCarver.java
++++ b/net/minecraft/world/level/levelgen/carver/WorldCarver.java
+@@ -38,6 +38,7 @@ public abstract class WorldCarver<C extends CarverConfiguration> {
+     protected static final FluidState LAVA = Fluids.LAVA.defaultFluidState();
+     protected Set<Fluid> liquids = ImmutableSet.of(Fluids.WATER);
+     private final MapCodec<ConfiguredWorldCarver<C>> configuredCodec;
++    private final ThreadLocal<WorldCarver.MutableSinglePointContext> aquiferContext = ThreadLocal.withInitial(WorldCarver.MutableSinglePointContext::new);
+ 
+     private static <C extends CarverConfiguration, F extends WorldCarver<C>> F register(final String name, final F carver) {
+         return Registry.register(BuiltInRegistries.CARVER, name, carver);
+@@ -168,7 +169,9 @@ public abstract class WorldCarver<C extends CarverConfiguration> {
+         if (blockPos.getY() <= configuration.lavaLevel.resolveY(context)) {
+             return LAVA.createLegacyBlock();
+         } else {
+-            BlockState state = aquifer.computeSubstance(new DensityFunction.SinglePointContext(blockPos.getX(), blockPos.getY(), blockPos.getZ()), 0.0);
++            WorldCarver.MutableSinglePointContext aquiferContext = this.aquiferContext.get();
++            aquiferContext.set(blockPos.getX(), blockPos.getY(), blockPos.getZ());
++            BlockState state = aquifer.computeSubstance(aquiferContext, 0.0);
+             if (state == null) {
+                 return isDebugEnabled(configuration) ? configuration.debugSettings.getBarrierState() : null;
+             } else {
+@@ -221,6 +224,33 @@ public abstract class WorldCarver<C extends CarverConfiguration> {
+         return SharedConstants.DEBUG_CARVERS || configuration.debugSettings.isDebugMode();
+     }
+ 
++    private static final class MutableSinglePointContext implements DensityFunction.FunctionContext {
++        private int blockX;
++        private int blockY;
++        private int blockZ;
++
++        private void set(final int blockX, final int blockY, final int blockZ) {
++            this.blockX = blockX;
++            this.blockY = blockY;
++            this.blockZ = blockZ;
++        }
++
++        @Override
++        public int blockX() {
++            return this.blockX;
++        }
++
++        @Override
++        public int blockY() {
++            return this.blockY;
++        }
++
++        @Override
++        public int blockZ() {
++            return this.blockZ;
++        }
++    }
++
+     public interface CarveSkipChecker {
+         boolean shouldSkip(CarvingContext context, double xd, double yd, double zd, int y);
+     }
+diff --git a/net/minecraft/world/level/levelgen/feature/GeodeFeature.java b/net/minecraft/world/level/levelgen/feature/GeodeFeature.java
+index baed0479a4552676844989868ee4c37ffa344def..685632e73a62e4bc0568d2865ef81d60e5fa3451 100644
+--- a/net/minecraft/world/level/levelgen/feature/GeodeFeature.java
++++ b/net/minecraft/world/level/levelgen/feature/GeodeFeature.java
+@@ -20,7 +20,7 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+ import net.minecraft.world.level.levelgen.GeodeBlockSettings;
+ import net.minecraft.world.level.levelgen.GeodeCrackSettings;
+ import net.minecraft.world.level.levelgen.GeodeLayerSettings;
+-import net.minecraft.world.level.levelgen.LegacyRandomSource;
++import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
+ import net.minecraft.world.level.levelgen.WorldgenRandom;
+ import net.minecraft.world.level.levelgen.feature.configurations.GeodeConfiguration;
+ import net.minecraft.world.level.levelgen.synth.NormalNoise;
+@@ -43,7 +43,7 @@ public class GeodeFeature extends Feature<GeodeConfiguration> {
+         int maxGenOffset = config.maxGenOffset();
+         List<Pair<BlockPos, Integer>> points = Lists.newLinkedList();
+         int numPoints = config.distributionPoints().sample(random);
+-        WorldgenRandom random1 = new WorldgenRandom(new LegacyRandomSource(level.getSeed()));
++        WorldgenRandom random1 = new WorldgenRandom(new SingleThreadedRandomSource(level.getSeed()));
+         NormalNoise noise = NormalNoise.create(random1, -4, 1.0);
+         List<BlockPos> crackPoints = Lists.newLinkedList();
+         double crackSizeAdjustment = (double)numPoints / config.outerWallDistance().maxInclusive();
+diff --git a/net/minecraft/world/level/levelgen/feature/OreFeature.java b/net/minecraft/world/level/levelgen/feature/OreFeature.java
+index 58e660e31437593971d2b7f631bbb0f9097d4ee2..8e5e3d14037d4f9732fcda15218496600a2cea91 100644
+--- a/net/minecraft/world/level/levelgen/feature/OreFeature.java
++++ b/net/minecraft/world/level/levelgen/feature/OreFeature.java
+@@ -1,6 +1,7 @@
+ package net.minecraft.world.level.levelgen.feature;
+ 
+ import com.mojang.serialization.Codec;
++import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+ import java.util.BitSet;
+ import java.util.function.Function;
+ import net.minecraft.core.BlockPos;
+@@ -15,6 +16,8 @@ import net.minecraft.world.level.levelgen.Heightmap;
+ import net.minecraft.world.level.levelgen.feature.configurations.OreConfiguration;
+ 
+ public class OreFeature extends Feature<OreConfiguration> {
++    private static final ThreadLocal<Int2ObjectOpenHashMap<BitSet>> FAND_BITSETS = ThreadLocal.withInitial(Int2ObjectOpenHashMap::new);
++
+     public OreFeature(final Codec<OreConfiguration> codec) {
+         super(codec);
+     }
+@@ -69,7 +72,7 @@ public class OreFeature extends Feature<OreConfiguration> {
+         final int sizeY
+     ) {
+         int placed = 0;
+-        BitSet tested = new BitSet(sizeXZ * sizeY * sizeXZ);
++        BitSet tested = getReusableBitSet(sizeXZ * sizeY * sizeXZ);
+         BlockPos.MutableBlockPos orePos = new BlockPos.MutableBlockPos();
+         int size = config.size;
+         double[] data = new double[size * 4];
+@@ -167,6 +170,12 @@ public class OreFeature extends Feature<OreConfiguration> {
+         return placed > 0;
+     }
+ 
++    private static BitSet getReusableBitSet(final int bits) {
++        BitSet bitSet = FAND_BITSETS.get().computeIfAbsent(bits, BitSet::new);
++        bitSet.clear();
++        return bitSet;
++    }
++
+     public static boolean canPlaceOre(
+         final BlockState orePosState,
+         final Function<BlockPos, BlockState> blockGetter,
+diff --git a/net/minecraft/world/level/levelgen/feature/stateproviders/DualNoiseProvider.java b/net/minecraft/world/level/levelgen/feature/stateproviders/DualNoiseProvider.java
+index dd8185dfc411eaf2c8d8a184e686e48bef133e14..d83ed62499a84529e4eca2b75c5e11e98d4204a5 100644
+--- a/net/minecraft/world/level/levelgen/feature/stateproviders/DualNoiseProvider.java
++++ b/net/minecraft/world/level/levelgen/feature/stateproviders/DualNoiseProvider.java
+@@ -12,7 +12,7 @@ import net.minecraft.util.Mth;
+ import net.minecraft.util.RandomSource;
+ import net.minecraft.world.level.WorldGenLevel;
+ import net.minecraft.world.level.block.state.BlockState;
+-import net.minecraft.world.level.levelgen.LegacyRandomSource;
++import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
+ import net.minecraft.world.level.levelgen.WorldgenRandom;
+ import net.minecraft.world.level.levelgen.synth.NormalNoise;
+ 
+@@ -44,7 +44,7 @@ public class DualNoiseProvider extends NoiseProvider {
+         this.variety = variety;
+         this.slowNoiseParameters = slowNoiseParameters;
+         this.slowScale = slowScale;
+-        this.slowNoise = NormalNoise.create(new WorldgenRandom(new LegacyRandomSource(seed)), slowNoiseParameters);
++        this.slowNoise = NormalNoise.create(new WorldgenRandom(new SingleThreadedRandomSource(seed)), slowNoiseParameters);
+     }
+ 
+     @Override
+diff --git a/net/minecraft/world/level/levelgen/feature/stateproviders/NoiseBasedStateProvider.java b/net/minecraft/world/level/levelgen/feature/stateproviders/NoiseBasedStateProvider.java
+index ea34b2d5ede07fd7775a78262096149902561adb..8e70466801db288e3e8d90e44dab1d73e79038c2 100644
+--- a/net/minecraft/world/level/levelgen/feature/stateproviders/NoiseBasedStateProvider.java
++++ b/net/minecraft/world/level/levelgen/feature/stateproviders/NoiseBasedStateProvider.java
+@@ -6,7 +6,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder.Instance;
+ import com.mojang.serialization.codecs.RecordCodecBuilder.Mu;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.util.ExtraCodecs;
+-import net.minecraft.world.level.levelgen.LegacyRandomSource;
++import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
+ import net.minecraft.world.level.levelgen.WorldgenRandom;
+ import net.minecraft.world.level.levelgen.synth.NormalNoise;
+ 
+@@ -28,7 +28,7 @@ public abstract class NoiseBasedStateProvider extends BlockStateProvider {
+         this.seed = seed;
+         this.parameters = parameters;
+         this.scale = scale;
+-        this.noise = NormalNoise.create(new WorldgenRandom(new LegacyRandomSource(seed)), parameters);
++        this.noise = NormalNoise.create(new WorldgenRandom(new SingleThreadedRandomSource(seed)), parameters);
+     }
+ 
+     protected double getNoiseValue(final BlockPos pos, final double scale) {
+diff --git a/net/minecraft/world/level/levelgen/structure/Structure.java b/net/minecraft/world/level/levelgen/structure/Structure.java
+index f1e13ede1f7345089ece8d8ef391f7fd5e55c445..3f6d2d9928a881169e42c4d4f8e09c001bc1c113 100644
+--- a/net/minecraft/world/level/levelgen/structure/Structure.java
++++ b/net/minecraft/world/level/levelgen/structure/Structure.java
+@@ -36,8 +36,8 @@ import net.minecraft.world.level.block.Rotation;
+ import net.minecraft.world.level.chunk.ChunkGenerator;
+ import net.minecraft.world.level.levelgen.GenerationStep;
+ import net.minecraft.world.level.levelgen.Heightmap;
+-import net.minecraft.world.level.levelgen.LegacyRandomSource;
+ import net.minecraft.world.level.levelgen.RandomState;
++import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
+ import net.minecraft.world.level.levelgen.WorldgenRandom;
+ import net.minecraft.world.level.levelgen.structure.pieces.PiecesContainer;
+ import net.minecraft.world.level.levelgen.structure.pieces.StructurePiecesBuilder;
+@@ -248,7 +248,7 @@ public abstract class Structure {
+         }
+ 
+         private static WorldgenRandom makeRandom(final long seed, final ChunkPos chunkPos) {
+-            WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(0L));
++            WorldgenRandom random = new WorldgenRandom(new SingleThreadedRandomSource(0L));
+             random.setLargeFeatureSeed(seed, chunkPos.x(), chunkPos.z());
+             return random;
+         }
+diff --git a/net/minecraft/world/level/levelgen/structure/StructureCheck.java b/net/minecraft/world/level/levelgen/structure/StructureCheck.java
+index 270545bf8db9e45a57d2f9c8064b3586fc49a3fd..9fa3a2c678483f10ed403f820f6ad20705990cba 100644
+--- a/net/minecraft/world/level/levelgen/structure/StructureCheck.java
++++ b/net/minecraft/world/level/levelgen/structure/StructureCheck.java
+@@ -52,6 +52,7 @@ public class StructureCheck {
+     private final DataFixer fixerUpper;
+     private final Long2ObjectMap<Object2IntMap<Structure>> loadedChunks = new Long2ObjectOpenHashMap<>();
+     private final Map<Structure, Long2BooleanMap> featureChecks = new HashMap<>();
++    private final Object cacheLock = new Object();
+ 
+     public StructureCheck(
+         final ChunkScanAccess storageAccess,
+@@ -79,9 +80,11 @@ public class StructureCheck {
+ 
+     public StructureCheckResult checkStart(final ChunkPos pos, final Structure structure, final StructurePlacement placement, final boolean requireUnreferenced) {
+         long posKey = pos.pack();
+-        Object2IntMap<Structure> cachedResult = this.loadedChunks.get(posKey);
+-        if (cachedResult != null) {
+-            return this.checkStructureInfo(cachedResult, structure, requireUnreferenced);
++        synchronized (this.cacheLock) {
++            Object2IntMap<Structure> cachedResult = this.loadedChunks.get(posKey);
++            if (cachedResult != null) {
++                return this.checkStructureInfo(cachedResult, structure, requireUnreferenced);
++            }
+         }
+ 
+         StructureCheckResult storageCheckResult = this.tryLoadFromStorage(pos, structure, requireUnreferenced, posKey);
+@@ -93,9 +96,26 @@ public class StructureCheck {
+             return StructureCheckResult.START_NOT_PRESENT;
+         }
+ 
+-        boolean isFeatureChunk = this.featureChecks
+-            .computeIfAbsent(structure, k -> new Long2BooleanOpenHashMap())
+-            .computeIfAbsent(posKey, k -> this.canCreateStructure(pos, structure));
++        Long2BooleanMap checks;
++        synchronized (this.cacheLock) {
++            checks = this.featureChecks.get(structure);
++            if (checks != null && checks.containsKey(posKey)) {
++                boolean isFeatureChunk = checks.get(posKey);
++                return !isFeatureChunk ? StructureCheckResult.START_NOT_PRESENT : StructureCheckResult.CHUNK_LOAD_NEEDED;
++            }
++        }
++
++        boolean computedFeatureChunk = this.canCreateStructure(pos, structure);
++        boolean isFeatureChunk;
++        synchronized (this.cacheLock) {
++            checks = this.featureChecks.computeIfAbsent(structure, k -> new Long2BooleanOpenHashMap());
++            if (checks.containsKey(posKey)) {
++                isFeatureChunk = checks.get(posKey);
++            } else {
++                checks.put(posKey, computedFeatureChunk);
++                isFeatureChunk = computedFeatureChunk;
++            }
++        }
+         return !isFeatureChunk ? StructureCheckResult.START_NOT_PRESENT : StructureCheckResult.CHUNK_LOAD_NEEDED;
+     }
+ 
+@@ -210,18 +230,23 @@ public class StructureCheck {
+     }
+ 
+     private void storeFullResults(final long posKey, final Object2IntMap<Structure> starts) {
+-        this.loadedChunks.put(posKey, deduplicateEmptyMap(starts));
+-        this.featureChecks.values().forEach(m -> m.remove(posKey));
++        synchronized (this.cacheLock) {
++            this.loadedChunks.put(posKey, deduplicateEmptyMap(starts));
++            this.featureChecks.values().forEach(m -> m.remove(posKey));
++            this.featureChecks.values().removeIf(Map::isEmpty);
++        }
+     }
+ 
+     public void incrementReference(final ChunkPos chunkPos, final Structure structure) {
+-        this.loadedChunks.compute(chunkPos.pack(), (key, counts) -> {
+-            if (counts == null || counts.isEmpty()) {
+-                counts = new Object2IntOpenHashMap<>();
+-            }
++        synchronized (this.cacheLock) {
++            this.loadedChunks.compute(chunkPos.pack(), (key, counts) -> {
++                if (counts == null || counts.isEmpty()) {
++                    counts = new Object2IntOpenHashMap<>();
++                }
+ 
+-            counts.computeInt(structure, (k, value) -> value == null ? 1 : value + 1);
+-            return counts;
+-        });
++                counts.computeInt(structure, (k, value) -> value == null ? 1 : value + 1);
++                return counts;
++            });
++        }
+     }
+ }
+diff --git a/net/minecraft/world/level/levelgen/structure/placement/RandomSpreadStructurePlacement.java b/net/minecraft/world/level/levelgen/structure/placement/RandomSpreadStructurePlacement.java
+index 1310b2ca994b8f6d3d92bdc676fe44de3619cc09..eeaaee61a4eed9695903da71b33093962535656f 100644
+--- a/net/minecraft/world/level/levelgen/structure/placement/RandomSpreadStructurePlacement.java
++++ b/net/minecraft/world/level/levelgen/structure/placement/RandomSpreadStructurePlacement.java
+@@ -8,7 +8,7 @@ import java.util.Optional;
+ import net.minecraft.core.Vec3i;
+ import net.minecraft.world.level.ChunkPos;
+ import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
+-import net.minecraft.world.level.levelgen.LegacyRandomSource;
++import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
+ import net.minecraft.world.level.levelgen.WorldgenRandom;
+ 
+ public class RandomSpreadStructurePlacement extends StructurePlacement {
+@@ -67,7 +67,7 @@ public class RandomSpreadStructurePlacement extends StructurePlacement {
+     public ChunkPos getPotentialStructureChunk(final long seed, final int sourceX, final int sourceZ) {
+         int spacedGridX = Math.floorDiv(sourceX, this.spacing);
+         int spacedGridZ = Math.floorDiv(sourceZ, this.spacing);
+-        WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(0L));
++        WorldgenRandom random = new WorldgenRandom(new SingleThreadedRandomSource(0L));
+         random.setLargeFeatureWithSalt(seed, spacedGridX, spacedGridZ, this.salt());
+         int limit = this.spacing - this.separation;
+         int spreadX = this.spreadType.evaluate(random, limit);
+diff --git a/net/minecraft/world/level/levelgen/structure/placement/StructurePlacement.java b/net/minecraft/world/level/levelgen/structure/placement/StructurePlacement.java
+index 5b39f75e6c31813ee32bd360c669f9f58aa91bf8..898060924de074715fcbde44bbac75be86774c06 100644
+--- a/net/minecraft/world/level/levelgen/structure/placement/StructurePlacement.java
++++ b/net/minecraft/world/level/levelgen/structure/placement/StructurePlacement.java
+@@ -16,7 +16,7 @@ import net.minecraft.util.ExtraCodecs;
+ import net.minecraft.util.StringRepresentable;
+ import net.minecraft.world.level.ChunkPos;
+ import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
+-import net.minecraft.world.level.levelgen.LegacyRandomSource;
++import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
+ import net.minecraft.world.level.levelgen.WorldgenRandom;
+ import net.minecraft.world.level.levelgen.structure.StructureSet;
+ 
+@@ -102,19 +102,19 @@ public abstract class StructurePlacement {
+     public abstract StructurePlacementType<?> type();
+ 
+     private static boolean probabilityReducer(final long seed, final int salt, final int sourceX, final int sourceZ, final float probability) {
+-        WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(0L));
++        WorldgenRandom random = new WorldgenRandom(new SingleThreadedRandomSource(0L));
+         random.setLargeFeatureWithSalt(seed, salt, sourceX, sourceZ);
+         return random.nextFloat() < probability;
+     }
+ 
+     private static boolean legacyProbabilityReducerWithDouble(final long seed, final int salt, final int sourceX, final int sourceZ, final float probability) {
+-        WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(0L));
++        WorldgenRandom random = new WorldgenRandom(new SingleThreadedRandomSource(0L));
+         random.setLargeFeatureSeed(seed, sourceX, sourceZ);
+         return random.nextDouble() < probability;
+     }
+ 
+     private static boolean legacyArbitrarySaltProbabilityReducer(final long seed, final int salt, final int sourceX, final int sourceZ, final float probability) {
+-        WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(0L));
++        WorldgenRandom random = new WorldgenRandom(new SingleThreadedRandomSource(0L));
+         random.setLargeFeatureWithSalt(seed, sourceX, sourceZ, 10387320);
+         return random.nextFloat() < probability;
+     }
+@@ -122,7 +122,7 @@ public abstract class StructurePlacement {
+     private static boolean legacyPillagerOutpostReducer(final long seed, final int salt, final int sourceX, final int sourceZ, final float probability) {
+         int cx = sourceX >> 4;
+         int cz = sourceZ >> 4;
+-        WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(0L));
++        WorldgenRandom random = new WorldgenRandom(new SingleThreadedRandomSource(0L));
+         random.setSeed(cx ^ cz << 4 ^ seed);
+         random.nextInt();
+         return random.nextInt((int)(1.0F / probability)) == 0;
+diff --git a/net/minecraft/world/level/levelgen/structure/structures/NetherFortressPieces.java b/net/minecraft/world/level/levelgen/structure/structures/NetherFortressPieces.java
+index 544be77ad1c39360bec11378d159c342e0d6d386..59f336a8c7246d0212b69e862882affbba9c5a2c 100644
+--- a/net/minecraft/world/level/levelgen/structure/structures/NetherFortressPieces.java
++++ b/net/minecraft/world/level/levelgen/structure/structures/NetherFortressPieces.java
+@@ -1513,6 +1513,10 @@ public class NetherFortressPieces {
+             this(pieceClass, weight, maxPlaceCount, false);
+         }
+ 
++        public NetherFortressPieces.PieceWeight copy() {
++            return new NetherFortressPieces.PieceWeight(this.pieceClass, this.weight, this.maxPlaceCount, this.allowInRow);
++        }
++
+         public boolean doPlace(final int depth) {
+             return this.maxPlaceCount == 0 || this.placeCount < this.maxPlaceCount;
+         }
+@@ -1679,13 +1683,11 @@ public class NetherFortressPieces {
+             super(west, north, getRandomHorizontalDirection(random));
+ 
+             for (NetherFortressPieces.PieceWeight piece : NetherFortressPieces.BRIDGE_PIECE_WEIGHTS) {
+-                piece.placeCount = 0;
+-                this.availableBridgePieces.add(piece);
++                this.availableBridgePieces.add(piece.copy());
+             }
+ 
+             for (NetherFortressPieces.PieceWeight piece : NetherFortressPieces.CASTLE_PIECE_WEIGHTS) {
+-                piece.placeCount = 0;
+-                this.availableCastlePieces.add(piece);
++                this.availableCastlePieces.add(piece.copy());
+             }
+         }
+ 
+diff --git a/net/minecraft/world/level/levelgen/structure/structures/OceanMonumentStructure.java b/net/minecraft/world/level/levelgen/structure/structures/OceanMonumentStructure.java
+index a856c0aa3c60d2de3d36ed0a9b372f872d62dfbb..4fe71f55140e647061d3a9cb3a25c05e18d1b79f 100644
+--- a/net/minecraft/world/level/levelgen/structure/structures/OceanMonumentStructure.java
++++ b/net/minecraft/world/level/levelgen/structure/structures/OceanMonumentStructure.java
+@@ -9,8 +9,8 @@ import net.minecraft.tags.BiomeTags;
+ import net.minecraft.world.level.ChunkPos;
+ import net.minecraft.world.level.biome.Biome;
+ import net.minecraft.world.level.levelgen.Heightmap;
+-import net.minecraft.world.level.levelgen.LegacyRandomSource;
+ import net.minecraft.world.level.levelgen.RandomSupport;
++import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
+ import net.minecraft.world.level.levelgen.WorldgenRandom;
+ import net.minecraft.world.level.levelgen.structure.BoundingBox;
+ import net.minecraft.world.level.levelgen.structure.Structure;
+@@ -57,7 +57,7 @@ public class OceanMonumentStructure extends Structure {
+             return savedPieces;
+         }
+ 
+-        WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(RandomSupport.generateUniqueSeed()));
++        WorldgenRandom random = new WorldgenRandom(new SingleThreadedRandomSource(RandomSupport.generateUniqueSeed()));
+         random.setLargeFeatureSeed(seed, chunkPos.x(), chunkPos.z());
+         StructurePiece oldTopPiece = savedPieces.pieces().get(0);
+         BoundingBox oldBoundingBox = oldTopPiece.getBoundingBox();
+diff --git a/net/minecraft/world/level/levelgen/structure/structures/StrongholdPieces.java b/net/minecraft/world/level/levelgen/structure/structures/StrongholdPieces.java
+index 6dbe60e3eb2e1843b9b94ce08f6a258d6add56b1..e98c17f039afa612a308554c697aed09bd80b79a 100644
+--- a/net/minecraft/world/level/levelgen/structure/structures/StrongholdPieces.java
++++ b/net/minecraft/world/level/levelgen/structure/structures/StrongholdPieces.java
+@@ -53,47 +53,44 @@ public class StrongholdPieces {
+         new StrongholdPieces.PieceWeight(StrongholdPieces.StairsDown.class, 5, 5),
+         new StrongholdPieces.PieceWeight(StrongholdPieces.FiveCrossing.class, 5, 4),
+         new StrongholdPieces.PieceWeight(StrongholdPieces.ChestCorridor.class, 5, 4),
+-        new StrongholdPieces.PieceWeight(StrongholdPieces.Library.class, 10, 2) {
+-            @Override
+-            public boolean doPlace(final int depth) {
+-                return super.doPlace(depth) && depth > 4;
+-            }
+-        },
+-        new StrongholdPieces.PieceWeight(StrongholdPieces.PortalRoom.class, 20, 1) {
+-            @Override
+-            public boolean doPlace(final int depth) {
+-                return super.doPlace(depth) && depth > 5;
+-            }
+-        }
++        new StrongholdPieces.PieceWeight(StrongholdPieces.Library.class, 10, 2, 5),
++        new StrongholdPieces.PieceWeight(StrongholdPieces.PortalRoom.class, 20, 1, 6)
+     };
+     private static List<StrongholdPieces.PieceWeight> currentPieces;
+     private static @Nullable Class<? extends StrongholdPieces.StrongholdPiece> imposedPiece;
+     private static int totalWeight;
++    private static final ThreadLocal<StrongholdPieces.GenerationState> FAND_GENERATION_STATE = ThreadLocal.withInitial(StrongholdPieces.GenerationState::new);
+     private static final StrongholdPieces.SmoothStoneSelector SMOOTH_STONE_SELECTOR = new StrongholdPieces.SmoothStoneSelector();
+ 
+     public static void resetPieces() {
+-        currentPieces = Lists.newArrayList();
++        StrongholdPieces.GenerationState state = FAND_GENERATION_STATE.get();
++        state.currentPieces.clear();
+ 
+         for (StrongholdPieces.PieceWeight piece : STRONGHOLD_PIECE_WEIGHTS) {
+-            piece.placeCount = 0;
+-            currentPieces.add(piece);
++            state.currentPieces.add(piece.copy());
+         }
+ 
++        state.imposedPiece = null;
++        state.totalWeight = 0;
++        currentPieces = state.currentPieces;
+         imposedPiece = null;
++        totalWeight = 0;
+     }
+ 
+     private static boolean updatePieceWeight() {
++        StrongholdPieces.GenerationState state = FAND_GENERATION_STATE.get();
+         boolean hasAnyPieces = false;
+-        totalWeight = 0;
++        state.totalWeight = 0;
+ 
+-        for (StrongholdPieces.PieceWeight piece : currentPieces) {
++        for (StrongholdPieces.PieceWeight piece : state.currentPieces) {
+             if (piece.maxPlaceCount > 0 && piece.placeCount < piece.maxPlaceCount) {
+                 hasAnyPieces = true;
+             }
+ 
+-            totalWeight = totalWeight + piece.weight;
++            state.totalWeight += piece.weight;
+         }
+ 
++        totalWeight = state.totalWeight;
+         return hasAnyPieces;
+     }
+ 
+@@ -149,10 +146,12 @@ public class StrongholdPieces {
+             return null;
+         }
+ 
+-        if (imposedPiece != null) {
++        StrongholdPieces.GenerationState state = FAND_GENERATION_STATE.get();
++        if (state.imposedPiece != null) {
+             StrongholdPieces.StrongholdPiece strongholdPiece = findAndCreatePieceFactory(
+-                imposedPiece, structurePieceAccessor, random, footX, footY, footZ, direction, depth
++                state.imposedPiece, structurePieceAccessor, random, footX, footY, footZ, direction, depth
+             );
++            state.imposedPiece = null;
+             imposedPiece = null;
+             if (strongholdPiece != null) {
+                 return strongholdPiece;
+@@ -163,9 +162,9 @@ public class StrongholdPieces {
+ 
+         while (numAttempts < 5) {
+             numAttempts++;
+-            int weightSelection = random.nextInt(totalWeight);
++            int weightSelection = random.nextInt(state.totalWeight);
+ 
+-            for (StrongholdPieces.PieceWeight piece : currentPieces) {
++            for (StrongholdPieces.PieceWeight piece : state.currentPieces) {
+                 weightSelection -= piece.weight;
+                 if (weightSelection < 0) {
+                     if (!piece.doPlace(depth) || piece == startPiece.previousPiece) {
+@@ -179,7 +178,7 @@ public class StrongholdPieces {
+                         piece.placeCount++;
+                         startPiece.previousPiece = piece;
+                         if (!piece.isValid()) {
+-                            currentPieces.remove(piece);
++                            state.currentPieces.remove(piece);
+                         }
+ 
+                         return strongholdPiece;
+@@ -756,15 +755,30 @@ public class StrongholdPieces {
+         public final int weight;
+         public int placeCount;
+         public final int maxPlaceCount;
++        private final int minDepth;
+ 
+         public PieceWeight(final Class<? extends StrongholdPieces.StrongholdPiece> pieceClass, final int weight, final int maxPlaceCount) {
++            this(pieceClass, weight, maxPlaceCount, 0);
++        }
++
++        public PieceWeight(
++            final Class<? extends StrongholdPieces.StrongholdPiece> pieceClass,
++            final int weight,
++            final int maxPlaceCount,
++            final int minDepth
++        ) {
+             this.pieceClass = pieceClass;
+             this.weight = weight;
+             this.maxPlaceCount = maxPlaceCount;
++            this.minDepth = minDepth;
++        }
++
++        public StrongholdPieces.PieceWeight copy() {
++            return new StrongholdPieces.PieceWeight(this.pieceClass, this.weight, this.maxPlaceCount, this.minDepth);
+         }
+ 
+         public boolean doPlace(final int depth) {
+-            return this.maxPlaceCount == 0 || this.placeCount < this.maxPlaceCount;
++            return depth >= this.minDepth && (this.maxPlaceCount == 0 || this.placeCount < this.maxPlaceCount);
+         }
+ 
+         public boolean isValid() {
+@@ -1268,6 +1282,7 @@ public class StrongholdPieces {
+         @Override
+         public void addChildren(final StructurePiece startPiece, final StructurePieceAccessor structurePieceAccessor, final RandomSource random) {
+             if (this.isSource) {
++                StrongholdPieces.FAND_GENERATION_STATE.get().imposedPiece = StrongholdPieces.FiveCrossing.class;
+                 StrongholdPieces.imposedPiece = StrongholdPieces.FiveCrossing.class;
+             }
+ 
+@@ -1810,4 +1825,10 @@ public class StrongholdPieces {
+             super(type, tag);
+         }
+     }
++
++    private static final class GenerationState {
++        private final List<StrongholdPieces.PieceWeight> currentPieces = Lists.newArrayList();
++        private @Nullable Class<? extends StrongholdPieces.StrongholdPiece> imposedPiece;
++        private int totalWeight;
++    }
+ }
+diff --git a/net/minecraft/world/level/levelgen/synth/ImprovedNoise.java b/net/minecraft/world/level/levelgen/synth/ImprovedNoise.java
+index ef8f2a00945a3d240a23ca73f138960ee0fe8742..675cac3773e2821d1a05a39691626f19bba76885 100644
+--- a/net/minecraft/world/level/levelgen/synth/ImprovedNoise.java
++++ b/net/minecraft/world/level/levelgen/synth/ImprovedNoise.java
+@@ -6,6 +6,24 @@ import net.minecraft.util.RandomSource;
+ 
+ public final class ImprovedNoise {
+     private static final float SHIFT_UP_EPSILON = 1.0E-7F;
++    private static final double[] FLAT_SIMPLEX_GRAD = new double[]{
++        1.0, 1.0, 0.0, 0.0,
++        -1.0, 1.0, 0.0, 0.0,
++        1.0, -1.0, 0.0, 0.0,
++        -1.0, -1.0, 0.0, 0.0,
++        1.0, 0.0, 1.0, 0.0,
++        -1.0, 0.0, 1.0, 0.0,
++        1.0, 0.0, -1.0, 0.0,
++        -1.0, 0.0, -1.0, 0.0,
++        0.0, 1.0, 1.0, 0.0,
++        0.0, -1.0, 1.0, 0.0,
++        0.0, 1.0, -1.0, 0.0,
++        0.0, -1.0, -1.0, 0.0,
++        1.0, 1.0, 0.0, 0.0,
++        0.0, -1.0, 1.0, 0.0,
++        -1.0, 1.0, 0.0, 0.0,
++        0.0, -1.0, -1.0, 0.0
++    };
+     private final byte[] p;
+     public final double xo;
+     public final double yo;
+@@ -38,9 +56,9 @@ public final class ImprovedNoise {
+         double x = _x + this.xo;
+         double y = _y + this.yo;
+         double z = _z + this.zo;
+-        int xf = Mth.floor(x);
+-        int yf = Mth.floor(y);
+-        int zf = Mth.floor(z);
++        double xf = Math.floor(x);
++        double yf = Math.floor(y);
++        double zf = Math.floor(z);
+         double xr = x - xf;
+         double yr = y - yf;
+         double zr = z - zf;
+@@ -53,25 +71,25 @@ public final class ImprovedNoise {
+                 fudgeLimit = yr;
+             }
+ 
+-            yrFudge = Mth.floor(fudgeLimit / yScale + 1.0E-7F) * yScale;
++            yrFudge = Math.floor(fudgeLimit / yScale + SHIFT_UP_EPSILON) * yScale;
+         } else {
+             yrFudge = 0.0;
+         }
+ 
+-        return this.sampleAndLerp(xf, yf, zf, xr, yr - yrFudge, zr, yr);
++        return this.sampleAndLerp((int)xf, (int)yf, (int)zf, xr, yr - yrFudge, zr, yr);
+     }
+ 
+     public double noiseWithDerivative(final double _x, final double _y, final double _z, final double[] derivativeOut) {
+         double x = _x + this.xo;
+         double y = _y + this.yo;
+         double z = _z + this.zo;
+-        int xf = Mth.floor(x);
+-        int yf = Mth.floor(y);
+-        int zf = Mth.floor(z);
++        double xf = Math.floor(x);
++        double yf = Math.floor(y);
++        double zf = Math.floor(z);
+         double xr = x - xf;
+         double yr = y - yf;
+         double zr = z - zf;
+-        return this.sampleWithDerivative(xf, yf, zf, xr, yr, zr, derivativeOut);
++        return this.sampleWithDerivative((int)xf, (int)yf, (int)zf, xr, yr, zr, derivativeOut);
+     }
+ 
+     private static double gradDot(final int hash, final double x, final double y, final double z) {
+@@ -83,24 +101,43 @@ public final class ImprovedNoise {
+     }
+ 
+     private double sampleAndLerp(final int x, final int y, final int z, final double xr, final double yr, final double zr, final double yrOriginal) {
+-        int x0 = this.p(x);
+-        int x1 = this.p(x + 1);
+-        int xy00 = this.p(x0 + y);
+-        int xy01 = this.p(x0 + y + 1);
+-        int xy10 = this.p(x1 + y);
+-        int xy11 = this.p(x1 + y + 1);
+-        double d000 = gradDot(this.p(xy00 + z), xr, yr, zr);
+-        double d100 = gradDot(this.p(xy10 + z), xr - 1.0, yr, zr);
+-        double d010 = gradDot(this.p(xy01 + z), xr, yr - 1.0, zr);
+-        double d110 = gradDot(this.p(xy11 + z), xr - 1.0, yr - 1.0, zr);
+-        double d001 = gradDot(this.p(xy00 + z + 1), xr, yr, zr - 1.0);
+-        double d101 = gradDot(this.p(xy10 + z + 1), xr - 1.0, yr, zr - 1.0);
+-        double d011 = gradDot(this.p(xy01 + z + 1), xr, yr - 1.0, zr - 1.0);
+-        double d111 = gradDot(this.p(xy11 + z + 1), xr - 1.0, yr - 1.0, zr - 1.0);
+-        double xAlpha = Mth.smoothstep(xr);
+-        double yAlpha = Mth.smoothstep(yrOriginal);
+-        double zAlpha = Mth.smoothstep(zr);
+-        return Mth.lerp3(xAlpha, yAlpha, zAlpha, d000, d100, d010, d110, d001, d101, d011, d111);
++        int x0 = x & 0xFF;
++        int x1 = (x + 1) & 0xFF;
++        int px0 = this.p[x0] & 0xFF;
++        int px1 = this.p[x1] & 0xFF;
++        int pxy00 = this.p[(px0 + y) & 0xFF] & 0xFF;
++        int pxy10 = this.p[(px1 + y) & 0xFF] & 0xFF;
++        int pxy01 = this.p[(px0 + y + 1) & 0xFF] & 0xFF;
++        int pxy11 = this.p[(px1 + y + 1) & 0xFF] & 0xFF;
++        int g000 = (this.p[(pxy00 + z) & 0xFF] & 15) << 2;
++        int g100 = (this.p[(pxy10 + z) & 0xFF] & 15) << 2;
++        int g010 = (this.p[(pxy01 + z) & 0xFF] & 15) << 2;
++        int g110 = (this.p[(pxy11 + z) & 0xFF] & 15) << 2;
++        int g001 = (this.p[(pxy00 + z + 1) & 0xFF] & 15) << 2;
++        int g101 = (this.p[(pxy10 + z + 1) & 0xFF] & 15) << 2;
++        int g011 = (this.p[(pxy01 + z + 1) & 0xFF] & 15) << 2;
++        int g111 = (this.p[(pxy11 + z + 1) & 0xFF] & 15) << 2;
++        double xr1 = xr - 1.0;
++        double yr1 = yr - 1.0;
++        double zr1 = zr - 1.0;
++        double d000 = FLAT_SIMPLEX_GRAD[g000] * xr + FLAT_SIMPLEX_GRAD[g000 | 1] * yr + FLAT_SIMPLEX_GRAD[g000 | 2] * zr;
++        double d100 = FLAT_SIMPLEX_GRAD[g100] * xr1 + FLAT_SIMPLEX_GRAD[g100 | 1] * yr + FLAT_SIMPLEX_GRAD[g100 | 2] * zr;
++        double d010 = FLAT_SIMPLEX_GRAD[g010] * xr + FLAT_SIMPLEX_GRAD[g010 | 1] * yr1 + FLAT_SIMPLEX_GRAD[g010 | 2] * zr;
++        double d110 = FLAT_SIMPLEX_GRAD[g110] * xr1 + FLAT_SIMPLEX_GRAD[g110 | 1] * yr1 + FLAT_SIMPLEX_GRAD[g110 | 2] * zr;
++        double d001 = FLAT_SIMPLEX_GRAD[g001] * xr + FLAT_SIMPLEX_GRAD[g001 | 1] * yr + FLAT_SIMPLEX_GRAD[g001 | 2] * zr1;
++        double d101 = FLAT_SIMPLEX_GRAD[g101] * xr1 + FLAT_SIMPLEX_GRAD[g101 | 1] * yr + FLAT_SIMPLEX_GRAD[g101 | 2] * zr1;
++        double d011 = FLAT_SIMPLEX_GRAD[g011] * xr + FLAT_SIMPLEX_GRAD[g011 | 1] * yr1 + FLAT_SIMPLEX_GRAD[g011 | 2] * zr1;
++        double d111 = FLAT_SIMPLEX_GRAD[g111] * xr1 + FLAT_SIMPLEX_GRAD[g111 | 1] * yr1 + FLAT_SIMPLEX_GRAD[g111 | 2] * zr1;
++        double xAlpha = xr * xr * xr * (xr * (xr * 6.0 - 15.0) + 10.0);
++        double yAlpha = yrOriginal * yrOriginal * yrOriginal * (yrOriginal * (yrOriginal * 6.0 - 15.0) + 10.0);
++        double zAlpha = zr * zr * zr * (zr * (zr * 6.0 - 15.0) + 10.0);
++        double x00 = d000 + xAlpha * (d100 - d000);
++        double x10 = d010 + xAlpha * (d110 - d010);
++        double x01 = d001 + xAlpha * (d101 - d001);
++        double x11 = d011 + xAlpha * (d111 - d011);
++        double y0 = x00 + yAlpha * (x10 - x00);
++        double y1 = x01 + yAlpha * (x11 - x01);
++        return y0 + zAlpha * (y1 - y0);
+     }
+ 
+     private double sampleWithDerivative(final int x, final int y, final int z, final double xr, final double yr, final double zr, final double[] derivativeOut) {
+diff --git a/net/minecraft/world/level/levelgen/synth/PerlinNoise.java b/net/minecraft/world/level/levelgen/synth/PerlinNoise.java
+index 9f9836f6bf15c5d3aa283c2cbcf6d29202ff22bb..68cc76acbbb80d631d51f646b07c615e283c4446 100644
+--- a/net/minecraft/world/level/levelgen/synth/PerlinNoise.java
++++ b/net/minecraft/world/level/levelgen/synth/PerlinNoise.java
+@@ -26,6 +26,7 @@ public class PerlinNoise {
+     private final double lowestFreqValueFactor;
+     private final double lowestFreqInputFactor;
+     private final double maxValue;
++    private final double[] amplitudesArray;
+ 
+     @Deprecated
+     public static PerlinNoise createLegacyForBlendedNoise(final RandomSource random, final IntStream octaves) {
+@@ -127,6 +128,7 @@ public class PerlinNoise {
+         this.lowestFreqInputFactor = Math.pow(2.0, -zeroOctaveIndex);
+         this.lowestFreqValueFactor = Math.pow(2.0, octaves - 1) / (Math.pow(2.0, octaves) - 1.0);
+         this.maxValue = this.edgeValue(2.0);
++        this.amplitudesArray = this.amplitudes.toDoubleArray();
+     }
+ 
+     protected double maxValue() {
+@@ -138,7 +140,22 @@ public class PerlinNoise {
+     }
+ 
+     public double getValue(final double x, final double y, final double z) {
+-        return this.getValue(x, y, z, 0.0, 0.0);
++        double value = 0.0;
++        double factor = this.lowestFreqInputFactor;
++        double valueFactor = this.lowestFreqValueFactor;
++
++        for (int i = 0; i < this.noiseLevels.length; i++) {
++            ImprovedNoise noise = this.noiseLevels[i];
++            if (noise != null) {
++                double noiseVal = noise.noise(wrap(x * factor), wrap(y * factor), wrap(z * factor), 0.0, 0.0);
++                value += this.amplitudesArray[i] * noiseVal * valueFactor;
++            }
++
++            factor *= 2.0;
++            valueFactor /= 2.0;
++        }
++
++        return value;
+     }
+ 
+     @Deprecated
+@@ -186,7 +203,7 @@ public class PerlinNoise {
+     }
+ 
+     public static double wrap(final double x) {
+-        return x - Mth.lfloor(x / 3.3554432E7 + 0.5) * 3.3554432E7;
++        return x - Math.floor(x / 3.3554432E7 + 0.5) * 3.3554432E7;
+     }
+ 
+     protected int firstOctave() {

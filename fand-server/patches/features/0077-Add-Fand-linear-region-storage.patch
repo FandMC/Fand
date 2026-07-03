@@ -1,0 +1,1237 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 2 Jul 2026 19:09:51 +0800
+Subject: [PATCH] Add Fand linear region storage
+
+
+diff --git a/net/minecraft/server/Main.java b/net/minecraft/server/Main.java
+index 1f6a666a51d94f06403e7a4afae3f642a936a2f8..a610a801eabce412df0098ddfae7236b85475754 100644
+--- a/net/minecraft/server/Main.java
++++ b/net/minecraft/server/Main.java
+@@ -13,6 +13,7 @@ import java.net.Proxy;
+ import java.nio.file.Files;
+ import java.nio.file.Path;
+ import java.nio.file.Paths;
++import java.util.List;
+ import java.util.Optional;
+ import java.util.function.BooleanSupplier;
+ import joptsimple.OptionParser;
+@@ -49,6 +50,7 @@ import net.minecraft.world.flag.FeatureFlags;
+ import net.minecraft.world.level.LevelSettings;
+ import net.minecraft.world.level.WorldDataConfiguration;
+ import net.minecraft.world.level.chunk.storage.RegionFileVersion;
++import net.minecraft.world.level.chunk.storage.RegionFileFormat;
+ import net.minecraft.world.level.dimension.LevelStem;
+ import net.minecraft.world.level.levelgen.WorldDimensions;
+ import net.minecraft.world.level.levelgen.WorldGenSettings;
+@@ -73,9 +75,17 @@ public class Main {
+         OptionSpec<Void> initSettings = parser.accepts("initSettings", "Initializes 'server.properties' and 'eula.txt', then quits");
+         OptionSpec<Void> demo = parser.accepts("demo");
+         OptionSpec<Void> bonusChest = parser.accepts("bonusChest");
+-        OptionSpec<Void> forceUpgrade = parser.accepts("forceUpgrade");
+-        OptionSpec<Void> eraseCache = parser.accepts("eraseCache");
+-        OptionSpec<Void> recreateRegionFiles = parser.accepts("recreateRegionFiles");
++        OptionSpec<Void> forceUpgrade = parser.accepts("forceUpgrade", "Runs the world upgrade tool before starting the server");
++        OptionSpec<Void> eraseCache = parser.accepts("eraseCache", "Erases cached worldgen data while force-upgrading chunks");
++        OptionSpec<Void> recreateRegionFiles = parser.accepts(
++            "recreateRegionFiles", "Rewrites region files using the selected region-file format and compression"
++        );
++        OptionSpec<String> regionFileCompression = parser.acceptsAll(
++            List.of("regionFileCompression", "region-file-compression"), "Overrides server.properties region-file-compression for this run"
++        ).withRequiredArg();
++        OptionSpec<String> regionFileFormat = parser.acceptsAll(
++            List.of("regionFileFormat", "region-file-format"), "Overrides server.properties region-file-format for this run"
++        ).withRequiredArg();
+         OptionSpec<Void> safeMode = parser.accepts("safeMode", "Loads level with vanilla datapack only");
+         OptionSpec<Void> help = parser.accepts("help").forHelp();
+         OptionSpec<String> universe = parser.accepts("universe").withRequiredArg().defaultsTo(".");
+@@ -109,7 +119,11 @@ public class Main {
+             Path settingsFile = Paths.get("server.properties");
+             DedicatedServerSettings settings = new DedicatedServerSettings(settingsFile);
+             settings.forceSave();
+-            RegionFileVersion.configure(settings.getProperties().regionFileComression);
++            String selectedRegionFileCompression = Optional.ofNullable(options.valueOf(regionFileCompression))
++                .orElse(settings.getProperties().regionFileComression);
++            RegionFileVersion.configure(selectedRegionFileCompression);
++            String selectedRegionFileFormat = Optional.ofNullable(options.valueOf(regionFileFormat)).orElse(settings.getProperties().regionFileFormat);
++            RegionFileFormat.configure(selectedRegionFileFormat);
+             Path eulaFile = Paths.get("eula.txt");
+             Eula eula = new Eula(eulaFile);
+             if (options.has(initSettings)) {
+diff --git a/net/minecraft/server/dedicated/DedicatedServerProperties.java b/net/minecraft/server/dedicated/DedicatedServerProperties.java
+index e714d50f7b6b4b1e702cfca43cfbfd5902d4c2b1..2f12b504c85b33d9b402c3caffbdb6c0b45e322e 100644
+--- a/net/minecraft/server/dedicated/DedicatedServerProperties.java
++++ b/net/minecraft/server/dedicated/DedicatedServerProperties.java
+@@ -110,6 +110,7 @@ public class DedicatedServerProperties extends Settings<DedicatedServerPropertie
+     public final int maxWorldSize = this.get("max-world-size", v -> Mth.clamp(v, 1, 29999984), 29999984);
+     public final boolean syncChunkWrites = this.get("sync-chunk-writes", true);
+     public final String regionFileComression = this.get("region-file-compression", "deflate");
++    public final String regionFileFormat = this.get("region-file-format", "mca");
+     public final boolean enableJmxMonitoring = this.get("enable-jmx-monitoring", false);
+     public final Settings<DedicatedServerProperties>.MutableValue<Boolean> enableStatus = this.getMutable("enable-status", true);
+     public final Settings<DedicatedServerProperties>.MutableValue<Boolean> hideOnlinePlayers = this.getMutable("hide-online-players", false);
+diff --git a/net/minecraft/util/worldupdate/FileToUpgrade.java b/net/minecraft/util/worldupdate/FileToUpgrade.java
+index a7f2cfa9277c898038f6b9e0a3401db51012b64c..85bd38862fd2253f02dc11cdeb67ceba9d6077d7 100644
+--- a/net/minecraft/util/worldupdate/FileToUpgrade.java
++++ b/net/minecraft/util/worldupdate/FileToUpgrade.java
+@@ -1,8 +1,12 @@
+ package net.minecraft.util.worldupdate;
+ 
+ import java.util.List;
++import java.nio.file.Path;
+ import net.minecraft.world.level.ChunkPos;
+-import net.minecraft.world.level.chunk.storage.RegionFile;
++import net.minecraft.world.level.chunk.storage.RegionFileFormat;
+ 
+-public record FileToUpgrade(RegionFile file, List<ChunkPos> chunksToUpgrade) {
++public record FileToUpgrade(Path file, int regionX, int regionZ, RegionFileFormat sourceFormat, List<ChunkPos> chunksToUpgrade) {
++    public Path targetFile(final Path directory) {
++        return directory.resolve(RegionFileFormat.getSelected().getRegionFileName(this.regionX, this.regionZ));
++    }
+ }
+diff --git a/net/minecraft/util/worldupdate/RegionStorageUpgrader.java b/net/minecraft/util/worldupdate/RegionStorageUpgrader.java
+index b228cd6c54e8c8998923ab332882d99092769c67..9f3524d17d410f6db838f89864fff2289db0d34f 100644
+--- a/net/minecraft/util/worldupdate/RegionStorageUpgrader.java
++++ b/net/minecraft/util/worldupdate/RegionStorageUpgrader.java
+@@ -6,37 +6,47 @@ import com.mojang.logging.LogUtils;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectAVLTreeMap;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectMap.Entry;
++import java.io.ByteArrayOutputStream;
++import java.io.DataInputStream;
++import java.io.DataOutputStream;
+ import java.io.File;
+ import java.io.IOException;
++import java.io.UncheckedIOException;
+ import java.nio.file.Files;
+ import java.nio.file.Path;
++import java.nio.file.StandardCopyOption;
++import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.ListIterator;
++import java.util.Map;
+ import java.util.Objects;
+ import java.util.concurrent.CompletableFuture;
+ import java.util.concurrent.CompletionException;
+-import java.util.regex.Matcher;
+-import java.util.regex.Pattern;
+ import net.minecraft.ReportedException;
+ import net.minecraft.SharedConstants;
+ import net.minecraft.nbt.CompoundTag;
++import net.minecraft.nbt.NbtIo;
+ import net.minecraft.nbt.NbtUtils;
+ import net.minecraft.resources.ResourceKey;
++import net.minecraft.util.FileUtil;
+ import net.minecraft.util.datafix.DataFixTypes;
+ import net.minecraft.world.level.ChunkPos;
+ import net.minecraft.world.level.Level;
++import net.minecraft.world.level.chunk.storage.FandLinearRegionFile;
+ import net.minecraft.world.level.chunk.storage.RecreatingSimpleRegionStorage;
+-import net.minecraft.world.level.chunk.storage.RegionFile;
++import net.minecraft.world.level.chunk.storage.RegionFileAccess;
++import net.minecraft.world.level.chunk.storage.RegionFileFormat;
++import net.minecraft.world.level.chunk.storage.RegionFileVersion;
+ import net.minecraft.world.level.chunk.storage.RegionStorageInfo;
+ import net.minecraft.world.level.chunk.storage.SimpleRegionStorage;
+ import net.minecraft.world.level.storage.LevelStorageSource;
++import org.apache.commons.io.FileUtils;
+ import org.jspecify.annotations.Nullable;
+ import org.slf4j.Logger;
+ 
+ public class RegionStorageUpgrader {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private static final String NEW_DIRECTORY_PREFIX = "new_";
+-    private static final Pattern REGEX = Pattern.compile("^r\\.(-?[0-9]+)\\.(-?[0-9]+)\\.mca$");
+     private final DataFixer dataFixer;
+     private final UpgradeProgress upgradeProgress;
+     private final String type;
+@@ -48,6 +58,7 @@ public class RegionStorageUpgrader {
+     private @Nullable ResourceKey<Level> dimensionKey;
+     private @Nullable SimpleRegionStorage storage;
+     private @Nullable List<FileToUpgrade> files;
++    private final List<FileToUpgrade> recreatedFiles = Lists.newArrayList();
+     private final int startIndex;
+     private final @Nullable CompoundTag dataFixContextTag;
+     private final Int2ObjectMap<RegionStorageUpgrader.TagModifier> tagModifiers;
+@@ -82,6 +93,7 @@ public class RegionStorageUpgrader {
+         this.dimensionKey = dimensionKey;
+         this.storage = this.createStorage(info, regionFolder);
+         this.files = this.getFilesToProcess(info, regionFolder);
++        this.recreatedFiles.clear();
+     }
+ 
+     public void upgrade() {
+@@ -99,18 +111,16 @@ public class RegionStorageUpgrader {
+                 float totalProgress = 0.0F;
+                 if (iterator.hasNext()) {
+                     FileToUpgrade fileToUpgrade = iterator.next();
+-                    boolean converted = true;
+-
+-                    for (ChunkPos chunkPos : fileToUpgrade.chunksToUpgrade()) {
+-                        converted = converted && this.processOnePosition(this.storage, chunkPos);
+-                        worked = true;
+-                    }
++                    boolean converted = this.canBatchWriteLinearRegion()
++                        ? this.processOneFileToLinearRegion((RecreatingSimpleRegionStorage)this.storage, fileToUpgrade)
++                        : this.processOneFile(fileToUpgrade);
++                    worked = !fileToUpgrade.chunksToUpgrade().isEmpty();
+ 
+                     if (this.recreateRegionFiles) {
+                         if (converted) {
+-                            this.onFileFinished(fileToUpgrade.file());
++                            this.recreatedFiles.add(fileToUpgrade);
+                         } else {
+-                            LOGGER.error("Failed to convert region file {}", fileToUpgrade.file().getPath());
++                            LOGGER.error("Failed to convert region file {}", fileToUpgrade.file());
+                         }
+                     }
+                 }
+@@ -133,7 +143,91 @@ public class RegionStorageUpgrader {
+             } catch (Exception e) {
+                 LOGGER.error("Error upgrading chunk", e);
+             }
++
++            if (this.recreateRegionFiles) {
++                this.replaceRecreatedRegionFiles();
++                this.deleteRecreateDirectory();
++            }
++        }
++    }
++
++    private boolean processOneFile(final FileToUpgrade fileToUpgrade) {
++        boolean converted = true;
++
++        for (ChunkPos chunkPos : fileToUpgrade.chunksToUpgrade()) {
++            boolean chunkConverted = this.processOnePosition(this.storage, chunkPos);
++            converted = converted && chunkConverted;
++        }
++
++        return converted;
++    }
++
++    private boolean canBatchWriteLinearRegion() {
++        return this.recreateRegionFiles && RegionFileFormat.getSelected() == RegionFileFormat.FLR && this.storage instanceof RecreatingSimpleRegionStorage;
++    }
++
++    private boolean processOneFileToLinearRegion(final RecreatingSimpleRegionStorage storage, final FileToUpgrade fileToUpgrade) {
++        Map<ChunkPos, FandLinearRegionFile.CompressedChunk> chunks = new LinkedHashMap<>();
++        boolean converted = true;
++
++        try (RegionFileAccess sourceRegion = fileToUpgrade.sourceFormat().create(storage.storageInfo(), fileToUpgrade.file(), fileToUpgrade.file().getParent(), false)) {
++            for (ChunkPos chunkPos : fileToUpgrade.chunksToUpgrade()) {
++                try (DataInputStream input = sourceRegion.getChunkDataInputStream(chunkPos)) {
++                    CompoundTag chunkTag = input == null ? null : NbtIo.read(input);
++                    CompoundTag upgradedTag = this.createUpgradedChunkTag(storage, chunkPos, chunkTag);
++                    if (upgradedTag == null) {
++                        converted = false;
++                        this.upgradeProgress.incrementSkipped();
++                        continue;
++                    }
++
++                    chunks.put(chunkPos, this.compressChunk(upgradedTag));
++                    this.upgradeProgress.incrementConverted();
++                } catch (ReportedException | CompletionException e) {
++                    Throwable cause = e.getCause();
++                    if (!(cause instanceof IOException)) {
++                        throw e;
++                    }
++
++                    LOGGER.error("Error upgrading chunk {}", chunkPos, cause);
++                    converted = false;
++                    this.upgradeProgress.incrementSkipped();
++                } catch (IOException e) {
++                    LOGGER.error("Error upgrading chunk {}", chunkPos, e);
++                    converted = false;
++                    this.upgradeProgress.incrementSkipped();
++                }
++            }
++        } catch (IOException e) {
++            throw new UncheckedIOException("Failed to read source region file " + fileToUpgrade.file(), e);
+         }
++
++        if (!chunks.isEmpty()) {
++            try {
++                Path targetFile = fileToUpgrade.targetFile(storage.writeFolder());
++                FileUtil.createDirectoriesSafe(targetFile.getParent());
++                Files.deleteIfExists(targetFile);
++
++                try (FandLinearRegionFile regionFile = new FandLinearRegionFile(storage.writeInfo(), targetFile, false)) {
++                    regionFile.writeCompressedChunks(chunks);
++                }
++            } catch (IOException e) {
++                throw new UncheckedIOException("Failed to batch write linear region file " + fileToUpgrade.file(), e);
++            }
++        }
++
++        return converted;
++    }
++
++    private FandLinearRegionFile.CompressedChunk compressChunk(final CompoundTag chunkTag) throws IOException {
++        RegionFileVersion version = RegionFileVersion.getSelected();
++        ByteArrayOutputStream bytes = new ByteArrayOutputStream(8192);
++
++        try (DataOutputStream output = new DataOutputStream(version.wrap(bytes))) {
++            NbtIo.write(chunkTag, output);
++        }
++
++        return new FandLinearRegionFile.CompressedChunk(bytes.toByteArray(), version);
+     }
+ 
+     protected final SimpleRegionStorage createStorage(final RegionStorageInfo info, final Path regionFolder) {
+@@ -162,21 +256,22 @@ public class RegionStorageUpgrader {
+     }
+ 
+     private static List<FileToUpgrade> getAllChunkPositions(final RegionStorageInfo info, final Path regionFolder) {
+-        File[] files = regionFolder.toFile().listFiles((dir, name) -> name.endsWith(".mca"));
++        File[] files = regionFolder.toFile().listFiles((dir, name) -> RegionFileFormat.parseRegionFileName(name) != null);
+         if (files == null) {
+             return List.of();
+         }
+ 
++        Map<Long, File> sourceFiles = selectSourceFiles(files);
+         List<FileToUpgrade> regionFileChunks = Lists.newArrayList();
+ 
+-        for (File regionFile : files) {
+-            Matcher regex = REGEX.matcher(regionFile.getName());
+-            if (regex.matches()) {
+-                int xOffset = Integer.parseInt(regex.group(1)) << 5;
+-                int zOffset = Integer.parseInt(regex.group(2)) << 5;
++        for (File regionFile : sourceFiles.values()) {
++            RegionFileFormat.RegionFileName regionFileName = RegionFileFormat.parseRegionFileName(regionFile.getName());
++            if (regionFileName != null) {
++                int xOffset = regionFileName.regionX() << 5;
++                int zOffset = regionFileName.regionZ() << 5;
+                 List<ChunkPos> chunkPositions = Lists.newArrayList();
+ 
+-                try (RegionFile regionSource = new RegionFile(info, regionFile.toPath(), regionFolder, true)) {
++                try (RegionFileAccess regionSource = regionFileName.format().create(info, regionFile.toPath(), regionFolder, true)) {
+                     for (int x = 0; x < 32; x++) {
+                         for (int z = 0; z < 32; z++) {
+                             ChunkPos pos = new ChunkPos(x + xOffset, z + zOffset);
+@@ -187,7 +282,9 @@ public class RegionStorageUpgrader {
+                     }
+ 
+                     if (!chunkPositions.isEmpty()) {
+-                        regionFileChunks.add(new FileToUpgrade(regionSource, chunkPositions));
++                        regionFileChunks.add(
++                            new FileToUpgrade(regionFile.toPath(), regionFileName.regionX(), regionFileName.regionZ(), regionFileName.format(), chunkPositions)
++                        );
+                     }
+                 } catch (Throwable t) {
+                     LOGGER.error("Failed to read chunks from region file {}", regionFile.toPath(), t);
+@@ -198,6 +295,32 @@ public class RegionStorageUpgrader {
+         return regionFileChunks;
+     }
+ 
++    private static Map<Long, File> selectSourceFiles(final File[] files) {
++        Map<Long, File> sourceFiles = new LinkedHashMap<>();
++        RegionFileFormat selectedFormat = RegionFileFormat.getSelected();
++
++        for (File file : files) {
++            RegionFileFormat.RegionFileName fileName = RegionFileFormat.parseRegionFileName(file.getName());
++            if (fileName == null) {
++                continue;
++            }
++
++            long key = ChunkPos.pack(fileName.regionX(), fileName.regionZ());
++            File existingFile = sourceFiles.get(key);
++            if (existingFile == null) {
++                sourceFiles.put(key, file);
++                continue;
++            }
++
++            RegionFileFormat.RegionFileName existingFileName = RegionFileFormat.parseRegionFileName(existingFile.getName());
++            if (existingFileName != null && existingFileName.format() != selectedFormat && fileName.format() == selectedFormat) {
++                sourceFiles.put(key, file);
++            }
++        }
++
++        return sourceFiles;
++    }
++
+     private boolean processOnePosition(final SimpleRegionStorage storage, final ChunkPos pos) {
+         boolean converted = false;
+ 
+@@ -222,62 +345,136 @@ public class RegionStorageUpgrader {
+     }
+ 
+     protected boolean tryProcessOnePosition(final SimpleRegionStorage storage, final ChunkPos pos) {
+-        CompoundTag chunkTag = storage.read(pos).join().orElse(null);
++        CompoundTag upgradedTag = this.createUpgradedChunkTag(storage, pos);
++        if (upgradedTag != null) {
++            if (this.previousWriteFuture != null) {
++                this.previousWriteFuture.join();
++            }
++
++            this.previousWriteFuture = storage.write(pos, upgradedTag);
++            return true;
++        }
++
++        return false;
++    }
++
++    private @Nullable CompoundTag createUpgradedChunkTag(final SimpleRegionStorage storage, final ChunkPos pos) {
++        return this.createUpgradedChunkTag(storage, pos, storage.read(pos).join().orElse(null));
++    }
++
++    private @Nullable CompoundTag createUpgradedChunkTag(final SimpleRegionStorage storage, final ChunkPos pos, final @Nullable CompoundTag chunkTag) {
+         if (chunkTag != null) {
+             int version = NbtUtils.getDataVersion(chunkTag);
+             int latestVersion = SharedConstants.getCurrentVersion().dataVersion().version();
+             boolean changed = false;
++            CompoundTag workingTag = chunkTag;
+ 
+             for (Entry<RegionStorageUpgrader.TagModifier> tagFixer : this.tagModifiers.int2ObjectEntrySet()) {
+                 int neededVersion = tagFixer.getIntKey();
+-                chunkTag = this.upgradeTag(storage, chunkTag, neededVersion);
+-                changed |= tagFixer.getValue().modifyTagAfterFix(pos, chunkTag);
++                workingTag = this.upgradeTag(storage, workingTag, neededVersion);
++                changed |= tagFixer.getValue().modifyTagAfterFix(pos, workingTag);
+             }
+ 
+-            CompoundTag upgradedTag = this.upgradeTag(storage, chunkTag, latestVersion);
++            CompoundTag upgradedTag = this.upgradeTag(storage, workingTag, latestVersion);
+             changed |= version < latestVersion;
+             if (changed || this.recreateRegionFiles) {
+-                if (this.previousWriteFuture != null) {
+-                    this.previousWriteFuture.join();
+-                }
+-
+-                this.previousWriteFuture = storage.write(pos, upgradedTag);
+-                return true;
++                return upgradedTag;
+             }
+         }
+ 
+-        return false;
++        return null;
+     }
+ 
+     protected CompoundTag upgradeTag(final SimpleRegionStorage storage, final CompoundTag chunkTag, final int targetVersion) {
+         return storage.upgradeChunkTag(chunkTag, this.defaultVersion, this.dataFixContextTag, targetVersion);
+     }
+ 
+-    private void onFileFinished(final RegionFile regionFile) {
++    private void replaceRecreatedRegionFiles() {
++        for (FileToUpgrade fileToUpgrade : this.recreatedFiles) {
++            this.replaceRecreatedRegionFile(fileToUpgrade);
++        }
++    }
++
++    private void deleteRecreateDirectory() {
++        if (this.storage instanceof RecreatingSimpleRegionStorage recreatingStorage && recreatingStorage.writeFolder().toFile().exists()) {
++            try {
++                FileUtils.deleteDirectory(recreatingStorage.writeFolder().toFile());
++            } catch (IOException exception) {
++                LOGGER.error("Failed to delete recreated region directory {}", recreatingStorage.writeFolder(), exception);
++            }
++        }
++    }
++
++    private void replaceRecreatedRegionFile(final FileToUpgrade fileToUpgrade) {
+         if (this.recreateRegionFiles) {
+             if (this.previousWriteFuture != null) {
+                 this.previousWriteFuture.join();
+             }
+ 
+-            Path filePath = regionFile.getPath();
+-            Path directoryPath = filePath.getParent();
+-            Path newFilePath = resolveRecreateDirectory(directoryPath).resolve(filePath.getFileName().toString());
++            Path sourceFilePath = fileToUpgrade.file();
++            Path directoryPath = sourceFilePath.getParent();
++            Path targetFilePath = fileToUpgrade.targetFile(directoryPath);
++            Path newFilePath = fileToUpgrade.targetFile(resolveRecreateDirectory(directoryPath));
++            Path sourceBackupFilePath = directoryPath.resolve(sourceFilePath.getFileName().toString() + ".recreate.bak");
++            Path targetBackupFilePath = targetFilePath.equals(sourceFilePath)
++                ? sourceBackupFilePath
++                : directoryPath.resolve(targetFilePath.getFileName().toString() + ".recreate.bak");
+ 
+             try {
+                 if (newFilePath.toFile().exists()) {
+-                    Files.delete(filePath);
+-                    Files.move(newFilePath, filePath);
++                    Files.deleteIfExists(sourceBackupFilePath);
++                    if (!targetBackupFilePath.equals(sourceBackupFilePath)) {
++                        Files.deleteIfExists(targetBackupFilePath);
++                    }
++
++                    if (Files.exists(sourceFilePath)) {
++                        Files.move(sourceFilePath, sourceBackupFilePath, StandardCopyOption.REPLACE_EXISTING);
++                    }
++
++                    if (!targetFilePath.equals(sourceFilePath) && Files.exists(targetFilePath)) {
++                        Files.move(targetFilePath, targetBackupFilePath, StandardCopyOption.REPLACE_EXISTING);
++                    }
++
++                    try {
++                        Files.move(newFilePath, targetFilePath, StandardCopyOption.REPLACE_EXISTING);
++                        Files.deleteIfExists(sourceBackupFilePath);
++                        if (!targetBackupFilePath.equals(sourceBackupFilePath)) {
++                            Files.deleteIfExists(targetBackupFilePath);
++                        }
++
++                        this.deleteOtherRegionFormats(fileToUpgrade, targetFilePath);
++                    } catch (IOException failure) {
++                        if (!Files.exists(sourceFilePath) && Files.exists(sourceBackupFilePath)) {
++                            Files.move(sourceBackupFilePath, sourceFilePath, StandardCopyOption.REPLACE_EXISTING);
++                        }
++
++                        if (!targetFilePath.equals(sourceFilePath) && !Files.exists(targetFilePath) && Files.exists(targetBackupFilePath)) {
++                            Files.move(targetBackupFilePath, targetFilePath, StandardCopyOption.REPLACE_EXISTING);
++                        }
++
++                        throw failure;
++                    }
+                 } else {
+                     LOGGER.error("Failed to replace an old region file. New file {} does not exist.", newFilePath);
+                 }
+             } catch (IOException e) {
+-                LOGGER.error("Failed to replace an old region file", e);
++                throw new UncheckedIOException("Failed to replace an old region file " + sourceFilePath, e);
++            }
++        }
++    }
++
++    private void deleteOtherRegionFormats(final FileToUpgrade fileToUpgrade, final Path targetFilePath) throws IOException {
++        Path directoryPath = targetFilePath.getParent();
++        for (RegionFileFormat format : RegionFileFormat.values()) {
++            Path formatPath = directoryPath.resolve(format.getRegionFileName(fileToUpgrade.regionX(), fileToUpgrade.regionZ()));
++            if (!formatPath.equals(targetFilePath)) {
++                Files.deleteIfExists(formatPath);
+             }
+         }
+     }
+ 
+     protected static Path resolveRecreateDirectory(final Path directoryPath) {
+-        return directoryPath.resolveSibling("new_" + directoryPath.getFileName().toString());
++        return directoryPath.resolveSibling(NEW_DIRECTORY_PREFIX + directoryPath.getFileName().toString());
+     }
+ 
+     public static class Builder {
+diff --git a/net/minecraft/world/level/chunk/storage/FandLinearRegionFile.java b/net/minecraft/world/level/chunk/storage/FandLinearRegionFile.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..8d59664400fda240c8e12276ed48ce57d10f880f
+--- /dev/null
++++ b/net/minecraft/world/level/chunk/storage/FandLinearRegionFile.java
+@@ -0,0 +1,410 @@
++package net.minecraft.world.level.chunk.storage;
++
++import com.google.common.annotations.VisibleForTesting;
++import com.mojang.logging.LogUtils;
++import java.io.ByteArrayInputStream;
++import java.io.ByteArrayOutputStream;
++import java.io.DataInputStream;
++import java.io.DataOutputStream;
++import java.io.IOException;
++import java.nio.ByteBuffer;
++import java.nio.channels.FileChannel;
++import java.nio.file.AtomicMoveNotSupportedException;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.nio.file.StandardCopyOption;
++import java.nio.file.StandardOpenOption;
++import java.util.Arrays;
++import java.util.Map;
++import net.minecraft.util.profiling.jfr.JvmProfiler;
++import net.minecraft.world.level.ChunkPos;
++import org.jspecify.annotations.Nullable;
++import org.slf4j.Logger;
++
++public final class FandLinearRegionFile implements RegionFileAccess {
++    private static final Logger LOGGER = LogUtils.getLogger();
++    private static final int MAGIC = 0x464C5231;
++    private static final int VERSION = 1;
++    private static final int CHUNK_COUNT = 1024;
++    private static final int FIXED_HEADER_SIZE = 16;
++    private static final int ENTRY_SIZE = 16;
++    private static final long COMPACT_MIN_WASTE_BYTES = 4L * 1024L * 1024L;
++    @VisibleForTesting
++    static final int HEADER_SIZE = FIXED_HEADER_SIZE + CHUNK_COUNT * ENTRY_SIZE;
++    private final RegionStorageInfo info;
++    private final Path path;
++    private final FileChannel file;
++    private final long[] offsets = new long[CHUNK_COUNT];
++    private final int[] lengths = new int[CHUNK_COUNT];
++    private final byte[] versions = new byte[CHUNK_COUNT];
++
++    public FandLinearRegionFile(final RegionStorageInfo info, final Path path, final boolean sync) throws IOException {
++        this.info = info;
++        this.path = path;
++        if (sync) {
++            this.file = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.DSYNC);
++        } else {
++            this.file = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE);
++        }
++
++        if (this.file.size() == 0L) {
++            this.writeEmptyHeader();
++        } else if (this.file.size() < HEADER_SIZE) {
++            LOGGER.warn("Linear region file {} has a truncated header, recreating it as an empty region file", path);
++            this.recreateEmptyFile();
++        } else {
++            this.readHeader();
++        }
++    }
++
++    @Override
++    public Path getPath() {
++        return this.path;
++    }
++
++    @Override
++    public synchronized @Nullable DataInputStream getChunkDataInputStream(final ChunkPos pos) throws IOException {
++        int index = getOffsetIndex(pos);
++        int length = this.lengths[index];
++        if (length <= 0) {
++            return null;
++        }
++
++        long offset = this.offsets[index];
++        if (offset < HEADER_SIZE || offset + length > this.file.size()) {
++            LOGGER.error("Chunk {} in linear region file {} points outside file bounds", pos, this.path);
++            return null;
++        }
++
++        RegionFileVersion version = RegionFileVersion.fromId(this.versions[index] & 0xFF);
++        if (version == null || version == RegionFileVersion.VERSION_CUSTOM) {
++            LOGGER.error("Chunk {} in linear region file {} has invalid compression version {}", pos, this.path, this.versions[index] & 0xFF);
++            return null;
++        }
++
++        byte[] data = new byte[length];
++        ByteBuffer buffer = ByteBuffer.wrap(data);
++        while (buffer.hasRemaining()) {
++            if (this.file.read(buffer, offset + buffer.position()) < 0) {
++                LOGGER.error("Chunk {} in linear region file {} is truncated", pos, this.path);
++                return null;
++            }
++        }
++
++        JvmProfiler.INSTANCE.onRegionFileRead(this.info, pos, version, length);
++        return new DataInputStream(version.wrap(new ByteArrayInputStream(data)));
++    }
++
++    @Override
++    public DataOutputStream getChunkDataOutputStream(final ChunkPos pos) throws IOException {
++        RegionFileVersion version = RegionFileVersion.getSelected();
++        return new DataOutputStream(version.wrap(new FandLinearRegionFile.ChunkBuffer(pos, version)));
++    }
++
++    @Override
++    public synchronized void clear(final ChunkPos pos) throws IOException {
++        int index = getOffsetIndex(pos);
++        if (this.lengths[index] != 0) {
++            this.offsets[index] = 0L;
++            this.lengths[index] = 0;
++            this.versions[index] = 0;
++            this.writeEntry(index);
++        }
++    }
++
++    @Override
++    public synchronized boolean doesChunkExist(final ChunkPos pos) {
++        int index = getOffsetIndex(pos);
++        int length = this.lengths[index];
++        if (length <= 0 || !RegionFileVersion.isValidVersion(this.versions[index] & 0xFF)) {
++            return false;
++        }
++
++        try {
++            long offset = this.offsets[index];
++            return offset >= HEADER_SIZE && offset + length <= this.file.size();
++        } catch (IOException exception) {
++            return false;
++        }
++    }
++
++    @Override
++    public synchronized boolean hasChunk(final ChunkPos pos) {
++        return this.lengths[getOffsetIndex(pos)] > 0;
++    }
++
++    @Override
++    public void flush() throws IOException {
++        this.file.force(true);
++    }
++
++    @Override
++    public synchronized void close() throws IOException {
++        Path compactedFile = null;
++
++        try {
++            compactedFile = this.createCompactedFileIfUseful();
++            this.file.force(true);
++        } finally {
++            this.file.close();
++        }
++
++        if (compactedFile != null) {
++            replaceWithCompactedFile(compactedFile, this.path);
++        }
++    }
++
++    private void writeEmptyHeader() throws IOException {
++        ByteBuffer header = ByteBuffer.allocate(HEADER_SIZE);
++        header.putInt(MAGIC);
++        header.putInt(VERSION);
++        header.putInt(HEADER_SIZE);
++        header.putInt(0);
++        header.position(HEADER_SIZE);
++        header.flip();
++        writeFully(header, 0L);
++    }
++
++    private void recreateEmptyFile() throws IOException {
++        this.file.truncate(0L);
++        Arrays.fill(this.offsets, 0L);
++        Arrays.fill(this.lengths, 0);
++        Arrays.fill(this.versions, (byte)0);
++        this.writeEmptyHeader();
++        this.file.force(true);
++    }
++
++    private void readHeader() throws IOException {
++        if (this.file.size() < HEADER_SIZE) {
++            throw new IOException("Linear region file " + this.path + " has truncated header");
++        }
++
++        ByteBuffer header = ByteBuffer.allocate(HEADER_SIZE);
++        readFully(header, 0L);
++        header.flip();
++        int magic = header.getInt();
++        int version = header.getInt();
++        int headerSize = header.getInt();
++        header.getInt();
++        if (magic != MAGIC || version != VERSION || headerSize != HEADER_SIZE) {
++            throw new IOException("Linear region file " + this.path + " has unsupported header");
++        }
++
++        boolean needsHeaderRewrite = false;
++        int invalidEntries = 0;
++        long fileSize = this.file.size();
++        for (int i = 0; i < CHUNK_COUNT; i++) {
++            long offset = header.getLong();
++            int length = header.getInt();
++            int versionId = header.getInt();
++            if (offset == 0L && length == 0 && versionId == 0) {
++                this.offsets[i] = 0L;
++                this.lengths[i] = 0;
++                this.versions[i] = 0;
++            } else if (this.isValidEntry(offset, length, versionId, fileSize)) {
++                this.offsets[i] = offset;
++                this.lengths[i] = length;
++                this.versions[i] = (byte)versionId;
++            } else {
++                this.offsets[i] = 0L;
++                this.lengths[i] = 0;
++                this.versions[i] = 0;
++                needsHeaderRewrite = true;
++                invalidEntries++;
++            }
++        }
++
++        if (needsHeaderRewrite) {
++            LOGGER.warn("Linear region file {} has {} invalid entries, clearing them", this.path, invalidEntries);
++            this.writeHeader();
++        }
++    }
++
++    private boolean isValidEntry(final long offset, final int length, final int versionId, final long fileSize) {
++        if (length <= 0 || offset < HEADER_SIZE || offset + length > fileSize) {
++            return false;
++        }
++
++        RegionFileVersion version = RegionFileVersion.fromId(versionId);
++        return version != null && version != RegionFileVersion.VERSION_CUSTOM;
++    }
++
++    private synchronized void write(final ChunkPos pos, final byte[] data, final RegionFileVersion version) throws IOException {
++        long offset = this.file.size();
++        writeFully(ByteBuffer.wrap(data), offset);
++        int index = getOffsetIndex(pos);
++        this.offsets[index] = offset;
++        this.lengths[index] = data.length;
++        this.versions[index] = (byte)version.getId();
++        this.writeEntry(index);
++        JvmProfiler.INSTANCE.onRegionFileWrite(this.info, pos, version, data.length);
++    }
++
++    public synchronized void writeCompressedChunks(final Map<ChunkPos, FandLinearRegionFile.CompressedChunk> chunks) throws IOException {
++        long writeOffset = this.file.size();
++
++        for (Map.Entry<ChunkPos, FandLinearRegionFile.CompressedChunk> entry : chunks.entrySet()) {
++            ChunkPos pos = entry.getKey();
++            FandLinearRegionFile.CompressedChunk chunk = entry.getValue();
++            byte[] data = chunk.data();
++            writeFully(ByteBuffer.wrap(data), writeOffset);
++
++            int index = getOffsetIndex(pos);
++            this.offsets[index] = writeOffset;
++            this.lengths[index] = data.length;
++            this.versions[index] = (byte)chunk.version().getId();
++            JvmProfiler.INSTANCE.onRegionFileWrite(this.info, pos, chunk.version(), data.length);
++
++            writeOffset += data.length;
++        }
++
++        this.writeHeader();
++    }
++
++    private void writeEntry(final int index) throws IOException {
++        ByteBuffer entry = ByteBuffer.allocate(ENTRY_SIZE);
++        entry.putLong(this.offsets[index]);
++        entry.putInt(this.lengths[index]);
++        entry.putInt(this.versions[index] & 0xFF);
++        entry.flip();
++        writeFully(entry, FIXED_HEADER_SIZE + (long)index * ENTRY_SIZE);
++    }
++
++    private void writeHeader() throws IOException {
++        ByteBuffer header = ByteBuffer.allocate(HEADER_SIZE);
++        header.putInt(MAGIC);
++        header.putInt(VERSION);
++        header.putInt(HEADER_SIZE);
++        header.putInt(0);
++
++        for (int i = 0; i < CHUNK_COUNT; i++) {
++            header.putLong(this.offsets[i]);
++            header.putInt(this.lengths[i]);
++            header.putInt(this.versions[i] & 0xFF);
++        }
++
++        header.flip();
++        writeFully(header, 0L);
++    }
++
++    private @Nullable Path createCompactedFileIfUseful() throws IOException {
++        long currentSize = this.file.size();
++        long storedSize = HEADER_SIZE;
++        for (int length : this.lengths) {
++            if (length > 0) {
++                storedSize += length;
++            }
++        }
++
++        if (currentSize <= storedSize + COMPACT_MIN_WASTE_BYTES) {
++            return null;
++        }
++
++        byte[][] chunks = new byte[CHUNK_COUNT][];
++        byte[] chunkVersions = new byte[CHUNK_COUNT];
++        for (int i = 0; i < CHUNK_COUNT; i++) {
++            int length = this.lengths[i];
++            long offset = this.offsets[i];
++            RegionFileVersion version = RegionFileVersion.fromId(this.versions[i] & 0xFF);
++            if (length <= 0 || version == null || version == RegionFileVersion.VERSION_CUSTOM || offset < HEADER_SIZE || offset + length > currentSize) {
++                continue;
++            }
++
++            byte[] data = new byte[length];
++            readFully(ByteBuffer.wrap(data), offset);
++            chunks[i] = data;
++            chunkVersions[i] = this.versions[i];
++        }
++
++        Path compactedFile = Files.createTempFile(this.path.getParent(), this.path.getFileName().toString(), ".compact");
++        try (FileChannel compacted = FileChannel.open(compactedFile, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
++            ByteBuffer header = ByteBuffer.allocate(HEADER_SIZE);
++            header.putInt(MAGIC);
++            header.putInt(VERSION);
++            header.putInt(HEADER_SIZE);
++            header.putInt(0);
++            header.position(HEADER_SIZE);
++            header.flip();
++            writeFully(compacted, header, 0L);
++
++            long writeOffset = HEADER_SIZE;
++            for (int i = 0; i < CHUNK_COUNT; i++) {
++                byte[] chunk = chunks[i];
++                if (chunk == null) {
++                    continue;
++                }
++
++                writeFully(compacted, ByteBuffer.wrap(chunk), writeOffset);
++
++                ByteBuffer entry = ByteBuffer.allocate(ENTRY_SIZE);
++                entry.putLong(writeOffset);
++                entry.putInt(chunk.length);
++                entry.putInt(chunkVersions[i] & 0xFF);
++                entry.flip();
++                writeFully(compacted, entry, FIXED_HEADER_SIZE + (long)i * ENTRY_SIZE);
++
++                writeOffset += chunk.length;
++            }
++
++            compacted.force(true);
++        } catch (IOException exception) {
++            Files.deleteIfExists(compactedFile);
++            throw exception;
++        }
++
++        return compactedFile;
++    }
++
++    private static void replaceWithCompactedFile(final Path compactedFile, final Path targetFile) throws IOException {
++        try {
++            Files.move(compactedFile, targetFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
++        } catch (AtomicMoveNotSupportedException exception) {
++            Files.move(compactedFile, targetFile, StandardCopyOption.REPLACE_EXISTING);
++        }
++    }
++
++    private void readFully(final ByteBuffer buffer, final long position) throws IOException {
++        readFully(this.file, buffer, position);
++    }
++
++    private static void readFully(final FileChannel file, final ByteBuffer buffer, final long position) throws IOException {
++        while (buffer.hasRemaining()) {
++            if (file.read(buffer, position + buffer.position()) < 0) {
++                throw new IOException("Failed to read linear region file");
++            }
++        }
++    }
++
++    private void writeFully(final ByteBuffer buffer, final long position) throws IOException {
++        writeFully(this.file, buffer, position);
++    }
++
++    private static void writeFully(final FileChannel file, final ByteBuffer buffer, final long position) throws IOException {
++        while (buffer.hasRemaining()) {
++            file.write(buffer, position + buffer.position());
++        }
++    }
++
++    private static int getOffsetIndex(final ChunkPos pos) {
++        return pos.getRegionLocalX() + pos.getRegionLocalZ() * 32;
++    }
++
++    private class ChunkBuffer extends ByteArrayOutputStream {
++        private final ChunkPos pos;
++        private final RegionFileVersion version;
++
++        ChunkBuffer(final ChunkPos pos, final RegionFileVersion version) {
++            super(8096);
++            this.pos = pos;
++            this.version = version;
++        }
++
++        @Override
++        public void close() throws IOException {
++            FandLinearRegionFile.this.write(this.pos, Arrays.copyOf(this.buf, this.count), this.version);
++        }
++    }
++
++    public record CompressedChunk(byte[] data, RegionFileVersion version) {
++    }
++}
+diff --git a/net/minecraft/world/level/chunk/storage/RecreatingSimpleRegionStorage.java b/net/minecraft/world/level/chunk/storage/RecreatingSimpleRegionStorage.java
+index 39901c7795fbf5cdbc1c5fe1a471faa956ed34db..4f9ec79d7b9b1a20b60b4f10bbf84a63fb631cf2 100644
+--- a/net/minecraft/world/level/chunk/storage/RecreatingSimpleRegionStorage.java
++++ b/net/minecraft/world/level/chunk/storage/RecreatingSimpleRegionStorage.java
+@@ -8,10 +8,10 @@ import java.util.function.Supplier;
+ import net.minecraft.nbt.CompoundTag;
+ import net.minecraft.util.datafix.DataFixTypes;
+ import net.minecraft.world.level.ChunkPos;
+-import org.apache.commons.io.FileUtils;
+ 
+ public class RecreatingSimpleRegionStorage extends SimpleRegionStorage {
+     private final IOWorker writeWorker;
++    private final RegionStorageInfo writeInfo;
+     private final Path writeFolder;
+ 
+     public RecreatingSimpleRegionStorage(
+@@ -24,6 +24,7 @@ public class RecreatingSimpleRegionStorage extends SimpleRegionStorage {
+         final DataFixTypes dataFixType
+     ) {
+         super(readInfo, readFolder, fixerUpper, syncWrites, dataFixType);
++        this.writeInfo = writeInfo;
+         this.writeFolder = writeFolder;
+         this.writeWorker = new IOWorker(writeInfo, writeFolder, syncWrites);
+     }
+@@ -37,8 +38,13 @@ public class RecreatingSimpleRegionStorage extends SimpleRegionStorage {
+     public void close() throws IOException {
+         super.close();
+         this.writeWorker.close();
+-        if (this.writeFolder.toFile().exists()) {
+-            FileUtils.deleteDirectory(this.writeFolder.toFile());
+-        }
++    }
++
++    public Path writeFolder() {
++        return this.writeFolder;
++    }
++
++    public RegionStorageInfo writeInfo() {
++        return this.writeInfo;
+     }
+ }
+diff --git a/net/minecraft/world/level/chunk/storage/RegionFile.java b/net/minecraft/world/level/chunk/storage/RegionFile.java
+index 23bc55a16fa0d87447f8659e51fea2dd72d3c28e..8a8bb607c8b43f0d306fe151d710ef75224a3707 100644
+--- a/net/minecraft/world/level/chunk/storage/RegionFile.java
++++ b/net/minecraft/world/level/chunk/storage/RegionFile.java
+@@ -22,7 +22,7 @@ import net.minecraft.world.level.ChunkPos;
+ import org.jspecify.annotations.Nullable;
+ import org.slf4j.Logger;
+ 
+-public class RegionFile implements AutoCloseable {
++public class RegionFile implements RegionFileAccess {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private static final int SECTOR_BYTES = 4096;
+     @VisibleForTesting
+diff --git a/net/minecraft/world/level/chunk/storage/RegionFileAccess.java b/net/minecraft/world/level/chunk/storage/RegionFileAccess.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..5f379984091425d5a8249040d9ea98ee51c9e569
+--- /dev/null
++++ b/net/minecraft/world/level/chunk/storage/RegionFileAccess.java
+@@ -0,0 +1,27 @@
++package net.minecraft.world.level.chunk.storage;
++
++import java.io.DataInputStream;
++import java.io.DataOutputStream;
++import java.io.IOException;
++import java.nio.file.Path;
++import net.minecraft.world.level.ChunkPos;
++import org.jspecify.annotations.Nullable;
++
++public interface RegionFileAccess extends AutoCloseable {
++    Path getPath();
++
++    @Nullable DataInputStream getChunkDataInputStream(ChunkPos pos) throws IOException;
++
++    DataOutputStream getChunkDataOutputStream(ChunkPos pos) throws IOException;
++
++    void clear(ChunkPos pos) throws IOException;
++
++    boolean doesChunkExist(ChunkPos pos);
++
++    boolean hasChunk(ChunkPos pos);
++
++    void flush() throws IOException;
++
++    @Override
++    void close() throws IOException;
++}
+diff --git a/net/minecraft/world/level/chunk/storage/RegionFileFormat.java b/net/minecraft/world/level/chunk/storage/RegionFileFormat.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..616fc43c475421540b53d30168b229ef9f91d146
+--- /dev/null
++++ b/net/minecraft/world/level/chunk/storage/RegionFileFormat.java
+@@ -0,0 +1,96 @@
++package net.minecraft.world.level.chunk.storage;
++
++import com.mojang.logging.LogUtils;
++import java.io.IOException;
++import java.nio.file.Path;
++import java.util.Arrays;
++import java.util.Locale;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++import org.jspecify.annotations.Nullable;
++import org.slf4j.Logger;
++
++public enum RegionFileFormat {
++    MCA("mca", RegionFileStorage.ANVIL_EXTENSION) {
++        @Override
++        public RegionFileAccess create(final RegionStorageInfo info, final Path path, final Path folder, final boolean sync) throws IOException {
++            return new RegionFile(info, path, folder, sync);
++        }
++    },
++    FLR("flr", RegionFileStorage.FAND_LINEAR_EXTENSION) {
++        @Override
++        public RegionFileAccess create(final RegionStorageInfo info, final Path path, final Path folder, final boolean sync) throws IOException {
++            return new FandLinearRegionFile(info, path, sync);
++        }
++    };
++
++    private static final Logger LOGGER = LogUtils.getLogger();
++    private static final Pattern REGION_FILE_PATTERN = Pattern.compile("^r\\.(-?[0-9]+)\\.(-?[0-9]+)\\.(mca|flr)$");
++    private static volatile RegionFileFormat selected = MCA;
++    private final String optionName;
++    private final String extension;
++
++    RegionFileFormat(final String optionName, final String extension) {
++        this.optionName = optionName;
++        this.extension = extension;
++    }
++
++    public abstract RegionFileAccess create(RegionStorageInfo info, Path path, Path folder, boolean sync) throws IOException;
++
++    public static void configure(final String optionName) {
++        RegionFileFormat format = byName(optionName);
++        if (format != null) {
++            selected = format;
++        } else {
++            LOGGER.error(
++                "Invalid `region-file-format` value `{}` in server.properties. Please use one of: {}",
++                optionName,
++                String.join(", ", Arrays.stream(values()).map(RegionFileFormat::optionName).toList())
++            );
++        }
++    }
++
++    public static RegionFileFormat getSelected() {
++        return selected;
++    }
++
++    public static @Nullable RegionFileFormat byName(final String optionName) {
++        String normalizedName = optionName.toLowerCase(Locale.ROOT);
++        for (RegionFileFormat format : values()) {
++            if (format.optionName.equals(normalizedName)) {
++                return format;
++            }
++        }
++
++        return null;
++    }
++
++    public static @Nullable RegionFileName parseRegionFileName(final String name) {
++        Matcher matcher = REGION_FILE_PATTERN.matcher(name);
++        if (!matcher.matches()) {
++            return null;
++        }
++
++        RegionFileFormat format = byName(matcher.group(3));
++        if (format == null) {
++            return null;
++        }
++
++        return new RegionFileName(Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)), format);
++    }
++
++    public String optionName() {
++        return this.optionName;
++    }
++
++    public String extension() {
++        return this.extension;
++    }
++
++    public String getRegionFileName(final int regionX, final int regionZ) {
++        return "r." + regionX + "." + regionZ + this.extension;
++    }
++
++    public record RegionFileName(int regionX, int regionZ, RegionFileFormat format) {
++    }
++}
+diff --git a/net/minecraft/world/level/chunk/storage/RegionFileStorage.java b/net/minecraft/world/level/chunk/storage/RegionFileStorage.java
+index 733dc003e867f6d4da542da71826467a34022948..70f7399cbeee92d28f2bf0fe22c91a5b22ff296a 100644
+--- a/net/minecraft/world/level/chunk/storage/RegionFileStorage.java
++++ b/net/minecraft/world/level/chunk/storage/RegionFileStorage.java
+@@ -18,8 +18,9 @@ import org.jspecify.annotations.Nullable;
+ 
+ public final class RegionFileStorage implements AutoCloseable {
+     public static final String ANVIL_EXTENSION = ".mca";
++    public static final String FAND_LINEAR_EXTENSION = ".flr";
+     private static final int MAX_CACHE_SIZE = 256;
+-    private final Long2ObjectLinkedOpenHashMap<RegionFile> regionCache = new Long2ObjectLinkedOpenHashMap<>();
++    private final Long2ObjectLinkedOpenHashMap<RegionFileAccess> regionCache = new Long2ObjectLinkedOpenHashMap<>();
+     private final RegionStorageInfo info;
+     private final Path folder;
+     private final boolean sync;
+@@ -30,13 +31,13 @@ public final class RegionFileStorage implements AutoCloseable {
+         this.info = info;
+     }
+ 
+-    private RegionFile getRegionFile(final ChunkPos pos) throws IOException {
++    private RegionFileAccess getRegionFile(final ChunkPos pos) throws IOException {
+         return this.getRegionFile(pos.getRegionX(), pos.getRegionZ());
+     }
+ 
+-    private RegionFile getRegionFile(final int regionX, final int regionZ) throws IOException {
++    private RegionFileAccess getRegionFile(final int regionX, final int regionZ) throws IOException {
+         long key = ChunkPos.pack(regionX, regionZ);
+-        RegionFile region = this.regionCache.getAndMoveToFirst(key);
++        RegionFileAccess region = this.regionCache.getAndMoveToFirst(key);
+         if (region != null) {
+             return region;
+         }
+@@ -46,18 +47,39 @@ public final class RegionFileStorage implements AutoCloseable {
+         }
+ 
+         FileUtil.createDirectoriesSafe(this.folder);
+-        Path file = this.getRegionFilePath(regionX, regionZ);
+-        RegionFile newRegion = new RegionFile(this.info, file, this.folder, this.sync);
++        RegionFileFormat format = this.resolveRegionFileFormat(regionX, regionZ);
++        Path file = this.getRegionFilePath(regionX, regionZ, format);
++        RegionFileAccess newRegion = format.create(this.info, file, this.folder, this.sync);
+         this.regionCache.putAndMoveToFirst(key, newRegion);
+         return newRegion;
+     }
+ 
+     boolean doesRegionFileExist(final int regionX, final int regionZ) {
+-        return Files.isRegularFile(this.getRegionFilePath(regionX, regionZ));
++        return this.getExistingRegionFileFormat(regionX, regionZ) != null;
+     }
+ 
+-    private Path getRegionFilePath(final int regionX, final int regionZ) {
+-        return this.folder.resolve("r." + regionX + "." + regionZ + ".mca");
++    private RegionFileFormat resolveRegionFileFormat(final int regionX, final int regionZ) {
++        RegionFileFormat existingFormat = this.getExistingRegionFileFormat(regionX, regionZ);
++        return existingFormat == null ? RegionFileFormat.getSelected() : existingFormat;
++    }
++
++    private @Nullable RegionFileFormat getExistingRegionFileFormat(final int regionX, final int regionZ) {
++        RegionFileFormat selectedFormat = RegionFileFormat.getSelected();
++        if (Files.isRegularFile(this.getRegionFilePath(regionX, regionZ, selectedFormat))) {
++            return selectedFormat;
++        }
++
++        for (RegionFileFormat format : RegionFileFormat.values()) {
++            if (format != selectedFormat && Files.isRegularFile(this.getRegionFilePath(regionX, regionZ, format))) {
++                return format;
++            }
++        }
++
++        return null;
++    }
++
++    private Path getRegionFilePath(final int regionX, final int regionZ, final RegionFileFormat format) {
++        return this.folder.resolve(format.getRegionFileName(regionX, regionZ));
+     }
+ 
+     public @Nullable CompoundTag read(final ChunkPos pos) throws IOException {
+@@ -65,7 +87,7 @@ public final class RegionFileStorage implements AutoCloseable {
+             return null;
+         }
+ 
+-        RegionFile region = this.getRegionFile(pos);
++        RegionFileAccess region = this.getRegionFile(pos);
+ 
+         try (DataInputStream regionChunkInputStream = region.getChunkDataInputStream(pos)) {
+             return regionChunkInputStream == null ? null : NbtIo.read(regionChunkInputStream);
+@@ -81,7 +103,7 @@ public final class RegionFileStorage implements AutoCloseable {
+     }
+ 
+     void scanChunkInExistingRegion(final ChunkPos pos, final StreamTagVisitor scanner) throws IOException {
+-        RegionFile region = this.getRegionFile(pos);
++        RegionFileAccess region = this.getRegionFile(pos);
+ 
+         try (DataInputStream regionChunkInputStream = region.getChunkDataInputStream(pos)) {
+             if (regionChunkInputStream != null) {
+@@ -92,7 +114,7 @@ public final class RegionFileStorage implements AutoCloseable {
+ 
+     public void write(final ChunkPos pos, final @Nullable CompoundTag value) throws IOException {
+         if (!SharedConstants.DEBUG_DONT_SAVE_WORLD) {
+-            RegionFile region = this.getRegionFile(pos);
++            RegionFileAccess region = this.getRegionFile(pos);
+             if (value == null) {
+                 region.clear(pos);
+             } else {
+@@ -107,7 +129,7 @@ public final class RegionFileStorage implements AutoCloseable {
+     public void close() throws IOException {
+         ExceptionCollector<IOException> exception = new ExceptionCollector<>();
+ 
+-        for (RegionFile regionFile : this.regionCache.values()) {
++        for (RegionFileAccess regionFile : this.regionCache.values()) {
+             try {
+                 regionFile.close();
+             } catch (IOException e) {
+@@ -119,7 +141,7 @@ public final class RegionFileStorage implements AutoCloseable {
+     }
+ 
+     public void flush() throws IOException {
+-        for (RegionFile regionFile : this.regionCache.values()) {
++        for (RegionFileAccess regionFile : this.regionCache.values()) {
+             regionFile.flush();
+         }
+     }

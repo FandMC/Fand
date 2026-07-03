@@ -81,6 +81,11 @@ public final class PersistentComponentData extends SavedData {
         return new DataComponentMap(decoded);
     }
 
+    public boolean empty(String id) {
+        var stored = values.get(id);
+        return stored == null || stored.isEmpty();
+    }
+
     public Map<String, DataComponentMap> entries() {
         var entries = new LinkedHashMap<String, DataComponentMap>();
         values.keySet().stream().sorted().forEach(id -> entries.put(id, get(id)));
