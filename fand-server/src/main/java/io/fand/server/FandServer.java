@@ -96,6 +96,7 @@ import io.fand.server.tag.FandTagRegistry;
 import io.fand.server.tag.FandTags;
 import io.fand.server.tablist.FandTabListService;
 import io.fand.server.text.FandMiniMessageService;
+import io.fand.server.util.ServerThreading;
 import io.fand.server.world.WorldRegistry;
 import java.nio.file.Path;
 import java.net.InetAddress;
@@ -714,7 +715,23 @@ public final class FandServer implements Server, AutoCloseable {
         if (server == null) {
             throw new IllegalStateException("Minecraft server is not attached");
         }
-        server.setMotd(motd);
+        ServerThreading.callBlocking(server, () -> {
+            server.setMotd(motd);
+            server.refreshStatus();
+            return null;
+        });
+    }
+
+    @Override
+    public void refreshServerListStatus() {
+        var server = minecraftServer.get();
+        if (server == null) {
+            throw new IllegalStateException("Minecraft server is not attached");
+        }
+        ServerThreading.callBlocking(server, () -> {
+            server.refreshStatus();
+            return null;
+        });
     }
 
     @Override

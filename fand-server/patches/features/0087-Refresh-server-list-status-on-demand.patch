@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 4 Jul 2026 00:27:31 +0800
+Subject: [PATCH] Refresh server list status on demand
+
+
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index 75d2e8c7f19da5985bbbcabfe61738bfe1f0cf7c..5653a74da6daa0b60650b57a984dc19b1ba3417b 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -1630,6 +1630,11 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         this.lastServerStatus = 0L;
+     }
+ 
++    public void refreshStatus() {
++        this.lastServerStatus = Util.getNanos();
++        this.status = this.buildServerStatus();
++    }
++
+     public int getAbsoluteMaxWorldSize() {
+         return 29999984;
+     }

@@ -203,6 +203,10 @@ public interface Server extends ForwardingAudience {
         throw new UnsupportedOperationException("MOTD changes are not supported");
     }
 
+    default void refreshServerListStatus() {
+        throw new UnsupportedOperationException("Server list status refresh is not supported");
+    }
+
     default CompletableFuture<Boolean> reloadData() {
         return CompletableFuture.completedFuture(false);
     }
