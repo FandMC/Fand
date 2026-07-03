@@ -540,6 +540,77 @@ public interface World extends ForwardingAudience {
         return CompletableFuture.completedFuture(false);
     }
 
+    /** Starts a cancellable batch load/generation operation for chunk coordinates. */
+    default ChunkBatchOperation loadChunks(Iterable<ChunkPos> chunks) {
+        return loadChunks(chunks, ChunkBatchOptions.defaults());
+    }
+
+    /** Starts a cancellable batch load/generation operation for chunk coordinates. */
+    default ChunkBatchOperation loadChunks(Iterable<ChunkPos> chunks, ChunkBatchOptions options) {
+        java.util.Objects.requireNonNull(chunks, "chunks");
+        java.util.Objects.requireNonNull(options, "options");
+        return unsupportedChunkBatchOperation(chunks);
+    }
+
+    /** Loads or generates every chunk in {@code region}. */
+    default ChunkBatchOperation loadChunks(ChunkRegion region) {
+        return loadChunks(region, ChunkBatchOptions.defaults());
+    }
+
+    /** Loads or generates every chunk in {@code region}. */
+    default ChunkBatchOperation loadChunks(ChunkRegion region, ChunkBatchOptions options) {
+        java.util.Objects.requireNonNull(region, "region");
+        return loadChunks(region.chunks(), options);
+    }
+
+    /** Loads or generates a square chunk radius around {@code center}. */
+    default ChunkBatchOperation loadChunksAround(ChunkPos center, int radius) {
+        return loadChunksAround(center, radius, ChunkBatchOptions.defaults());
+    }
+
+    /** Loads or generates a square chunk radius around {@code center}. */
+    default ChunkBatchOperation loadChunksAround(ChunkPos center, int radius, ChunkBatchOptions options) {
+        return loadChunks(ChunkRegion.around(center, radius), options);
+    }
+
+    /** Loads or generates a square chunk radius around {@code center}. */
+    default ChunkBatchOperation loadChunksAround(Location center, int radius) {
+        return loadChunksAround(center, radius, ChunkBatchOptions.defaults().prioritize(center));
+    }
+
+    /** Loads or generates a square chunk radius around {@code center}. */
+    default ChunkBatchOperation loadChunksAround(Location center, int radius, ChunkBatchOptions options) {
+        requireSameWorld(center, this, "center");
+        java.util.Objects.requireNonNull(options, "options");
+        var chunkCenter = center.chunkPos();
+        return loadChunks(ChunkRegion.around(chunkCenter, radius), options.prioritize(chunkCenter, center.horizontalDirection()));
+    }
+
+    /** Loads or generates chunks in front of {@code origin}, with side and back padding. */
+    default ChunkBatchOperation loadChunksAhead(Location origin, int forwardRadius, int sideRadius, int backRadius) {
+        return loadChunksAhead(origin, forwardRadius, sideRadius, backRadius, ChunkBatchOptions.defaults());
+    }
+
+    /** Loads or generates chunks in front of {@code origin}, with side and back padding. */
+    default ChunkBatchOperation loadChunksAhead(
+            Location origin,
+            int forwardRadius,
+            int sideRadius,
+            int backRadius,
+            ChunkBatchOptions options
+    ) {
+        requireSameWorld(origin, this, "origin");
+        requireNonNegative(forwardRadius, "forwardRadius");
+        requireNonNegative(sideRadius, "sideRadius");
+        requireNonNegative(backRadius, "backRadius");
+        java.util.Objects.requireNonNull(options, "options");
+        var center = origin.chunkPos();
+        var direction = origin.horizontalDirection();
+        return loadChunks(
+                forwardChunks(center, direction, forwardRadius, sideRadius, backRadius),
+                options.prioritize(center, direction));
+    }
+
     /**
      * Requests that a chunk may unload by clearing forced-load state.
      *
@@ -558,6 +629,44 @@ public interface World extends ForwardingAudience {
     /** Sets explicit force-loaded state for a chunk. Marshals to the server thread. */
     default CompletableFuture<Boolean> setChunkForceLoaded(int chunkX, int chunkZ, boolean forceLoaded) {
         return CompletableFuture.completedFuture(false);
+    }
+
+    /** Starts a cancellable batch force-loaded state operation for chunk coordinates. */
+    default ChunkBatchOperation setChunksForceLoaded(Iterable<ChunkPos> chunks, boolean forceLoaded) {
+        return setChunksForceLoaded(chunks, forceLoaded, ChunkBatchOptions.defaults());
+    }
+
+    /** Starts a cancellable batch force-loaded state operation for chunk coordinates. */
+    default ChunkBatchOperation setChunksForceLoaded(Iterable<ChunkPos> chunks, boolean forceLoaded, ChunkBatchOptions options) {
+        java.util.Objects.requireNonNull(chunks, "chunks");
+        java.util.Objects.requireNonNull(options, "options");
+        return unsupportedChunkBatchOperation(chunks);
+    }
+
+    /** Sets explicit force-loaded state for every chunk in {@code region}. */
+    default ChunkBatchOperation setChunksForceLoaded(ChunkRegion region, boolean forceLoaded) {
+        return setChunksForceLoaded(region, forceLoaded, ChunkBatchOptions.defaults());
+    }
+
+    /** Sets explicit force-loaded state for every chunk in {@code region}. */
+    default ChunkBatchOperation setChunksForceLoaded(ChunkRegion region, boolean forceLoaded, ChunkBatchOptions options) {
+        java.util.Objects.requireNonNull(region, "region");
+        return setChunksForceLoaded(region.chunks(), forceLoaded, options);
+    }
+
+    /** Sets explicit force-loaded state for a square radius around {@code center}. */
+    default ChunkBatchOperation setChunksForceLoadedAround(ChunkPos center, int radius, boolean forceLoaded) {
+        return setChunksForceLoadedAround(center, radius, forceLoaded, ChunkBatchOptions.defaults());
+    }
+
+    /** Sets explicit force-loaded state for a square radius around {@code center}. */
+    default ChunkBatchOperation setChunksForceLoadedAround(
+            ChunkPos center,
+            int radius,
+            boolean forceLoaded,
+            ChunkBatchOptions options
+    ) {
+        return setChunksForceLoaded(ChunkRegion.around(center, radius), forceLoaded, options);
     }
 
     /** Number of loaded entities in this world. */
@@ -583,6 +692,72 @@ public interface World extends ForwardingAudience {
     /** Asynchronous lightweight chunk state snapshot. */
     default CompletableFuture<ChunkSnapshot> chunkSnapshotAsync(int chunkX, int chunkZ) {
         return CompletableFuture.completedFuture(chunkSnapshot(chunkX, chunkZ));
+    }
+
+    private static ChunkBatchOperation unsupportedChunkBatchOperation(Iterable<ChunkPos> chunks) {
+        int requested = countChunks(chunks);
+        CompletableFuture<ChunkBatchResult> future = CompletableFuture.failedFuture(
+                new UnsupportedOperationException("Batch chunk operations are not supported"));
+        return new ChunkBatchOperation() {
+            @Override
+            public CompletableFuture<ChunkBatchResult> future() {
+                return future;
+            }
+
+            @Override
+            public ChunkBatchProgress progress() {
+                return new ChunkBatchProgress(requested, 0, 0, 0, false, true);
+            }
+
+            @Override
+            public boolean cancel() {
+                return false;
+            }
+        };
+    }
+
+    private static int countChunks(Iterable<ChunkPos> chunks) {
+        if (chunks instanceof java.util.Collection<?> collection) {
+            return collection.size();
+        }
+        return 0;
+    }
+
+    private static Iterable<ChunkPos> forwardChunks(
+            ChunkPos center,
+            Vector3 direction,
+            int forwardRadius,
+            int sideRadius,
+            int backRadius
+    ) {
+        long requested = ((long) forwardRadius + backRadius + 1L) * ((long) sideRadius * 2L + 1L);
+        if (requested > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("chunk batch contains too many chunks: " + requested);
+        }
+        var chunks = new java.util.ArrayList<ChunkPos>((int) requested);
+        var seen = new java.util.HashSet<ChunkPos>();
+        double length = Math.hypot(direction.x(), direction.z());
+        double forwardX = length == 0.0D ? 0.0D : direction.x() / length;
+        double forwardZ = length == 0.0D ? 1.0D : direction.z() / length;
+        double sideX = -forwardZ;
+        double sideZ = forwardX;
+        for (int forward = -backRadius; forward <= forwardRadius; forward++) {
+            for (int side = -sideRadius; side <= sideRadius; side++) {
+                int x = center.x() + (int) Math.round(forward * forwardX + side * sideX);
+                int z = center.z() + (int) Math.round(forward * forwardZ + side * sideZ);
+                var pos = new ChunkPos(x, z);
+                if (seen.add(pos)) {
+                    chunks.add(pos);
+                }
+            }
+        }
+        return chunks;
+    }
+
+    private static void requireNonNegative(int value, String name) {
+        if (value < 0) {
+            throw new IllegalArgumentException(name + " must be >= 0");
+        }
     }
 
     /** Snapshot of persisted component-bearing blocks in this world. */

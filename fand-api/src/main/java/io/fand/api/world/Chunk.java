@@ -20,6 +20,10 @@ public interface Chunk {
 
     int z();
 
+    default ChunkPos pos() {
+        return new ChunkPos(x(), z());
+    }
+
     default int minBlockX() {
         return x() << 4;
     }
@@ -44,6 +48,18 @@ public interface Chunk {
         return world().loadChunk(x(), z());
     }
 
+    default ChunkBatchOperation loadAround(int radius) {
+        return world().loadChunksAround(pos(), radius);
+    }
+
+    default ChunkBatchOperation loadAround(int radius, ChunkBatchOptions options) {
+        return world().loadChunksAround(pos(), radius, options);
+    }
+
+    default ChunkBatchOperation loadAroundPrioritized(int radius) {
+        return loadAround(radius, ChunkBatchOptions.defaults().prioritize(pos()));
+    }
+
     default CompletableFuture<Boolean> unload() {
         return world().unloadChunk(x(), z());
     }
@@ -54,6 +70,14 @@ public interface Chunk {
 
     default CompletableFuture<Boolean> setForceLoaded(boolean forceLoaded) {
         return world().setChunkForceLoaded(x(), z(), forceLoaded);
+    }
+
+    default ChunkBatchOperation setForceLoadedAround(int radius, boolean forceLoaded) {
+        return world().setChunksForceLoadedAround(pos(), radius, forceLoaded);
+    }
+
+    default ChunkBatchOperation setForceLoadedAround(int radius, boolean forceLoaded, ChunkBatchOptions options) {
+        return world().setChunksForceLoadedAround(pos(), radius, forceLoaded, options);
     }
 
     default int entityCount() {

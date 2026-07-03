@@ -24,6 +24,12 @@ import io.fand.api.world.BlockScanOptions;
 import io.fand.api.world.BlockScanResult;
 import io.fand.api.world.BlockTransform;
 import io.fand.api.world.Chunk;
+import io.fand.api.world.ChunkBatchListener;
+import io.fand.api.world.ChunkBatchOperation;
+import io.fand.api.world.ChunkBatchOptions;
+import io.fand.api.world.ChunkBatchProgress;
+import io.fand.api.world.ChunkBatchResult;
+import io.fand.api.world.ChunkRegion;
 import io.fand.api.world.ChunkSnapshot;
 import io.fand.api.world.Difficulty;
 import io.fand.api.world.EntityRayTraceResult;
@@ -57,7 +63,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -692,6 +700,21 @@ public final class FandWorld implements World {
     }
 
     @Override
+    public ChunkBatchOperation loadChunks(Iterable<io.fand.api.world.ChunkPos> chunks, ChunkBatchOptions options) {
+        Objects.requireNonNull(chunks, "chunks");
+        Objects.requireNonNull(options, "options");
+        return runChunkBatch(chunks, options, ChunkBatchMode.LOAD);
+    }
+
+    @Override
+    public ChunkBatchOperation loadChunks(ChunkRegion region, ChunkBatchOptions options) {
+        Objects.requireNonNull(region, "region");
+        Objects.requireNonNull(options, "options");
+        checkedChunkBatchSize(region.chunkCount());
+        return runChunkBatch(region.chunks(), withDefaultPriorityCenter(options, region.center()), ChunkBatchMode.LOAD);
+    }
+
+    @Override
     public CompletableFuture<Boolean> unloadChunk(int chunkX, int chunkZ) {
         return runOnServerThreadFuture(() -> {
             boolean updated = handle.setChunkForced(chunkX, chunkZ, false);
@@ -708,6 +731,28 @@ public final class FandWorld implements World {
     @Override
     public CompletableFuture<Boolean> setChunkForceLoaded(int chunkX, int chunkZ, boolean forceLoaded) {
         return runOnServerThreadFuture(() -> handle.setChunkForced(chunkX, chunkZ, forceLoaded));
+    }
+
+    @Override
+    public ChunkBatchOperation setChunksForceLoaded(
+            Iterable<io.fand.api.world.ChunkPos> chunks,
+            boolean forceLoaded,
+            ChunkBatchOptions options
+    ) {
+        Objects.requireNonNull(chunks, "chunks");
+        Objects.requireNonNull(options, "options");
+        return runChunkBatch(chunks, options.withForceLoaded(forceLoaded), ChunkBatchMode.FORCE_LOADED);
+    }
+
+    @Override
+    public ChunkBatchOperation setChunksForceLoaded(ChunkRegion region, boolean forceLoaded, ChunkBatchOptions options) {
+        Objects.requireNonNull(region, "region");
+        Objects.requireNonNull(options, "options");
+        checkedChunkBatchSize(region.chunkCount());
+        return runChunkBatch(
+                region.chunks(),
+                withDefaultPriorityCenter(options.withForceLoaded(forceLoaded), region.center()),
+                ChunkBatchMode.FORCE_LOADED);
     }
 
     @Override
@@ -1067,6 +1112,48 @@ public final class FandWorld implements World {
     @Override
     public String toString() {
         return "FandWorld(" + key.asString() + ")";
+    }
+
+    private ChunkBatchOperation runChunkBatch(
+            Iterable<io.fand.api.world.ChunkPos> chunks,
+            ChunkBatchOptions options,
+            ChunkBatchMode mode
+    ) {
+        Objects.requireNonNull(chunks, "chunks");
+        Objects.requireNonNull(options, "options");
+        Objects.requireNonNull(mode, "mode");
+        var orderedChunks = ChunkBatchPlanner.ordered(chunks, options);
+        int requested = orderedChunks.size();
+        if (requested == 0) {
+            return new CompletedChunkBatchOperation(ChunkBatchResult.empty());
+        }
+        var runner = new ChunkBatchRunner(requested, orderedChunks.iterator(), options, mode);
+        try {
+            if (options.maxChunksPerTick() == Integer.MAX_VALUE && scheduler == null) {
+                runOnServerThread(runner);
+            } else if (scheduler != null) {
+                scheduler.runMain(runner);
+            } else {
+                runOnServerThread(runner);
+            }
+        } catch (RejectedExecutionException failure) {
+            runner.future.completeExceptionally(failure);
+        }
+        return runner;
+    }
+
+    private static ChunkBatchOptions withDefaultPriorityCenter(
+            ChunkBatchOptions options,
+            io.fand.api.world.ChunkPos center
+    ) {
+        return options.priorityCenter() == null ? options.withPriorityCenter(center) : options;
+    }
+
+    private static int checkedChunkBatchSize(long count) {
+        if (count > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("chunk batch contains too many chunks: " + count);
+        }
+        return (int) count;
     }
 
     private CompletableFuture<BlockBatchResult> runBlockBatch(
@@ -2708,6 +2795,189 @@ public final class FandWorld implements World {
                 return;
             }
             runOnServerThread(this);
+        }
+    }
+
+    private enum ChunkBatchMode {
+        LOAD,
+        FORCE_LOADED
+    }
+
+    private static final class CompletedChunkBatchOperation implements ChunkBatchOperation {
+
+        private final ChunkBatchResult result;
+        private final CompletableFuture<ChunkBatchResult> future;
+
+        private CompletedChunkBatchOperation(ChunkBatchResult result) {
+            this.result = result;
+            this.future = CompletableFuture.completedFuture(result);
+        }
+
+        @Override
+        public CompletableFuture<ChunkBatchResult> future() {
+            return future;
+        }
+
+        @Override
+        public ChunkBatchProgress progress() {
+            return new ChunkBatchProgress(
+                    result.requested(),
+                    result.succeeded(),
+                    result.skipped(),
+                    result.failed(),
+                    result.cancelled(),
+                    true);
+        }
+
+        @Override
+        public boolean cancel() {
+            return false;
+        }
+    }
+
+    private final class ChunkBatchRunner implements Runnable, ChunkBatchOperation {
+
+        private final int requested;
+        private final Iterator<io.fand.api.world.ChunkPos> chunks;
+        private final ChunkBatchOptions options;
+        private final ChunkBatchMode mode;
+        private final CompletableFuture<ChunkBatchResult> future = new CompletableFuture<>();
+        private final AtomicBoolean cancellationRequested = new AtomicBoolean();
+        private final CopyOnWriteArrayList<ChunkBatchListener> listeners = new CopyOnWriteArrayList<>();
+        private int succeeded;
+        private int skipped;
+        private int failed;
+
+        private ChunkBatchRunner(
+                int requested,
+                Iterator<io.fand.api.world.ChunkPos> chunks,
+                ChunkBatchOptions options,
+                ChunkBatchMode mode
+        ) {
+            this.requested = requested;
+            this.chunks = chunks;
+            this.options = options;
+            this.mode = mode;
+        }
+
+        @Override
+        public void run() {
+            if (future.isDone()) {
+                return;
+            }
+            if (cancellationRequested.get()) {
+                future.complete(result(true));
+                return;
+            }
+            try {
+                processSlice();
+            } catch (Throwable failure) {
+                future.completeExceptionally(failure);
+                return;
+            }
+            notifyProgress();
+            if (!chunks.hasNext() || cancellationRequested.get()) {
+                future.complete(result(cancellationRequested.get()));
+                return;
+            }
+            scheduleNextSlice();
+        }
+
+        private void processSlice() {
+            int remaining = options.maxChunksPerTick();
+            while (remaining > 0 && chunks.hasNext() && !cancellationRequested.get()) {
+                var pos = chunks.next();
+                try {
+                    if (applyChunkOperation(pos)) {
+                        succeeded++;
+                    } else {
+                        skipped++;
+                    }
+                } catch (RuntimeException failure) {
+                    failed++;
+                }
+                remaining--;
+            }
+        }
+
+        private boolean applyChunkOperation(io.fand.api.world.ChunkPos pos) {
+            return switch (mode) {
+                case LOAD -> loadChunkForBatch(pos);
+                case FORCE_LOADED -> setForceLoadedForBatch(pos);
+            };
+        }
+
+        private boolean loadChunkForBatch(io.fand.api.world.ChunkPos pos) {
+            boolean loaded = handle.getChunkSource().hasChunk(pos.x(), pos.z());
+            if (loaded && options.skipAlreadyLoaded()) {
+                if (options.forceLoaded()) {
+                    handle.setChunkForced(pos.x(), pos.z(), true);
+                }
+                return false;
+            }
+            if (options.forceLoaded()) {
+                handle.setChunkForced(pos.x(), pos.z(), true);
+            }
+            return handle.getChunk(pos.x(), pos.z(), ChunkStatus.FULL, true) != null;
+        }
+
+        private boolean setForceLoadedForBatch(io.fand.api.world.ChunkPos pos) {
+            return handle.setChunkForced(pos.x(), pos.z(), options.forceLoaded());
+        }
+
+        private void scheduleNextSlice() {
+            try {
+                if (scheduler != null) {
+                    scheduler.runMainAfterTicks(this, 0L);
+                } else {
+                    runOnServerThread(this);
+                }
+            } catch (RejectedExecutionException failure) {
+                future.completeExceptionally(failure);
+            }
+        }
+
+        private ChunkBatchResult result(boolean cancelled) {
+            return new ChunkBatchResult(requested, succeeded, skipped, failed, cancelled);
+        }
+
+        private void notifyProgress() {
+            if (listeners.isEmpty()) {
+                return;
+            }
+            var progress = progress();
+            for (var listener : listeners) {
+                try {
+                    listener.onProgress(progress);
+                } catch (RuntimeException ignored) {
+                    // Plugin progress listeners must not stall the chunk operation.
+                }
+            }
+        }
+
+        @Override
+        public CompletableFuture<ChunkBatchResult> future() {
+            return future;
+        }
+
+        @Override
+        public ChunkBatchProgress progress() {
+            return new ChunkBatchProgress(requested, succeeded, skipped, failed, cancellationRequested.get(), future.isDone());
+        }
+
+        @Override
+        public ChunkBatchOperation onProgress(ChunkBatchListener listener) {
+            Objects.requireNonNull(listener, "listener");
+            listeners.add(listener);
+            return this;
+        }
+
+        @Override
+        public boolean cancel() {
+            if (future.isDone() || !cancellationRequested.compareAndSet(false, true)) {
+                return false;
+            }
+            return true;
         }
     }
 

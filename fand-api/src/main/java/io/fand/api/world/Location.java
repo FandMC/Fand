@@ -36,4 +36,13 @@ public record Location(World world, double x, double y, double z, float yaw, flo
     public int blockZ() {
         return (int) Math.floor(z);
     }
+
+    public ChunkPos chunkPos() {
+        return ChunkPos.containing(this);
+    }
+
+    public Vector3 horizontalDirection() {
+        double radians = Math.toRadians(yaw);
+        return new Vector3(-Math.sin(radians), 0.0D, Math.cos(radians));
+    }
 }
