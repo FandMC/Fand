@@ -3,6 +3,21 @@ From: MC20018 <winme2001@outlook.com>
 Date: Wed, 1 Jul 2026 19:20:54 +0800
 Subject: [PATCH] Optimize hot-path Minecraft source handling
 
+License: GPL-3.0-only (https://www.gnu.org/licenses/gpl-3.0.html)
+
+This Fand patch includes VarInt#write and VarLong#write optimizations
+derived from the Leaf patch:
+leaf-server/minecraft-patches/features/0076-Optimize-VarInt-write-and-VarLong-write.patch
+
+Original Leaf patch author: Martijn Muijsers <martijnmuijsers@live.nl>.
+The Leaf patch is licensed GPL-3.0-only and is based on Gale
+(https://galemc.org), which in turn is based on the Velocity commit
+"Reapply \"Optimize varint writing\"" by Andrew Steinborn <git@steinborn.me>
+as part of Velocity (https://github.com/PaperMC/Velocity), licensed
+GPL-3.0-only.
+
+Modifications made by MC20018 <winme2001@outlook.com> for Fand on
+2026-07-04. Other hot-path changes in this patch are Fand-specific.
 
 diff --git a/net/minecraft/network/VarInt.java b/net/minecraft/network/VarInt.java
 index 3e62f43edecb63921afeec4fa97c4b6ae5350d76..a2a95ac02d15ba1816b811c17f74c1c76c478d6a 100644
