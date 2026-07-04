@@ -65,6 +65,22 @@ The patched Minecraft code lives in `fand-server/src/minecraft/java` after setup
 See `PROJECT_PROPOSAL.md` for the full roadmap and `CODING_STANDARDS.md` for
 development guidelines.
 
+## Acknowledgements
+
+Fand uses code, implementation ideas, and engineering approaches from the
+Paper, Gale, Leaf, Leaves, Moonrise, C2ME, Lithium, and ScalableLux projects.
+Their work provides important reference points for Fand's patch workflow,
+vanilla integration, performance optimization, and server runtime design.
+
+- [Paper](https://github.com/PaperMC/Paper)
+- [Gale](https://github.com/GaleMC/Gale)
+- [Leaf](https://github.com/Winds-Studio/Leaf)
+- [Leaves](https://github.com/LeavesMC/Leaves)
+- [Moonrise](https://github.com/Tuinity/Moonrise)
+- [C2ME](https://github.com/RelativityMC/C2ME-fabric)
+- [Lithium](https://github.com/CaffeineMC/lithium)
+- [ScalableLux](https://github.com/RelativityMC/ScalableLux)
+
 ## License
 
 Fand is licensed under the GNU General Public License v3.0. See `LICENSE` for
