@@ -23,6 +23,7 @@ import io.fand.server.entity.EntityRegistry;
 import io.fand.server.entity.FandEntity;
 import io.fand.server.entity.FandPlayer;
 import io.fand.server.entity.PlayerRegistry;
+import io.fand.server.event.EventDispatcher;
 import io.fand.server.network.ForwardedPlayerInfo;
 import io.fand.server.network.ProxyForwarding;
 import io.fand.server.network.ProxyForwardingMode;
@@ -477,11 +478,11 @@ public final class FandHooks {
     }
 
     public static boolean redstoneProfilerEnabled() {
-        return redstoneJitMode.profilingEnabled();
+        return redstoneJitMode.probeEnabled();
     }
 
     public static long beginRedstoneProbe() {
-        if (!redstoneJitMode.profilingEnabled()) {
+        if (!redstoneJitMode.probeEnabled()) {
             return 0L;
         }
         var runtime = redstoneRuntime;
@@ -494,7 +495,7 @@ public final class FandHooks {
             net.minecraft.core.BlockPos pos,
             long startNanos
     ) {
-        if (startNanos == 0L || !redstoneJitMode.profilingEnabled()) {
+        if (startNanos == 0L || !redstoneJitMode.probeEnabled()) {
             return;
         }
         var runtime = redstoneRuntime;
@@ -503,13 +504,26 @@ public final class FandHooks {
         }
     }
 
+    public static boolean tryExecuteRedstoneWireJit(
+            net.minecraft.world.level.block.RedStoneWireBlock wireBlock,
+            net.minecraft.world.level.Level level,
+            net.minecraft.core.BlockPos pos,
+            BlockState state
+    ) {
+        if (!redstoneJitMode.executorEnabled()) {
+            return false;
+        }
+        var runtime = redstoneRuntime;
+        return runtime != null && runtime.tryUpdateWirePower(wireBlock, level, pos, state);
+    }
+
     public static void markRedstoneBlockDirty(@Nullable Object level, net.minecraft.core.BlockPos pos, String reason) {
         if (!redstoneJitMode.profilingEnabled()) {
             return;
         }
         var runtime = redstoneRuntime;
-        if (runtime != null) {
-            runtime.regions().markBlockDirty(levelName(level), pos.asLong(), reason);
+        if (runtime != null && level instanceof Level world) {
+            runtime.markBlockDirty(levelName(world), world, pos.asLong(), reason);
         }
     }
 
@@ -518,8 +532,8 @@ public final class FandHooks {
             return;
         }
         var runtime = redstoneRuntime;
-        if (runtime != null) {
-            runtime.regions().markChunkDirty(levelName(level), chunkX, chunkZ, reason);
+        if (runtime != null && level instanceof Level world) {
+            runtime.markChunkDirty(levelName(world), world, chunkX, chunkZ, reason);
         }
     }
 
@@ -760,6 +774,14 @@ public final class FandHooks {
     public static EventBus events() {
         var runtime = activeRuntime();
         return runtime == null ? NOOP_EVENTS : runtime.events();
+    }
+
+    public static long eventStructureVersion() {
+        var runtime = activeRuntime();
+        if (runtime == null || !(runtime.events() instanceof EventDispatcher dispatcher)) {
+            return -1L;
+        }
+        return dispatcher.structureVersion();
     }
 
     public static ServerPerformance performance() {

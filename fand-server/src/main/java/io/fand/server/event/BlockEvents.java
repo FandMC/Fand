@@ -67,6 +67,10 @@ public final class BlockEvents {
     private static final int STRUCTURE_GROW_RADIUS = 16;
     private static final int STRUCTURE_GROW_BELOW = 1;
     private static final int STRUCTURE_GROW_ABOVE = 40;
+    private static volatile long hotListenerVersion = Long.MIN_VALUE;
+    private static volatile boolean hasRedstoneListeners;
+    private static volatile boolean hasPistonPushListeners;
+    private static volatile boolean hasPistonRetractListeners;
 
     private BlockEvents() {
     }
@@ -519,10 +523,10 @@ public final class BlockEvents {
     }
 
     public static int fireRedstone(ServerLevel level, BlockPos pos, int oldCurrent, int newCurrent) {
-        var bus = FandHooks.events();
-        if (!bus.hasListeners(BlockRedstoneEvent.class)) {
+        if (!hasRedstoneListeners()) {
             return newCurrent;
         }
+        var bus = FandHooks.events();
         var world = FandHooks.wrapWorld(level);
         if (world == null) {
             return newCurrent;
@@ -569,13 +573,10 @@ public final class BlockEvents {
             List<BlockPos> affectedPositions,
             boolean extending
     ) {
-        var bus = FandHooks.events();
-        boolean hasListeners = extending
-                ? bus.hasListeners(BlockPistonPushEvent.class) || bus.hasListeners(BlockPistonExtendEvent.class)
-                : bus.hasListeners(BlockPistonRetractEvent.class);
-        if (!hasListeners) {
+        if (!hasPistonMoveListeners(extending)) {
             return true;
         }
+        var bus = FandHooks.events();
         var world = FandHooks.wrapWorld(level);
         if (world == null) {
             return true;
@@ -598,6 +599,28 @@ public final class BlockEvents {
             LOGGER.warn("{} listener failed", extending ? "BlockPistonExtendEvent" : "BlockPistonRetractEvent", failure);
             return true;
         }
+    }
+
+    public static boolean hasPistonMoveListeners(boolean extending) {
+        refreshHotListenerCache();
+        return extending ? hasPistonPushListeners : hasPistonRetractListeners;
+    }
+
+    private static boolean hasRedstoneListeners() {
+        refreshHotListenerCache();
+        return hasRedstoneListeners;
+    }
+
+    private static void refreshHotListenerCache() {
+        long version = FandHooks.eventStructureVersion();
+        if (version == hotListenerVersion) {
+            return;
+        }
+        var bus = FandHooks.events();
+        hasRedstoneListeners = bus.hasListeners(BlockRedstoneEvent.class);
+        hasPistonPushListeners = bus.hasListeners(BlockPistonPushEvent.class) || bus.hasListeners(BlockPistonExtendEvent.class);
+        hasPistonRetractListeners = bus.hasListeners(BlockPistonRetractEvent.class);
+        hotListenerVersion = version;
     }
 
     public static boolean fireFromTo(

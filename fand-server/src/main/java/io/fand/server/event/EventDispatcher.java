@@ -9,6 +9,7 @@ import io.fand.api.event.EventSubscription;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,6 +30,7 @@ public final class EventDispatcher implements EventBus {
     private final ConcurrentHashMap<Class<? extends Event>, ListenerBucket> buckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Class<? extends Event>, DispatchPlan> dispatchPlans = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Class<? extends Event>, AtomicInteger> applicableCounters = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Class<? extends Event>, CachedPresence> presenceCache = new ConcurrentHashMap<>();
     private final Object counterLock = new Object();
     private final AtomicLong sequence = new AtomicLong();
     // Bumped on every subscribe/unregister. Cached dispatch plans embed the
@@ -90,14 +92,26 @@ public final class EventDispatcher implements EventBus {
     @Override
     public boolean hasListeners(Class<? extends Event> type) {
         Objects.requireNonNull(type, "type");
+        var version = structureVersion.get();
+        var cached = presenceCache.get(type);
+        if (cached != null && cached.structureVersion == version) {
+            return cached.present;
+        }
         var counter = applicableCounters.get(type);
         if (counter != null && counter.get() > 0) {
+            presenceCache.put(type, new CachedPresence(version, true));
             return true;
         }
         // Cold path: a listener was registered against a supertype but this exact
         // event subtype has never been queried. Walk the hierarchy once and seed
         // the counter so subsequent calls take the fast path above.
-        return ensureCounter(type).get() > 0;
+        var present = ensureCounter(type).get() > 0;
+        presenceCache.put(type, new CachedPresence(version, present));
+        return present;
+    }
+
+    public long structureVersion() {
+        return structureVersion.get();
     }
 
     private DispatchPlan resolveDispatchPlan(Class<? extends Event> eventType) {
@@ -167,7 +181,7 @@ public final class EventDispatcher implements EventBus {
     }
 
     private void adjustApplicableCounters(Class<? extends Event> bucketType, int delta) {
-        for (var entry : applicableCounters.entrySet()) {
+        for (Map.Entry<Class<? extends Event>, AtomicInteger> entry : applicableCounters.entrySet()) {
             if (bucketType.isAssignableFrom(entry.getKey())) {
                 entry.getValue().addAndGet(delta);
             }
@@ -306,6 +320,9 @@ public final class EventDispatcher implements EventBus {
     }
 
     private record DispatchPlan(long structureVersion, Registration<?>[] registrations) {
+    }
+
+    private record CachedPresence(long structureVersion, boolean present) {
     }
 
     private static final class MergeCursor {

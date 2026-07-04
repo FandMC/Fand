@@ -518,8 +518,8 @@ public final class FandConfig {
     public static final class Performance {
 
         @ConfigComment({
-                "Redstone JIT pipeline mode. Stage 1 only profiles redstone hotspots",
-                "and never changes vanilla execution. Supported values:",
+                "Redstone JIT pipeline mode. profile/shadow collect hotspot samples;",
+                "interpreter/hot may execute validated hot paths. Supported values:",
                 "off, profile, shadow, interpreter, hot."
         })
         public volatile String redstoneJitMode = "off";

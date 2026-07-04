@@ -26,6 +26,14 @@ public enum RedstoneJitMode {
         return shadowEnabled;
     }
 
+    public boolean probeEnabled() {
+        return this == PROFILE || this == SHADOW || this == INTERPRETER;
+    }
+
+    public boolean executorEnabled() {
+        return this == INTERPRETER || this == HOT;
+    }
+
     public static RedstoneJitMode fromConfig(String value) {
         if (value == null) {
             throw new ConfigException("performance.redstoneJitMode must be one of: off, profile, shadow, interpreter, hot");

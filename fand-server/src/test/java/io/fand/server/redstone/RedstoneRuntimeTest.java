@@ -54,6 +54,14 @@ final class RedstoneRuntimeTest {
     }
 
     @Test
+    void hotModeExecutesWithoutProfilerProbe() {
+        var runtime = new RedstoneRuntime(RedstoneJitMode.HOT);
+
+        assertThat(runtime.beginProbe()).isZero();
+        assertThat(runtime.snapshot(10).observedEvents()).isZero();
+    }
+
+    @Test
     void keepsChunkAndRegionTotalsWhenPositionDetailsAreFull() {
         var runtime = new RedstoneRuntime(RedstoneJitMode.PROFILE);
         int samples = 9000;

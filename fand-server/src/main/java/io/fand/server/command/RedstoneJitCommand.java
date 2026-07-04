@@ -36,6 +36,7 @@ public final class RedstoneJitCommand implements CommandExecutor, CommandComplet
         sendStatus(sender, snapshot);
         sendCandidates(sender, runtime.clusterCandidates(snapshot, TOP_LIMIT));
         sendShadowCandidates(sender, runtime.shadowCandidates(TOP_LIMIT));
+        sendWireJit(sender, runtime.wireJitSnapshot());
         sendRegions(sender, runtime.regions().snapshot(TOP_LIMIT));
     }
 
@@ -201,6 +202,26 @@ public final class RedstoneJitCommand implements CommandExecutor, CommandComplet
                     nanosToMillis(candidate.lastNanos()),
                     candidate.lastReason())));
         }
+    }
+
+    private static void sendWireJit(CommandSender sender, io.fand.server.redstone.RedstoneWireJitSnapshot snapshot) {
+        if (snapshot.attempts() == 0L && snapshot.plans() == 0) {
+            return;
+        }
+        sender.sendMessage(Component.text(String.format(
+                Locale.ROOT,
+                "Wire JIT: plans=%d attempts=%d hits=%d compiled=%d guardMisses=%d capacityMisses=%d warmupMisses=%d cooldownMisses=%d invalidations=%d blockInvalidations=%d chunkInvalidations=%d",
+                snapshot.plans(),
+                snapshot.attempts(),
+                snapshot.hits(),
+                snapshot.compiled(),
+                snapshot.guardMisses(),
+                snapshot.capacityMisses(),
+                snapshot.warmupMisses(),
+                snapshot.cooldownMisses(),
+                snapshot.invalidations(),
+                snapshot.blockInvalidations(),
+                snapshot.chunkInvalidations())));
     }
 
     private static double nanosToMillis(long nanos) {
