@@ -6,6 +6,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 import net.minecraft.core.BlockPos;
 
@@ -18,30 +20,40 @@ public final class RedstoneProfiler {
     private final ConcurrentHashMap<RedstoneRegionKey, Counter> regionCounters = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<ChunkKey, Counter> chunkCounters = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<RedstoneProbeKey, Counter> positionCounters = new ConcurrentHashMap<>();
+    private final AtomicInteger positionCounterSize = new AtomicInteger();
+    private final AtomicBoolean positionSamplesFull = new AtomicBoolean();
+    private final LongAdder observedEvents = new LongAdder();
     private final LongAdder droppedPositionSamples = new LongAdder();
 
-    public void record(RedstoneProbeType type, String level, long blockPos, long durationNanos) {
+    public void observe(long count) {
+        observedEvents.add(count);
+    }
+
+    public void recordSample(RedstoneProbeType type, String level, long blockPos, long durationNanos, long sampleWeight) {
+        if (sampleWeight <= 0L) {
+            return;
+        }
         var normalizedDuration = Math.max(0L, durationNanos);
         var normalizedLevel = level == null ? "unknown" : level;
-        typeCounters.counter(type).add(normalizedDuration);
+        typeCounters.counter(type).add(normalizedDuration, sampleWeight);
 
         int chunkX = BlockPos.getX(blockPos) >> 4;
         int chunkZ = BlockPos.getZ(blockPos) >> 4;
         chunkCounters.computeIfAbsent(new ChunkKey(normalizedLevel, chunkX, chunkZ), ignored -> new Counter())
-                .add(normalizedDuration);
+                .add(normalizedDuration, sampleWeight);
         regionCounters.computeIfAbsent(RedstoneRegionKey.fromChunk(normalizedLevel, chunkX, chunkZ), ignored -> new Counter())
-                .add(normalizedDuration);
+                .add(normalizedDuration, sampleWeight);
 
-        var key = new RedstoneProbeKey(type, normalizedLevel, blockPos);
-        var counter = positionCounters.get(key);
-        if (counter == null) {
-            if (positionCounters.size() >= MAX_POSITION_SAMPLES) {
-                droppedPositionSamples.increment();
-                return;
-            }
-            counter = positionCounters.computeIfAbsent(key, ignored -> new Counter());
+        if (positionSamplesFull.get()) {
+            droppedPositionSamples.add(sampleWeight);
+            return;
         }
-        counter.add(normalizedDuration);
+        var counter = positionCounter(type, normalizedLevel, blockPos);
+        if (counter == null) {
+            droppedPositionSamples.add(sampleWeight);
+            return;
+        }
+        counter.add(normalizedDuration, sampleWeight);
     }
 
     public RedstoneProbeSnapshot snapshot(RedstoneJitMode mode, int topLimit) {
@@ -108,6 +120,7 @@ public final class RedstoneProfiler {
                 mode,
                 totalCount,
                 totalNanos,
+                observedEvents.sum(),
                 droppedPositionSamples.sum(),
                 types,
                 clusters,
@@ -121,7 +134,41 @@ public final class RedstoneProfiler {
         regionCounters.clear();
         chunkCounters.clear();
         positionCounters.clear();
+        positionCounterSize.set(0);
+        positionSamplesFull.set(false);
+        observedEvents.reset();
         droppedPositionSamples.reset();
+    }
+
+    private Counter positionCounter(RedstoneProbeType type, String level, long blockPos) {
+        var key = new RedstoneProbeKey(type, level, blockPos);
+        var existing = positionCounters.get(key);
+        if (existing != null) {
+            return existing;
+        }
+        if (!reservePositionCounterSlot()) {
+            return null;
+        }
+        var created = new Counter();
+        var previous = positionCounters.putIfAbsent(key, created);
+        if (previous != null) {
+            positionCounterSize.decrementAndGet();
+            return previous;
+        }
+        return created;
+    }
+
+    private boolean reservePositionCounterSlot() {
+        while (true) {
+            int size = positionCounterSize.get();
+            if (size >= MAX_POSITION_SAMPLES) {
+                positionSamplesFull.set(true);
+                return false;
+            }
+            if (positionCounterSize.compareAndSet(size, size + 1)) {
+                return true;
+            }
+        }
     }
 
     private List<RedstoneProbeSnapshot.ClusterEntry> clusterHotChunks(int topLimit) {
@@ -262,9 +309,9 @@ public final class RedstoneProfiler {
         private final LongAdder count = new LongAdder();
         private final LongAdder totalNanos = new LongAdder();
 
-        private void add(long durationNanos) {
-            count.increment();
-            totalNanos.add(durationNanos);
+        private void add(long durationNanos, long sampleWeight) {
+            count.add(sampleWeight);
+            totalNanos.add(durationNanos * sampleWeight);
         }
 
         private long count() {

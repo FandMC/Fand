@@ -289,6 +289,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.plugins.nmsService(nms);
         this.plugins.loginAuthenticationService(loginAuthenticators);
         this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, chunks, chunkTasks, guiThemes);
+        io.fand.server.hooks.FandHooks.bindRedstoneRuntime(redstone);
         io.fand.server.hooks.FandHooks.applyPlayerConfig(initialConfig.players);
         io.fand.server.hooks.FandHooks.applyAuthenticationConfig(initialConfig.authentication);
         io.fand.server.hooks.FandHooks.applyChunkConfig(initialConfig.chunks);

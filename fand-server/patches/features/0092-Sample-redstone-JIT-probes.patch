@@ -1,0 +1,196 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 4 Jul 2026 18:28:36 +0800
+Subject: [PATCH] Sample redstone JIT probes
+
+
+diff --git a/net/minecraft/world/level/block/ComparatorBlock.java b/net/minecraft/world/level/block/ComparatorBlock.java
+index 6283642d4752785f7ce218beac86f1c1d92ecb96..3990b1b35e70985c41b2789806d36131d676c2c0 100644
+--- a/net/minecraft/world/level/block/ComparatorBlock.java
++++ b/net/minecraft/world/level/block/ComparatorBlock.java
+@@ -73,8 +73,8 @@ public class ComparatorBlock extends DiodeBlock implements EntityBlock {
+     }
+ 
+     private int calculateOutputSignal(final Level level, final BlockPos pos, final BlockState state) {
+-        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
+-            long startNanos = System.nanoTime();
++        long startNanos = io.fand.server.hooks.FandHooks.beginRedstoneProbe();
++        if (startNanos != 0L) {
+             try {
+                 return this.calculateOutputSignal0(level, pos, state);
+             } finally {
+@@ -199,8 +199,8 @@ public class ComparatorBlock extends DiodeBlock implements EntityBlock {
+ 
+     @Override
+     protected void tick(final BlockState state, final ServerLevel level, final BlockPos pos, final RandomSource random) {
+-        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
+-            long startNanos = System.nanoTime();
++        long startNanos = io.fand.server.hooks.FandHooks.beginRedstoneProbe();
++        if (startNanos != 0L) {
+             try {
+                 this.refreshOutputState(level, pos, state);
+             } finally {
+diff --git a/net/minecraft/world/level/block/DiodeBlock.java b/net/minecraft/world/level/block/DiodeBlock.java
+index 628b9e6be29d7d26b5ed8f28c61a2757bec1be93..12df46cb897e5aa62d1ac7ab64f036c272bda9eb 100644
+--- a/net/minecraft/world/level/block/DiodeBlock.java
++++ b/net/minecraft/world/level/block/DiodeBlock.java
+@@ -53,8 +53,8 @@ public abstract class DiodeBlock extends HorizontalDirectionalBlock {
+ 
+     @Override
+     protected void tick(final BlockState state, final ServerLevel level, final BlockPos pos, final RandomSource random) {
+-        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
+-            long startNanos = System.nanoTime();
++        long startNanos = io.fand.server.hooks.FandHooks.beginRedstoneProbe();
++        if (startNanos != 0L) {
+             try {
+                 this.tick0(state, level, pos, random);
+             } finally {
+@@ -86,8 +86,8 @@ public abstract class DiodeBlock extends HorizontalDirectionalBlock {
+     protected void neighborChanged(
+         final BlockState state, final Level level, final BlockPos pos, final Block block, final @Nullable Orientation orientation, final boolean movedByPiston
+     ) {
+-        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
+-            long startNanos = System.nanoTime();
++        long startNanos = io.fand.server.hooks.FandHooks.beginRedstoneProbe();
++        if (startNanos != 0L) {
+             try {
+                 this.neighborChanged0(state, level, pos, block, orientation, movedByPiston);
+             } finally {
+diff --git a/net/minecraft/world/level/block/ObserverBlock.java b/net/minecraft/world/level/block/ObserverBlock.java
+index d550ab9e01931a4e17fad06d46fcbc5ba39ddabb..5a469e36692fce33cdb7ee92f038c2b962796ad6 100644
+--- a/net/minecraft/world/level/block/ObserverBlock.java
++++ b/net/minecraft/world/level/block/ObserverBlock.java
+@@ -50,8 +50,8 @@ public class ObserverBlock extends DirectionalBlock {
+ 
+     @Override
+     protected void tick(final BlockState state, final ServerLevel level, final BlockPos pos, final RandomSource random) {
+-        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
+-            long startNanos = System.nanoTime();
++        long startNanos = io.fand.server.hooks.FandHooks.beginRedstoneProbe();
++        if (startNanos != 0L) {
+             try {
+                 this.tick0(state, level, pos, random);
+             } finally {
+@@ -86,8 +86,8 @@ public class ObserverBlock extends DirectionalBlock {
+         final BlockState neighbourState,
+         final RandomSource random
+     ) {
+-        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
+-            long startNanos = System.nanoTime();
++        long startNanos = io.fand.server.hooks.FandHooks.beginRedstoneProbe();
++        if (startNanos != 0L) {
+             try {
+                 return this.updateShape0(state, level, ticks, pos, directionToNeighbour, neighbourPos, neighbourState, random);
+             } finally {
+diff --git a/net/minecraft/world/level/block/RedStoneWireBlock.java b/net/minecraft/world/level/block/RedStoneWireBlock.java
+index 23e07e9b74cc87a292998e0414b1974ed0f0d2f2..9a20801b057977f413233b9d1fd28a588603104c 100644
+--- a/net/minecraft/world/level/block/RedStoneWireBlock.java
++++ b/net/minecraft/world/level/block/RedStoneWireBlock.java
+@@ -348,8 +348,8 @@ public class RedStoneWireBlock extends Block {
+     protected void neighborChanged(
+         final BlockState state, final Level level, final BlockPos pos, final Block block, final @Nullable Orientation orientation, final boolean movedByPiston
+     ) {
+-        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
+-            long startNanos = System.nanoTime();
++        long startNanos = io.fand.server.hooks.FandHooks.beginRedstoneProbe();
++        if (startNanos != 0L) {
+             try {
+                 this.neighborChanged0(state, level, pos, block, orientation, movedByPiston);
+             } finally {
+diff --git a/net/minecraft/world/level/block/piston/PistonBaseBlock.java b/net/minecraft/world/level/block/piston/PistonBaseBlock.java
+index d369d0687d082733fbb081ae45bc2bd0f0710799..312ad028c300677cb8738a4b285e51366c886493 100644
+--- a/net/minecraft/world/level/block/piston/PistonBaseBlock.java
++++ b/net/minecraft/world/level/block/piston/PistonBaseBlock.java
+@@ -273,8 +273,8 @@ public class PistonBaseBlock extends DirectionalBlock {
+     }
+ 
+     private boolean moveBlocks(final Level level, final BlockPos pistonPos, final Direction direction, final boolean extending) {
+-        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
+-            long startNanos = System.nanoTime();
++        long startNanos = io.fand.server.hooks.FandHooks.beginRedstoneProbe();
++        if (startNanos != 0L) {
+             try {
+                 return this.moveBlocks0(level, pistonPos, direction, extending);
+             } finally {
+diff --git a/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java b/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
+index 2ad96c725eb5e7e7275d3066e47aeef89131d5e3..70bca91e11bef0d62cecbe0da90b90776135bb47 100644
+--- a/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
++++ b/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
+@@ -85,8 +85,8 @@ public class CollectingNeighborUpdater implements NeighborUpdater {
+     }
+ 
+     private void runUpdates() {
+-        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
+-            long startNanos = System.nanoTime();
++        long startNanos = io.fand.server.hooks.FandHooks.beginRedstoneProbe();
++        if (startNanos != 0L) {
+             try {
+                 this.runUpdates0();
+             } finally {
+diff --git a/net/minecraft/world/level/redstone/DefaultRedstoneWireEvaluator.java b/net/minecraft/world/level/redstone/DefaultRedstoneWireEvaluator.java
+index 1ce14e4338c838c1a88ef4674fd2f9ef12e71a7e..ea14606640c7b894b58163560cbac05184cb34c4 100644
+--- a/net/minecraft/world/level/redstone/DefaultRedstoneWireEvaluator.java
++++ b/net/minecraft/world/level/redstone/DefaultRedstoneWireEvaluator.java
+@@ -19,8 +19,8 @@ public class DefaultRedstoneWireEvaluator extends RedstoneWireEvaluator {
+     public void updatePowerStrength(
+         final Level level, final BlockPos pos, final BlockState state, final @Nullable Orientation orientation, final boolean skipShapeUpdates
+     ) {
+-        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
+-            long startNanos = System.nanoTime();
++        long startNanos = io.fand.server.hooks.FandHooks.beginRedstoneProbe();
++        if (startNanos != 0L) {
+             try {
+                 this.updatePowerStrength0(level, pos, state, orientation, skipShapeUpdates);
+             } finally {
+@@ -60,8 +60,8 @@ public class DefaultRedstoneWireEvaluator extends RedstoneWireEvaluator {
+     }
+ 
+     private int calculateTargetStrength(final Level level, final BlockPos pos) {
+-        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
+-            long startNanos = System.nanoTime();
++        long startNanos = io.fand.server.hooks.FandHooks.beginRedstoneProbe();
++        if (startNanos != 0L) {
+             try {
+                 return this.calculateTargetStrength0(level, pos);
+             } finally {
+diff --git a/net/minecraft/world/level/redstone/ExperimentalRedstoneWireEvaluator.java b/net/minecraft/world/level/redstone/ExperimentalRedstoneWireEvaluator.java
+index 49da9625b9db32ae0491d888a6a5c4b1d8e0711c..38a52f12ef5b1863f00277d46ce2dd86a44ecbc8 100644
+--- a/net/minecraft/world/level/redstone/ExperimentalRedstoneWireEvaluator.java
++++ b/net/minecraft/world/level/redstone/ExperimentalRedstoneWireEvaluator.java
+@@ -35,8 +35,8 @@ public class ExperimentalRedstoneWireEvaluator extends RedstoneWireEvaluator {
+         final @Nullable Orientation orientation,
+         final boolean shapeUpdateWiresAroundInitialPosition
+     ) {
+-        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
+-            long startNanos = System.nanoTime();
++        long startNanos = io.fand.server.hooks.FandHooks.beginRedstoneProbe();
++        if (startNanos != 0L) {
+             try {
+                 this.updatePowerStrength0(level, initialPos, ignored, orientation, shapeUpdateWiresAroundInitialPosition);
+             } finally {
+diff --git a/net/minecraft/world/level/redstone/NeighborUpdater.java b/net/minecraft/world/level/redstone/NeighborUpdater.java
+index 459ef20f7f9137d7dc8fb3e94591612b033b3783..7dd0b4843aec53c380ab7750eace097a786380af 100644
+--- a/net/minecraft/world/level/redstone/NeighborUpdater.java
++++ b/net/minecraft/world/level/redstone/NeighborUpdater.java
+@@ -42,8 +42,8 @@ public interface NeighborUpdater {
+         final @Block.UpdateFlags int updateFlags,
+         final int updateLimit
+     ) {
+-        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
+-            long startNanos = System.nanoTime();
++        long startNanos = io.fand.server.hooks.FandHooks.beginRedstoneProbe();
++        if (startNanos != 0L) {
+             try {
+                 executeShapeUpdate0(level, direction, pos, neighborPos, neighborState, updateFlags, updateLimit);
+             } finally {
+@@ -89,8 +89,8 @@ public interface NeighborUpdater {
+         final @Nullable Orientation orientation,
+         final boolean movedByPiston
+     ) {
+-        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
+-            long startNanos = System.nanoTime();
++        long startNanos = io.fand.server.hooks.FandHooks.beginRedstoneProbe();
++        if (startNanos != 0L) {
+             try {
+                 executeUpdate0(level, state, pos, changedBlock, orientation, movedByPiston);
+             } finally {

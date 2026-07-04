@@ -15,10 +15,13 @@ public final class RedstoneRegionManager {
 
     private final ConcurrentHashMap<RedstoneRegionKey, RegionState> regions = new ConcurrentHashMap<>();
 
-    public void observe(String level, long blockPos, long durationNanos) {
+    public void observe(String level, long blockPos, long durationNanos, long sampleWeight) {
+        if (sampleWeight <= 0L) {
+            return;
+        }
         var key = RedstoneRegionKey.fromBlock(level, blockPos);
         regions.computeIfAbsent(key, RegionState::new)
-                .record(Math.max(0L, durationNanos));
+                .record(Math.max(0L, durationNanos), sampleWeight);
     }
 
     public void markBlockDirty(String level, long blockPos, String reason) {
@@ -168,8 +171,8 @@ public final class RedstoneRegionManager {
             this.key = key;
         }
 
-        private void record(long durationNanos) {
-            samples.increment();
+        private void record(long durationNanos, long sampleWeight) {
+            samples.add(sampleWeight);
             totalNanos.add(durationNanos);
         }
 

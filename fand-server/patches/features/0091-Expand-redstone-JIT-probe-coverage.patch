@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 4 Jul 2026 18:03:46 +0800
+Subject: [PATCH] Expand redstone JIT probe coverage
+
+
+diff --git a/net/minecraft/world/level/block/RedStoneWireBlock.java b/net/minecraft/world/level/block/RedStoneWireBlock.java
+index 0a4beae404f803c0990bf8f85c7da4ce2ab69d4b..23e07e9b74cc87a292998e0414b1974ed0f0d2f2 100644
+--- a/net/minecraft/world/level/block/RedStoneWireBlock.java
++++ b/net/minecraft/world/level/block/RedStoneWireBlock.java
+@@ -347,6 +347,23 @@ public class RedStoneWireBlock extends Block {
+     @Override
+     protected void neighborChanged(
+         final BlockState state, final Level level, final BlockPos pos, final Block block, final @Nullable Orientation orientation, final boolean movedByPiston
++    ) {
++        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
++            long startNanos = System.nanoTime();
++            try {
++                this.neighborChanged0(state, level, pos, block, orientation, movedByPiston);
++            } finally {
++                io.fand.server.hooks.FandHooks.recordRedstoneProbe(
++                    io.fand.server.redstone.RedstoneProbeType.WIRE_NEIGHBOR, level, pos, startNanos
++                );
++            }
++            return;
++        }
++        this.neighborChanged0(state, level, pos, block, orientation, movedByPiston);
++    }
++
++    private void neighborChanged0(
++        final BlockState state, final Level level, final BlockPos pos, final Block block, final @Nullable Orientation orientation, final boolean movedByPiston
+     ) {
+         if (!level.isClientSide()) {
+             if (block != this || !useExperimentalEvaluator(level)) {
+diff --git a/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java b/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
+index 5defe0cd4398c9b228ed9526ff26fd298421a89e..2ad96c725eb5e7e7275d3066e47aeef89131d5e3 100644
+--- a/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
++++ b/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
+@@ -85,6 +85,21 @@ public class CollectingNeighborUpdater implements NeighborUpdater {
+     }
+ 
+     private void runUpdates() {
++        if (io.fand.server.hooks.FandHooks.redstoneProfilerEnabled()) {
++            long startNanos = System.nanoTime();
++            try {
++                this.runUpdates0();
++            } finally {
++                io.fand.server.hooks.FandHooks.recordRedstoneProbe(
++                    io.fand.server.redstone.RedstoneProbeType.COLLECTING_NEIGHBOR_RUN, this.level, BlockPos.ZERO, startNanos
++                );
++            }
++            return;
++        }
++        this.runUpdates0();
++    }
++
++    private void runUpdates0() {
+         try {
+             while (!this.stack.isEmpty() || !this.addedThisLayer.isEmpty()) {
+                 for (int i = this.addedThisLayer.size() - 1; i >= 0; i--) {

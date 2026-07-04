@@ -1,6 +1,7 @@
 package io.fand.server.redstone;
 
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -9,14 +10,21 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class RedstoneShadowRuntime {
 
     private static final long READY_OBSERVATIONS = 2L;
+    private static final long STALE_OBSERVATIONS = 3L;
 
     private final ConcurrentHashMap<ShadowKey, ShadowState> candidates = new ConcurrentHashMap<>();
+    private final AtomicLong observationEpoch = new AtomicLong();
 
     public void observe(List<RedstoneClusterCandidateSnapshot> clusterCandidates) {
+        long epoch = observationEpoch.incrementAndGet();
+        var seen = new HashSet<ShadowKey>();
         for (var candidate : clusterCandidates) {
-            candidates.computeIfAbsent(ShadowKey.of(candidate), ShadowState::new)
-                    .observe(candidate);
+            var key = ShadowKey.of(candidate);
+            seen.add(key);
+            candidates.computeIfAbsent(key, ShadowState::new)
+                    .observe(candidate, epoch);
         }
+        candidates.entrySet().removeIf(entry -> !seen.contains(entry.getKey()) && entry.getValue().stale(epoch));
     }
 
     public List<RedstoneShadowCandidateSnapshot> snapshot(int topLimit) {
@@ -53,6 +61,7 @@ public final class RedstoneShadowRuntime {
         private final AtomicBoolean ready = new AtomicBoolean();
         private final AtomicLong stableObservations = new AtomicLong();
         private final AtomicLong blockedObservations = new AtomicLong();
+        private final AtomicLong lastObservedEpoch = new AtomicLong();
         private final AtomicLong lastSamples = new AtomicLong();
         private final AtomicLong lastNanos = new AtomicLong();
         private volatile String lastReason = "";
@@ -61,7 +70,8 @@ public final class RedstoneShadowRuntime {
             this.key = key;
         }
 
-        private void observe(RedstoneClusterCandidateSnapshot candidate) {
+        private void observe(RedstoneClusterCandidateSnapshot candidate, long epoch) {
+            lastObservedEpoch.set(epoch);
             lastSamples.set(candidate.samples());
             lastNanos.set(candidate.totalNanos());
             lastReason = candidate.blockedReason();
@@ -73,6 +83,16 @@ public final class RedstoneShadowRuntime {
                 stableObservations.set(0L);
                 ready.set(false);
             }
+        }
+
+        private boolean stale(long currentEpoch) {
+            long missed = currentEpoch - lastObservedEpoch.get();
+            if (missed < STALE_OBSERVATIONS) {
+                return false;
+            }
+            ready.set(false);
+            stableObservations.set(0L);
+            return true;
         }
 
         private RedstoneShadowCandidateSnapshot snapshot() {

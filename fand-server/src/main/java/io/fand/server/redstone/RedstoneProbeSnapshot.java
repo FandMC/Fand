@@ -6,6 +6,7 @@ public record RedstoneProbeSnapshot(
         RedstoneJitMode mode,
         long totalCount,
         long totalNanos,
+        long observedEvents,
         long droppedPositionSamples,
         List<TypeEntry> types,
         List<ClusterEntry> topClusters,

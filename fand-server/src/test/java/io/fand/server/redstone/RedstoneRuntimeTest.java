@@ -30,13 +30,13 @@ final class RedstoneRuntimeTest {
     void recordsSamplesOnlyWhenProfilingEnabled() {
         var runtime = new RedstoneRuntime(RedstoneJitMode.OFF);
 
-        runtime.record(RedstoneProbeType.NEIGHBOR_UPDATE, "minecraft:overworld", 1L, 100L);
+        recordSample(runtime, RedstoneProbeType.NEIGHBOR_UPDATE, "minecraft:overworld", 1L, 100L);
         assertThat(runtime.snapshot(10).totalCount()).isZero();
 
         runtime.configure(RedstoneJitMode.PROFILE);
-        runtime.record(RedstoneProbeType.NEIGHBOR_UPDATE, "minecraft:overworld", 1L, 100L);
-        runtime.record(RedstoneProbeType.NEIGHBOR_UPDATE, "minecraft:overworld", 1L, 200L);
-        runtime.record(RedstoneProbeType.PISTON_MOVE, "minecraft:the_nether", 2L, 300L);
+        recordSample(runtime, RedstoneProbeType.NEIGHBOR_UPDATE, "minecraft:overworld", 1L, 100L);
+        recordSample(runtime, RedstoneProbeType.NEIGHBOR_UPDATE, "minecraft:overworld", 1L, 200L);
+        recordSample(runtime, RedstoneProbeType.PISTON_MOVE, "minecraft:the_nether", 2L, 300L);
 
         var snapshot = runtime.snapshot(10);
         assertThat(snapshot.totalCount()).isEqualTo(3L);
@@ -59,7 +59,7 @@ final class RedstoneRuntimeTest {
         int samples = 9000;
 
         for (int index = 0; index < samples; index++) {
-            runtime.record(
+            recordSample(runtime,
                     RedstoneProbeType.NEIGHBOR_UPDATE,
                     "minecraft:overworld",
                     BlockPos.asLong(index << 4, 64, 0),
@@ -77,6 +77,28 @@ final class RedstoneRuntimeTest {
                 .containsOnly(1L);
         assertThat(snapshot.topRegions().stream().mapToLong(RedstoneProbeSnapshot.RegionEntry::count).sum())
                 .isEqualTo(40L);
+    }
+
+    @Test
+    void keepsAggregatesAfterPositionSamplesAreFull() {
+        var runtime = new RedstoneRuntime(RedstoneJitMode.PROFILE);
+        int samples = 10_000;
+
+        for (int index = 0; index < samples; index++) {
+            recordSample(runtime,
+                    RedstoneProbeType.WIRE_POWER_UPDATE,
+                    "minecraft:overworld",
+                    BlockPos.asLong(index << 4, 64, 0),
+                    2L);
+        }
+
+        var snapshot = runtime.snapshot(5);
+        assertThat(snapshot.totalCount()).isEqualTo(samples);
+        assertThat(snapshot.totalNanos()).isEqualTo(samples * 2L);
+        assertThat(snapshot.droppedPositionSamples()).isEqualTo(samples - 8192L);
+        assertThat(snapshot.topPositions()).hasSize(5);
+        assertThat(snapshot.topChunks().stream().mapToLong(RedstoneProbeSnapshot.ChunkEntry::count).sum())
+                .isEqualTo(5L);
     }
 
     @Test
@@ -125,20 +147,21 @@ final class RedstoneRuntimeTest {
         runtime.configure(RedstoneJitMode.SHADOW);
         snapshot = runtime.snapshot(10);
         runtime.clusterCandidates(snapshot, 10);
+        assertThat(runtime.shadowCandidates(10)).isEmpty();
+
+        runtime.refreshShadowCandidates(10);
         var shadow = runtime.shadowCandidates(10);
         assertThat(shadow).hasSize(1);
         assertThat(shadow.getFirst().ready()).isFalse();
         assertThat(shadow.getFirst().stableObservations()).isEqualTo(1L);
 
-        snapshot = runtime.snapshot(10);
-        runtime.clusterCandidates(snapshot, 10);
+        runtime.refreshShadowCandidates(10);
         shadow = runtime.shadowCandidates(10);
         assertThat(shadow.getFirst().ready()).isTrue();
         assertThat(shadow.getFirst().stableObservations()).isEqualTo(2L);
 
         runtime.regions().markChunkDirty("minecraft:overworld", 2, 1, "chunk-unload");
-        snapshot = runtime.snapshot(10);
-        runtime.clusterCandidates(snapshot, 10);
+        runtime.refreshShadowCandidates(10);
         shadow = runtime.shadowCandidates(10);
         assertThat(shadow.getFirst().ready()).isFalse();
         assertThat(shadow.getFirst().stableObservations()).isZero();
@@ -147,10 +170,40 @@ final class RedstoneRuntimeTest {
     }
 
     @Test
+    void removesStaleShadowCandidates() {
+        var shadow = new RedstoneShadowRuntime();
+        var candidate = new RedstoneClusterCandidateSnapshot(
+                "minecraft:overworld",
+                2,
+                1,
+                5,
+                2,
+                8,
+                1,
+                0,
+                true,
+                true,
+                2000L,
+                2_000_000L,
+                0L,
+                0L,
+                "ready");
+
+        shadow.observe(java.util.List.of(candidate));
+        shadow.observe(java.util.List.of(candidate));
+        assertThat(shadow.snapshot(10).getFirst().ready()).isTrue();
+
+        shadow.observe(java.util.List.of());
+        shadow.observe(java.util.List.of());
+        shadow.observe(java.util.List.of());
+        assertThat(shadow.snapshot(10)).isEmpty();
+    }
+
+    @Test
     void tracksAndDirtiesObservedRegions() {
         var runtime = new RedstoneRuntime(RedstoneJitMode.PROFILE);
 
-        runtime.record(RedstoneProbeType.NEIGHBOR_UPDATE, "minecraft:overworld", BlockPos.asLong(120, 64, 16), 1_000_000L);
+        recordSample(runtime, RedstoneProbeType.NEIGHBOR_UPDATE, "minecraft:overworld", BlockPos.asLong(120, 64, 16), 1_000_000L);
         runtime.regions().markBlockDirty("minecraft:overworld", BlockPos.asLong(120, 64, 16), "block-change");
 
         var regions = runtime.regions().snapshot(10);
@@ -176,11 +229,21 @@ final class RedstoneRuntimeTest {
     }
 
     private static void recordChunk(RedstoneRuntime runtime, int chunkX, int chunkZ, long durationNanos) {
-        runtime.record(
+        recordSample(runtime,
                 RedstoneProbeType.NEIGHBOR_UPDATE,
                 "minecraft:overworld",
                 BlockPos.asLong(chunkX << 4, 64, chunkZ << 4),
                 durationNanos * 1000L);
+    }
+
+    private static void recordSample(
+            RedstoneRuntime runtime,
+            RedstoneProbeType type,
+            String level,
+            long blockPos,
+            long durationNanos
+    ) {
+        runtime.recordForTest(type, level, blockPos, durationNanos);
     }
 
     private static RedstoneClusterCandidateSnapshot findCandidate(

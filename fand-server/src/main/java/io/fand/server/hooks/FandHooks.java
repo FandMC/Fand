@@ -29,6 +29,7 @@ import io.fand.server.network.ProxyForwardingMode;
 import io.fand.server.network.VelocityForwardingQueryAnswerPayload;
 import io.fand.server.redstone.RedstoneJitMode;
 import io.fand.server.redstone.RedstoneProbeType;
+import io.fand.server.redstone.RedstoneRuntime;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.WorldRegistry;
 import java.net.SocketAddress;
@@ -38,6 +39,7 @@ import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.network.PacketListener;
 import net.minecraft.network.protocol.Packet;
@@ -112,6 +114,7 @@ public final class FandHooks {
             new io.fand.server.block.FandCustomBlockRegistry(NOOP_EVENTS);
     private static final io.fand.server.console.gui.GuiThemeService FALLBACK_GUI_THEMES =
             new io.fand.server.console.gui.GuiThemeService(io.fand.server.console.gui.GuiTheme.SYSTEM);
+    private static final ConcurrentHashMap<ResourceKey<Level>, String> LEVEL_NAME_CACHE = new ConcurrentHashMap<>();
 
     // Pushed by FandServer on config load/reload. Static volatiles (rather than
     // a runtime lookup) because these gate per-collision-pair and per-explosion
@@ -156,6 +159,7 @@ public final class FandHooks {
     private static volatile int chargedProjectilesSoftLimit = 1024;
     private static volatile int bundleContentsSoftLimit = 256;
     private static volatile RedstoneJitMode redstoneJitMode = RedstoneJitMode.OFF;
+    private static volatile @Nullable RedstoneRuntime redstoneRuntime;
     private static volatile boolean asyncChunkPacketPreparation = false;
     private static volatile int asyncChunkPacketPreparationBatches = 4;
     private static volatile boolean preparedChunkPacketFrames = true;
@@ -242,10 +246,15 @@ public final class FandHooks {
         chargedProjectilesSoftLimit = performance.chargedProjectilesSoftLimit;
         bundleContentsSoftLimit = performance.bundleContentsSoftLimit;
         redstoneJitMode = RedstoneJitMode.fromConfig(performance.redstoneJitMode);
-        var runtime = activeRuntime();
+        var runtime = redstoneRuntime;
         if (runtime != null) {
-            runtime.redstoneRuntime().configure(redstoneJitMode);
+            runtime.configure(redstoneJitMode);
         }
+    }
+
+    public static void bindRedstoneRuntime(RedstoneRuntime runtime) {
+        redstoneRuntime = runtime;
+        runtime.configure(redstoneJitMode);
     }
 
     public static void applyPlayerConfig(io.fand.server.config.FandConfig.Players players) {
@@ -471,19 +480,26 @@ public final class FandHooks {
         return redstoneJitMode.profilingEnabled();
     }
 
+    public static long beginRedstoneProbe() {
+        if (!redstoneJitMode.profilingEnabled()) {
+            return 0L;
+        }
+        var runtime = redstoneRuntime;
+        return runtime == null ? 0L : runtime.beginProbe();
+    }
+
     public static void recordRedstoneProbe(
             RedstoneProbeType type,
             @Nullable Object level,
             net.minecraft.core.BlockPos pos,
             long startNanos
     ) {
-        if (!redstoneJitMode.profilingEnabled()) {
+        if (startNanos == 0L || !redstoneJitMode.profilingEnabled()) {
             return;
         }
-        long durationNanos = System.nanoTime() - startNanos;
-        var runtime = activeRuntime();
+        var runtime = redstoneRuntime;
         if (runtime != null) {
-            runtime.redstoneRuntime().record(type, levelName(level), pos.asLong(), durationNanos);
+            runtime.recordSample(type, levelName(level), pos.asLong(), startNanos);
         }
     }
 
@@ -491,9 +507,9 @@ public final class FandHooks {
         if (!redstoneJitMode.profilingEnabled()) {
             return;
         }
-        var runtime = activeRuntime();
+        var runtime = redstoneRuntime;
         if (runtime != null) {
-            runtime.redstoneRuntime().regions().markBlockDirty(levelName(level), pos.asLong(), reason);
+            runtime.regions().markBlockDirty(levelName(level), pos.asLong(), reason);
         }
     }
 
@@ -501,9 +517,9 @@ public final class FandHooks {
         if (!redstoneJitMode.profilingEnabled()) {
             return;
         }
-        var runtime = activeRuntime();
+        var runtime = redstoneRuntime;
         if (runtime != null) {
-            runtime.redstoneRuntime().regions().markChunkDirty(levelName(level), chunkX, chunkZ, reason);
+            runtime.regions().markChunkDirty(levelName(level), chunkX, chunkZ, reason);
         }
     }
 
@@ -1025,7 +1041,7 @@ public final class FandHooks {
 
     private static String levelName(@Nullable Object level) {
         if (level instanceof Level world) {
-            return world.dimension().identifier().toString();
+            return LEVEL_NAME_CACHE.computeIfAbsent(world.dimension(), key -> key.identifier().toString());
         }
         return "unknown";
     }

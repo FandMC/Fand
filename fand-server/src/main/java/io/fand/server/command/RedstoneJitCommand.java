@@ -32,6 +32,7 @@ public final class RedstoneJitCommand implements CommandExecutor, CommandComplet
         }
         var runtime = server.redstoneRuntime();
         var snapshot = runtime.snapshot(TOP_LIMIT);
+        runtime.refreshShadowCandidates(TOP_LIMIT);
         sendStatus(sender, snapshot);
         sendCandidates(sender, runtime.clusterCandidates(snapshot, TOP_LIMIT));
         sendShadowCandidates(sender, runtime.shadowCandidates(TOP_LIMIT));
@@ -52,8 +53,9 @@ public final class RedstoneJitCommand implements CommandExecutor, CommandComplet
     private static void sendStatus(CommandSender sender, RedstoneProbeSnapshot snapshot) {
         sender.sendMessage(Component.text(String.format(
                 Locale.ROOT,
-                "Redstone JIT: mode=%s, samples=%d, time=%.3fms, droppedPositions=%d",
+                "Redstone JIT: mode=%s, events=%d, sampled=%d, estimatedTime=%.3fms, droppedPositions=%d",
                 snapshot.mode().name().toLowerCase(Locale.ROOT),
+                snapshot.observedEvents(),
                 snapshot.totalCount(),
                 nanosToMillis(snapshot.totalNanos()),
                 snapshot.droppedPositionSamples())));
