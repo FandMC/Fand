@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 4 Jul 2026 12:51:07 +0800
+Subject: [PATCH] Flush status pong before disconnecting
+
+
+diff --git a/net/minecraft/server/network/ServerStatusPacketListenerImpl.java b/net/minecraft/server/network/ServerStatusPacketListenerImpl.java
+index 8b0394e49d804362ad4bfc2d29e891308a700e89..9df469de5e463ee0a48ebd844d5253e650669d29 100644
+--- a/net/minecraft/server/network/ServerStatusPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerStatusPacketListenerImpl.java
+@@ -2,6 +2,7 @@ package net.minecraft.server.network;
+ 
+ import net.minecraft.network.Connection;
+ import net.minecraft.network.DisconnectionDetails;
++import net.minecraft.network.PacketSendListener;
+ import net.minecraft.network.chat.Component;
+ import net.minecraft.network.protocol.ping.ClientboundPongResponsePacket;
+ import net.minecraft.network.protocol.ping.ServerboundPingRequestPacket;
+@@ -42,7 +43,6 @@ public class ServerStatusPacketListenerImpl implements ServerStatusPacketListene
+ 
+     @Override
+     public void handlePingRequest(final ServerboundPingRequestPacket packet) {
+-        this.connection.send(new ClientboundPongResponsePacket(packet.getTime()));
+-        this.connection.disconnect(DISCONNECT_REASON);
++        this.connection.send(new ClientboundPongResponsePacket(packet.getTime()), PacketSendListener.thenRun(() -> this.connection.disconnect(DISCONNECT_REASON)));
+     }
+ }
