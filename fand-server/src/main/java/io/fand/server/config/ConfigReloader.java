@@ -124,6 +124,7 @@ public final class ConfigReloader {
             field("compat.modProtocols.servux.stackableShulkerSize", (FandConfig.Servux config) -> config.stackableShulkerSize)
     );
     private static final List<ReloadField<FandConfig.Performance, ?>> HOT_PERFORMANCE_FIELDS = List.of(
+            field("performance.redstoneJitMode", (FandConfig.Performance config) -> config.redstoneJitMode),
             field("performance.explosionDensityCache", (FandConfig.Performance config) -> config.explosionDensityCache),
             field("performance.collisionTeamCache", (FandConfig.Performance config) -> config.collisionTeamCache),
             field("performance.explosionBlockCache", (FandConfig.Performance config) -> config.explosionBlockCache),

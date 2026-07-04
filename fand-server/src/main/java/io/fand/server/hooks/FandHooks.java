@@ -27,6 +27,8 @@ import io.fand.server.network.ForwardedPlayerInfo;
 import io.fand.server.network.ProxyForwarding;
 import io.fand.server.network.ProxyForwardingMode;
 import io.fand.server.network.VelocityForwardingQueryAnswerPayload;
+import io.fand.server.redstone.RedstoneJitMode;
+import io.fand.server.redstone.RedstoneProbeType;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.WorldRegistry;
 import java.net.SocketAddress;
@@ -48,6 +50,7 @@ import net.minecraft.server.network.ServerLoginPacketListenerImpl;
 import net.minecraft.server.network.ServerPlayerConnection;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.loot.LootParams;
@@ -152,6 +155,7 @@ public final class FandHooks {
     private static volatile boolean outboundPacketQueueCoalescing = true;
     private static volatile int chargedProjectilesSoftLimit = 1024;
     private static volatile int bundleContentsSoftLimit = 256;
+    private static volatile RedstoneJitMode redstoneJitMode = RedstoneJitMode.OFF;
     private static volatile boolean asyncChunkPacketPreparation = false;
     private static volatile int asyncChunkPacketPreparationBatches = 4;
     private static volatile boolean preparedChunkPacketFrames = true;
@@ -237,6 +241,11 @@ public final class FandHooks {
         outboundPacketQueueCoalescing = performance.outboundPacketQueueCoalescing;
         chargedProjectilesSoftLimit = performance.chargedProjectilesSoftLimit;
         bundleContentsSoftLimit = performance.bundleContentsSoftLimit;
+        redstoneJitMode = RedstoneJitMode.fromConfig(performance.redstoneJitMode);
+        var runtime = activeRuntime();
+        if (runtime != null) {
+            runtime.redstoneRuntime().configure(redstoneJitMode);
+        }
     }
 
     public static void applyPlayerConfig(io.fand.server.config.FandConfig.Players players) {
@@ -456,6 +465,46 @@ public final class FandHooks {
 
     public static boolean outboundPacketQueueCoalescingEnabled() {
         return outboundPacketQueueCoalescing;
+    }
+
+    public static boolean redstoneProfilerEnabled() {
+        return redstoneJitMode.profilingEnabled();
+    }
+
+    public static void recordRedstoneProbe(
+            RedstoneProbeType type,
+            @Nullable Object level,
+            net.minecraft.core.BlockPos pos,
+            long startNanos
+    ) {
+        if (!redstoneJitMode.profilingEnabled()) {
+            return;
+        }
+        long durationNanos = System.nanoTime() - startNanos;
+        var runtime = activeRuntime();
+        if (runtime != null) {
+            runtime.redstoneRuntime().record(type, levelName(level), pos.asLong(), durationNanos);
+        }
+    }
+
+    public static void markRedstoneBlockDirty(@Nullable Object level, net.minecraft.core.BlockPos pos, String reason) {
+        if (!redstoneJitMode.profilingEnabled()) {
+            return;
+        }
+        var runtime = activeRuntime();
+        if (runtime != null) {
+            runtime.redstoneRuntime().regions().markBlockDirty(levelName(level), pos.asLong(), reason);
+        }
+    }
+
+    public static void markRedstoneChunkDirty(@Nullable Object level, int chunkX, int chunkZ, String reason) {
+        if (!redstoneJitMode.profilingEnabled()) {
+            return;
+        }
+        var runtime = activeRuntime();
+        if (runtime != null) {
+            runtime.redstoneRuntime().regions().markChunkDirty(levelName(level), chunkX, chunkZ, reason);
+        }
     }
 
     public static int chargedProjectilesSoftLimit() {
@@ -972,6 +1021,13 @@ public final class FandHooks {
         }
         var phase = runtime.phase();
         return phase == LifecyclePhase.STOPPING || phase == LifecyclePhase.STOPPED ? null : runtime;
+    }
+
+    private static String levelName(@Nullable Object level) {
+        if (level instanceof Level world) {
+            return world.dimension().identifier().toString();
+        }
+        return "unknown";
     }
 
     private static ServerPerformance emptyPerformance() {

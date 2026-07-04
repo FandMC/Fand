@@ -178,6 +178,7 @@ public final class WorldEvents {
         if (world == null) {
             return;
         }
+        FandHooks.markRedstoneChunkDirty(level, pos.x(), pos.z(), "chunk-unload");
         FandHooks.customBlocks().handleChunkUnloaded(world, pos.x(), pos.z());
         if (!bus.hasListeners(ChunkUnloadEvent.class)) {
             return;

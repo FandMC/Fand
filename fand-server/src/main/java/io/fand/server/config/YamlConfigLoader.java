@@ -167,12 +167,19 @@ public final class YamlConfigLoader<T> {
 
     private static String formatScalar(Object value) {
         if (value instanceof String text) {
-            if (text.isEmpty() || text.matches(".*[:#\\s].*")) {
+            if (text.isEmpty() || text.matches(".*[:#\\s].*") || yamlBooleanLike(text)) {
                 return "'" + text.replace("'", "''") + "'";
             }
             return text;
         }
         return String.valueOf(value);
+    }
+
+    private static boolean yamlBooleanLike(String text) {
+        return switch (text.toLowerCase(java.util.Locale.ROOT)) {
+            case "true", "false", "yes", "no", "on", "off" -> true;
+            default -> false;
+        };
     }
 
     private static boolean isSection(Class<?> type) {

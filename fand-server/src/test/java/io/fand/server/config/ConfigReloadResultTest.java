@@ -138,6 +138,7 @@ final class ConfigReloadResultTest {
         var path = tempDir.resolve("fand.yml");
         Files.writeString(path, """
                 performance:
+                  redstoneJitMode: off
                   entityHardCollisionCandidateIndex: false
                   entitySectionChunkScan: false
                   entityCollisionAbortPropagation: false
@@ -164,6 +165,7 @@ final class ConfigReloadResultTest {
 
         Files.writeString(path, """
                 performance:
+                  redstoneJitMode: profile
                   entityHardCollisionCandidateIndex: true
                   entitySectionChunkScan: true
                   entityCollisionAbortPropagation: true
@@ -188,6 +190,7 @@ final class ConfigReloadResultTest {
         var result = server.reloadConfig();
 
         assertThat(result.hotApplied()).containsExactlyInAnyOrder(
+                "performance.redstoneJitMode",
                 "performance.entityHardCollisionCandidateIndex",
                 "performance.entitySectionChunkScan",
                 "performance.entityCollisionAbortPropagation",

@@ -1,6 +1,7 @@
 package io.fand.server.config;
 
 import io.fand.server.network.ProxyForwardingMode;
+import io.fand.server.redstone.RedstoneJitMode;
 import java.nio.file.Path;
 
 public final class FandConfig {
@@ -64,6 +65,7 @@ public final class FandConfig {
         validateTripwireBehavior(config.technical.tripwireBehavior);
         validateServux(config.compat.modProtocols.servux);
         validateAuthentication(config.authentication);
+        RedstoneJitMode.fromConfig(config.performance.redstoneJitMode);
     }
 
     private static void validateAuthentication(Authentication config) {
@@ -514,6 +516,13 @@ public final class FandConfig {
     }
 
     public static final class Performance {
+
+        @ConfigComment({
+                "Redstone JIT pipeline mode. Stage 1 only profiles redstone hotspots",
+                "and never changes vanilla execution. Supported values:",
+                "off, profile, shadow, interpreter, hot."
+        })
+        public volatile String redstoneJitMode = "off";
 
         @ConfigComment({
                 "Cache explosion line-of-sight exposure per (center, entity bounding box)",

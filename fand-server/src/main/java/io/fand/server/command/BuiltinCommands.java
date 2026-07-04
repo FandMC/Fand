@@ -16,6 +16,7 @@ public final class BuiltinCommands {
         commands.register(new MsptCommand(server));
         commands.register(new PluginsCommand(server));
         commands.register(new PluginCommand(server));
+        commands.register(new RedstoneJitCommand(server));
         registerPluginCommandPermissions(server);
     }
 
@@ -33,7 +34,8 @@ public final class BuiltinCommands {
                 "fand.command.plugin.dependents",
                 "fand.command.plugin.commands",
                 "fand.command.plugin.permissions",
-                "fand.command.plugin.errors"
+                "fand.command.plugin.errors",
+                "fand.command.redstonejit"
         )) {
             server.permissions().register(new PermissionDescriptor(node, PermissionDefault.OPERATOR));
         }

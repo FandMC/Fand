@@ -66,6 +66,7 @@ final class FandConfigTest {
         assertThat(config.compat.modProtocols.servux.litematica).isTrue();
         assertThat(config.compat.modProtocols.servux.litematicaPaste).isFalse();
         assertThat(config.compat.modProtocols.servux.tweaks).isTrue();
+        assertThat(config.performance.redstoneJitMode).isEqualTo("off");
         assertThat(config.performance.entityHardCollisionCandidateIndex).isTrue();
         assertThat(config.performance.entitySectionChunkScan).isTrue();
         assertThat(config.performance.entityCollisionAbortPropagation).isTrue();
@@ -173,6 +174,7 @@ final class FandConfigTest {
                 .contains("litematicaPaste: false")
                 .contains("tweaks: true")
                 .contains("performance:")
+                .contains("redstoneJitMode: 'off'")
                 .contains("entityHardCollisionCandidateIndex: true")
                 .contains("entitySectionChunkScan: true")
                 .contains("entityCollisionAbortPropagation: true")
@@ -318,6 +320,7 @@ final class FandConfigTest {
                       stackableShulkerSize: 16
 
                 performance:
+                  redstoneJitMode: profile
                   entityHardCollisionCandidateIndex: false
                   entitySectionChunkScan: false
                   entityCollisionAbortPropagation: false
@@ -440,6 +443,7 @@ final class FandConfigTest {
         assertThat(config.compat.modProtocols.servux.tweaksPermissionLevel).isEqualTo(1);
         assertThat(config.compat.modProtocols.servux.stackableShulkers).isTrue();
         assertThat(config.compat.modProtocols.servux.stackableShulkerSize).isEqualTo(16);
+        assertThat(config.performance.redstoneJitMode).isEqualTo("profile");
         assertThat(config.performance.entityHardCollisionCandidateIndex).isFalse();
         assertThat(config.performance.entitySectionChunkScan).isFalse();
         assertThat(config.performance.entityCollisionAbortPropagation).isFalse();
@@ -555,6 +559,19 @@ final class FandConfigTest {
         assertThatThrownBy(() -> FandConfig.load(path))
                 .isInstanceOf(ConfigException.class)
                 .hasMessageContaining("technical.tripwireBehavior");
+    }
+
+    @Test
+    void rejectsUnknownRedstoneJitMode() throws Exception {
+        var path = tempDir.resolve("fand.yml");
+        Files.writeString(path, """
+                performance:
+                  redstoneJitMode: turbo
+                """);
+
+        assertThatThrownBy(() -> FandConfig.load(path))
+                .isInstanceOf(ConfigException.class)
+                .hasMessageContaining("performance.redstoneJitMode");
     }
 }
 
