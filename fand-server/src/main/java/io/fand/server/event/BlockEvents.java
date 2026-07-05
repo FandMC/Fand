@@ -177,7 +177,6 @@ public final class BlockEvents {
         if (oldState.getBlock() == newState.getBlock()) {
             return true;
         }
-        FandHooks.markRedstoneBlockDirty(level, pos, "block-change");
         IgniteContext igniteContext = IGNITE_CONTEXT.get();
         BlockIgniteEvent.Cause igniteCause = igniteContext == null ? BlockIgniteEvent.Cause.UNKNOWN : igniteContext.cause();
         BlockPos igniteSource = igniteContext == null ? null : igniteContext.sourcePos();

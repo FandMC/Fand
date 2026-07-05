@@ -28,9 +28,6 @@ import io.fand.server.network.ForwardedPlayerInfo;
 import io.fand.server.network.ProxyForwarding;
 import io.fand.server.network.ProxyForwardingMode;
 import io.fand.server.network.VelocityForwardingQueryAnswerPayload;
-import io.fand.server.redstone.RedstoneJitMode;
-import io.fand.server.redstone.RedstoneProbeType;
-import io.fand.server.redstone.RedstoneRuntime;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.WorldRegistry;
 import java.net.SocketAddress;
@@ -40,7 +37,6 @@ import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
-import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.network.PacketListener;
 import net.minecraft.network.protocol.Packet;
@@ -53,7 +49,6 @@ import net.minecraft.server.network.ServerLoginPacketListenerImpl;
 import net.minecraft.server.network.ServerPlayerConnection;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.loot.LootParams;
@@ -115,8 +110,6 @@ public final class FandHooks {
             new io.fand.server.block.FandCustomBlockRegistry(NOOP_EVENTS);
     private static final io.fand.server.console.gui.GuiThemeService FALLBACK_GUI_THEMES =
             new io.fand.server.console.gui.GuiThemeService(io.fand.server.console.gui.GuiTheme.SYSTEM);
-    private static final ConcurrentHashMap<ResourceKey<Level>, String> LEVEL_NAME_CACHE = new ConcurrentHashMap<>();
-
     // Pushed by FandServer on config load/reload. Static volatiles (rather than
     // a runtime lookup) because these gate per-collision-pair and per-explosion
     // vanilla code where even an extra pointer chase is measurable. Defaults
@@ -159,8 +152,6 @@ public final class FandHooks {
     private static volatile boolean outboundPacketQueueCoalescing = true;
     private static volatile int chargedProjectilesSoftLimit = 1024;
     private static volatile int bundleContentsSoftLimit = 256;
-    private static volatile RedstoneJitMode redstoneJitMode = RedstoneJitMode.OFF;
-    private static volatile @Nullable RedstoneRuntime redstoneRuntime;
     private static volatile boolean asyncChunkPacketPreparation = false;
     private static volatile int asyncChunkPacketPreparationBatches = 4;
     private static volatile boolean preparedChunkPacketFrames = true;
@@ -246,16 +237,6 @@ public final class FandHooks {
         outboundPacketQueueCoalescing = performance.outboundPacketQueueCoalescing;
         chargedProjectilesSoftLimit = performance.chargedProjectilesSoftLimit;
         bundleContentsSoftLimit = performance.bundleContentsSoftLimit;
-        redstoneJitMode = RedstoneJitMode.fromConfig(performance.redstoneJitMode);
-        var runtime = redstoneRuntime;
-        if (runtime != null) {
-            runtime.configure(redstoneJitMode);
-        }
-    }
-
-    public static void bindRedstoneRuntime(RedstoneRuntime runtime) {
-        redstoneRuntime = runtime;
-        runtime.configure(redstoneJitMode);
     }
 
     public static void applyPlayerConfig(io.fand.server.config.FandConfig.Players players) {
@@ -475,66 +456,6 @@ public final class FandHooks {
 
     public static boolean outboundPacketQueueCoalescingEnabled() {
         return outboundPacketQueueCoalescing;
-    }
-
-    public static boolean redstoneProfilerEnabled() {
-        return redstoneJitMode.probeEnabled();
-    }
-
-    public static long beginRedstoneProbe() {
-        if (!redstoneJitMode.probeEnabled()) {
-            return 0L;
-        }
-        var runtime = redstoneRuntime;
-        return runtime == null ? 0L : runtime.beginProbe();
-    }
-
-    public static void recordRedstoneProbe(
-            RedstoneProbeType type,
-            @Nullable Object level,
-            net.minecraft.core.BlockPos pos,
-            long startNanos
-    ) {
-        if (startNanos == 0L || !redstoneJitMode.probeEnabled()) {
-            return;
-        }
-        var runtime = redstoneRuntime;
-        if (runtime != null) {
-            runtime.recordSample(type, levelName(level), pos.asLong(), startNanos);
-        }
-    }
-
-    public static boolean tryExecuteRedstoneWireJit(
-            net.minecraft.world.level.block.RedStoneWireBlock wireBlock,
-            net.minecraft.world.level.Level level,
-            net.minecraft.core.BlockPos pos,
-            BlockState state
-    ) {
-        if (!redstoneJitMode.executorEnabled()) {
-            return false;
-        }
-        var runtime = redstoneRuntime;
-        return runtime != null && runtime.tryUpdateWirePower(wireBlock, level, pos, state);
-    }
-
-    public static void markRedstoneBlockDirty(@Nullable Object level, net.minecraft.core.BlockPos pos, String reason) {
-        if (!redstoneJitMode.profilingEnabled()) {
-            return;
-        }
-        var runtime = redstoneRuntime;
-        if (runtime != null && level instanceof Level world) {
-            runtime.markBlockDirty(levelName(world), world, pos.asLong(), reason);
-        }
-    }
-
-    public static void markRedstoneChunkDirty(@Nullable Object level, int chunkX, int chunkZ, String reason) {
-        if (!redstoneJitMode.profilingEnabled()) {
-            return;
-        }
-        var runtime = redstoneRuntime;
-        if (runtime != null && level instanceof Level world) {
-            runtime.markChunkDirty(levelName(world), world, chunkX, chunkZ, reason);
-        }
     }
 
     public static int chargedProjectilesSoftLimit() {
@@ -1059,13 +980,6 @@ public final class FandHooks {
         }
         var phase = runtime.phase();
         return phase == LifecyclePhase.STOPPING || phase == LifecyclePhase.STOPPED ? null : runtime;
-    }
-
-    private static String levelName(@Nullable Object level) {
-        if (level instanceof Level world) {
-            return LEVEL_NAME_CACHE.computeIfAbsent(world.dimension(), key -> key.identifier().toString());
-        }
-        return "unknown";
     }
 
     private static ServerPerformance emptyPerformance() {

@@ -2,11 +2,13 @@ package net.minecraft.server.level;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import net.minecraft.SharedConstants;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.util.StaticCache2D;
@@ -108,6 +110,26 @@ final class ChunkGenerationTaskTest {
         assertThat(firstClaim.future()).isDone();
         assertThat(secondClaim.owner()).isTrue();
         assertThat(secondClaim.future()).isNotSameAs(firstClaim.future());
+    }
+
+    @Test
+    void holderIgnoresCompletedStaleGenerationNodeWhenClaimingNewPendingFuture() throws Exception {
+        ChunkPos center = new ChunkPos(0, 0);
+        var chunkMap = new GraphTestChunkMap(new ChunkPos(99, 99));
+        TestChunkHolder holder = chunkMap.holderOrCreate(center);
+
+        GenerationChunkHolder.StatusGenerationClaim firstClaim = holder.claimGenerationStatus(ChunkStatus.FULL);
+        holder.failGenerationStatus(ChunkStatus.FULL, GenerationChunkHolder.UNLOADED_CHUNK);
+        CompletableFuture<ChunkResult<ChunkAccess>> staleNode = CompletableFuture.completedFuture(ChunkResult.of(chunk(center, ChunkStatus.FULL)));
+        setGenerationNodeForTesting(holder, ChunkStatus.FULL, staleNode);
+        GenerationChunkHolder.StatusGenerationClaim secondClaim = holder.claimGenerationStatus(ChunkStatus.FULL);
+
+        assertThat(firstClaim.owner()).isTrue();
+        assertThat(firstClaim.future()).isDone();
+        assertThat(secondClaim.owner()).isTrue();
+        assertThat(secondClaim.future()).isNotDone();
+        assertThat(secondClaim.future()).isNotSameAs(firstClaim.future());
+        assertThat(secondClaim.future()).isNotSameAs(staleNode);
     }
 
     @Test
@@ -273,5 +295,18 @@ final class ChunkGenerationTaskTest {
         ProtoChunk chunk = new ProtoChunk(pos, UpgradeData.EMPTY, LevelHeightAccessor.create(0, 0), null, null);
         chunk.setPersistedStatus(status);
         return chunk;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void setGenerationNodeForTesting(
+        final GenerationChunkHolder holder,
+        final ChunkStatus status,
+        final CompletableFuture<ChunkResult<ChunkAccess>> future
+    ) throws Exception {
+        Field field = GenerationChunkHolder.class.getDeclaredField("generationNodes");
+        field.setAccessible(true);
+        AtomicReferenceArray<CompletableFuture<ChunkResult<ChunkAccess>>> generationNodes =
+            (AtomicReferenceArray<CompletableFuture<ChunkResult<ChunkAccess>>>)field.get(holder);
+        generationNodes.set(status.getIndex(), future);
     }
 }

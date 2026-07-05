@@ -85,8 +85,6 @@ import io.fand.server.permission.PermissionManager;
 import io.fand.server.performance.ServerPerformanceTracker;
 import io.fand.server.player.FandPlayerAccessService;
 import io.fand.server.player.FandSimulatedPlayerService;
-import io.fand.server.redstone.RedstoneJitMode;
-import io.fand.server.redstone.RedstoneRuntime;
 import io.fand.server.region.FandRegionService;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.recipe.FandRecipeRegistry;
@@ -178,7 +176,6 @@ public final class FandServer implements Server, AutoCloseable {
     private final FandLoginAuthenticationService loginAuthenticators;
     private final @Nullable Environment authEnvironment;
     private final ServerPerformanceTracker performance;
-    private final RedstoneRuntime redstone;
     private final ConfigReloader configReloader;
     private final ProxyForwardingSettings proxyForwarding;
     private final io.fand.server.console.gui.GuiThemeService guiThemes;
@@ -253,7 +250,6 @@ public final class FandServer implements Server, AutoCloseable {
                 EventPriority.OBSERVER,
                 event -> this.simulatedPlayers.forgetIfSimulated(event.player().uniqueId()));
         this.performance = new ServerPerformanceTracker(() -> chunks.metrics().pendingJobs());
-        this.redstone = new RedstoneRuntime(RedstoneJitMode.fromConfig(initialConfig.performance.redstoneJitMode));
         var pluginDirectory = Path.of(initialConfig.plugins.directory);
         this.plugins = new PluginRuntime(
                 pluginDirectory,
@@ -289,7 +285,6 @@ public final class FandServer implements Server, AutoCloseable {
         this.plugins.nmsService(nms);
         this.plugins.loginAuthenticationService(loginAuthenticators);
         this.configReloader = new ConfigReloader(configPath, config, plugins, scheduler, chunks, chunkTasks, guiThemes);
-        io.fand.server.hooks.FandHooks.bindRedstoneRuntime(redstone);
         io.fand.server.hooks.FandHooks.applyPlayerConfig(initialConfig.players);
         io.fand.server.hooks.FandHooks.applyAuthenticationConfig(initialConfig.authentication);
         io.fand.server.hooks.FandHooks.applyChunkConfig(initialConfig.chunks);
@@ -336,9 +331,7 @@ public final class FandServer implements Server, AutoCloseable {
 
     public ConfigReloadResult reloadConfig() {
         synchronized (configSaveLock) {
-            var result = configReloader.reload();
-            redstone.configure(RedstoneJitMode.fromConfig(config.get().performance.redstoneJitMode));
-            return result;
+            return configReloader.reload();
         }
     }
 
@@ -695,10 +688,6 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public io.fand.api.performance.ServerPerformance performance() {
         return performance.snapshot();
-    }
-
-    public RedstoneRuntime redstoneRuntime() {
-        return redstone;
     }
 
     @Override
