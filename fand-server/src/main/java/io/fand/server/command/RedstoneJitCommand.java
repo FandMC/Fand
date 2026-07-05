@@ -1,9 +1,11 @@
 package io.fand.server.command;
 
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandExecutor;
+import io.fand.api.command.Command;
+import io.fand.api.command.CommandContext;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
+import io.fand.api.command.Default;
+import io.fand.api.command.Permission;
+import io.fand.api.command.Subcommand;
 import io.fand.server.redstone.RedstoneClusterCandidateSnapshot;
 import io.fand.server.redstone.RedstoneProbeSnapshot;
 import io.fand.server.redstone.RedstoneRegionSnapshot;
@@ -13,8 +15,9 @@ import java.util.Locale;
 import net.kyori.adventure.text.Component;
 import net.minecraft.core.BlockPos;
 
-@CommandSpec(label = "redstonejit", namespace = "fand", arguments = {"subcommand"}, permission = "fand.command.redstonejit")
-public final class RedstoneJitCommand implements CommandExecutor, CommandCompleter {
+@Command(value = "redstonejit", namespace = "fand")
+@Permission("fand.command.redstonejit")
+public final class RedstoneJitCommand {
 
     private static final int TOP_LIMIT = 10;
     private final io.fand.server.FandServer server;
@@ -23,13 +26,17 @@ public final class RedstoneJitCommand implements CommandExecutor, CommandComplet
         this.server = server;
     }
 
-    @Override
-    public void execute(CommandSender sender, String label, List<String> args) {
-        if (!args.isEmpty() && "clear".equalsIgnoreCase(args.getFirst())) {
-            server.redstoneRuntime().clear();
-            sender.sendMessage(Component.text("Redstone JIT profiler cleared."));
-            return;
-        }
+    @Default
+    public void execute(CommandContext context) {
+        sendSnapshot(context.sender());
+    }
+
+    @Subcommand("status")
+    public void status(CommandContext context) {
+        sendSnapshot(context.sender());
+    }
+
+    private void sendSnapshot(CommandSender sender) {
         var runtime = server.redstoneRuntime();
         var snapshot = runtime.snapshot(TOP_LIMIT);
         runtime.refreshShadowCandidates(TOP_LIMIT);
@@ -40,15 +47,10 @@ public final class RedstoneJitCommand implements CommandExecutor, CommandComplet
         sendRegions(sender, runtime.regions().snapshot(TOP_LIMIT));
     }
 
-    @Override
-    public List<String> complete(CommandSender sender, String label, List<String> args) {
-        if (args.size() == 1) {
-            var prefix = args.getFirst().toLowerCase(Locale.ROOT);
-            return List.of("status", "clear").stream()
-                    .filter(option -> option.startsWith(prefix))
-                    .toList();
-        }
-        return List.of();
+    @Subcommand("clear")
+    public void clear(CommandContext context) {
+        server.redstoneRuntime().clear();
+        context.sender().sendMessage(Component.text("Redstone JIT profiler cleared."));
     }
 
     private static void sendStatus(CommandSender sender, RedstoneProbeSnapshot snapshot) {

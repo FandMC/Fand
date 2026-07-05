@@ -19,7 +19,7 @@ public final class CommandBridge {
         }
 
         var runtime = io.fand.server.Main.runtime();
-        var registry = runtime.commands();
+        var registry = (CommandManager) runtime.commands();
         var resolved = registry.resolve(sender, tokens);
         if (resolved.isEmpty()) {
             if (registry.claims(tokens)) {
@@ -34,7 +34,7 @@ public final class CommandBridge {
         try {
             CommandEvents.runInCommandContext(() -> {
                 try {
-                    command.command().executor().execute(sender, command.usedLabel(), args);
+                    command.command().execute(sender, command.usedLabel(), args);
                 } catch (Exception failure) {
                     throw new CommandExecutionFailure(failure);
                 }

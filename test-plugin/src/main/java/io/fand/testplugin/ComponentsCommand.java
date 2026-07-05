@@ -3,17 +3,14 @@ package io.fand.testplugin;
 import static io.fand.testplugin.DemoSupport.*;
 
 import io.fand.api.block.Block;
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import java.util.List;
 import java.util.Locale;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(label = "fandcomponents", arguments = {"player", "mode"}, aliases = {"fcomponents"}, permission = "fand.testplugin.components")
-final class ComponentsCommand implements CommandExecutor, CommandCompleter {
+@TestCommand(label = "fandcomponents", arguments = {"player", "mode"}, aliases = {"fcomponents"}, permission = "fand.testplugin.components")
+final class ComponentsCommand implements TestCommandHandler, TestCommandTabHandler {
 
     @Override
     public void execute(CommandSender sender, String label, List<String> args) {

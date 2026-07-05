@@ -1126,22 +1126,16 @@ final class PluginRuntimeTest {
         return """
                 package testplugins.hot;
 
-                import io.fand.api.command.CommandDescriptor;
                 import io.fand.api.permission.PermissionDefault;
                 import io.fand.api.permission.PermissionDescriptor;
                 import io.fand.api.plugin.Plugin;
                 import io.fand.api.plugin.PluginContext;
-                import java.util.List;
 
                 public final class HotPlugin implements Plugin {
                     @Override
                     public void onEnable(PluginContext context) {
                         context.permissions().register(new PermissionDescriptor("%s", PermissionDefault.FALSE));
-                        context.commands().register(
-                                new CommandDescriptor("ignored", "runtime", List.of(), List.of(), null),
-                                (sender, label, args) -> {},
-                                (sender, label, args) -> List.of("ok")
-                        );
+                        context.commands().register("runtime", command -> command.executes(commandContext -> {}));
                     }
                 }
                 """.formatted(permission);

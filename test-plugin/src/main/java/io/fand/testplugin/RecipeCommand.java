@@ -3,10 +3,7 @@ package io.fand.testplugin;
 import static io.fand.testplugin.DemoSupport.*;
 
 import io.fand.api.Fand;
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import io.fand.api.plugin.PluginContext;
 import java.util.List;
 import net.kyori.adventure.key.InvalidKeyException;
@@ -14,8 +11,8 @@ import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(label = "fandrecipe", arguments = {"key"}, aliases = {"frecipe"}, permission = "fand.testplugin.recipe")
-final class RecipeCommand implements CommandExecutor, CommandCompleter {
+@TestCommand(label = "fandrecipe", arguments = {"key"}, aliases = {"frecipe"}, permission = "fand.testplugin.recipe")
+final class RecipeCommand implements TestCommandHandler, TestCommandTabHandler {
 
     private final PluginContext context;
 

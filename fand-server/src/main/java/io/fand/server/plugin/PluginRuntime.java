@@ -5,7 +5,7 @@ import com.google.gson.JsonParseException;
 import io.fand.api.advancement.AdvancementRegistry;
 import io.fand.api.auth.LoginAuthenticationService;
 import io.fand.api.bossbar.BossBarService;
-import io.fand.api.command.CommandDescriptor;
+import io.fand.api.command.CommandInfo;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.customblock.CustomBlockRegistry;
 import io.fand.api.customitem.CustomItemRegistry;
@@ -1205,7 +1205,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private PluginStatus toStatus(StatusEntry entry, LoadedPlugin loadedPlugin, List<String> dependents) {
         var descriptor = loadedPlugin == null ? entry.descriptor : loadedPlugin.descriptor;
         var dependencies = descriptor == null ? List.<String>of() : descriptor.depends();
-        var commands = loadedPlugin == null ? List.<CommandDescriptor>of() : loadedPlugin.resources.commandDescriptors();
+        var commands = loadedPlugin == null ? List.<CommandInfo>of() : loadedPlugin.resources.commandDescriptors();
         var runtimePermissions = loadedPlugin == null ? List.<PermissionDescriptor>of() : loadedPlugin.resources.permissionDescriptors();
         var declaredPermissions = descriptor == null ? List.<PermissionDescriptor>of() : descriptor.permissions();
         var permissions = new ArrayList<PermissionDescriptor>(declaredPermissions.size() + runtimePermissions.size());
@@ -1864,7 +1864,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             long loadedAtMillis,
             long enabledAtMillis,
             long disabledAtMillis,
-            List<CommandDescriptor> commands,
+            List<CommandInfo> commands,
             List<PermissionDescriptor> permissions
     ) {
         public PluginStatus {

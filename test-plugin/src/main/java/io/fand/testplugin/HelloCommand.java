@@ -4,16 +4,14 @@ import static io.fand.testplugin.DemoSupport.*;
 
 import io.fand.api.Fand;
 import io.fand.api.Server;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import io.fand.api.plugin.PluginContext;
 import java.util.List;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(label = "fandtest", arguments = {"greeting"}, aliases = {"ftest"}, permission = "fand.testplugin.use")
-final class HelloCommand implements CommandExecutor {
+@TestCommand(label = "fandtest", arguments = {"greeting"}, aliases = {"ftest"}, permission = "fand.testplugin.use")
+final class HelloCommand implements TestCommandHandler {
 
     private final PluginContext context;
 

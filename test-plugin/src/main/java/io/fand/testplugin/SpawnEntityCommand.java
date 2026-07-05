@@ -2,10 +2,7 @@ package io.fand.testplugin;
 
 import static io.fand.testplugin.DemoSupport.*;
 
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import io.fand.api.entity.EntitySpawnOptions;
 import io.fand.api.entity.EntityType;
 import io.fand.api.entity.Player;
@@ -16,12 +13,12 @@ import java.util.List;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(
+@TestCommand(
         label = "fandspawnentity",
         arguments = {"entity", "count", "x", "y", "z", "world"},
         aliases = {"fspawn"},
         permission = "fand.testplugin.spawnentity")
-final class SpawnEntityCommand implements CommandExecutor, CommandCompleter {
+final class SpawnEntityCommand implements TestCommandHandler, TestCommandTabHandler {
 
     private final PluginContext context;
 

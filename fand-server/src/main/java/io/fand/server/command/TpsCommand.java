@@ -1,15 +1,16 @@
 package io.fand.server.command;
 
-import io.fand.api.command.CommandExecutor;
-import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
+import io.fand.api.command.Command;
+import io.fand.api.command.CommandContext;
+import io.fand.api.command.Default;
+import io.fand.api.command.Permission;
 import io.fand.api.performance.TickAverages;
-import java.util.List;
 import java.util.Locale;
 import net.kyori.adventure.text.Component;
 
-@CommandSpec(label = "tps", namespace = "fand", arguments = {}, permission = "fand.command.tps")
-public final class TpsCommand implements CommandExecutor {
+@Command(value = "tps", namespace = "fand")
+@Permission("fand.command.tps")
+public final class TpsCommand {
 
     private final io.fand.server.FandServer server;
 
@@ -17,10 +18,10 @@ public final class TpsCommand implements CommandExecutor {
         this.server = server;
     }
 
-    @Override
-    public void execute(CommandSender sender, String label, List<String> args) {
+    @Default
+    public void execute(CommandContext context) {
         var tps = server.performance().ticksPerSecond();
-        sender.sendMessage(Component.text("TPS: " + format(tps)));
+        context.sender().sendMessage(Component.text("TPS: " + format(tps)));
     }
 
     static String format(TickAverages averages) {

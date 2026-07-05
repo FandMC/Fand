@@ -3,16 +3,14 @@ package io.fand.testplugin;
 import static io.fand.testplugin.DemoSupport.*;
 
 import io.fand.api.Fand;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import java.util.List;
 import java.util.Locale;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(label = "fandperf", arguments = {}, aliases = {"fperf"}, permission = "fand.testplugin.performance")
-final class PerformanceCommand implements CommandExecutor {
+@TestCommand(label = "fandperf", arguments = {}, aliases = {"fperf"}, permission = "fand.testplugin.performance")
+final class PerformanceCommand implements TestCommandHandler {
 
     @Override
     public void execute(CommandSender sender, String label, List<String> args) {

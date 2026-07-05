@@ -2,10 +2,7 @@ package io.fand.testplugin;
 
 import static io.fand.testplugin.DemoSupport.*;
 
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import io.fand.api.entity.GameMode;
 import io.fand.api.entity.Player;
 import java.util.List;
@@ -14,8 +11,8 @@ import java.util.Set;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(label = "fandmode", arguments = {"mode", "player"}, aliases = {"fgm"}, permission = "fand.testplugin.mode")
-final class GameModeCommand implements CommandExecutor, CommandCompleter {
+@TestCommand(label = "fandmode", arguments = {"mode", "player"}, aliases = {"fgm"}, permission = "fand.testplugin.mode")
+final class GameModeCommand implements TestCommandHandler, TestCommandTabHandler {
 
     @Override
     public void execute(CommandSender sender, String label, List<String> args) {

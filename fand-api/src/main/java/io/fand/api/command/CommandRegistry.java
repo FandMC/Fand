@@ -2,6 +2,7 @@ package io.fand.api.command;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 /**
  * Registry for server commands. Plugin commands should be registered during
@@ -14,19 +15,19 @@ public interface CommandRegistry {
         throw new UnsupportedOperationException("This command registry does not support annotated command registration");
     }
 
-    CommandRegistration register(CommandDescriptor descriptor, CommandExecutor executor, CommandCompleter completer);
-
-    default CommandRegistration register(CommandDescriptor descriptor, CommandExecutor executor) {
-        return register(descriptor, executor, (sender, label, args) -> List.of());
+    default CommandRegistration register(String label, Consumer<CommandBuilder> builder) {
+        var command = new CommandBuilder(label);
+        builder.accept(command);
+        return register(command.build());
     }
 
-    Optional<RegisteredCommand> lookup(String name);
+    CommandRegistration register(CommandDefinition definition);
+
+    Optional<CommandInfo> lookup(String name);
 
     boolean claims(List<String> tokens);
 
-    Optional<ResolvedCommand> resolve(CommandSender sender, List<String> tokens);
-
     List<String> suggestions(CommandSender sender, List<String> tokens);
 
-    List<RegisteredCommand> visibleCommands(CommandSender sender);
+    List<CommandInfo> visibleCommands(CommandSender sender);
 }

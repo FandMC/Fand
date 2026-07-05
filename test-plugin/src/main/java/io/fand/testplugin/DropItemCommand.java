@@ -2,10 +2,7 @@ package io.fand.testplugin;
 
 import static io.fand.testplugin.DemoSupport.*;
 
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import io.fand.api.entity.EntitySpawnOptions;
 import io.fand.api.entity.Player;
 import io.fand.api.item.ItemStack;
@@ -17,12 +14,12 @@ import java.util.List;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(
+@TestCommand(
         label = "fanddropitem",
         arguments = {"item", "amount", "x", "y", "z", "world"},
         aliases = {"fdrop"},
         permission = "fand.testplugin.dropitem")
-final class DropItemCommand implements CommandExecutor, CommandCompleter {
+final class DropItemCommand implements TestCommandHandler, TestCommandTabHandler {
 
     private final PluginContext context;
 

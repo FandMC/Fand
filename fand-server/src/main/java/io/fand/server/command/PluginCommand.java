@@ -1,10 +1,10 @@
 package io.fand.server.command;
 
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandDescriptor;
-import io.fand.api.command.CommandExecutor;
+import io.fand.api.command.Arguments;
+import io.fand.api.command.CommandContext;
+import io.fand.api.command.CommandInfo;
+import io.fand.api.command.CommandRegistry;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import io.fand.api.permission.PermissionDescriptor;
 import io.fand.server.plugin.PluginRuntime;
 import java.time.Instant;
@@ -15,25 +15,7 @@ import java.util.Locale;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(label = "plugin", namespace = "fand", arguments = {"subcommand"})
-public final class PluginCommand implements CommandExecutor, CommandCompleter {
-
-    private static final List<String> SUBCOMMANDS = List.of(
-            "list",
-            "info",
-            "status",
-            "load",
-            "unload",
-            "reload",
-            "enable",
-            "disable",
-            "depends",
-            "dependents",
-            "commands",
-            "permissions",
-            "errors",
-            "help"
-    );
+public final class PluginCommand {
 
     private final io.fand.server.FandServer server;
 
@@ -41,72 +23,96 @@ public final class PluginCommand implements CommandExecutor, CommandCompleter {
         this.server = server;
     }
 
-    @Override
-    public void execute(CommandSender sender, String label, List<String> args) {
-        if (args.isEmpty() || "help".equalsIgnoreCase(args.getFirst())) {
-            sendHelp(sender);
-            return;
-        }
-
-        var runtime = server.pluginRuntime();
-        var subcommand = args.getFirst().toLowerCase(Locale.ROOT);
-        switch (subcommand) {
-            case "list" -> {
-                if (requires(sender, "fand.command.plugin.list", "fand.command.plugins")) {
-                    sendPluginList(sender, runtime, args.contains("--all"));
-                }
-            }
-            case "info" -> withPlugin(sender, args, "fand.command.plugin.info", status -> sendInfo(sender, status));
-            case "status" -> withPlugin(sender, args, "fand.command.plugin.status", status -> sendStatus(sender, status));
-            case "load" -> operate(sender, args, "fand.command.plugin.load", runtime::loadPlugin);
-            case "unload" -> operate(sender, args, "fand.command.plugin.unload", id -> runtime.unloadPlugin(id, args.contains("--cascade")));
-            case "reload" -> operate(sender, args, "fand.command.plugin.reload", id -> runtime.reloadPlugin(id, args.contains("--cascade")));
-            case "enable" -> operate(sender, args, "fand.command.plugin.enable", runtime::enablePlugin);
-            case "disable" -> operate(sender, args, "fand.command.plugin.disable", id -> runtime.disablePlugin(id, args.contains("--cascade")));
-            case "depends" -> withPlugin(sender, args, "fand.command.plugin.depends", status -> sendStringList(sender, "Dependencies", status.dependencies()));
-            case "dependents" -> withPlugin(sender, args, "fand.command.plugin.dependents", status -> sendStringList(sender, "Dependents", status.dependents()));
-            case "commands" -> withPlugin(sender, args, "fand.command.plugin.commands", status -> sendCommands(sender, status.commands()));
-            case "permissions" -> withPlugin(sender, args, "fand.command.plugin.permissions", status -> sendPermissions(sender, status.permissions()));
-            case "errors" -> {
-                if (requires(sender, "fand.command.plugin.errors")) {
-                    sendErrors(sender, args);
-                }
-            }
-            default -> {
-                sender.sendMessage(Component.text("Unknown plugin subcommand: " + subcommand, NamedTextColor.RED));
-                sendHelp(sender);
-            }
-        }
+    public void register(CommandRegistry commands) {
+        commands.register("plugin", command -> command
+                .namespace("fand")
+                .executes(context -> sendHelp(context.sender()))
+                .literal("help", help -> help.executes(context -> sendHelp(context.sender())))
+                .literal("list", list -> list
+                        .permission("fand.command.plugin.list")
+                        .executes(context -> sendPluginList(context.sender(), server.pluginRuntime(), false))
+                        .argument("flag", Arguments.word().optional().suggests("--all"), flag -> flag
+                                .suggests(context -> List.of("--all"))
+                                .executes(context -> {
+                                    if (invalidFlag(context, "flag", "--all")) {
+                                        return;
+                                    }
+                                    sendPluginList(context.sender(), server.pluginRuntime(), true);
+                                })))
+                .literal("info", info -> pluginArgument(info, "fand.command.plugin.info",
+                        plugin -> sendInfo(plugin.sender(), plugin.value())))
+                .literal("status", status -> pluginArgument(status, "fand.command.plugin.status",
+                        plugin -> sendStatus(plugin.sender(), plugin.value())))
+                .literal("load", load -> load
+                        .permission("fand.command.plugin.load")
+                        .argument("plugin", Arguments.word(), plugin -> plugin
+                                .suggests(context -> server.pluginRuntime().loadSuggestions())
+                                .executes(context -> operate(context, server.pluginRuntime()::loadPlugin))))
+                .literal("unload", unload -> cascadeOperation(unload, false, "fand.command.plugin.unload",
+                        (id, cascade) -> server.pluginRuntime().unloadPlugin(id, cascade)))
+                .literal("reload", reload -> cascadeOperation(reload, true, "fand.command.plugin.reload",
+                        (id, cascade) -> server.pluginRuntime().reloadPlugin(id, cascade)))
+                .literal("enable", enable -> enable
+                        .permission("fand.command.plugin.enable")
+                        .argument("plugin", Arguments.word(), plugin -> plugin
+                                .suggests(context -> server.pluginRuntime().pluginIdSuggestions())
+                                .executes(context -> operate(context, server.pluginRuntime()::enablePlugin))))
+                .literal("disable", disable -> cascadeOperation(disable, false, "fand.command.plugin.disable",
+                        (id, cascade) -> server.pluginRuntime().disablePlugin(id, cascade)))
+                .literal("depends", depends -> pluginArgument(depends, "fand.command.plugin.depends",
+                        status -> sendStringList(status.sender(), "Dependencies", status.value().dependencies())))
+                .literal("dependents", dependents -> pluginArgument(dependents, "fand.command.plugin.dependents",
+                        status -> sendStringList(status.sender(), "Dependents", status.value().dependents())))
+                .literal("commands", commandList -> pluginArgument(commandList, "fand.command.plugin.commands",
+                        status -> sendCommands(status.sender(), status.value().commands())))
+                .literal("permissions", permissions -> pluginArgument(permissions, "fand.command.plugin.permissions",
+                        status -> sendPermissions(status.sender(), status.value().permissions())))
+                .literal("errors", errors -> errors
+                        .permission("fand.command.plugin.errors")
+                        .executes(context -> sendErrors(context.sender(), null))
+                        .argument("plugin", Arguments.word().optional(), plugin -> plugin
+                                .suggests(context -> server.pluginRuntime().pluginIdSuggestions())
+                                .executes(context -> sendErrors(context.sender(), context.string("plugin"))))));
     }
 
-    @Override
-    public List<String> complete(CommandSender sender, String label, List<String> args) {
-        var runtime = server.pluginRuntime();
-        if (args.isEmpty()) {
-            return SUBCOMMANDS;
+    private void pluginArgument(
+            io.fand.api.command.CommandBuilder builder,
+            String permission,
+            java.util.function.Consumer<PluginStatusContext> consumer
+    ) {
+        builder.permission(permission)
+                .argument("plugin", Arguments.word(), plugin -> plugin
+                        .suggests(context -> server.pluginRuntime().pluginIdSuggestions())
+                        .executes(context -> withPlugin(context, consumer)));
+    }
+
+    private void cascadeOperation(
+            io.fand.api.command.CommandBuilder builder,
+            boolean suggestAll,
+            String permission,
+            CascadeOperation operation
+    ) {
+        builder.permission(permission)
+                .argument("plugin", Arguments.word(), plugin -> plugin
+                        .suggests(context -> suggestAll ? withAll(server.pluginRuntime().pluginIdSuggestions()) : server.pluginRuntime().pluginIdSuggestions())
+                        .executes(context -> operate(context, id -> operation.apply(id, false)))
+                        .argument("flag", Arguments.word().optional().suggests("--cascade"), flag -> flag
+                                .suggests(context -> List.of("--cascade"))
+                                .executes(context -> {
+                                    if (invalidFlag(context, "flag", "--cascade")) {
+                                        return;
+                                    }
+                                    operate(context, id -> operation.apply(id, true));
+                                })));
+    }
+
+    private boolean invalidFlag(CommandContext context, String name, String expected) {
+        var actual = context.string(name);
+        if (expected.equals(actual)) {
+            return false;
         }
-        if (args.size() == 1) {
-            return filter(SUBCOMMANDS, args.getFirst());
-        }
-        var subcommand = args.getFirst().toLowerCase(Locale.ROOT);
-        if (args.size() == 2) {
-            var prefix = args.get(1);
-            return switch (subcommand) {
-                case "load" -> filter(runtime.loadSuggestions(), prefix);
-                case "reload" -> filter(withAll(runtime.pluginIdSuggestions()), prefix);
-                case "info", "status", "unload", "enable", "disable", "depends", "dependents", "commands", "permissions", "errors" ->
-                        filter(runtime.pluginIdSuggestions(), prefix);
-                default -> List.of();
-            };
-        }
-        var last = args.getLast();
-        if (("unload".equals(subcommand) || "reload".equals(subcommand) || "disable".equals(subcommand)) && "--cascade".startsWith(last)) {
-            return List.of("--cascade");
-        }
-        if ("list".equals(subcommand) && "--all".startsWith(last)) {
-            return List.of("--all");
-        }
-        return List.of();
+        context.sender().sendMessage(Component.text("Unknown flag: " + actual, NamedTextColor.RED));
+        return true;
     }
 
     static void sendPluginList(CommandSender sender, PluginRuntime runtime, boolean includeAvailable) {
@@ -177,17 +183,14 @@ public final class PluginCommand implements CommandExecutor, CommandCompleter {
         }
     }
 
-    private void sendCommands(CommandSender sender, List<CommandDescriptor> commands) {
+    private void sendCommands(CommandSender sender, List<CommandInfo> commands) {
         if (commands.isEmpty()) {
             sender.sendMessage(Component.text("Commands: none", NamedTextColor.YELLOW));
             return;
         }
         sender.sendMessage(Component.text("Commands:", NamedTextColor.YELLOW));
         for (var command : commands) {
-            var path = command.namespace() + ":" + command.label();
-            if (!command.subcommands().isEmpty()) {
-                path += " " + String.join(" ", command.subcommands());
-            }
+            var path = command.usage();
             var permission = command.permission() == null ? "" : " permission=" + command.permission();
             sender.sendMessage(Component.text("  " + path + permission, NamedTextColor.GRAY));
         }
@@ -204,12 +207,12 @@ public final class PluginCommand implements CommandExecutor, CommandCompleter {
         }
     }
 
-    private void sendErrors(CommandSender sender, List<String> args) {
+    private void sendErrors(CommandSender sender, String pluginId) {
         var runtime = server.pluginRuntime();
-        if (args.size() >= 2 && !args.get(1).startsWith("--")) {
-            var status = runtime.pluginStatus(args.get(1));
+        if (pluginId != null) {
+            var status = runtime.pluginStatus(pluginId);
             if (status.isEmpty()) {
-                sender.sendMessage(Component.text("Plugin not found: " + args.get(1), NamedTextColor.RED));
+                sender.sendMessage(Component.text("Plugin not found: " + pluginId, NamedTextColor.RED));
                 return;
             }
             sendError(sender, status.get());
@@ -239,55 +242,19 @@ public final class PluginCommand implements CommandExecutor, CommandCompleter {
         sender.sendMessage(Component.text(title + ": " + emptyJoin(values), values.isEmpty() ? NamedTextColor.YELLOW : NamedTextColor.GRAY));
     }
 
-    private void withPlugin(
-            CommandSender sender,
-            List<String> args,
-            String permission,
-            java.util.function.Consumer<PluginRuntime.PluginStatus> consumer
-    ) {
-        if (!requires(sender, permission)) {
-            return;
-        }
-        if (args.size() < 2) {
-            sender.sendMessage(Component.text("Plugin id is required", NamedTextColor.RED));
-            return;
-        }
-        var status = server.pluginRuntime().pluginStatus(args.get(1));
+    private void withPlugin(CommandContext context, java.util.function.Consumer<PluginStatusContext> consumer) {
+        var pluginId = context.string("plugin");
+        var status = server.pluginRuntime().pluginStatus(pluginId);
         if (status.isEmpty()) {
-            sender.sendMessage(Component.text("Plugin not found: " + args.get(1), NamedTextColor.RED));
+            context.sender().sendMessage(Component.text("Plugin not found: " + pluginId, NamedTextColor.RED));
             return;
         }
-        consumer.accept(status.get());
+        consumer.accept(new PluginStatusContext(context.sender(), status.get()));
     }
 
-    private void operate(
-            CommandSender sender,
-            List<String> args,
-            String permission,
-            java.util.function.Function<String, PluginRuntime.PluginOperationResult> operation
-    ) {
-        if (!requires(sender, permission)) {
-            return;
-        }
-        if (args.size() < 2) {
-            sender.sendMessage(Component.text("Plugin id or file is required", NamedTextColor.RED));
-            return;
-        }
-        var result = operation.apply(args.get(1));
-        sender.sendMessage(Component.text(result.message(), result.success() ? NamedTextColor.GREEN : NamedTextColor.RED));
-    }
-
-    private static boolean requires(CommandSender sender, String permission, String... alternatives) {
-        if (sender.hasPermission(permission)) {
-            return true;
-        }
-        for (var alternative : alternatives) {
-            if (sender.hasPermission(alternative)) {
-                return true;
-            }
-        }
-        sender.sendMessage(Component.text("Missing permission: " + permission, NamedTextColor.RED));
-        return false;
+    private static void operate(CommandContext context, java.util.function.Function<String, PluginRuntime.PluginOperationResult> operation) {
+        var result = operation.apply(context.string("plugin"));
+        context.sender().sendMessage(Component.text(result.message(), result.success() ? NamedTextColor.GREEN : NamedTextColor.RED));
     }
 
     private static NamedTextColor color(PluginRuntime.PluginLifecycle lifecycle) {
@@ -322,5 +289,13 @@ public final class PluginCommand implements CommandExecutor, CommandCompleter {
 
     private static String time(long timestampMillis) {
         return timestampMillis <= 0 ? "never" : Instant.ofEpochMilli(timestampMillis).toString();
+    }
+
+    private record PluginStatusContext(CommandSender sender, PluginRuntime.PluginStatus value) {
+    }
+
+    @FunctionalInterface
+    private interface CascadeOperation {
+        PluginRuntime.PluginOperationResult apply(String id, boolean cascade);
     }
 }

@@ -3,10 +3,7 @@ package io.fand.testplugin;
 import static io.fand.testplugin.DemoSupport.*;
 
 import io.fand.api.Fand;
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import io.fand.api.entity.Player;
 import io.fand.api.plugin.PluginContext;
 import io.fand.api.world.Difficulty;
@@ -24,8 +21,8 @@ import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(label = "fandworld", arguments = {"player", "mode"}, aliases = {"fworld"}, permission = "fand.testplugin.world")
-final class WorldCommand implements CommandExecutor, CommandCompleter {
+@TestCommand(label = "fandworld", arguments = {"player", "mode"}, aliases = {"fworld"}, permission = "fand.testplugin.world")
+final class WorldCommand implements TestCommandHandler, TestCommandTabHandler {
 
     private final PluginContext context;
 

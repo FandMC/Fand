@@ -2,11 +2,12 @@ package io.fand.server.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.mojang.brigadier.tree.ArgumentCommandNode;
 import com.mojang.brigadier.tree.RootCommandNode;
-import io.fand.api.command.CommandDescriptor;
+import io.fand.api.command.Arguments;
 import io.fand.api.command.CommandSender;
-import net.minecraft.commands.CommandSourceStack;
 import net.kyori.adventure.text.Component;
+import net.minecraft.commands.CommandSourceStack;
 import org.junit.jupiter.api.Test;
 
 final class CommandTreeBridgeTest {
@@ -14,12 +15,9 @@ final class CommandTreeBridgeTest {
     @Test
     void appendsVisibleFandCommandsToRoot() {
         var manager = new CommandManager(new io.fand.server.permission.PermissionManager());
-        manager.register(
-                new CommandDescriptor("fand", "fand", java.util.List.of("reload"), java.util.List.of(), null),
-                (sender, label, args) -> {
-                },
-                (sender, label, args) -> java.util.List.of()
-        );
+        manager.register("fand", command -> command
+                .namespace("fand")
+                .literal("reload", reload -> reload.executes(context -> {})));
 
         var root = new RootCommandNode<CommandSourceStack>();
         CommandTreeBridge.appendToRoot(manager, new TestSender(), root);
@@ -30,18 +28,16 @@ final class CommandTreeBridgeTest {
         assertThat(namespaced).isNotNull();
         assertThat(local.getChild("reload")).isNotNull();
         assertThat(namespaced.getChild("reload")).isNotNull();
-        assertThat(local.getChild("reload").getChild("args")).isNotNull();
     }
 
     @Test
     void usesDeclaredArgumentNames() {
         var manager = new CommandManager(new io.fand.server.permission.PermissionManager());
-        manager.register(
-                new CommandDescriptor("demo", "give", java.util.List.of(), java.util.List.of("item", "amount", "player"), java.util.List.of(), null),
-                (sender, label, args) -> {
-                },
-                (sender, label, args) -> java.util.List.of()
-        );
+        manager.register("give", command -> command
+                .namespace("demo")
+                .argument("item", Arguments.word(), item -> item
+                        .argument("amount", Arguments.integer(), amount -> amount
+                                .argument("player", Arguments.player(), player -> player.executes(context -> {})))));
 
         var root = new RootCommandNode<CommandSourceStack>();
         CommandTreeBridge.appendToRoot(manager, new TestSender(), root);
@@ -58,12 +54,7 @@ final class CommandTreeBridgeTest {
     @Test
     void omitsArgumentNodeWhenNoArgumentsAreDeclared() {
         var manager = new CommandManager(new io.fand.server.permission.PermissionManager());
-        manager.register(
-                new CommandDescriptor("demo", "info", java.util.List.of(), java.util.List.of(), java.util.List.of(), null),
-                (sender, label, args) -> {
-                },
-                (sender, label, args) -> java.util.List.of()
-        );
+        manager.register("info", command -> command.namespace("demo").executes(context -> {}));
 
         var root = new RootCommandNode<CommandSourceStack>();
         CommandTreeBridge.appendToRoot(manager, new TestSender(), root);
@@ -75,8 +66,8 @@ final class CommandTreeBridgeTest {
     @Test
     void omitsAmbiguousLocalRootsButKeepsNamespacedRoots() {
         var manager = new CommandManager(new io.fand.server.permission.PermissionManager());
-        manager.register(new CommandDescriptor("fand", "reload", java.util.List.of(), java.util.List.of(), null), (s, l, a) -> {}, (s, l, a) -> java.util.List.of());
-        manager.register(new CommandDescriptor("tools", "reload", java.util.List.of(), java.util.List.of(), null), (s, l, a) -> {}, (s, l, a) -> java.util.List.of());
+        manager.register("reload", command -> command.namespace("fand").executes(context -> {}));
+        manager.register("reload", command -> command.namespace("tools").executes(context -> {}));
 
         var root = new RootCommandNode<CommandSourceStack>();
         CommandTreeBridge.appendToRoot(manager, new TestSender(), root);
@@ -84,6 +75,25 @@ final class CommandTreeBridgeTest {
         assertThat(root.getChild("reload")).isNull();
         assertThat(root.getChild("fand:reload")).isNotNull();
         assertThat(root.getChild("tools:reload")).isNotNull();
+    }
+
+    @Test
+    void appendsTypedBuilderArguments() {
+        var manager = new CommandManager(new io.fand.server.permission.PermissionManager());
+        manager.register("give", command -> command
+                .namespace("demo")
+                .argument("target", Arguments.player(), target -> target
+                        .argument("amount", Arguments.integer(1, 64), amount -> amount
+                                .executes(context -> {
+                                }))));
+
+        var root = new RootCommandNode<CommandSourceStack>();
+        CommandTreeBridge.appendToRoot(manager, new TestSender(), root);
+
+        var target = root.getChild("give").getChild("target");
+        var amount = target.getChild("amount");
+        assertThat(((ArgumentCommandNode<?, ?>) target).getType().getClass().getName()).contains("EntityArgument");
+        assertThat(((ArgumentCommandNode<?, ?>) amount).getType().getClass().getName()).contains("IntegerArgumentType");
     }
 
     private static final class TestSender implements CommandSender {

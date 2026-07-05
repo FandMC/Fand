@@ -2,16 +2,13 @@ package io.fand.testplugin;
 
 import static io.fand.testplugin.DemoSupport.matching;
 
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import java.util.List;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(label = "fandnms", arguments = {"mode"}, aliases = {"fnms"}, permission = "fand.testplugin.nms")
-final class NmsCommand implements CommandExecutor, CommandCompleter {
+@TestCommand(label = "fandnms", arguments = {"mode"}, aliases = {"fnms"}, permission = "fand.testplugin.nms")
+final class NmsCommand implements TestCommandHandler, TestCommandTabHandler {
 
     private static final List<String> MODES = List.of("run", "status", "hooks");
 

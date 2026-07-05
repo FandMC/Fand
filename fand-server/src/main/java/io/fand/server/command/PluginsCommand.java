@@ -1,12 +1,15 @@
 package io.fand.server.command;
 
-import io.fand.api.command.CommandExecutor;
-import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
-import java.util.List;
+import io.fand.api.command.Aliases;
+import io.fand.api.command.Command;
+import io.fand.api.command.CommandContext;
+import io.fand.api.command.Default;
+import io.fand.api.command.Permission;
 
-@CommandSpec(label = "plugins", namespace = "fand", aliases = {"pl"}, arguments = {}, permission = "fand.command.plugins")
-public final class PluginsCommand implements CommandExecutor {
+@Command(value = "plugins", namespace = "fand")
+@Aliases("pl")
+@Permission("fand.command.plugins")
+public final class PluginsCommand {
 
     private final io.fand.server.FandServer server;
 
@@ -14,8 +17,8 @@ public final class PluginsCommand implements CommandExecutor {
         this.server = server;
     }
 
-    @Override
-    public void execute(CommandSender sender, String label, List<String> args) {
-        PluginCommand.sendPluginList(sender, server.pluginRuntime(), true);
+    @Default
+    public void execute(CommandContext context) {
+        PluginCommand.sendPluginList(context.sender(), server.pluginRuntime(), true);
     }
 }

@@ -1,13 +1,11 @@
 package io.fand.server.plugin;
 
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandDescriptor;
-import io.fand.api.command.CommandExecutor;
+import io.fand.api.command.CommandDefinition;
+import io.fand.api.command.CommandInfo;
+import io.fand.api.command.CommandNode;
 import io.fand.api.command.CommandRegistration;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.RegisteredCommand;
-import io.fand.api.command.ResolvedCommand;
 import io.fand.server.command.AnnotatedCommands;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,21 +33,19 @@ public final class PluginCommandRegistry implements CommandRegistry {
     }
 
     @Override
-    public CommandRegistration register(CommandDescriptor descriptor, CommandExecutor executor, CommandCompleter completer) {
-        var scoped = new CommandDescriptor(
+    public CommandRegistration register(CommandDefinition definition) {
+        var scoped = new CommandDefinition(
                 namespace,
-                descriptor.label(),
-                descriptor.subcommands(),
-                descriptor.arguments(),
-                descriptor.typedArguments(),
-                descriptor.aliases(),
-                descriptor.permission()
+                definition.label(),
+                definition.aliases(),
+                definition.permission(),
+                definition.root()
         );
-        return tracker.track(delegate.register(scoped, executor, completer), scoped);
+        return tracker.track(delegate.register(scoped), descriptors(scoped));
     }
 
     @Override
-    public Optional<RegisteredCommand> lookup(String name) {
+    public Optional<CommandInfo> lookup(String name) {
         return delegate.lookup(name).filter(this::ownedByThisPlugin);
     }
 
@@ -59,18 +55,13 @@ public final class PluginCommandRegistry implements CommandRegistry {
     }
 
     @Override
-    public Optional<ResolvedCommand> resolve(CommandSender sender, List<String> tokens) {
-        return delegate.resolve(sender, tokens);
-    }
-
-    @Override
     public List<String> suggestions(CommandSender sender, List<String> tokens) {
         return delegate.suggestions(sender, tokens);
     }
 
     @Override
-    public List<RegisteredCommand> visibleCommands(CommandSender sender) {
-        var filtered = new ArrayList<RegisteredCommand>();
+    public List<CommandInfo> visibleCommands(CommandSender sender) {
+        var filtered = new ArrayList<CommandInfo>();
         for (var command : delegate.visibleCommands(sender)) {
             if (ownedByThisPlugin(command)) {
                 filtered.add(command);
@@ -79,7 +70,48 @@ public final class PluginCommandRegistry implements CommandRegistry {
         return List.copyOf(filtered);
     }
 
-    private boolean ownedByThisPlugin(RegisteredCommand command) {
-        return namespace.equals(command.descriptor().namespace());
+    private boolean ownedByThisPlugin(CommandInfo command) {
+        return namespace.equals(command.namespace());
+    }
+
+    private static List<CommandInfo> descriptors(CommandDefinition definition) {
+        var descriptors = new ArrayList<CommandInfo>();
+        collect(definition, definition.root(), definition.permission(), List.of(), List.of(), descriptors);
+        return descriptors;
+    }
+
+    private static void collect(
+            CommandDefinition definition,
+            CommandNode node,
+            String inheritedPermission,
+            List<String> path,
+            List<io.fand.api.command.CommandArgument> arguments,
+            List<CommandInfo> descriptors
+    ) {
+        var permission = node.permission() == null ? inheritedPermission : node.permission();
+        if (node.action() != null) {
+            descriptors.add(new CommandInfo(
+                    definition.namespace(),
+                    definition.label(),
+                    path,
+                    arguments,
+                    definition.aliases(),
+                    permission));
+        }
+        for (var child : node.children()) {
+            switch (child.type()) {
+                case LITERAL -> {
+                    var nextPath = new ArrayList<>(path);
+                    nextPath.add(child.name());
+                    collect(definition, child, permission, nextPath, arguments, descriptors);
+                }
+                case ARGUMENT -> {
+                    var nextArguments = new ArrayList<>(arguments);
+                    nextArguments.add(child.argument().metadata(child.name()));
+                    collect(definition, child, permission, path, nextArguments, descriptors);
+                }
+                case ROOT -> collect(definition, child, permission, path, arguments, descriptors);
+            }
+        }
     }
 }

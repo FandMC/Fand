@@ -2,10 +2,7 @@ package io.fand.testplugin;
 
 import static io.fand.testplugin.DemoSupport.*;
 
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import io.fand.api.entity.Player;
 import io.fand.api.plugin.PluginContext;
 import java.util.List;
@@ -14,8 +11,8 @@ import java.util.UUID;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(label = "fandgui", arguments = {"player"}, aliases = {"fgui"}, permission = "fand.testplugin.gui")
-final class GuiCommand implements CommandExecutor, CommandCompleter {
+@TestCommand(label = "fandgui", arguments = {"player"}, aliases = {"fgui"}, permission = "fand.testplugin.gui")
+final class GuiCommand implements TestCommandHandler, TestCommandTabHandler {
 
     private final PluginContext context;
     private final Set<UUID> demoGuiViewers;

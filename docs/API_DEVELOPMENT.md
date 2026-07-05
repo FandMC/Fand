@@ -154,34 +154,47 @@ context.events().registerListener(new PlayerListener());
 
 ## 命令
 
-命令可以通过 `@CommandSpec` 和 `CommandExecutor` 注册。命令通常在 `onEnable` 中注册到
-`context.commands()`，插件禁用时由运行时清理。
+命令可以通过链式 Builder 或注解类注册。命令通常在 `onEnable` 中注册到
+`context.commands()`，插件禁用时由运行时自动清理。
 
 ```java
-import io.fand.api.command.CommandExecutor;
-import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
-import java.util.List;
 import net.kyori.adventure.text.Component;
 
-@CommandSpec(
-        label = "hello",
-        aliases = {"hi"},
-        permission = "example.hello"
-)
-public final class HelloCommand implements CommandExecutor {
+context.commands().register("hello", command -> command
+        .aliases("hi")
+        .permission("example.hello")
+        .executes(context -> context.sender().sendMessage(Component.text("Hello, " + context.sender().name())))
+        .argument("target", io.fand.api.command.Arguments.greedyString(), target -> target
+                .executes(context -> context.sender().sendMessage(Component.text("Hello, " + context.string("target"))))));
+```
 
-    @Override
-    public void execute(CommandSender sender, String label, List<String> args) {
-        var target = args.isEmpty() ? sender.name() : String.join(" ", args);
-        sender.sendMessage(Component.text("Hello, " + target));
+独立命令类可以用注解注册：
+
+```java
+import io.fand.api.command.Arg;
+import io.fand.api.command.Command;
+import io.fand.api.command.CommandContext;
+import io.fand.api.command.Default;
+import io.fand.api.command.Permission;
+import io.fand.api.command.Subcommand;
+
+@Command("hello")
+@Permission("example.hello")
+public final class HelloCommand {
+    @Default
+    public void self(CommandContext context) {
+        context.sender().sendMessage(Component.text("Hello, " + context.sender().name()));
+    }
+
+    @Subcommand("to")
+    public void target(CommandContext context, @Arg("name") String name) {
+        context.sender().sendMessage(Component.text("Hello, " + name));
     }
 }
 
 context.commands().register(new HelloCommand());
 ```
 
-需要更细控制时，可以直接注册 `CommandDescriptor`、`CommandExecutor` 和 `CommandCompleter`。
 命令权限节点应配合 `PermissionService` 注册默认访问策略。
 
 ## 配置、存储和权限

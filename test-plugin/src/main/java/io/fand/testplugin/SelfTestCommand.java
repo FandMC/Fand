@@ -4,7 +4,6 @@ import static io.fand.testplugin.DemoSupport.matching;
 
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import io.fand.api.event.Event;
 import io.fand.api.event.EventBus;
 import io.fand.api.event.block.BlockBreakEvent;
@@ -242,8 +241,8 @@ import java.util.Set;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(label = "fandselftest", arguments = {"scope"}, aliases = {"fselftest"}, permission = "fand.testplugin.selftest")
-final class SelfTestCommand implements io.fand.api.command.CommandExecutor, io.fand.api.command.CommandCompleter {
+@TestCommand(label = "fandselftest", arguments = {"scope"}, aliases = {"fselftest"}, permission = "fand.testplugin.selftest")
+final class SelfTestCommand implements TestCommandHandler, TestCommandTabHandler {
 
     private static final List<String> MODES = List.of("all", "commands", "listeners");
 
@@ -581,15 +580,15 @@ final class SelfTestCommand implements io.fand.api.command.CommandExecutor, io.f
             failures.add("missing command /" + expected.label());
             return;
         }
-        var descriptor = registered.get().descriptor();
-        if (!descriptor.label().equals(expected.label())) {
-            failures.add("command /" + expected.label() + " resolved as /" + descriptor.label());
+        var info = registered.get();
+        if (!info.label().equals(expected.label())) {
+            failures.add("command /" + expected.label() + " resolved as /" + info.label());
         }
-        if (!descriptor.aliases().equals(expected.aliases())) {
-            failures.add("command /" + expected.label() + " aliases " + descriptor.aliases() + " expected " + expected.aliases());
+        if (!info.aliases().equals(expected.aliases())) {
+            failures.add("command /" + expected.label() + " aliases " + info.aliases() + " expected " + expected.aliases());
         }
-        if (!expected.permission().equals(descriptor.permission())) {
-            failures.add("command /" + expected.label() + " permission " + descriptor.permission() + " expected " + expected.permission());
+        if (!expected.permission().equals(info.permission())) {
+            failures.add("command /" + expected.label() + " permission " + info.permission() + " expected " + expected.permission());
         }
         if (!commands.claims(List.of(expected.label()))) {
             failures.add("command registry does not claim /" + expected.label());
@@ -598,12 +597,12 @@ final class SelfTestCommand implements io.fand.api.command.CommandExecutor, io.f
             var aliasLookup = commands.lookup(alias);
             if (aliasLookup.isEmpty()) {
                 failures.add("missing alias /" + alias + " for /" + expected.label());
-            } else if (!aliasLookup.get().descriptor().label().equals(expected.label())) {
-                failures.add("alias /" + alias + " resolved as /" + aliasLookup.get().descriptor().label());
+            } else if (!aliasLookup.get().label().equals(expected.label())) {
+                failures.add("alias /" + alias + " resolved as /" + aliasLookup.get().label());
             }
         }
         try {
-            registered.get().completer().complete(sender, expected.label(), List.of());
+            commands.suggestions(sender, List.of(expected.label(), ""));
         } catch (Exception exception) {
             failures.add("completer failed for /" + expected.label() + ": " + exception.getClass().getSimpleName());
         }

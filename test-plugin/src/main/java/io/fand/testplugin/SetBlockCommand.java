@@ -4,10 +4,7 @@ import static io.fand.testplugin.DemoSupport.*;
 
 import io.fand.api.block.Block;
 import io.fand.api.block.BlockType;
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import io.fand.api.entity.Player;
 import io.fand.api.plugin.PluginContext;
 import io.fand.api.world.World;
@@ -16,12 +13,12 @@ import java.util.Set;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(
+@TestCommand(
         label = "fandsetblock",
         arguments = {"block", "x", "y", "z", "world"},
         aliases = {"fsb"},
         permission = "fand.testplugin.setblock")
-final class SetBlockCommand implements CommandExecutor, CommandCompleter {
+final class SetBlockCommand implements TestCommandHandler, TestCommandTabHandler {
 
     private final PluginContext context;
 

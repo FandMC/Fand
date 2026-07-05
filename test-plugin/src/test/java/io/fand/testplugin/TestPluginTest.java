@@ -2,15 +2,11 @@ package io.fand.testplugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandDescriptor;
-import io.fand.api.command.CommandExecutor;
+import io.fand.api.command.CommandDefinition;
+import io.fand.api.command.CommandInfo;
 import io.fand.api.command.CommandRegistration;
 import io.fand.api.command.CommandRegistry;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
-import io.fand.api.command.RegisteredCommand;
-import io.fand.api.command.ResolvedCommand;
 import io.fand.api.auth.LoginAuthenticationRequest;
 import io.fand.api.auth.LoginAuthenticationResult;
 import io.fand.api.event.Event;
@@ -218,7 +214,7 @@ final class TestPluginTest {
     }
 
     @Test
-    void allDemoCommandClassesCarryCommandSpec() {
+    void allDemoCommandClassesCarryTestCommand() {
         assertThat(List.of(
                 HelloCommand.class,
                 DemoCommand.class,
@@ -244,7 +240,7 @@ final class TestPluginTest {
                 NmsCommand.class,
                 SelfTestCommand.class,
                 GuiCommand.class
-        )).allSatisfy(type -> assertThat(type.getAnnotation(CommandSpec.class))
+        )).allSatisfy(type -> assertThat(type.getAnnotation(TestCommand.class))
                 .as(type.getSimpleName())
                 .isNotNull());
     }
@@ -438,30 +434,29 @@ final class TestPluginTest {
 
     private static final class FakeCommandRegistry implements CommandRegistry {
 
-        private final Map<String, RegisteredCommand> commands = new LinkedHashMap<>();
+        private final Map<String, CommandInfo> commands = new LinkedHashMap<>();
 
         FakeCommandRegistry(List<SelfTestCommand.ExpectedCommand> expectedCommands) {
             for (var expected : expectedCommands) {
-                var descriptor = new CommandDescriptor(
+                var info = new CommandInfo(
                         "fand-test-plugin",
                         expected.label(),
                         List.of(),
-                        List.of("scope"),
+                        List.of(io.fand.api.command.CommandArgument.string("scope")),
                         expected.aliases(),
                         expected.permission());
-                var command = new FakeRegisteredCommand(descriptor);
-                commands.put(expected.label(), command);
-                expected.aliases().forEach(alias -> commands.put(alias, command));
+                commands.put(expected.label(), info);
+                expected.aliases().forEach(alias -> commands.put(alias, info));
             }
         }
 
         @Override
-        public CommandRegistration register(CommandDescriptor descriptor, CommandExecutor executor, CommandCompleter completer) {
+        public CommandRegistration register(CommandDefinition definition) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public Optional<RegisteredCommand> lookup(String name) {
+        public Optional<CommandInfo> lookup(String name) {
             return Optional.ofNullable(commands.get(name));
         }
 
@@ -471,32 +466,13 @@ final class TestPluginTest {
         }
 
         @Override
-        public Optional<ResolvedCommand> resolve(CommandSender sender, List<String> tokens) {
-            return lookup(tokens.getFirst()).map(command -> new ResolvedCommand(command, 1, tokens.getFirst()));
-        }
-
-        @Override
         public List<String> suggestions(CommandSender sender, List<String> tokens) {
             return List.of();
         }
 
         @Override
-        public List<RegisteredCommand> visibleCommands(CommandSender sender) {
+        public List<CommandInfo> visibleCommands(CommandSender sender) {
             return commands.values().stream().distinct().toList();
-        }
-    }
-
-    private record FakeRegisteredCommand(CommandDescriptor descriptor) implements RegisteredCommand {
-
-        @Override
-        public CommandExecutor executor() {
-            return (sender, label, args) -> {
-            };
-        }
-
-        @Override
-        public CommandCompleter completer() {
-            return (sender, label, args) -> List.of();
         }
     }
 

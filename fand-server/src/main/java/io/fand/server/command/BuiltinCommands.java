@@ -15,7 +15,7 @@ public final class BuiltinCommands {
         commands.register(new TpsCommand(server));
         commands.register(new MsptCommand(server));
         commands.register(new PluginsCommand(server));
-        commands.register(new PluginCommand(server));
+        new PluginCommand(server).register(commands);
         commands.register(new RedstoneJitCommand(server));
         registerPluginCommandPermissions(server);
     }

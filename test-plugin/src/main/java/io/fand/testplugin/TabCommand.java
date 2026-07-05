@@ -3,10 +3,7 @@ package io.fand.testplugin;
 import static io.fand.testplugin.DemoSupport.*;
 
 import io.fand.api.Fand;
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import io.fand.api.entity.Player;
 import io.fand.api.plugin.PluginContext;
 import io.fand.api.world.World;
@@ -15,8 +12,8 @@ import java.util.List;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(label = "fandtab", arguments = {"player", "message"}, aliases = {"ftab"}, permission = "fand.testplugin.tab")
-final class TabCommand implements CommandExecutor, CommandCompleter {
+@TestCommand(label = "fandtab", arguments = {"player", "message"}, aliases = {"ftab"}, permission = "fand.testplugin.tab")
+final class TabCommand implements TestCommandHandler, TestCommandTabHandler {
 
     private final PluginContext context;
 

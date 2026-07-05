@@ -65,7 +65,7 @@ final class FandReloadCommandTest {
                 """);
 
         var resolved = server.commandManager().resolve(allowed, List.of("fand", "reload")).orElseThrow();
-        resolved.command().executor().execute(allowed, resolved.usedLabel(), List.of());
+        resolved.command().execute(allowed, resolved.usedLabel(), List.of());
 
         assertThat(server.brand()).isEqualTo("Reloaded Brand");
         assertThat(server.guiThemes().current())

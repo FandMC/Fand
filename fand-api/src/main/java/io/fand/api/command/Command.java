@@ -4,20 +4,11 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
-import org.jspecify.annotations.Nullable;
 
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
-public @interface CommandSpec {
-    String label();
+public @interface Command {
+    String value();
 
     String namespace() default "";
-
-    String[] subcommands() default {};
-
-    String[] arguments() default {"args"};
-
-    String[] aliases() default {};
-
-    @Nullable String permission() default "";
 }

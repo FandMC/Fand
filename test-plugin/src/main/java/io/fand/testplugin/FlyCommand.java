@@ -2,18 +2,15 @@ package io.fand.testplugin;
 
 import static io.fand.testplugin.DemoSupport.*;
 
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import io.fand.api.entity.Player;
 import java.util.List;
 import java.util.Locale;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(label = "fandfly", arguments = {"state", "player"}, aliases = {"ffly"}, permission = "fand.testplugin.fly")
-final class FlyCommand implements CommandExecutor, CommandCompleter {
+@TestCommand(label = "fandfly", arguments = {"state", "player"}, aliases = {"ffly"}, permission = "fand.testplugin.fly")
+final class FlyCommand implements TestCommandHandler, TestCommandTabHandler {
 
     @Override
     public void execute(CommandSender sender, String label, List<String> args) {

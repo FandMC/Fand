@@ -1,12 +1,12 @@
 package io.fand.server.command;
 
-import io.fand.api.command.CommandExecutor;
-import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
-import java.util.List;
+import io.fand.api.command.Command;
+import io.fand.api.command.CommandContext;
+import io.fand.api.command.Permission;
+import io.fand.api.command.Subcommand;
 
-@CommandSpec(label = "fand", namespace = "fand", subcommands = {"reload"}, arguments = {}, permission = "fand.command.reload")
-public final class FandCommand implements CommandExecutor {
+@Command(value = "fand", namespace = "fand")
+public final class FandCommand {
 
     private final io.fand.server.FandServer server;
 
@@ -14,11 +14,12 @@ public final class FandCommand implements CommandExecutor {
         this.server = server;
     }
 
-    @Override
-    public void execute(CommandSender sender, String label, List<String> args) {
+    @Subcommand("reload")
+    @Permission("fand.command.reload")
+    public void reload(CommandContext context) {
         var result = server.reloadConfig();
         for (var line : io.fand.server.config.ConfigReloadMessages.lines(result)) {
-            sender.sendMessage(net.kyori.adventure.text.Component.text(line));
+            context.sender().sendMessage(net.kyori.adventure.text.Component.text(line));
         }
     }
 }

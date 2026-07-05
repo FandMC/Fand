@@ -3,10 +3,8 @@ package io.fand.server.command;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandArgument;
-import io.fand.api.command.CommandDescriptor;
-import io.fand.api.command.CommandExecutor;
+import io.fand.api.command.Arguments;
+import io.fand.api.command.CommandArgumentType;
 import io.fand.api.command.CommandSender;
 import io.fand.api.permission.PermissionSubject;
 import io.fand.server.permission.PermissionManager;
@@ -21,7 +19,7 @@ final class CommandManagerTest {
     @Test
     void resolvesUniqueLocalAndNamespacedCommands() {
         var manager = new CommandManager(new PermissionManager());
-        manager.register(descriptor("fand", "reload"), noop(), completer());
+        manager.register("reload", command -> command.namespace("fand").executes(context -> {}));
 
         var sender = new TestSender();
         assertThat(manager.lookup("reload")).isPresent();
@@ -32,8 +30,8 @@ final class CommandManagerTest {
     @Test
     void treatsConflictingLocalRootsAsNamespacedOnly() {
         var manager = new CommandManager(new PermissionManager());
-        manager.register(descriptor("fand", "reload"), noop(), completer());
-        manager.register(descriptor("tools", "reload"), noop(), completer());
+        manager.register("reload", command -> command.namespace("fand").executes(context -> {}));
+        manager.register("reload", command -> command.namespace("tools").executes(context -> {}));
 
         var sender = new TestSender();
         assertThat(manager.lookup("reload")).isEmpty();
@@ -45,7 +43,11 @@ final class CommandManagerTest {
     @Test
     void respectsPermissionsForResolutionAndSuggestions() {
         var manager = new CommandManager(new PermissionManager());
-        manager.register(new CommandDescriptor("fand", "config", List.of("reload"), List.of(), "fand.admin"), noop(), completer());
+        manager.register("config", command -> command
+                .namespace("fand")
+                .literal("reload", reload -> reload
+                        .permission("fand.admin")
+                        .executes(context -> {})));
 
         var denied = new TestSender();
         var allowed = new TestSender("fand.admin");
@@ -57,31 +59,31 @@ final class CommandManagerTest {
     }
 
     @Test
-    void resolvesSubcommandsAndUsesSeparateCompleter() throws Exception {
+    void resolvesSubcommandsAndUsesSeparateSuggestions() throws Exception {
         var manager = new CommandManager(new PermissionManager());
         var executed = new ArrayList<String>();
-        manager.register(
-                new CommandDescriptor("fand", "config", List.of("reload"), List.of(), null),
-                (sender, label, args) -> executed.add(label + ":" + String.join(",", args)),
-                (sender, label, args) -> List.of("suggested")
-        );
+        manager.register("config", command -> command
+                .namespace("fand")
+                .literal("reload", reload -> reload
+                        .argument("mode", Arguments.word().optional().suggests("suggested"), mode -> mode
+                                .executes(context -> executed.add(context.label() + ":" + String.join(",", context.args()))))));
 
         var sender = new TestSender();
         var resolved = manager.resolve(sender, List.of("config", "reload", "now")).orElseThrow();
-        resolved.command().executor().execute(sender, resolved.usedLabel(), List.of("now"));
+        resolved.command().execute(sender, resolved.usedLabel(), List.of("now"));
 
         assertThat(executed).containsExactly("config:now");
         assertThat(manager.suggestions(sender, List.of("config", "r"))).containsExactly("reload");
         assertThat(manager.suggestions(sender, List.of("fand:config", "r"))).containsExactly("reload");
-        assertThat(manager.suggestions(sender, List.of("config", "reload", "n"))).containsExactly("suggested");
-        assertThat(manager.suggestions(sender, List.of("fand:config", "reload", "n"))).containsExactly("suggested");
+        assertThat(manager.suggestions(sender, List.of("config", "reload", "s"))).containsExactly("suggested");
+        assertThat(manager.suggestions(sender, List.of("fand:config", "reload", "s"))).containsExactly("suggested");
     }
 
     @Test
     void claimsOnlyCompleteRootsForExecution() {
         var manager = new CommandManager(new PermissionManager());
-        manager.register(descriptor("fand", "tps"), noop(), completer());
-        manager.register(new CommandDescriptor("fand", "config", List.of("reload"), List.of(), null), noop(), completer());
+        manager.register("tps", command -> command.namespace("fand").executes(context -> {}));
+        manager.register("config", command -> command.namespace("fand").literal("reload", reload -> reload.executes(context -> {})));
 
         assertThat(manager.claims(List.of("tp"))).isFalse();
         assertThat(manager.claims(List.of("tps"))).isTrue();
@@ -93,44 +95,100 @@ final class CommandManagerTest {
     @Test
     void rejectsInvalidNames() {
         var manager = new CommandManager(new PermissionManager());
-        assertThatThrownBy(() -> manager.register(descriptor("Bad Ns", "reload"), noop(), completer()))
+        assertThatThrownBy(() -> manager.register("reload", command -> command.namespace("Bad Ns").executes(context -> {})))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void preservesTypedArgumentsDuringNormalization() {
         var manager = new CommandManager(new PermissionManager());
-        manager.register(
-                new CommandDescriptor(
-                        "FAND",
-                        "Hello",
-                        List.of("Reload"),
-                        List.of("Target"),
-                        List.of(CommandArgument.players("Targets").asOptional()),
-                        List.of("Alias"),
-                        null),
-                noop(),
-                completer());
+        manager.register("Hello", command -> command
+                .namespace("FAND")
+                .aliases("Alias")
+                .literal("Reload", reload -> reload
+                        .argument("Targets", Arguments.word().optional(), target -> target.executes(context -> {}))));
 
         var command = manager.lookup("hello").orElseThrow();
-        assertThat(command.descriptor().typedArguments()).hasSize(1);
-        var argument = command.descriptor().typedArguments().getFirst();
+        assertThat(command.arguments()).hasSize(1);
+        var argument = command.arguments().getFirst();
         assertThat(argument.name()).isEqualTo("targets");
         assertThat(argument.optional()).isTrue();
-        assertThat(argument.type()).isEqualTo(io.fand.api.command.CommandArgumentType.PLAYERS);
+        assertThat(argument.type()).isEqualTo(CommandArgumentType.WORD);
     }
 
-    private static CommandDescriptor descriptor(String namespace, String label) {
-        return new CommandDescriptor(namespace, label, List.of(), List.of(), null);
+    @Test
+    void builderRegistersRootAndLiteralSubcommandsWithoutLocalRootConflict() throws Exception {
+        var manager = new CommandManager(new PermissionManager());
+        var executed = new ArrayList<String>();
+
+        manager.register("minimotd", command -> command
+                .namespace("demo")
+                .permission("demo.admin")
+                .executes(context -> executed.add("help:" + context.label()))
+                .literal("about", about -> about.executes(context -> executed.add("about:" + context.label())))
+                .literal("reload", reload -> reload.executes(context -> executed.add("reload:" + context.label()))));
+
+        var sender = new TestSender("demo.admin");
+        assertThat(manager.lookup("minimotd")).isPresent();
+        assertThat(manager.resolve(sender, List.of("minimotd"))).isPresent();
+        assertThat(manager.resolve(sender, List.of("minimotd", "reload"))).isPresent();
+        assertThat(manager.suggestions(sender, List.of("minimotd", "r"))).containsExactly("reload");
+
+        var resolved = manager.resolve(sender, List.of("minimotd", "about")).orElseThrow();
+        resolved.command().execute(sender, resolved.usedLabel(), List.of());
+
+        assertThat(executed).containsExactly("about:minimotd");
     }
 
-    private static CommandExecutor noop() {
-        return (sender, label, args) -> {
-        };
+    @Test
+    void builderParsesTypedArgumentsAndOptionalDefaults() throws Exception {
+        var manager = new CommandManager(new PermissionManager());
+        var executed = new ArrayList<String>();
+
+        manager.register("give", command -> command
+                .namespace("demo")
+                .argument("item", Arguments.word(), item -> item
+                        .argument("amount", Arguments.integer(1, 2304).optional(1), amount -> amount
+                                .executes(context -> executed.add(context.string("item") + ":" + context.intValue("amount"))))));
+
+        var sender = new TestSender();
+        var withAmount = manager.resolve(sender, List.of("give", "stone", "64")).orElseThrow();
+        withAmount.command().execute(sender, withAmount.usedLabel(), List.of("stone", "64"));
+
+        var defaultAmount = manager.resolve(sender, List.of("give", "dirt")).orElseThrow();
+        defaultAmount.command().execute(sender, defaultAmount.usedLabel(), List.of("dirt"));
+
+        assertThat(executed).containsExactly("stone:64", "dirt:1");
     }
 
-    private static CommandCompleter completer() {
-        return (sender, label, args) -> List.of();
+    @Test
+    void builderRejectsDuplicateArgumentNameWithDifferentDefinition() {
+        var builder = new io.fand.api.command.CommandBuilder("demo");
+        builder.argument("value", Arguments.word());
+
+        assertThatThrownBy(() -> builder.argument("value", Arguments.integer()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("different definition");
+    }
+
+    @Test
+    void builderAllowsReusingSameArgumentNodeForBranches() {
+        var definition = new io.fand.api.command.CommandBuilder("demo")
+                .argument("value", Arguments.word(), branch -> branch.executes(context -> {}))
+                .argument("value", Arguments.word(), branch -> branch.literal("confirm", confirm -> confirm.executes(context -> {})))
+                .build();
+
+        assertThat(definition.root().children()).hasSize(1);
+        assertThat(definition.root().children().getFirst().children()).hasSize(1);
+    }
+
+    @Test
+    void commandInfoUsageOmitsBlankNamespacePrefix() {
+        var local = new io.fand.api.command.CommandInfo("", "demo", List.of("reload"), List.of(), List.of(), null);
+        var namespaced = new io.fand.api.command.CommandInfo("fand", "demo", List.of("reload"), List.of(), List.of(), null);
+
+        assertThat(local.usage()).isEqualTo("demo reload");
+        assertThat(namespaced.usage()).isEqualTo("fand:demo reload");
     }
 
     private static final class TestSender implements CommandSender, PermissionSubject {

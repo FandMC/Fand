@@ -37,9 +37,9 @@ final class PerformanceCommandsTest {
             awaitPerformanceTicks(server, 2L);
 
             var tps = server.commandManager().resolve(sender, List.of("tps")).orElseThrow();
-            tps.command().executor().execute(sender, tps.usedLabel(), List.of());
+            tps.command().execute(sender, tps.usedLabel(), List.of());
             var mspt = server.commandManager().resolve(sender, List.of("mspt")).orElseThrow();
-            mspt.command().executor().execute(sender, mspt.usedLabel(), List.of());
+            mspt.command().execute(sender, mspt.usedLabel(), List.of());
 
             assertThat(sender.messages).containsExactly(
                     Component.text("TPS: 20.00, 20.00, 20.00 (1m, 5m, 15m)"),

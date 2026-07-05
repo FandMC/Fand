@@ -2,9 +2,8 @@ package io.fand.server.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.fand.api.command.CommandArgument;
 import io.fand.api.command.CommandArgumentType;
-import io.fand.api.command.CommandDescriptor;
+import io.fand.api.command.Arguments;
 import io.fand.server.command.CommandManager;
 import io.fand.server.command.CommandTreeBridge;
 import io.fand.server.event.EventDispatcher;
@@ -31,22 +30,14 @@ final class PluginCommandIntegrationTest {
         var commands = new CommandManager(new PermissionManager());
         var registry = new PluginCommandRegistry(commands, new PluginResourceTracker(), "demo");
 
-        registry.register(
-                new CommandDescriptor(
-                        "ignored",
-                        "give",
-                        List.of(),
-                        List.of("target"),
-                        List.of(CommandArgument.players("target")),
-                        List.of(),
-                        null),
-                (sender, label, args) -> {},
-                (sender, label, args) -> List.of());
+        registry.register("give", command -> command
+                .namespace("ignored")
+                .argument("target", Arguments.word(), target -> target.executes(context -> {})));
 
-        var descriptor = commands.lookup("demo:give").orElseThrow().descriptor();
-        assertThat(descriptor.namespace()).isEqualTo("demo");
-        assertThat(descriptor.typedArguments()).hasSize(1);
-        assertThat(descriptor.typedArguments().getFirst().type()).isEqualTo(CommandArgumentType.PLAYERS);
+        var info = commands.lookup("demo:give").orElseThrow();
+        assertThat(info.namespace()).isEqualTo("demo");
+        assertThat(info.arguments()).hasSize(1);
+        assertThat(info.arguments().getFirst().type()).isEqualTo(CommandArgumentType.WORD);
     }
 
     @Test
@@ -81,13 +72,14 @@ final class PluginCommandIntegrationTest {
                 runtime.loadPlugins();
                 runtime.enablePlugins();
 
-                assertThat(commands.resolve(denied, List.of("hello", "world"))).isEmpty();
-                assertThat(commands.resolve(allowed, List.of("hello", "world"))).isPresent();
+                assertThat(commands.resolve(denied, List.of("hello", "world", "alpha"))).isEmpty();
+                assertThat(commands.resolve(allowed, List.of("hello", "world", "alpha"))).isPresent();
                 assertThat(commands.suggestions(allowed, List.of("hello", "w"))).containsExactly("world");
-                assertThat(commands.suggestions(allowed, List.of("hello", "world", "a"))).containsExactly("alpha", "beta");
+                assertThat(commands.suggestions(allowed, List.of("hello", "world", ""))).containsExactly("alpha", "beta");
+                assertThat(commands.suggestions(allowed, List.of("hello", "world", "a"))).containsExactly("alpha");
 
                 var resolved = commands.resolve(allowed, List.of("hello", "world", "alpha")).orElseThrow();
-                resolved.command().executor().execute(allowed, resolved.usedLabel(), List.of("alpha"));
+                resolved.command().execute(allowed, resolved.usedLabel(), List.of("alpha"));
 
                 var root = new com.mojang.brigadier.tree.RootCommandNode<net.minecraft.commands.CommandSourceStack>();
                 CommandTreeBridge.appendToRoot(commands, allowed, root);
@@ -108,10 +100,11 @@ final class PluginCommandIntegrationTest {
         return """
                 package testplugins.demo;
 
-                import io.fand.api.command.CommandCompleter;
-                import io.fand.api.command.CommandExecutor;
-                import io.fand.api.command.CommandSender;
-                import io.fand.api.command.CommandSpec;
+                import io.fand.api.command.Arg;
+                import io.fand.api.command.Command;
+                import io.fand.api.command.CommandContext;
+                import io.fand.api.command.Permission;
+                import io.fand.api.command.Subcommand;
                 import io.fand.api.plugin.Plugin;
                 import io.fand.api.plugin.PluginContext;
                 import io.fand.server.command.AnnotatedCommands;
@@ -128,16 +121,12 @@ final class PluginCommandIntegrationTest {
                         context.commands().register(new HelloCommand());
                     }
 
-                    @CommandSpec(label = "hello", subcommands = {"world"}, permission = "demo.command.hello")
-                    public static final class HelloCommand implements CommandExecutor, CommandCompleter {
-                        @Override
-                        public void execute(CommandSender sender, String label, List<String> args) {
-                            log("command:" + String.join(",", args));
-                        }
-
-                        @Override
-                        public List<String> complete(CommandSender sender, String label, List<String> args) {
-                            return List.of("alpha", "beta");
+                    @Command("hello")
+                    @Permission("demo.command.hello")
+                    public static final class HelloCommand {
+                        @Subcommand("world")
+                        public void world(CommandContext context, @Arg(value = "name", suggestions = {"alpha", "beta"}) String name) {
+                            log("command:" + name);
                         }
                     }
 

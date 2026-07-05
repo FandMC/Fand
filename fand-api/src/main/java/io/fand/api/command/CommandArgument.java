@@ -9,8 +9,7 @@ import org.jspecify.annotations.Nullable;
  * Typed command argument metadata advertised by registered commands.
  *
  * <p>This is an API-safe description of Brigadier-like argument shapes. The
- * runtime may use it to build richer client command trees, while legacy
- * executors still receive the final string tokens through {@link CommandExecutor}.
+ * runtime may use it to build richer client command trees and command listings.
  */
 public record CommandArgument(
         String name,

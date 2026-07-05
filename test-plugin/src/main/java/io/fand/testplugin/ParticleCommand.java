@@ -5,10 +5,7 @@ import static io.fand.testplugin.DemoSupport.*;
 import io.fand.api.Fand;
 import io.fand.api.block.BlockKey;
 import io.fand.api.block.BlockTypes;
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import io.fand.api.entity.Player;
 import io.fand.api.item.ItemKey;
 import io.fand.api.item.ItemTypes;
@@ -22,8 +19,8 @@ import java.util.Locale;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(label = "fandparticle", arguments = {"player", "mode"}, aliases = {"fparticle"}, permission = "fand.testplugin.particle")
-final class ParticleCommand implements CommandExecutor, CommandCompleter {
+@TestCommand(label = "fandparticle", arguments = {"player", "mode"}, aliases = {"fparticle"}, permission = "fand.testplugin.particle")
+final class ParticleCommand implements TestCommandHandler, TestCommandTabHandler {
 
     @Override
     public void execute(CommandSender sender, String label, List<String> args) {

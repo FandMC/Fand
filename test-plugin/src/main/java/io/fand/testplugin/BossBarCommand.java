@@ -3,10 +3,7 @@ package io.fand.testplugin;
 import static io.fand.testplugin.DemoSupport.*;
 
 import io.fand.api.Fand;
-import io.fand.api.command.CommandCompleter;
-import io.fand.api.command.CommandExecutor;
 import io.fand.api.command.CommandSender;
-import io.fand.api.command.CommandSpec;
 import io.fand.api.plugin.PluginContext;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -15,8 +12,8 @@ import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-@CommandSpec(label = "fandbossbar", arguments = {"player", "progress", "message"}, aliases = {"fbossbar"}, permission = "fand.testplugin.bossbar")
-final class BossBarCommand implements CommandExecutor, CommandCompleter {
+@TestCommand(label = "fandbossbar", arguments = {"player", "progress", "message"}, aliases = {"fbossbar"}, permission = "fand.testplugin.bossbar")
+final class BossBarCommand implements TestCommandHandler, TestCommandTabHandler {
 
     private final PluginContext context;
 

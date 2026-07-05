@@ -4,7 +4,7 @@ import io.fand.api.advancement.AdvancementRegistration;
 import io.fand.api.auth.LoginAuthenticationRegistration;
 import io.fand.api.bossbar.BossBarHandle;
 import io.fand.api.bossbar.BossBarRegistration;
-import io.fand.api.command.CommandDescriptor;
+import io.fand.api.command.CommandInfo;
 import io.fand.api.command.CommandRegistration;
 import io.fand.api.customblock.CustomBlockItemBinding;
 import io.fand.api.customblock.CustomBlockRegistration;
@@ -94,11 +94,15 @@ final class PluginResourceTracker {
     }
 
     TrackedCommandRegistration track(CommandRegistration delegate) {
-        return track(delegate, null);
+        return track(delegate, List.of());
     }
 
-    TrackedCommandRegistration track(CommandRegistration delegate, CommandDescriptor descriptor) {
-        var tracked = new TrackedCommandRegistration(this, delegate, descriptor);
+    TrackedCommandRegistration track(CommandRegistration delegate, CommandInfo descriptor) {
+        return track(delegate, descriptor == null ? List.of() : List.of(descriptor));
+    }
+
+    TrackedCommandRegistration track(CommandRegistration delegate, List<CommandInfo> descriptors) {
+        var tracked = new TrackedCommandRegistration(this, delegate, descriptors);
         var dispose = false;
         synchronized (lock) {
             if (closed) {
@@ -796,11 +800,10 @@ final class PluginResourceTracker {
         }
     }
 
-    List<CommandDescriptor> commandDescriptors() {
+    List<CommandInfo> commandDescriptors() {
         synchronized (lock) {
             return commandRegistrations.stream()
-                    .map(TrackedCommandRegistration::descriptor)
-                    .flatMap(Optional::stream)
+                    .flatMap(registration -> registration.descriptors().stream())
                     .toList();
         }
     }
@@ -1041,17 +1044,17 @@ final class PluginResourceTracker {
 
         private final PluginResourceTracker owner;
         private final CommandRegistration delegate;
-        private final CommandDescriptor descriptor;
+        private final List<CommandInfo> descriptors;
         private volatile boolean released;
 
-        TrackedCommandRegistration(PluginResourceTracker owner, CommandRegistration delegate, CommandDescriptor descriptor) {
+        TrackedCommandRegistration(PluginResourceTracker owner, CommandRegistration delegate, List<CommandInfo> descriptors) {
             this.owner = owner;
             this.delegate = delegate;
-            this.descriptor = descriptor;
+            this.descriptors = List.copyOf(descriptors);
         }
 
-        Optional<CommandDescriptor> descriptor() {
-            return Optional.ofNullable(descriptor);
+        List<CommandInfo> descriptors() {
+            return descriptors;
         }
 
         @Override
