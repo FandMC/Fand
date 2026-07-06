@@ -154,31 +154,126 @@ context.events().registerListener(new PlayerListener());
 
 ## 命令
 
-命令可以通过链式 Builder 或注解类注册。命令通常在 `onEnable` 中注册到
-`context.commands()`，插件禁用时由运行时自动清理。
+命令使用结构化命令树注册。推荐在 `onEnable` 中注册到 `context.commands()`；通过
+`PluginContext` 注册的命令会自动归属到当前插件命名空间，并在插件禁用时由运行时自动清理。
+
+Fand 0.6 起不再推荐旧的 `CommandDescriptor + executor + completer` 写法。新命令 API 有两种入口：
+
+- Builder：适合在插件主类或服务类中就地声明简单命令。
+- 注解类：适合把较大的命令拆到独立类中维护。
+
+### Builder 命令
+
+Builder 以根命令名开始，继续声明别名、权限、默认执行器、字面量子命令和类型化参数：
 
 ```java
+import io.fand.api.command.Arguments;
 import net.kyori.adventure.text.Component;
 
-context.commands().register("hello", command -> command
+context.commands().register("hello", root -> root
         .aliases("hi")
         .permission("example.hello")
         .executes(context -> context.sender().sendMessage(Component.text("Hello, " + context.sender().name())))
-        .argument("target", io.fand.api.command.Arguments.greedyString(), target -> target
-                .executes(context -> context.sender().sendMessage(Component.text("Hello, " + context.string("target"))))));
+        .literal("to", to -> to
+                .argument("target", Arguments.greedyString(), target -> target
+                        .executes(context -> context.sender().sendMessage(Component.text("Hello, " + context.string("target")))))));
 ```
 
-独立命令类可以用注解注册：
+上面的命令提供：
+
+- `/hello`：向执行者问候。
+- `/hello to <target>`：读取 `target` 参数并问候目标。
+- `/hi`：根命令别名。
+
+插件作用域的 `context.commands()` 会覆盖命令定义中的 namespace，保证命令属于当前插件。普通插件通常
+不需要调用 `.namespace(...)`；服务端内置命令或测试中直接使用全局 `CommandRegistry` 时才需要手动指定。
+
+子命令用 `.literal(...)` 表示固定词，用 `.argument(...)` 表示参数节点。每个可执行节点都要设置
+`.executes(...)`；权限可以放在根节点，也可以放在某个子命令节点上：
+
+```java
+context.commands().register("config", root -> root
+        .permission("example.config")
+        .executes(context -> showHelp(context.sender()))
+        .literal("reload", reload -> reload
+                .permission("example.config.reload")
+                .executes(context -> reloadConfig(context.sender())))
+        .literal("set", set -> set
+                .argument("key", Arguments.word(), key -> key
+                        .argument("value", Arguments.greedyString(), value -> value
+                                .executes(context -> setConfig(
+                                        context.sender(),
+                                        context.string("key"),
+                                        context.string("value")))))));
+```
+
+常用参数工厂在 `Arguments` 中：
+
+- `word()`：单个无空格词。
+- `string()`：一个 Brigadier 字符串参数。
+- `greedyString()`：吞掉剩余输入，适合消息、理由和配置值。
+- `bool()`：`true` 或 `false`。
+- `integer()` / `integer(min, max)`：整数，可限制范围。
+- `longValue(min, max)`、`floatValue()`、`doubleValue()`：数字参数。
+- `player()`：在线玩家。
+- `item()`：物品注册表 key。
+- `enumValue(...)`：有限字符串集合。
+
+参数可以声明为可选、带默认值，或在发送者类型匹配时默认使用发送者：
+
+```java
+context.commands().register("giveitem", root -> root
+        .argument("item", Arguments.item(), item -> item
+                .argument("amount", Arguments.integer(1, 2304).optional(1), amount -> amount
+                        .executes(context -> giveItem(
+                                context.sender(),
+                                context.item("item"),
+                                context.intValue("amount"))))));
+```
+
+补全可以直接挂在参数定义上，也可以挂在当前命令节点上。参数静态补全适合枚举值；节点补全适合需要根据
+已解析参数动态计算的场景。运行时会按玩家正在输入的前缀过滤补全结果，补全回调只需要返回候选列表：
+
+```java
+context.commands().register("mode", root -> root
+        .argument("value", Arguments.enumValue("fast", "safe", "debug"), value -> value
+                .executes(context -> setMode(context.string("value")))));
+
+context.commands().register("warp", root -> root
+        .argument("name", Arguments.word(), name -> name
+                .suggests(context -> knownWarpsFor(context.sender()))
+                .executes(context -> warp(context.sender(), context.string("name")))));
+```
+
+`CommandContext` 提供本次调用的结构化数据：
+
+- `sender()` / `sender(SomeSender.class)`：命令发送者。
+- `label()`：玩家实际使用的根命令名，可能是别名。
+- `args()`：原始参数列表。
+- `arguments()`：已解析参数 map。
+- `has(name)`、`argument(name, type)`、`optionalArgument(name, type)`：通用访问。
+- `string(name)`、`intValue(name)`、`booleanValue(name)`、`player(name)`、`item(name)` 等：常用类型访问。
+
+`context.commands().register(...)` 会返回 `CommandRegistration`。如果命令只跟随插件生命周期，通常不需要保存；
+运行时会在插件禁用时清理。需要临时命令时，可以保存句柄并调用 `unregister()` 或 `close()`。
+
+### 注解命令
+
+独立命令类可以用注解注册。类上使用 `@Command`、`@Aliases` 和 `@Permission` 声明根命令；方法上使用
+`@Default` 或 `@Subcommand` 声明可执行节点：
 
 ```java
 import io.fand.api.command.Arg;
+import io.fand.api.command.Aliases;
 import io.fand.api.command.Command;
 import io.fand.api.command.CommandContext;
 import io.fand.api.command.Default;
 import io.fand.api.command.Permission;
 import io.fand.api.command.Subcommand;
+import net.kyori.adventure.text.Component;
 
 @Command("hello")
+@Aliases({"hi", "hey"})
 @Permission("example.hello")
 public final class HelloCommand {
     @Default
@@ -187,7 +282,7 @@ public final class HelloCommand {
     }
 
     @Subcommand("to")
-    public void target(CommandContext context, @Arg("name") String name) {
+    public void target(CommandContext context, @Arg(value = "name", type = io.fand.api.command.CommandArgumentType.GREEDY_STRING) String name) {
         context.sender().sendMessage(Component.text("Hello, " + name));
     }
 }
@@ -195,7 +290,40 @@ public final class HelloCommand {
 context.commands().register(new HelloCommand());
 ```
 
-命令权限节点应配合 `PermissionService` 注册默认访问策略。
+`@Subcommand` 可以包含多段路径，例如 `@Subcommand("config reload")`。方法参数可以是 `CommandContext`，
+也可以是带 `@Arg` 的类型化参数。未显式指定 `type` 时，运行时会按 Java 参数类型推断：
+
+- `String` 默认是 `WORD`，需要空格内容时指定 `type = CommandArgumentType.GREEDY_STRING`。
+- `int` / `Integer`、`long` / `Long`、`boolean` / `Boolean`、`float` / `Float`、`double` / `Double`
+  会映射到对应数字或布尔参数。
+- `Player` 会映射为玩家参数。
+- `ItemType` 会映射为物品注册表 key。
+
+注解参数同样支持补全、范围和默认值：
+
+```java
+@Command("demo")
+@Permission("example.demo")
+public final class DemoCommand {
+    @Subcommand("repeat")
+    public void repeat(
+            CommandContext context,
+            @Arg(value = "times", min = 1, max = 10, optional = true, defaultInt = 1) int times,
+            @Arg(value = "message", type = io.fand.api.command.CommandArgumentType.GREEDY_STRING) String message
+    ) {
+        for (var i = 0; i < times; i++) {
+            context.sender().sendMessage(Component.text(message));
+        }
+    }
+
+    @Subcommand("mode")
+    public void mode(@Arg(value = "value", type = io.fand.api.command.CommandArgumentType.ENUM, suggestions = {"fast", "safe"}) String value) {
+        setMode(value);
+    }
+}
+```
+
+命令权限节点应配合 `PermissionService` 或 `fand-plugin.json` 的 `permissions` 声明默认访问策略。
 
 ## 配置、存储和权限
 
