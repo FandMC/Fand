@@ -444,11 +444,11 @@ final class DemoSupport {
     }
 
     static boolean hasEnchantment(ItemStack stack, Key enchantment) {
-        return !stack.isEmpty() && stack.enchantments().has(enchantment);
+        return !stack.empty() && stack.enchantments().contains(enchantment);
     }
 
     static boolean isKitNavigator(ItemStack stack) {
-        return !stack.isEmpty()
+        return !stack.empty()
                 && stack.customData()
                         .map(data -> data.has("demo_role")
                                 && data.get("demo_role").getAsString().equals("fand_kit_navigator"))
@@ -573,7 +573,7 @@ final class DemoSupport {
     }
 
     static String message(Configuration config, String path, String fallback) {
-        return config.getString(path, fallback);
+        return config.string(path, fallback);
     }
 
     static List<String> playerNames() {
@@ -604,7 +604,7 @@ final class DemoSupport {
     }
 
     static boolean isStackType(ItemStack stack, String itemKey) {
-        return !stack.isEmpty() && stack.type().key().asString().equals(keyString(itemKey));
+        return !stack.empty() && stack.type().key().asString().equals(keyString(itemKey));
     }
 
     static boolean isFloat(String raw) {
@@ -695,7 +695,7 @@ final class DemoSupport {
     }
 
     static String stackName(ItemStack stack) {
-        return stack.isEmpty() ? "empty" : stack.amount() + "x " + itemName(stack.type());
+        return stack.empty() ? "empty" : stack.amount() + "x " + itemName(stack.type());
     }
 
     static String compactLocation(io.fand.api.world.Location location) {

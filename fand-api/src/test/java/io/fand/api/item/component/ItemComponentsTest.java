@@ -18,7 +18,7 @@ class ItemComponentsTest {
         var components = ItemComponents.fromJsonPatch(json);
         var encoded = components.toJsonPatch();
 
-        assertThat(components.has(ItemComponentKeys.CUSTOM_NAME)).isTrue();
+        assertThat(components.contains(ItemComponentKeys.CUSTOM_NAME)).isTrue();
         assertThat(components.removes(ItemComponentKeys.LORE)).isTrue();
         assertThat(encoded.get("minecraft:custom_name").getAsString()).isEqualTo("name");
         assertThat(encoded.has("!minecraft:lore")).isTrue();
@@ -32,7 +32,7 @@ class ItemComponentsTest {
         var components = ItemComponents.of(Key.key("minecraft:custom_data"), value);
         value.addProperty("after", true);
 
-        assertThat(components.get(Key.key("minecraft:custom_data")).orElseThrow().getAsJsonObject().has("after"))
+        assertThat(components.value(Key.key("minecraft:custom_data")).orElseThrow().getAsJsonObject().has("after"))
                 .isFalse();
     }
 
@@ -45,13 +45,13 @@ class ItemComponentsTest {
 
     @Test
     void typedHelpersWritePrimitiveValues() {
-        var components = ItemComponents.empty()
+        var components = ItemComponents.emptyComponents()
                 .withInt(ItemComponentKeys.REPAIR_COST, 4)
                 .withBoolean(ItemComponentKeys.ENCHANTMENT_GLINT_OVERRIDE, true)
                 .withKey(ItemComponentKeys.ITEM_MODEL, Key.key("fand:test"));
 
-        assertThat(components.get(ItemComponentKeys.REPAIR_COST)).contains(new JsonPrimitive(4));
-        assertThat(components.get(ItemComponentKeys.ENCHANTMENT_GLINT_OVERRIDE)).contains(new JsonPrimitive(true));
-        assertThat(components.get(ItemComponentKeys.ITEM_MODEL)).contains(new JsonPrimitive("fand:test"));
+        assertThat(components.value(ItemComponentKeys.REPAIR_COST)).contains(new JsonPrimitive(4));
+        assertThat(components.value(ItemComponentKeys.ENCHANTMENT_GLINT_OVERRIDE)).contains(new JsonPrimitive(true));
+        assertThat(components.value(ItemComponentKeys.ITEM_MODEL)).contains(new JsonPrimitive("fand:test"));
     }
 }

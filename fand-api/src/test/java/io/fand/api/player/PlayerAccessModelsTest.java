@@ -120,22 +120,22 @@ final class PlayerAccessModelsTest {
     void worldCreateOptionsSeparateVoidAndGeneratorModes() {
         var template = WorldCreateOptions.of(WorldTemplate.NETHER);
         var generated = WorldCreateOptions.generated(chunk -> { });
-        var voidWorld = WorldCreateOptions.voidWorld();
+        var voidWorld = WorldCreateOptions.voidWorldOptions();
 
         assertThat(template.template()).isEqualTo(WorldTemplate.NETHER);
         assertThat(template.generator()).isEmpty();
         assertThat(template.generatorSettings().mode()).isEqualTo(GenerationMode.TEMPLATE);
-        assertThat(template.isVoidWorld()).isFalse();
+        assertThat(template.voidWorld()).isFalse();
         assertThat(generated.generator()).isPresent();
         assertThat(generated.generatorSettings().mode()).isEqualTo(GenerationMode.CUSTOM);
-        assertThat(generated.isVoidWorld()).isFalse();
+        assertThat(generated.voidWorld()).isFalse();
         var vanillaGenerated = WorldCreateOptions.generated(chunk -> { }, WorldGeneratorSettings.vanilla());
         assertThat(vanillaGenerated.generator()).isPresent();
         assertThat(vanillaGenerated.generatorSettings().mode()).isEqualTo(GenerationMode.VANILLA);
         assertThat(vanillaGenerated.generatorSettings().usesVanillaNoisePipeline()).isTrue();
         assertThat(voidWorld.template()).isEqualTo(WorldTemplate.OVERWORLD);
         assertThat(voidWorld.generatorSettings().mode()).isEqualTo(GenerationMode.EMPTY);
-        assertThat(voidWorld.isVoidWorld()).isTrue();
+        assertThat(voidWorld.voidWorld()).isTrue();
         assertThatThrownBy(() -> generated.voidWorld(true))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("mutually exclusive");

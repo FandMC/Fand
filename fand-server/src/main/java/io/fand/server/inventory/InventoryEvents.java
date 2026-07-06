@@ -193,7 +193,7 @@ public final class InventoryEvents {
             LOGGER.warn("InventoryMoveItemEvent listener failed", failure);
             return new MoveItemResult(true, itemStack);
         }
-        if (event.cancelled() || event.item().isEmpty()) {
+        if (event.cancelled() || event.item().empty()) {
             return new MoveItemResult(false, itemStack);
         }
         try {
@@ -237,7 +237,7 @@ public final class InventoryEvents {
             LOGGER.warn("HopperMoveItemEvent listener failed", failure);
             return new MoveItemResult(true, itemStack);
         }
-        if (event.cancelled() || event.item().isEmpty()) {
+        if (event.cancelled() || event.item().empty()) {
             return new MoveItemResult(false, itemStack);
         }
         try {
@@ -265,7 +265,7 @@ public final class InventoryEvents {
             LOGGER.warn("InventoryPickupItemEvent listener failed", failure);
             return new MoveItemResult(true, itemStack);
         }
-        if (event.cancelled() || event.item().isEmpty()) {
+        if (event.cancelled() || event.item().empty()) {
             return new MoveItemResult(false, itemStack);
         }
         try {
@@ -301,7 +301,7 @@ public final class InventoryEvents {
             LOGGER.warn("HopperPickupItemEvent listener failed", failure);
             return new MoveItemResult(true, itemStack);
         }
-        if (event.cancelled() || event.item().isEmpty()) {
+        if (event.cancelled() || event.item().empty()) {
             return new MoveItemResult(false, itemStack);
         }
         try {
@@ -481,7 +481,7 @@ public final class InventoryEvents {
             LOGGER.warn("EnchantItemEvent listener failed", failure);
             return resultItem;
         }
-        if (event.cancelled() || event.resultItem().isEmpty()) {
+        if (event.cancelled() || event.resultItem().empty()) {
             return null;
         }
         try {
@@ -696,7 +696,7 @@ public final class InventoryEvents {
             LOGGER.warn("FurnaceSmeltEvent listener failed", failure);
             return result;
         }
-        if (event.cancelled() || event.result().isEmpty()) {
+        if (event.cancelled() || event.result().empty()) {
             return null;
         }
         try {

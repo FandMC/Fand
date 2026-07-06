@@ -41,7 +41,7 @@ final class ComponentItemCommand implements TestCommandHandler, TestCommandTabHa
             }
             amount = parsed;
         }
-        int limit = Math.max(1, context.config().getInt("limits.max-give-amount", 2304));
+        int limit = Math.max(1, context.config().intValue("limits.max-give-amount", 2304));
         if (amount < 1 || amount > limit) {
             sender.sendMessage(Component.text("Amount must be in 1.." + limit, NamedTextColor.RED));
             return;

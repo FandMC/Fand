@@ -64,7 +64,7 @@ public final class FandInventory implements Inventory {
 
     @Override
     public ItemStack add(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) {
+        if (stack == null || stack.empty()) {
             return ItemStack.EMPTY;
         }
         var leftover = container.addItem(FandItemStacks.toVanilla(stack));

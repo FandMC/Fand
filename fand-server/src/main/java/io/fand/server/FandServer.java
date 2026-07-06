@@ -1042,7 +1042,7 @@ public final class FandServer implements Server, AutoCloseable {
 
     private LevelStem levelStem(MinecraftServer server, Key worldKey, WorldCreateOptions options) {
         var template = templateKey(options.template());
-        if (options.isVoidWorld()) {
+        if (options.voidWorld()) {
             return server.fand$voidLevelStem(template);
         }
         var generator = options.generator().orElse(null);

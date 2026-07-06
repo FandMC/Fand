@@ -31,7 +31,7 @@ public final class PluginCommand {
                 .literal("list", list -> list
                         .permission("fand.command.plugin.list")
                         .executes(context -> sendPluginList(context.sender(), server.pluginRuntime(), false))
-                        .argument("flag", Arguments.word().optional().suggests("--all"), flag -> flag
+                        .argument("flag", Arguments.word().asOptional().suggests("--all"), flag -> flag
                                 .suggests(context -> List.of("--all"))
                                 .executes(context -> {
                                     if (invalidFlag(context, "flag", "--all")) {
@@ -70,7 +70,7 @@ public final class PluginCommand {
                 .literal("errors", errors -> errors
                         .permission("fand.command.plugin.errors")
                         .executes(context -> sendErrors(context.sender(), null))
-                        .argument("plugin", Arguments.word().optional(), plugin -> plugin
+                        .argument("plugin", Arguments.word().asOptional(), plugin -> plugin
                                 .suggests(context -> server.pluginRuntime().pluginIdSuggestions())
                                 .executes(context -> sendErrors(context.sender(), context.string("plugin"))))));
     }
@@ -96,7 +96,7 @@ public final class PluginCommand {
                 .argument("plugin", Arguments.word(), plugin -> plugin
                         .suggests(context -> suggestAll ? withAll(server.pluginRuntime().pluginIdSuggestions()) : server.pluginRuntime().pluginIdSuggestions())
                         .executes(context -> operate(context, id -> operation.apply(id, false)))
-                        .argument("flag", Arguments.word().optional().suggests("--cascade"), flag -> flag
+                        .argument("flag", Arguments.word().asOptional().suggests("--cascade"), flag -> flag
                                 .suggests(context -> List.of("--cascade"))
                                 .executes(context -> {
                                     if (invalidFlag(context, "flag", "--cascade")) {

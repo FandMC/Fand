@@ -156,7 +156,7 @@ public final class CommandBuilder {
             }
             return first.valueType().equals(second.valueType())
                     && first.type() == second.type()
-                    && first.isOptional() == second.isOptional()
+                    && first.optional() == second.optional()
                     && Objects.equals(first.defaultValue(), second.defaultValue())
                     && first.usesSenderAsDefault() == second.usesSenderAsDefault()
                     && first.suggestions().equals(second.suggestions())

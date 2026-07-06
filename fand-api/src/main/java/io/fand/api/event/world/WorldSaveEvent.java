@@ -7,15 +7,9 @@ import java.util.Objects;
 /**
  * Fired on the server thread when a world is about to be flushed to disk.
  */
-public final class WorldSaveEvent implements Event {
-
-    private final World world;
+public record WorldSaveEvent(World world) implements Event {
 
     public WorldSaveEvent(World world) {
         this.world = Objects.requireNonNull(world, "world");
-    }
-
-    public World world() {
-        return world;
     }
 }

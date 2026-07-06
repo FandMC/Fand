@@ -57,7 +57,7 @@ final class FandConfigurationServiceTest {
         config.save();
 
         var reloaded = FandConfigurationService.INSTANCE.load(path);
-        assertThat(reloaded.getString("server.motd", "")).isEqualTo("hello");
+        assertThat(reloaded.string("server.motd", "")).isEqualTo("hello");
         assertStandardValues(reloaded);
     }
 
@@ -84,7 +84,7 @@ final class FandConfigurationServiceTest {
         config.save();
 
         var reloaded = FandConfigurationService.INSTANCE.load(path);
-        assertThat(reloaded.getString("server.motd", "")).isEqualTo("hello");
+        assertThat(reloaded.string("server.motd", "")).isEqualTo("hello");
         assertStandardValues(reloaded);
     }
 
@@ -110,7 +110,7 @@ final class FandConfigurationServiceTest {
         config.save();
 
         var reloaded = FandConfigurationService.INSTANCE.load(path);
-        assertThat(reloaded.getString("server.motd", "")).isEqualTo("hello");
+        assertThat(reloaded.string("server.motd", "")).isEqualTo("hello");
         assertStandardValues(reloaded);
     }
 
@@ -136,8 +136,8 @@ final class FandConfigurationServiceTest {
         config.save();
 
         var reloaded = FandConfigurationService.INSTANCE.load(path);
-        assertThat(reloaded.getString("server.motd", "")).isEqualTo("hello");
-        assertThat(reloaded.getStringList("extra.flags")).containsExactly("a", "b");
+        assertThat(reloaded.string("server.motd", "")).isEqualTo("hello");
+        assertThat(reloaded.stringList("extra.flags")).containsExactly("a", "b");
         assertStandardValues(reloaded);
     }
 
@@ -151,14 +151,14 @@ final class FandConfigurationServiceTest {
                 new java.io.ByteArrayInputStream(defaults));
 
         assertThat(Files.readString(path)).isEqualTo("welcome=hello\n");
-        assertThat(config.getString("welcome", "")).isEqualTo("hello");
+        assertThat(config.string("welcome", "")).isEqualTo("hello");
     }
 
     private static void assertStandardValues(io.fand.api.config.Configuration config) {
-        assertThat(config.getString("server.host", "")).isEqualTo("example.com");
-        assertThat(config.getInt("server.port", 0)).isEqualTo(25565);
-        assertThat(config.getDouble("rate", 0.0)).isEqualTo(1.5);
-        assertThat(config.getBoolean("enabled", false)).isTrue();
-        assertThat(config.getStringList("server.flags")).containsExactly("online", "whitelist");
+        assertThat(config.string("server.host", "")).isEqualTo("example.com");
+        assertThat(config.intValue("server.port", 0)).isEqualTo(25565);
+        assertThat(config.doubleValue("rate", 0.0)).isEqualTo(1.5);
+        assertThat(config.booleanValue("enabled", false)).isTrue();
+        assertThat(config.stringList("server.flags")).containsExactly("online", "whitelist");
     }
 }

@@ -26,10 +26,10 @@ class FandPluginStorageTest {
 
         var reloaded = new FandPluginStorage(tempDir);
 
-        assertThat(reloaded.global().getString("version")).contains("1");
-        assertThat(reloaded.player(UUID.fromString("00000000-0000-0000-0000-000000000123")).getInt("research")).contains(7);
-        assertThat(reloaded.entity(UUID.fromString("00000000-0000-0000-0000-000000000456")).getString("quest")).contains("active");
-        assertThat(reloaded.chunk(Key.key("minecraft:overworld"), 1, -2).getInt("energy")).contains(42);
+        assertThat(reloaded.global().string("version")).contains("1");
+        assertThat(reloaded.player(UUID.fromString("00000000-0000-0000-0000-000000000123")).intValue("research")).contains(7);
+        assertThat(reloaded.entity(UUID.fromString("00000000-0000-0000-0000-000000000456")).string("quest")).contains("active");
+        assertThat(reloaded.chunk(Key.key("minecraft:overworld"), 1, -2).intValue("energy")).contains(42);
     }
 
     @Test
@@ -40,7 +40,7 @@ class FandPluginStorageTest {
 
         var reloaded = new FandPluginStorage(tempDir);
 
-        assertThat(reloaded.global().getString("queued")).contains("yes");
+        assertThat(reloaded.global().string("queued")).contains("yes");
     }
 
     @Test

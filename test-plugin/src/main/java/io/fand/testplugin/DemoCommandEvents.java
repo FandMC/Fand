@@ -52,14 +52,14 @@ final class DemoCommandEvents implements Listener {
 
     @Subscribe
     public void onCommandExecute(CommandExecuteEvent event) {
-        if (context.config().getBoolean("features.log-command-execute", false)) {
+        if (context.config().booleanValue("features.log-command-execute", false)) {
             logger.info("{} executing /{}", event.sender().name(), event.command());
         }
     }
 
     @Subscribe
     public void onTabComplete(TabCompleteEvent event) {
-        if (context.config().getBoolean("features.log-command-completions", false)) {
+        if (context.config().booleanValue("features.log-command-completions", false)) {
             logger.info("{} requested completions for '{}' count={}",
                     event.player().name(), event.buffer(), event.completions().size());
         }
@@ -74,7 +74,7 @@ final class DemoCommandEvents implements Listener {
                     + " " + loc.blockX() + "," + loc.blockY() + "," + loc.blockZ(), NamedTextColor.AQUA));
             return;
         }
-        if (context.config().getBoolean("features.mute-next-demo", true)) {
+        if (context.config().booleanValue("features.mute-next-demo", true)) {
             UUID playerId = event.player().uniqueId();
             if (isMuteNextCommand(event.originalText())) {
                 mutedNextMessages.add(playerId);
@@ -92,7 +92,7 @@ final class DemoCommandEvents implements Listener {
                 return;
             }
         }
-        if (context.config().getBoolean("features.chat-prefix", true)) {
+        if (context.config().booleanValue("features.chat-prefix", true)) {
             event.setMessage(Component.text("[FandDemo] ", NamedTextColor.LIGHT_PURPLE).append(event.message()));
         }
     }

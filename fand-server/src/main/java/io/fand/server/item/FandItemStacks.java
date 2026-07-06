@@ -20,13 +20,13 @@ public final class FandItemStacks {
     }
 
     public static net.minecraft.world.item.ItemStack toVanilla(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) {
+        if (stack == null || stack.empty()) {
             return net.minecraft.world.item.ItemStack.EMPTY;
         }
         ItemType type = stack.type();
         var item = ((FandItemType) requireFandType(type)).handle();
         var vanilla = new net.minecraft.world.item.ItemStack(item, stack.amount());
-        if (!stack.components().isEmpty()) {
+        if (!stack.components().empty()) {
             vanilla.applyComponents(ItemComponentBridge.toVanilla(stack.components()));
             net.minecraft.world.item.ItemStack.validateStrict(vanilla)
                     .getOrThrow(error -> new IllegalArgumentException("Invalid item stack components: " + error));

@@ -330,7 +330,7 @@ public final class EntityEvents {
                 LOGGER.warn("ItemSpawnEvent listener failed", failure);
                 return true;
             }
-            if (event.cancelled() || event.item().isEmpty()) {
+            if (event.cancelled() || event.item().empty()) {
                 return false;
             }
             try {
@@ -1102,7 +1102,7 @@ public final class EntityEvents {
             LOGGER.warn("EntityPickupItemEvent listener failed", failure);
             return new PickupItemResult(true, itemStack);
         }
-        if (event.cancelled() || event.item().isEmpty()) {
+        if (event.cancelled() || event.item().empty()) {
             return new PickupItemResult(false, itemStack);
         }
         try {
@@ -1139,7 +1139,7 @@ public final class EntityEvents {
             LOGGER.warn("EntityDropItemEvent listener failed", failure);
             return itemStack;
         }
-        if (event.cancelled() || event.item().isEmpty()) {
+        if (event.cancelled() || event.item().empty()) {
             return null;
         }
         try {

@@ -10,21 +10,10 @@ import java.util.Objects;
  * cancellable — by the time this fires, the client has already torn down
  * its UI.
  */
-public final class InventoryCloseEvent implements Event {
-
-    private final Player player;
-    private final InventoryType type;
+public record InventoryCloseEvent(Player player, InventoryType type) implements Event {
 
     public InventoryCloseEvent(Player player, InventoryType type) {
         this.player = Objects.requireNonNull(player, "player");
         this.type = Objects.requireNonNull(type, "type");
-    }
-
-    public Player player() {
-        return player;
-    }
-
-    public InventoryType type() {
-        return type;
     }
 }

@@ -38,7 +38,7 @@ public final class FandPlayerInventory implements PlayerInventory {
 
     @Override
     public ItemStack add(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) {
+        if (stack == null || stack.empty()) {
             return ItemStack.EMPTY;
         }
         var vanilla = FandItemStacks.toVanilla(stack);

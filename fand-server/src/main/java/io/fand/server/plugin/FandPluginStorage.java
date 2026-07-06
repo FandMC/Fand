@@ -133,7 +133,7 @@ public final class FandPluginStorage implements PluginStorage, AutoCloseable {
         }
 
         @Override
-        public Optional<JsonElement> get(String key) {
+        public Optional<JsonElement> value(String key) {
             Objects.requireNonNull(key, "key");
             synchronized (lock) {
                 var value = load().get(key);

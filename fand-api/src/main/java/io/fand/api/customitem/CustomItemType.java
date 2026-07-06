@@ -15,7 +15,7 @@ public record CustomItemType(Key id, ItemType baseType, ItemStack template) {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(baseType, "baseType");
         Objects.requireNonNull(template, "template");
-        if (template.isEmpty()) {
+        if (template.empty()) {
             throw new IllegalArgumentException("template must not be empty");
         }
         if (!baseType.equals(template.type())) {
@@ -25,7 +25,7 @@ public record CustomItemType(Key id, ItemType baseType, ItemStack template) {
 
     public static CustomItemType of(Key id, ItemStack template) {
         Objects.requireNonNull(template, "template");
-        if (template.isEmpty()) {
+        if (template.empty()) {
             throw new IllegalArgumentException("template must not be empty");
         }
         return new CustomItemType(id, template.type(), template);

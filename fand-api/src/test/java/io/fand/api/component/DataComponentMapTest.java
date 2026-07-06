@@ -21,13 +21,13 @@ class DataComponentMapTest {
 
     @Test
     void roundTripsTypedValues() {
-        var map = DataComponentMap.empty()
+        var map = DataComponentMap.emptyMap()
                 .with(LABEL, "machine")
                 .with(COUNT, 4);
 
-        assertThat(map.get(LABEL)).contains("machine");
-        assertThat(map.get(COUNT)).contains(4);
-        assertThat(DataComponentMap.fromJson(map.toJson()).get(LABEL)).contains("machine");
+        assertThat(map.value(LABEL)).contains("machine");
+        assertThat(map.value(COUNT)).contains(4);
+        assertThat(DataComponentMap.fromJson(map.toJson()).value(LABEL)).contains("machine");
     }
 
     @Test
@@ -35,8 +35,8 @@ class DataComponentMapTest {
         var id = UUID.fromString("00000000-0000-0000-0000-000000000123");
         var map = DataComponentMap.of(OWNER, id);
 
-        assertThat(map.get(OWNER)).contains(id);
-        assertThat(DataComponentMap.fromJson(map.toJson()).get(OWNER)).contains(id);
+        assertThat(map.value(OWNER)).contains(id);
+        assertThat(DataComponentMap.fromJson(map.toJson()).value(OWNER)).contains(id);
     }
 
     @Test
@@ -44,15 +44,15 @@ class DataComponentMapTest {
         var object = new JsonObject();
         object.addProperty("before", true);
 
-        var map = DataComponentMap.empty().with(DATA, object);
+        var map = DataComponentMap.emptyMap().with(DATA, object);
         object.addProperty("after", true);
 
-        assertThat(map.get(DATA).orElseThrow().has("after")).isFalse();
+        assertThat(map.value(DATA).orElseThrow().has("after")).isFalse();
 
-        var read = map.get(DATA).orElseThrow();
+        var read = map.value(DATA).orElseThrow();
         read.addProperty("mutated", true);
 
-        assertThat(map.get(DATA).orElseThrow().has("mutated")).isFalse();
+        assertThat(map.value(DATA).orElseThrow().has("mutated")).isFalse();
     }
 
     @Test
@@ -60,8 +60,8 @@ class DataComponentMapTest {
         var key = Key.key("fand-test:unknown");
         var map = DataComponentMap.of(key, new JsonPrimitive("value"));
 
-        assertThat(map.has(key)).isTrue();
-        assertThat(map.get(key)).contains(new JsonPrimitive("value"));
-        assertThat(map.without(key).isEmpty()).isTrue();
+        assertThat(map.contains(key)).isTrue();
+        assertThat(map.value(key)).contains(new JsonPrimitive("value"));
+        assertThat(map.without(key).empty()).isTrue();
     }
 }

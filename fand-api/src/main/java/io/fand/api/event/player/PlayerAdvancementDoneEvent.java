@@ -8,21 +8,10 @@ import net.kyori.adventure.key.Key;
 /**
  * Fired on the server thread after a player completes an advancement.
  */
-public final class PlayerAdvancementDoneEvent implements Event {
-
-    private final Player player;
-    private final Key advancement;
+public record PlayerAdvancementDoneEvent(Player player, Key advancement) implements Event {
 
     public PlayerAdvancementDoneEvent(Player player, Key advancement) {
         this.player = Objects.requireNonNull(player, "player");
         this.advancement = Objects.requireNonNull(advancement, "advancement");
-    }
-
-    public Player player() {
-        return player;
-    }
-
-    public Key advancement() {
-        return advancement;
     }
 }

@@ -7,7 +7,7 @@ import java.util.Objects;
 /**
  * Fired on the server thread when a non-player entity is removed from tracking.
  */
-public final class EntityRemoveEvent implements Event {
+public record EntityRemoveEvent(Entity entity, Cause cause) implements Event {
 
     public enum Cause {
         KILLED,
@@ -18,19 +18,8 @@ public final class EntityRemoveEvent implements Event {
         UNKNOWN
     }
 
-    private final Entity entity;
-    private final Cause cause;
-
     public EntityRemoveEvent(Entity entity, Cause cause) {
         this.entity = Objects.requireNonNull(entity, "entity");
         this.cause = Objects.requireNonNull(cause, "cause");
-    }
-
-    public Entity entity() {
-        return entity;
-    }
-
-    public Cause cause() {
-        return cause;
     }
 }

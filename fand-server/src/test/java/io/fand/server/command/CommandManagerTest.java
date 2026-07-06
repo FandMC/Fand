@@ -65,7 +65,7 @@ final class CommandManagerTest {
         manager.register("config", command -> command
                 .namespace("fand")
                 .literal("reload", reload -> reload
-                        .argument("mode", Arguments.word().optional().suggests("suggested"), mode -> mode
+                        .argument("mode", Arguments.word().asOptional().suggests("suggested"), mode -> mode
                                 .executes(context -> executed.add(context.label() + ":" + String.join(",", context.args()))))));
 
         var sender = new TestSender();
@@ -106,7 +106,7 @@ final class CommandManagerTest {
                 .namespace("FAND")
                 .aliases("Alias")
                 .literal("Reload", reload -> reload
-                        .argument("Targets", Arguments.word().optional(), target -> target.executes(context -> {}))));
+                        .argument("Targets", Arguments.word().asOptional(), target -> target.executes(context -> {}))));
 
         var command = manager.lookup("hello").orElseThrow();
         assertThat(command.arguments()).hasSize(1);
@@ -148,7 +148,7 @@ final class CommandManagerTest {
         manager.register("give", command -> command
                 .namespace("demo")
                 .argument("item", Arguments.word(), item -> item
-                        .argument("amount", Arguments.integer(1, 2304).optional(1), amount -> amount
+                        .argument("amount", Arguments.integer(1, 2304).asOptional(1), amount -> amount
                                 .executes(context -> executed.add(context.string("item") + ":" + context.intValue("amount"))))));
 
         var sender = new TestSender();

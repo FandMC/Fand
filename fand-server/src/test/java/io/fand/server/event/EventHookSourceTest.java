@@ -309,7 +309,7 @@ final class EventHookSourceTest {
 
         assertThat(source).contains("public static boolean fireSpawn");
         assertThat(source).contains("if (event.cancelled()) {\n                return false;");
-        assertThat(source).contains("if (event.cancelled() || event.item().isEmpty()) {\n                return false;");
+        assertThat(source).contains("if (event.cancelled() || event.item().empty()) {\n                return false;");
         assertThat(source).contains("public static net.minecraft.world.item.@Nullable ItemStack fireDropItem");
         assertThat(source).contains("return null;");
         assertThat(source).contains("public static void fireRemove");

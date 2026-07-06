@@ -32,32 +32,32 @@ public record PersistentDataContainer(JsonObject values) {
         return Set.copyOf(keys);
     }
 
-    public boolean has(Key key) {
+    public boolean contains(Key key) {
         return values.has(requireKey(key));
     }
 
-    public Optional<JsonElement> get(Key key) {
+    public Optional<JsonElement> value(Key key) {
         var value = values.get(requireKey(key));
         return value == null ? Optional.empty() : Optional.of(value.deepCopy());
     }
 
-    public Optional<String> getString(Key key) {
+    public Optional<String> string(Key key) {
         return primitive(key).filter(JsonPrimitive::isString).map(JsonPrimitive::getAsString);
     }
 
-    public Optional<Integer> getInt(Key key) {
+    public Optional<Integer> intValue(Key key) {
         return primitive(key).filter(JsonPrimitive::isNumber).map(JsonPrimitive::getAsInt);
     }
 
-    public Optional<Long> getLong(Key key) {
+    public Optional<Long> longValue(Key key) {
         return primitive(key).filter(JsonPrimitive::isNumber).map(JsonPrimitive::getAsLong);
     }
 
-    public Optional<Double> getDouble(Key key) {
+    public Optional<Double> doubleValue(Key key) {
         return primitive(key).filter(JsonPrimitive::isNumber).map(JsonPrimitive::getAsDouble);
     }
 
-    public Optional<Boolean> getBoolean(Key key) {
+    public Optional<Boolean> booleanValue(Key key) {
         return primitive(key).filter(JsonPrimitive::isBoolean).map(JsonPrimitive::getAsBoolean);
     }
 
@@ -99,7 +99,7 @@ public record PersistentDataContainer(JsonObject values) {
     }
 
     private Optional<JsonPrimitive> primitive(Key key) {
-        return get(key)
+        return value(key)
                 .filter(JsonElement::isJsonPrimitive)
                 .map(JsonElement::getAsJsonPrimitive);
     }

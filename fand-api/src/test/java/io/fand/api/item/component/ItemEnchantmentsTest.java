@@ -11,7 +11,7 @@ class ItemEnchantmentsTest {
 
     @Test
     void writesAndReadsLevels() {
-        var enchantments = ItemEnchantments.empty()
+        var enchantments = ItemEnchantments.emptyEnchantments()
                 .with(EnchantmentKey.SHARPNESS, 3)
                 .upgrade(EnchantmentKey.SHARPNESS, 5)
                 .with(Key.key("custom:glow"), 1);
@@ -20,7 +20,7 @@ class ItemEnchantmentsTest {
 
         assertThat(roundTripped.level(EnchantmentKey.SHARPNESS)).isEqualTo(5);
         assertThat(roundTripped.level(Key.key("custom:glow"))).isEqualTo(1);
-        assertThat(roundTripped.has(EnchantmentKey.MENDING)).isFalse();
+        assertThat(roundTripped.contains(EnchantmentKey.MENDING)).isFalse();
     }
 
     @Test
@@ -28,7 +28,7 @@ class ItemEnchantmentsTest {
         var enchantments = ItemEnchantments.of(EnchantmentKey.UNBREAKING, 3)
                 .with(EnchantmentKey.UNBREAKING, 0);
 
-        assertThat(enchantments.isEmpty()).isTrue();
+        assertThat(enchantments.empty()).isTrue();
     }
 
     @Test
@@ -43,6 +43,6 @@ class ItemEnchantmentsTest {
         var json = new JsonObject();
         json.addProperty(EnchantmentKey.SHARPNESS.asString(), 0);
 
-        assertThat(ItemEnchantments.fromJson(json).isEmpty()).isTrue();
+        assertThat(ItemEnchantments.fromJson(json).empty()).isTrue();
     }
 }

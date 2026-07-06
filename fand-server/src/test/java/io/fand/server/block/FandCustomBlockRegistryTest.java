@@ -64,8 +64,8 @@ class FandCustomBlockRegistryTest {
         assertThat(registry.place(block, MACHINE_ID)).isTrue();
         registry.tick(world);
 
-        assertThat(block.components().get(BlockComponentKeys.CUSTOM_ID)).contains(MACHINE_ID);
-        assertThat(block.components().get(BlockComponentKeys.TICKING)).contains(true);
+        assertThat(block.components().value(BlockComponentKeys.CUSTOM_ID)).contains(MACHINE_ID);
+        assertThat(block.components().value(BlockComponentKeys.TICKING)).contains(true);
         assertThat(registry.tickingBlocks(world, 0, 0)).containsExactly(block);
         assertThat(events).containsExactly("placed:test:machine", "tick:1");
     }
@@ -108,7 +108,7 @@ class FandCustomBlockRegistryTest {
         registry.place(block, MACHINE_ID);
 
         assertThat(registry.remove(block)).isTrue();
-        assertThat(block.components().snapshot().isEmpty()).isTrue();
+        assertThat(block.components().snapshot().empty()).isTrue();
         assertThat(events).containsExactly("broken");
     }
 
@@ -237,14 +237,14 @@ class FandCustomBlockRegistryTest {
 
         @Override
         public Collection<? extends Block> blocksWith(DataComponentKey<?> key) {
-            return blocks.values().stream().filter(block -> block.components().has(key)).toList();
+            return blocks.values().stream().filter(block -> block.components().contains(key)).toList();
         }
 
         @Override
         public Collection<? extends Block> blocksWith(DataComponentKey<?> key, int chunkX, int chunkZ) {
             return blocks.values().stream()
                     .filter(block -> (block.x() >> 4) == chunkX && (block.z() >> 4) == chunkZ)
-                    .filter(block -> block.components().has(key))
+                    .filter(block -> block.components().contains(key))
                     .toList();
         }
 

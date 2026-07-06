@@ -14,7 +14,7 @@ public record CustomEnchantment(
 ) {
 
     public CustomEnchantment(Key key, Component description, int maxLevel) {
-        this(key, description, EnchantmentDefinition.allItems(maxLevel), EnchantmentEffects.empty(), java.util.List.of());
+        this(key, description, EnchantmentDefinition.allItems(maxLevel), EnchantmentEffects.emptyEffects(), java.util.List.of());
     }
 
     public CustomEnchantment(

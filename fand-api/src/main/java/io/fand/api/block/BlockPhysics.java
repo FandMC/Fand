@@ -20,7 +20,7 @@ public record BlockPhysics(
         boolean flammable,
         boolean air,
         boolean requiresTool,
-        boolean hasBlockEntity,
+        boolean blockEntityPresent,
         boolean canSurvive,
         boolean redstoneConductor
 ) {

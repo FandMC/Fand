@@ -79,14 +79,14 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityDeath(EntityDeathEvent event) {
-        if (context.config().getBoolean("features.log-entity-deaths", false)) {
+        if (context.config().booleanValue("features.log-entity-deaths", false)) {
             logger.info("{} died from {}", event.entity().type().key().asString(), event.cause());
         }
     }
 
     @Subscribe
     public void onEntitySpawn(EntitySpawnEvent event) {
-        if (context.config().getBoolean("features.log-entity-spawns", false)) {
+        if (context.config().booleanValue("features.log-entity-spawns", false)) {
             logger.info("Entity spawned: {} cause={} at {}",
                     event.entity().type().key().asString(), event.cause(), compactLocation(event.entity().location()));
         }
@@ -94,28 +94,28 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onItemSpawn(ItemSpawnEvent event) {
-        if (context.config().getBoolean("features.log-item-events", false)) {
+        if (context.config().booleanValue("features.log-item-events", false)) {
             logger.info("Item spawned: {} at {}", stackName(event.item()), compactLocation(event.entity().location()));
         }
     }
 
     @Subscribe
     public void onItemDespawn(ItemDespawnEvent event) {
-        if (context.config().getBoolean("features.log-item-events", false)) {
+        if (context.config().booleanValue("features.log-item-events", false)) {
             logger.info("Item despawn: {} age={}", stackName(event.item()), event.age());
         }
     }
 
     @Subscribe
     public void onItemMerge(ItemMergeEvent event) {
-        if (context.config().getBoolean("features.log-item-events", false)) {
+        if (context.config().booleanValue("features.log-item-events", false)) {
             logger.info("Item merge: {} <- {}", stackName(event.targetItem()), stackName(event.sourceItem()));
         }
     }
 
     @Subscribe
     public void onEntityPickupItem(EntityPickupItemEvent event) {
-        if (context.config().getBoolean("features.log-item-events", false)) {
+        if (context.config().booleanValue("features.log-item-events", false)) {
             logger.info("Entity picked up item: {} item={}",
                     event.entity().type().key().asString(), stackName(event.item()));
         }
@@ -123,7 +123,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityDropItem(EntityDropItemEvent event) {
-        if (context.config().getBoolean("features.log-item-events", false)) {
+        if (context.config().booleanValue("features.log-item-events", false)) {
             logger.info("Entity dropped item: {} item={} at {}",
                     event.entity().type().key().asString(),
                     stackName(event.item()),
@@ -133,7 +133,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityChangeBlock(EntityChangeBlockEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity changed block: {} {},{},{} {} -> {} cause={}",
                     event.entity().type().key().asString(),
                     event.block().x(), event.block().y(), event.block().z(),
@@ -143,14 +143,14 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityRemove(EntityRemoveEvent event) {
-        if (context.config().getBoolean("features.log-entity-removes", false)) {
+        if (context.config().booleanValue("features.log-entity-removes", false)) {
             logger.info("Entity removed: {} cause={}", event.entity().type().key().asString(), event.cause());
         }
     }
 
     @Subscribe
     public void onEntityTeleport(EntityTeleportEvent event) {
-        if (context.config().getBoolean("features.log-entity-teleports", false)) {
+        if (context.config().booleanValue("features.log-entity-teleports", false)) {
             logger.info("Entity teleport: {} {} -> {}",
                     event.entity().type().key().asString(), compactLocation(event.from()), compactLocation(event.to()));
         }
@@ -158,7 +158,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityPortal(EntityPortalEvent event) {
-        if (context.config().getBoolean("features.log-entity-teleports", false)) {
+        if (context.config().booleanValue("features.log-entity-teleports", false)) {
             logger.info("Entity portal: {} {} -> {}",
                     event.entity().type().key().asString(), compactLocation(event.from()), compactLocation(event.to()));
         }
@@ -166,7 +166,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityPortalEnter(EntityPortalEnterEvent event) {
-        if (context.config().getBoolean("features.log-entity-teleports", false)) {
+        if (context.config().booleanValue("features.log-entity-teleports", false)) {
             logger.info("Entity portal enter: {} at {}",
                     event.entity().type().key().asString(), compactLocation(event.location()));
         }
@@ -174,7 +174,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityPortalExit(EntityPortalExitEvent event) {
-        if (context.config().getBoolean("features.log-entity-teleports", false)) {
+        if (context.config().booleanValue("features.log-entity-teleports", false)) {
             logger.info("Entity portal exit: {} {} -> {} after={}",
                     event.entity().type().key().asString(),
                     compactLocation(event.from()),
@@ -185,14 +185,14 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityCreatePortal(EntityCreatePortalEvent event) {
-        if (context.config().getBoolean("features.log-entity-teleports", false)) {
+        if (context.config().booleanValue("features.log-entity-teleports", false)) {
             logger.info("Entity created portal: {} blocks={}", event.entity().type().key().asString(), event.blocks().size());
         }
     }
 
     @Subscribe
     public void onExplosionPrime(ExplosionPrimeEvent event) {
-        if (context.config().getBoolean("protections.limit-explosion-radius", true) && event.radius() > 8.0F) {
+        if (context.config().booleanValue("protections.limit-explosion-radius", true) && event.radius() > 8.0F) {
             event.setRadius(8.0F);
             logger.info("Limited explosion at {} to radius {}", compactLocation(event.location()), event.radius());
         }
@@ -200,11 +200,11 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityExplode(EntityExplodeEvent event) {
-        if (context.config().getBoolean("protections.limit-explosion-block-damage", false)
+        if (context.config().booleanValue("protections.limit-explosion-block-damage", false)
                 && event.affectedBlocks().size() > 512) {
             event.affectedBlocks().subList(512, event.affectedBlocks().size()).clear();
         }
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity explosion: {} at {} affected={}",
                     event.entity().type().key().asString(), compactLocation(event.location()), event.affectedBlocks().size());
         }
@@ -212,7 +212,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityCombust(EntityCombustEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity combust: {} duration={} cause={}",
                     event.entity().type().key().asString(), trim(event.durationSeconds()), event.cause());
         }
@@ -220,7 +220,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityCombustByBlock(EntityCombustByBlockEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity combust by block: {} block={},{},{} duration={} cause={}",
                     event.entity().type().key().asString(),
                     event.combuster().x(),
@@ -233,7 +233,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityCombustByEntity(EntityCombustByEntityEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity combust by entity: {} source={} duration={} cause={}",
                     event.entity().type().key().asString(),
                     event.combuster().type().key().asString(),
@@ -244,7 +244,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityRegainHealth(EntityRegainHealthEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity heal: {} amount={} cause={}",
                     event.entity().type().key().asString(), trim(event.amount()), event.cause());
         }
@@ -252,7 +252,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity attacked: {} <- {} cause={} amount={}",
                     event.entity().type().key().asString(),
                     event.damager().type().key().asString(),
@@ -280,7 +280,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityDamageByBlock(EntityDamageByBlockEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity block damage: {} <- {},{},{} cause={} amount={}",
                     event.entity().type().key().asString(),
                     event.damager().x(),
@@ -311,7 +311,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityKnockback(EntityKnockbackEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             var velocity = event.velocity();
             logger.info("Entity knockback: {} source={} velocity={},{},{}",
                     event.entity().type().key().asString(),
@@ -324,7 +324,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onProjectileHit(ProjectileHitEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Projectile hit: {} type={} block={} entity={}",
                     event.projectile().type().key().asString(),
                     event.hitType(),
@@ -335,7 +335,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onProjectileLaunch(ProjectileLaunchEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Projectile launch: {} shooter={} item={}",
                     event.projectile().type().key().asString(),
                     event.shooter().map(entity -> entity.type().key().asString()).orElse("none"),
@@ -345,7 +345,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onShootBow(EntityShootBowEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Bow shot: {} projectile={} force={} consumable={}",
                     event.shooter().type().key().asString(),
                     event.projectile().type().key().asString(),
@@ -356,7 +356,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityTarget(EntityTargetEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity target: {} -> {} cause={}",
                     event.entity().type().key().asString(),
                     event.target().map(entity -> entity.type().key().asString()).orElse("none"),
@@ -366,7 +366,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityTargetLiving(EntityTargetLivingEntityEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity target living: {} -> {} cause={}",
                     event.entity().type().key().asString(),
                     event.livingTarget().type().key().asString(),
@@ -381,7 +381,7 @@ final class DemoEntityEvents implements Listener {
             event.setCancelled(true);
             return;
         }
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity damage reaction: {} source={} cause={} impact={}",
                     event.entity().type().key().asString(),
                     event.source().map(entity -> entity.type().key().asString()).orElse("none"),
@@ -392,7 +392,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onVillagerReputation(VillagerReputationEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Villager reputation: {} source={} cause={}",
                     event.villager().type().key().asString(),
                     event.source().type().key().asString(),
@@ -426,7 +426,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onPotionEffect(EntityPotionEffectEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity effect: {} {} action={} source={}",
                     event.entity().type().key().asString(),
                     event.effect().asString(),
@@ -437,7 +437,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onPotionSplash(PotionSplashEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Potion splash: {} at {} affected={} source={}",
                     stackName(event.item()),
                     compactLocation(event.location()),
@@ -448,7 +448,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onLingeringPotionSplash(LingeringPotionSplashEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Lingering potion: {} at {} source={}",
                     stackName(event.item()),
                     compactLocation(event.location()),
@@ -458,7 +458,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onAreaEffectCloudApply(AreaEffectCloudApplyEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Area effect cloud apply: {} affected={}",
                     event.cloud().type().key().asString(),
                     event.affectedEntities().size());
@@ -467,7 +467,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityMount(EntityMountEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity mount: {} -> {}",
                     event.entity().type().key().asString(), event.vehicle().type().key().asString());
         }
@@ -475,7 +475,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityDismount(EntityDismountEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity dismount: {} <- {}",
                     event.entity().type().key().asString(), event.vehicle().type().key().asString());
         }
@@ -486,7 +486,7 @@ final class DemoEntityEvents implements Listener {
         if (event.entity() instanceof Player player) {
             player.sendMessage(Component.text("Resurrection event observed with " + stackName(event.item()) + ".", NamedTextColor.GOLD));
         }
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity resurrect: {} hand={} item={}",
                     event.entity().type().key().asString(), event.hand(), stackName(event.item()));
         }
@@ -494,14 +494,14 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityTame(EntityTameEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity tame: {} owner={}", event.entity().type().key().asString(), event.owner().name());
         }
     }
 
     @Subscribe
     public void onEntityBreed(EntityBreedEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity breed: {} + {} -> {} breeder={}",
                     event.parent().type().key().asString(),
                     event.partner().type().key().asString(),
@@ -512,7 +512,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onEntityTransform(EntityTransformEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Entity transform: {} -> {} cause={}",
                     event.entity().type().key().asString(), event.targetType().asString(), event.cause());
         }
@@ -520,7 +520,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onHangingPlace(HangingPlaceEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Hanging place: {} face={} item={} player={}",
                     event.entity().type().key().asString(),
                     event.face(),
@@ -531,7 +531,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onHangingBreak(HangingBreakEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Hanging break: {} cause={} remover={}",
                     event.entity().type().key().asString(),
                     event.cause(),
@@ -541,7 +541,7 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onItemFrameChange(PlayerItemFrameChangeEvent event) {
-        if (context.config().getBoolean("features.log-entity-detail-events", false)) {
+        if (context.config().booleanValue("features.log-entity-detail-events", false)) {
             logger.info("Item frame: {} action={} item={} rotation={}",
                     event.player().name(), event.action(), stackName(event.item()), event.rotation());
         }
@@ -549,14 +549,14 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onVehicleCreate(VehicleCreateEvent event) {
-        if (context.config().getBoolean("features.log-vehicle-events", false)) {
+        if (context.config().booleanValue("features.log-vehicle-events", false)) {
             logger.info("Vehicle create: {} at {}", event.vehicle().type().key().asString(), compactLocation(event.vehicle().location()));
         }
     }
 
     @Subscribe
     public void onVehicleDestroy(VehicleDestroyEvent event) {
-        if (context.config().getBoolean("features.log-vehicle-events", false)) {
+        if (context.config().booleanValue("features.log-vehicle-events", false)) {
             logger.info("Vehicle destroy: {} attacker={}",
                     event.vehicle().type().key().asString(),
                     event.attacker().map(entity -> entity.type().key().asString()).orElse("none"));
@@ -565,21 +565,21 @@ final class DemoEntityEvents implements Listener {
 
     @Subscribe
     public void onVehicleEnter(VehicleEnterEvent event) {
-        if (context.config().getBoolean("features.log-vehicle-events", false)) {
+        if (context.config().booleanValue("features.log-vehicle-events", false)) {
             logger.info("Vehicle enter: {} <- {}", event.vehicle().type().key().asString(), event.entity().type().key().asString());
         }
     }
 
     @Subscribe
     public void onVehicleExit(VehicleExitEvent event) {
-        if (context.config().getBoolean("features.log-vehicle-events", false)) {
+        if (context.config().booleanValue("features.log-vehicle-events", false)) {
             logger.info("Vehicle exit: {} -> {}", event.vehicle().type().key().asString(), event.entity().type().key().asString());
         }
     }
 
     @Subscribe
     public void onVehicleMove(VehicleMoveEvent event) {
-        if (context.config().getBoolean("features.log-vehicle-move-events", false)) {
+        if (context.config().booleanValue("features.log-vehicle-move-events", false)) {
             logger.info("Vehicle move: {} {} -> {}",
                     event.vehicle().type().key().asString(), compactLocation(event.from()), compactLocation(event.to()));
         }

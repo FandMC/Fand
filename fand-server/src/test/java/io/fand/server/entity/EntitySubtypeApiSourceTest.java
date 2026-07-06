@@ -17,8 +17,8 @@ final class EntitySubtypeApiSourceTest {
 
         assertThat(api).contains("extends Animal, Angerable");
         assertThat(api).contains("Optional<Location> hiveLocation()");
-        assertThat(api).contains("void setHasNectar");
-        assertThat(api).contains("void setHasStung");
+        assertThat(api).contains("void setNectar");
+        assertThat(api).contains("void setStung");
         assertThat(wrapper).contains("handle().getHivePos()");
         assertThat(wrapper).contains("handle().setHivePos");
         assertThat(wrapper).contains("SET_HAS_NECTAR");

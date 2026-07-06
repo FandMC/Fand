@@ -307,7 +307,7 @@ final class TestPluginTest {
         assertThat(item.enchantable()).contains(30);
         assertThat(item.tooltipDisplay().hides(ItemComponentKeys.STORED_ENCHANTMENTS)).isTrue();
         assertThat(item.rarity()).contains(ItemRarity.RARE);
-        assertThat(item.components().has(ItemComponentKeys.CUSTOM_MODEL_DATA)).isTrue();
+        assertThat(item.components().contains(ItemComponentKeys.CUSTOM_MODEL_DATA)).isTrue();
         assertThat(item.customData()).get().extracting(json -> json.get("source").getAsString()).isEqualTo("tester");
     }
 

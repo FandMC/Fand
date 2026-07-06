@@ -15,7 +15,7 @@ public record EnchantmentEffects(JsonObject value) {
         value = value == null ? new JsonObject() : value.deepCopy();
     }
 
-    public static EnchantmentEffects empty() {
+    public static EnchantmentEffects emptyEffects() {
         return EMPTY;
     }
 
@@ -31,7 +31,7 @@ public record EnchantmentEffects(JsonObject value) {
         return value.deepCopy();
     }
 
-    public boolean isEmpty() {
+    public boolean empty() {
         return value.size() == 0;
     }
 

@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Mon, 6 Jul 2026 22:08:32 +0800
+Subject: [PATCH] Update Fand component API usage in BlockItem
+
+
+diff --git a/net/minecraft/world/item/BlockItem.java b/net/minecraft/world/item/BlockItem.java
+index f2461bb909e300289604c7a0e1959ff9282c12ae..662c59c92ca343ab4d9b5bba3bdfa56bbb6467be 100644
+--- a/net/minecraft/world/item/BlockItem.java
++++ b/net/minecraft/world/item/BlockItem.java
+@@ -105,7 +105,7 @@ public class BlockItem extends Item {
+                         : io.fand.server.event.BlockEvents.firePlace(serverLevel, pos, serverPlayer, placedState, replacedState, updatedPlaceContext.getHand(), itemStack);
+                     if (!allowed) {
+                         restorePlacement(serverLevel, beforeStates, beforeComponents, serverPlayer);
+-                        if (!replacedComponents.isEmpty()) {
++                        if (!replacedComponents.empty()) {
+                             io.fand.server.component.BlockComponentStorage.put(serverLevel, pos, replacedComponents);
+                         }
+                         return InteractionResult.FAIL;
+@@ -275,7 +275,7 @@ public class BlockItem extends Item {
+             BlockPos pos = entry.getKey();
+             level.setBlock(pos, entry.getValue(), Block.UPDATE_ALL);
+             io.fand.api.component.DataComponentMap components = beforeComponents.getOrDefault(pos, io.fand.api.component.DataComponentMap.EMPTY);
+-            if (components.isEmpty()) {
++            if (components.empty()) {
+                 io.fand.server.component.BlockComponentStorage.clear(level, pos);
+             } else {
+                 io.fand.server.component.BlockComponentStorage.put(level, pos, components);

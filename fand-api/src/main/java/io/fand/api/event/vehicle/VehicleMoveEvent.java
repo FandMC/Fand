@@ -8,27 +8,11 @@ import java.util.Objects;
 /**
  * Fired on the server thread after a vehicle changes position.
  */
-public final class VehicleMoveEvent implements Event {
-
-    private final Entity vehicle;
-    private final Location from;
-    private final Location to;
+public record VehicleMoveEvent(Entity vehicle, Location from, Location to) implements Event {
 
     public VehicleMoveEvent(Entity vehicle, Location from, Location to) {
         this.vehicle = Objects.requireNonNull(vehicle, "vehicle");
         this.from = Objects.requireNonNull(from, "from");
         this.to = Objects.requireNonNull(to, "to");
-    }
-
-    public Entity vehicle() {
-        return vehicle;
-    }
-
-    public Location from() {
-        return from;
-    }
-
-    public Location to() {
-        return to;
     }
 }

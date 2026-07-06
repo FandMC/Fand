@@ -18,7 +18,7 @@ final class DemoPermissionEvents implements Listener {
 
     @Subscribe
     public void onPermissionCheck(PermissionCheckEvent event) {
-        if (context.config().getBoolean("features.log-permission-checks", false)) {
+        if (context.config().booleanValue("features.log-permission-checks", false)) {
             logger.info("Permission check: node={} default={} effective={}",
                     event.node(), event.defaultResult(), event.effectiveResult());
         }

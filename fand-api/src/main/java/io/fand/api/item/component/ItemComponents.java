@@ -45,7 +45,7 @@ public record ItemComponents(Map<Key, JsonElement> values, Set<Key> removals) {
         removals = Collections.unmodifiableSet(copiedRemovals);
     }
 
-    public static ItemComponents empty() {
+    public static ItemComponents emptyComponents() {
         return EMPTY;
     }
 
@@ -83,7 +83,7 @@ public record ItemComponents(Map<Key, JsonElement> values, Set<Key> removals) {
         return new ItemComponents(values, removals);
     }
 
-    public boolean isEmpty() {
+    public boolean empty() {
         return values.isEmpty() && removals.isEmpty();
     }
 
@@ -98,7 +98,7 @@ public record ItemComponents(Map<Key, JsonElement> values, Set<Key> removals) {
         return Collections.unmodifiableSet(keys);
     }
 
-    public boolean has(Key key) {
+    public boolean contains(Key key) {
         return values.containsKey(key);
     }
 
@@ -106,7 +106,7 @@ public record ItemComponents(Map<Key, JsonElement> values, Set<Key> removals) {
         return removals.contains(key);
     }
 
-    public Optional<JsonElement> get(Key key) {
+    public Optional<JsonElement> value(Key key) {
         var value = values.get(key);
         return value == null ? Optional.empty() : Optional.of(value.deepCopy());
     }

@@ -97,7 +97,7 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
 
     public Optional<Key> customId(Block block) {
         Objects.requireNonNull(block, "block");
-        return block.components().get(BlockComponentKeys.CUSTOM_ID);
+        return block.components().value(BlockComponentKeys.CUSTOM_ID);
     }
 
     @Override
@@ -446,7 +446,7 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
             PlayerInteractEvent.Hand hand,
             ItemStack item
     ) {
-        if (item.isEmpty() || player.gameMode() == io.fand.api.entity.GameMode.CREATIVE) {
+        if (item.empty() || player.gameMode() == io.fand.api.entity.GameMode.CREATIVE) {
             return;
         }
         var next = item.amount() <= 1 ? ItemStack.EMPTY : item.withAmount(item.amount() - 1);

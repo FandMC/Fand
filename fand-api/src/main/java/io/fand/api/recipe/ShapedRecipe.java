@@ -118,7 +118,7 @@ public record ShapedRecipe(
 
     static ItemStack validateResult(ItemStack result) {
         Objects.requireNonNull(result, "result");
-        if (result.isEmpty()) {
+        if (result.empty()) {
             throw new IllegalArgumentException("Recipe result must be non-empty");
         }
         return result;

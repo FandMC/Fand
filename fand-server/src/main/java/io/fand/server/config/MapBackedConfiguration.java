@@ -36,48 +36,48 @@ abstract class MapBackedConfiguration implements Configuration {
     }
 
     @Override
-    public @Nullable Object get(String path) {
-        return root.get(path);
+    public @Nullable Object value(String path) {
+        return root.value(path);
     }
 
     @Override
-    public String getString(String path, String defaultValue) {
-        return root.getString(path, defaultValue);
+    public String string(String path, String defaultValue) {
+        return root.string(path, defaultValue);
     }
 
     @Override
-    public @Nullable String getString(String path) {
-        return root.getString(path);
+    public @Nullable String string(String path) {
+        return root.string(path);
     }
 
     @Override
-    public int getInt(String path, int defaultValue) {
-        return root.getInt(path, defaultValue);
+    public int intValue(String path, int defaultValue) {
+        return root.intValue(path, defaultValue);
     }
 
     @Override
-    public long getLong(String path, long defaultValue) {
-        return root.getLong(path, defaultValue);
+    public long longValue(String path, long defaultValue) {
+        return root.longValue(path, defaultValue);
     }
 
     @Override
-    public double getDouble(String path, double defaultValue) {
-        return root.getDouble(path, defaultValue);
+    public double doubleValue(String path, double defaultValue) {
+        return root.doubleValue(path, defaultValue);
     }
 
     @Override
-    public boolean getBoolean(String path, boolean defaultValue) {
-        return root.getBoolean(path, defaultValue);
+    public boolean booleanValue(String path, boolean defaultValue) {
+        return root.booleanValue(path, defaultValue);
     }
 
     @Override
-    public List<String> getStringList(String path) {
-        return root.getStringList(path);
+    public List<String> stringList(String path) {
+        return root.stringList(path);
     }
 
     @Override
-    public ConfigurationSection getSection(String path) {
-        return root.getSection(path);
+    public ConfigurationSection section(String path) {
+        return root.section(path);
     }
 
     @Override
@@ -137,7 +137,7 @@ abstract class MapBackedConfiguration implements Configuration {
         }
 
         @Override
-        public @Nullable Object get(String path) {
+        public @Nullable Object value(String path) {
             var resolved = resolve(path, false);
             if (resolved == null) {
                 return null;
@@ -152,19 +152,19 @@ abstract class MapBackedConfiguration implements Configuration {
         }
 
         @Override
-        public String getString(String path, String defaultValue) {
+        public String string(String path, String defaultValue) {
             var value = rawValue(path);
             return value == null ? defaultValue : value.toString();
         }
 
         @Override
-        public @Nullable String getString(String path) {
+        public @Nullable String string(String path) {
             var value = rawValue(path);
             return value == null ? null : value.toString();
         }
 
         @Override
-        public int getInt(String path, int defaultValue) {
+        public int intValue(String path, int defaultValue) {
             var value = rawValue(path);
             if (value instanceof Number number) {
                 return number.intValue();
@@ -179,7 +179,7 @@ abstract class MapBackedConfiguration implements Configuration {
         }
 
         @Override
-        public long getLong(String path, long defaultValue) {
+        public long longValue(String path, long defaultValue) {
             var value = rawValue(path);
             if (value instanceof Number number) {
                 return number.longValue();
@@ -194,7 +194,7 @@ abstract class MapBackedConfiguration implements Configuration {
         }
 
         @Override
-        public double getDouble(String path, double defaultValue) {
+        public double doubleValue(String path, double defaultValue) {
             var value = rawValue(path);
             if (value instanceof Number number) {
                 return number.doubleValue();
@@ -209,7 +209,7 @@ abstract class MapBackedConfiguration implements Configuration {
         }
 
         @Override
-        public boolean getBoolean(String path, boolean defaultValue) {
+        public boolean booleanValue(String path, boolean defaultValue) {
             var value = rawValue(path);
             if (value instanceof Boolean flag) {
                 return flag;
@@ -226,7 +226,7 @@ abstract class MapBackedConfiguration implements Configuration {
         }
 
         @Override
-        public List<String> getStringList(String path) {
+        public List<String> stringList(String path) {
             var value = rawValue(path);
             if (value instanceof List<?> list) {
                 var out = new ArrayList<String>(list.size());
@@ -239,7 +239,7 @@ abstract class MapBackedConfiguration implements Configuration {
         }
 
         @Override
-        public ConfigurationSection getSection(String path) {
+        public ConfigurationSection section(String path) {
             var resolved = resolve(path, true);
             assert resolved != null;
             var existing = resolved.parent.get(resolved.leaf);

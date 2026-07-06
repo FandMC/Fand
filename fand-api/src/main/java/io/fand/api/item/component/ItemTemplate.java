@@ -67,7 +67,7 @@ public record ItemTemplate(Key item, int count, ItemComponents components) imple
 
     @Override
     public JsonElement toJson() {
-        if (count == 1 && components.isEmpty()) {
+        if (count == 1 && components.empty()) {
             return new JsonPrimitive(item.asString());
         }
         var json = new JsonObject();
@@ -75,7 +75,7 @@ public record ItemTemplate(Key item, int count, ItemComponents components) imple
         if (count != 1) {
             json.addProperty("count", count);
         }
-        if (!components.isEmpty()) {
+        if (!components.empty()) {
             json.add("components", components.toJsonPatch());
         }
         return json;

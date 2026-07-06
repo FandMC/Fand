@@ -85,7 +85,7 @@ public record AdvancementDisplay(
     }
 
     private static JsonObject iconJson(ItemStack icon) {
-        if (icon.isEmpty()) {
+        if (icon.empty()) {
             throw new IllegalArgumentException("advancement display icon must not be empty");
         }
         var json = new JsonObject();
@@ -93,7 +93,7 @@ public record AdvancementDisplay(
         if (icon.amount() != 1) {
             json.addProperty("count", icon.amount());
         }
-        if (!icon.components().isEmpty()) {
+        if (!icon.components().empty()) {
             json.add("components", icon.components().toJsonPatch());
         }
         return json;

@@ -34,7 +34,7 @@ public final class WorldCreateOptions {
         return new WorldCreateOptions(template, null, WorldGeneratorSettings.template(), false);
     }
 
-    public static WorldCreateOptions voidWorld() {
+    public static WorldCreateOptions voidWorldOptions() {
         return new WorldCreateOptions(WorldTemplate.OVERWORLD, null, WorldGeneratorSettings.empty(), true);
     }
 
@@ -62,7 +62,7 @@ public final class WorldCreateOptions {
         return generatorSettings;
     }
 
-    public boolean isVoidWorld() {
+    public boolean voidWorld() {
         return voidWorld;
     }
 

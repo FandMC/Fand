@@ -47,7 +47,7 @@ public final class FandContainerInventory implements Inventory {
 
     @Override
     public ItemStack add(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) {
+        if (stack == null || stack.empty()) {
             return ItemStack.EMPTY;
         }
         if (handle instanceof net.minecraft.world.SimpleContainer simple) {

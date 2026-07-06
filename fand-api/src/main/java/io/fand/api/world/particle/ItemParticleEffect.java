@@ -11,7 +11,7 @@ public record ItemParticleEffect(ItemStack stack) implements ParticleEffect {
 
     public ItemParticleEffect {
         Objects.requireNonNull(stack, "stack");
-        if (stack.isEmpty()) {
+        if (stack.empty()) {
             throw new IllegalArgumentException("stack must be non-empty");
         }
     }

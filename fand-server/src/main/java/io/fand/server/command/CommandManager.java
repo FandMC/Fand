@@ -518,7 +518,7 @@ public final class CommandManager implements CommandRegistry {
             values.put(runtimeArgument.name(), argument.defaultValue());
             return;
         }
-        if (argument.isOptional()) {
+        if (argument.optional()) {
             return;
         }
         throw new IllegalArgumentException("Missing command argument: " + runtimeArgument.name());

@@ -48,7 +48,7 @@ final class DemoDetailedDamageEvents {
             Class<? extends EntityDamageEvent> subscribedType,
             EntityDamageEvent event) {
         if (event.getClass() != subscribedType
-                || !context.config().getBoolean("features.log-detailed-damage-events", false)) {
+                || !context.config().booleanValue("features.log-detailed-damage-events", false)) {
             return;
         }
 

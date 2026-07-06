@@ -30,7 +30,7 @@ public record ItemEnchantments(Map<Key, Integer> levels) {
         levels = Collections.unmodifiableMap(copied);
     }
 
-    public static ItemEnchantments empty() {
+    public static ItemEnchantments emptyEnchantments() {
         return EMPTY;
     }
 
@@ -42,16 +42,16 @@ public record ItemEnchantments(Map<Key, Integer> levels) {
         return of(enchantment.key(), level);
     }
 
-    public boolean isEmpty() {
+    public boolean empty() {
         return levels.isEmpty();
     }
 
-    public boolean has(Key enchantment) {
+    public boolean contains(Key enchantment) {
         return levels.containsKey(enchantment);
     }
 
-    public boolean has(EnchantmentKey enchantment) {
-        return has(enchantment.key());
+    public boolean contains(EnchantmentKey enchantment) {
+        return contains(enchantment.key());
     }
 
     public int level(Key enchantment) {

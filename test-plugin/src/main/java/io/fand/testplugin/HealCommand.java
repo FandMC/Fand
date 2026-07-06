@@ -32,7 +32,7 @@ final class HealCommand implements TestCommandHandler, TestCommandTabHandler {
         target.setHealth(target.maxHealth());
         target.setFoodLevel(20);
         target.setSaturation(20.0F);
-        int xp = Math.max(0, context.config().getInt("defaults.heal-xp", 5));
+        int xp = Math.max(0, context.config().intValue("defaults.heal-xp", 5));
         if (xp > 0) {
             target.giveExperience(xp);
         }

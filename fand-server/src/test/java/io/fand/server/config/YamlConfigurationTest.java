@@ -22,7 +22,7 @@ final class YamlConfigurationTest {
         var config = YamlConfiguration.load(tempDir.resolve("missing.yml"));
 
         assertThat(config.keys()).isEmpty();
-        assertThat(config.getString("anything", "fallback")).isEqualTo("fallback");
+        assertThat(config.string("anything", "fallback")).isEqualTo("fallback");
     }
 
     @Test
@@ -41,11 +41,11 @@ final class YamlConfigurationTest {
 
         var config = YamlConfiguration.load(path);
 
-        assertThat(config.getString("server.host", "")).isEqualTo("example.com");
-        assertThat(config.getInt("server.port", 0)).isEqualTo(25565);
-        assertThat(config.getDouble("rate", 0.0)).isEqualTo(1.5);
-        assertThat(config.getBoolean("enabled", false)).isTrue();
-        assertThat(config.getStringList("server.flags")).containsExactly("online", "whitelist");
+        assertThat(config.string("server.host", "")).isEqualTo("example.com");
+        assertThat(config.intValue("server.port", 0)).isEqualTo(25565);
+        assertThat(config.doubleValue("rate", 0.0)).isEqualTo(1.5);
+        assertThat(config.booleanValue("enabled", false)).isTrue();
+        assertThat(config.stringList("server.flags")).containsExactly("online", "whitelist");
         assertThat(config.contains("server.host")).isTrue();
         assertThat(config.contains("server.unknown")).isFalse();
     }
@@ -57,8 +57,8 @@ final class YamlConfigurationTest {
 
         var config = YamlConfiguration.load(path);
 
-        assertThat(config.getInt("port", 42)).isEqualTo(42);
-        assertThat(config.getStringList("port")).isEmpty();
+        assertThat(config.intValue("port", 42)).isEqualTo(42);
+        assertThat(config.stringList("port")).isEmpty();
     }
 
     @Test
@@ -72,18 +72,18 @@ final class YamlConfigurationTest {
         config.save();
 
         var reloaded = YamlConfiguration.load(path);
-        assertThat(reloaded.getString("server.host", "")).isEqualTo("example.com");
-        assertThat(reloaded.getInt("server.port", 0)).isEqualTo(25565);
-        assertThat(reloaded.getStringList("flags")).containsExactly("a", "b");
+        assertThat(reloaded.string("server.host", "")).isEqualTo("example.com");
+        assertThat(reloaded.intValue("server.port", 0)).isEqualTo(25565);
+        assertThat(reloaded.stringList("flags")).containsExactly("a", "b");
     }
 
     @Test
     void getSectionCreatesMissing() {
         var config = YamlConfiguration.load(tempDir.resolve("config.yml"));
-        var section = config.getSection("nested.deep");
+        var section = config.section("nested.deep");
 
         section.set("value", "x");
-        assertThat(config.getString("nested.deep.value", "")).isEqualTo("x");
+        assertThat(config.string("nested.deep.value", "")).isEqualTo("x");
     }
 
     @Test
@@ -94,7 +94,7 @@ final class YamlConfigurationTest {
         var config = YamlConfiguration.loadOrCopyDefault(path, new ByteArrayInputStream(defaults));
 
         assertThat(Files.readString(path)).isEqualTo("greeting: hello\n");
-        assertThat(config.getString("greeting", "")).isEqualTo("hello");
+        assertThat(config.string("greeting", "")).isEqualTo("hello");
     }
 
     @Test

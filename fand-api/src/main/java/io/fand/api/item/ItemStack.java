@@ -93,7 +93,7 @@ import org.jspecify.annotations.Nullable;
  */
 public record ItemStack(@Nullable ItemType type, int amount, ItemComponents components) {
 
-    /** Sentinel empty stack (type {@code null}, amount 0). Prefer {@link #isEmpty()} over null checks. */
+    /** Sentinel empty stack (type {@code null}, amount 0). Prefer {@link #empty()} over null checks. */
     public static final ItemStack EMPTY = new ItemStack(null, 0, ItemComponents.EMPTY);
     private static final String PERSISTENT_DATA_KEY = "fand:persistent_data";
 
@@ -121,32 +121,32 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
         }
     }
 
-    public boolean isEmpty() {
+    public boolean empty() {
         return type == null;
     }
 
     /** Effective maximum stack size, including a {@code max_stack_size} component override. */
     public int maxStackSize() {
-        return isEmpty() ? 0 : maxStackSize(type, components);
+        return empty() ? 0 : maxStackSize(type, components);
     }
 
     public ItemStack withAmount(int newAmount) {
-        if (isEmpty()) {
+        if (empty()) {
             return EMPTY;
         }
         return new ItemStack(type, newAmount, components);
     }
 
     public Optional<JsonElement> component(Key key) {
-        return components.get(key);
+        return components.value(key);
     }
 
-    public boolean hasComponent(Key key) {
-        return components.has(key);
+    public boolean containsComponent(Key key) {
+        return components.contains(key);
     }
 
     public ItemStack withComponent(Key key, JsonElement value) {
-        if (isEmpty()) {
+        if (empty()) {
             return EMPTY;
         }
         return new ItemStack(type, amount, components.with(key, value));
@@ -157,7 +157,7 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
      * type's vanilla default component to show through again.
      */
     public ItemStack withoutComponent(Key key) {
-        if (isEmpty()) {
+        if (empty()) {
             return EMPTY;
         }
         return new ItemStack(type, amount, components.without(key));
@@ -168,21 +168,21 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
      * default for it.
      */
     public ItemStack removeComponent(Key key) {
-        if (isEmpty()) {
+        if (empty()) {
             return EMPTY;
         }
         return new ItemStack(type, amount, components.remove(key));
     }
 
     public ItemStack withComponents(ItemComponents newComponents) {
-        if (isEmpty()) {
+        if (empty()) {
             return EMPTY;
         }
         return new ItemStack(type, amount, newComponents);
     }
 
     public ItemStack applyComponents(ItemComponents patch) {
-        if (isEmpty()) {
+        if (empty()) {
             return EMPTY;
         }
         return new ItemStack(type, amount, components.apply(patch));
@@ -218,7 +218,7 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
 
     public ItemStack withPersistentData(PersistentDataContainer data) {
         Objects.requireNonNull(data, "data");
-        if (isEmpty()) {
+        if (empty()) {
             return EMPTY;
         }
         var customData = customData().orElseGet(JsonObject::new);
@@ -288,7 +288,7 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
 
     public ItemStack withLore(List<Component> lore) {
         Objects.requireNonNull(lore, "lore");
-        if (isEmpty()) {
+        if (empty()) {
             return EMPTY;
         }
         var lines = new JsonArray();
@@ -360,7 +360,7 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public boolean unbreakable() {
-        return hasComponent(ItemComponentKeys.UNBREAKABLE);
+        return containsComponent(ItemComponentKeys.UNBREAKABLE);
     }
 
     public ItemStack withUnbreakable(boolean unbreakable) {
@@ -702,7 +702,7 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public boolean creativeSlotLock() {
-        return hasComponent(ItemComponentKeys.CREATIVE_SLOT_LOCK);
+        return containsComponent(ItemComponentKeys.CREATIVE_SLOT_LOCK);
     }
 
     public ItemStack withCreativeSlotLock(boolean locked) {
@@ -714,7 +714,7 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public boolean intangibleProjectile() {
-        return hasComponent(ItemComponentKeys.INTANGIBLE_PROJECTILE);
+        return containsComponent(ItemComponentKeys.INTANGIBLE_PROJECTILE);
     }
 
     public ItemStack withIntangibleProjectile(boolean intangible) {
@@ -846,7 +846,7 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public boolean glider() {
-        return hasComponent(ItemComponentKeys.GLIDER);
+        return containsComponent(ItemComponentKeys.GLIDER);
     }
 
     public ItemStack withGlider(boolean glider) {
@@ -1761,7 +1761,7 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
         return withoutComponent(ItemComponentKeys.SHULKER_COLOR);
     }
 
-    public static ItemStack empty() {
+    public static ItemStack emptyStack() {
         return EMPTY;
     }
 
@@ -1913,7 +1913,7 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     private static int maxStackSize(ItemType type, ItemComponents components) {
-        return components.get(ItemComponentKeys.MAX_STACK_SIZE)
+        return components.value(ItemComponentKeys.MAX_STACK_SIZE)
                 .filter(JsonElement::isJsonPrimitive)
                 .map(JsonElement::getAsInt)
                 .orElseGet(type::maxStackSize);

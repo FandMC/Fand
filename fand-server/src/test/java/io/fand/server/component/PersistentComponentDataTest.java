@@ -17,14 +17,14 @@ class PersistentComponentDataTest {
     @Test
     void storesAndLoadsComponentMapsById() {
         var data = new PersistentComponentData();
-        data.put("demo", DataComponentMap.empty()
+        data.put("demo", DataComponentMap.emptyMap()
                 .with(LABEL, "machine")
                 .with(COUNT, 7));
 
         var loaded = data.get("demo");
 
-        assertThat(loaded.get(LABEL)).contains("machine");
-        assertThat(loaded.get(COUNT)).contains(7);
+        assertThat(loaded.value(LABEL)).contains("machine");
+        assertThat(loaded.value(COUNT)).contains(7);
         assertThat(data.isDirty()).isTrue();
     }
 
@@ -33,9 +33,9 @@ class PersistentComponentDataTest {
         var data = new PersistentComponentData();
         data.put("demo", DataComponentMap.of(LABEL, "machine"));
 
-        data.put("demo", DataComponentMap.empty());
+        data.put("demo", DataComponentMap.emptyMap());
 
-        assertThat(data.get("demo").isEmpty()).isTrue();
+        assertThat(data.get("demo").empty()).isTrue();
     }
 
     @Test
@@ -48,7 +48,7 @@ class PersistentComponentDataTest {
         var decoded = PersistentComponentData.CODEC.parse(com.mojang.serialization.JsonOps.INSTANCE, encoded)
                 .getOrThrow();
 
-        assertThat(decoded.get("demo").get(LABEL)).contains("machine");
+        assertThat(decoded.get("demo").value(LABEL)).contains("machine");
     }
 
     @Test
@@ -56,7 +56,7 @@ class PersistentComponentDataTest {
         var data = new PersistentComponentData();
         data.put("one", DataComponentMap.of(LABEL, "machine"));
         data.put("two", DataComponentMap.of(COUNT, 2));
-        data.put("three", DataComponentMap.empty().with(LABEL, "other").with(COUNT, 3));
+        data.put("three", DataComponentMap.emptyMap().with(LABEL, "other").with(COUNT, 3));
 
         assertThat(data.idsWith(LABEL.key())).containsExactly("one", "three");
         assertThat(data.entries().keySet()).containsExactly("one", "three", "two");

@@ -15,7 +15,7 @@ public record EnchantmentView(
         List<io.fand.api.registry.RegistryReference> exclusiveSet
 ) {
     public EnchantmentView(Key key, @Nullable Component description, int maxLevel) {
-        this(key, description, maxLevel, null, EnchantmentEffects.empty(), List.of());
+        this(key, description, maxLevel, null, EnchantmentEffects.emptyEffects(), List.of());
     }
 
     public EnchantmentView(
@@ -29,7 +29,7 @@ public record EnchantmentView(
     }
 
     public EnchantmentView {
-        effects = effects == null ? EnchantmentEffects.empty() : effects;
+        effects = effects == null ? EnchantmentEffects.emptyEffects() : effects;
         exclusiveSet = exclusiveSet == null ? List.of() : List.copyOf(exclusiveSet);
     }
 

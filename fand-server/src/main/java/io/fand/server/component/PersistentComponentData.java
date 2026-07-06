@@ -104,7 +104,7 @@ public final class PersistentComponentData extends SavedData {
     }
 
     public void put(String id, DataComponentMap components) {
-        if (components.isEmpty()) {
+        if (components.empty()) {
             clear(id);
             return;
         }

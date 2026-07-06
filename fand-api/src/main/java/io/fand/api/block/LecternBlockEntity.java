@@ -9,7 +9,7 @@ public interface LecternBlockEntity extends BlockEntity {
 
     void setBook(ItemStack book);
 
-    boolean hasBook();
+    boolean bookPresent();
 
     int page();
 

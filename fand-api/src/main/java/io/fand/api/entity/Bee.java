@@ -6,19 +6,19 @@ import org.jspecify.annotations.Nullable;
 
 public interface Bee extends Animal, Angerable {
 
-    boolean hasHive();
+    boolean hivePresent();
 
     Optional<Location> hiveLocation();
 
     void setHiveLocation(@Nullable Location location);
 
-    boolean hasNectar();
+    boolean nectar();
 
-    void setHasNectar(boolean hasNectar);
+    void setNectar(boolean nectar);
 
-    boolean hasStung();
+    boolean stung();
 
-    void setHasStung(boolean hasStung);
+    void setStung(boolean stung);
 
     void setStayOutOfHiveTicks(int ticks);
 }

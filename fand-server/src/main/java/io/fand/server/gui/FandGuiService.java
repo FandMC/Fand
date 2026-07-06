@@ -413,7 +413,7 @@ public final class FandGuiService implements GuiService, AutoCloseable {
             int slots = Math.min(gui.size(), menu.size());
             for (int slot = 0; slot < slots; slot++) {
                 var item = gui.item(slot);
-                if (!item.isEmpty()) {
+                if (!item.empty()) {
                     menu.set(slot, item);
                 }
             }

@@ -23,32 +23,32 @@ public interface ConfigurationSection {
      * The runtime type matches whatever the YAML parser produced (String,
      * Long/Integer, Double, Boolean, List, or {@link ConfigurationSection}).
      */
-    @Nullable Object get(String path);
+    @Nullable Object value(String path);
 
-    String getString(String path, String defaultValue);
+    String string(String path, String defaultValue);
 
-    @Nullable String getString(String path);
+    @Nullable String string(String path);
 
-    int getInt(String path, int defaultValue);
+    int intValue(String path, int defaultValue);
 
-    long getLong(String path, long defaultValue);
+    long longValue(String path, long defaultValue);
 
-    double getDouble(String path, double defaultValue);
+    double doubleValue(String path, double defaultValue);
 
-    boolean getBoolean(String path, boolean defaultValue);
+    boolean booleanValue(String path, boolean defaultValue);
 
     /**
      * Returns the list at {@code path}, coerced element-wise to {@code String}
      * via {@code toString()}. Returns an empty list when the path is missing
      * or the value is not a list.
      */
-    List<String> getStringList(String path);
+    List<String> stringList(String path);
 
     /**
      * Returns the sub-section at {@code path}, creating an empty one if it
      * does not exist. Mutations on the returned view affect this section.
      */
-    ConfigurationSection getSection(String path);
+    ConfigurationSection section(String path);
 
     /**
      * Sets {@code value} at {@code path}. Pass {@code null} to remove. Maps

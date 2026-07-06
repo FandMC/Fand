@@ -18,22 +18,22 @@ import java.util.Optional;
  */
 public interface ScopedStorage {
 
-    Optional<JsonElement> get(String key);
+    Optional<JsonElement> value(String key);
 
-    default Optional<String> getString(String key) {
-        return get(key)
+    default Optional<String> string(String key) {
+        return value(key)
                 .filter(JsonElement::isJsonPrimitive)
                 .map(JsonElement::getAsString);
     }
 
-    default Optional<Integer> getInt(String key) {
-        return get(key)
+    default Optional<Integer> intValue(String key) {
+        return value(key)
                 .filter(JsonElement::isJsonPrimitive)
                 .map(JsonElement::getAsInt);
     }
 
-    default Optional<Boolean> getBoolean(String key) {
-        return get(key)
+    default Optional<Boolean> booleanValue(String key) {
+        return value(key)
                 .filter(JsonElement::isJsonPrimitive)
                 .map(JsonElement::getAsBoolean);
     }

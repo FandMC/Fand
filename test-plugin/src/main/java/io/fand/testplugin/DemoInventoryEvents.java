@@ -71,7 +71,7 @@ final class DemoInventoryEvents implements Listener {
                     message(context.config(), "messages.gui-locked", "This barrier is locked in the demo GUI."),
                     NamedTextColor.RED));
         }
-        if (context.config().getBoolean("features.log-inventory-clicks", false)) {
+        if (context.config().booleanValue("features.log-inventory-clicks", false)) {
             logger.info("{} clicked {} action={} slot={} current={} cursor={}",
                     event.player().name(), event.clickType(), event.action(), event.slot(),
                     stackName(event.currentItem()), stackName(event.cursorItem()));
@@ -80,7 +80,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onInventoryDrag(InventoryDragEvent event) {
-        if (context.config().getBoolean("features.log-inventory-clicks", false)) {
+        if (context.config().booleanValue("features.log-inventory-clicks", false)) {
             logger.info("{} dragged {} across {} slots cursor={}",
                     event.player().name(), event.dragType(), event.slots().size(), stackName(event.cursorItem()));
         }
@@ -88,7 +88,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onInventoryCreative(InventoryCreativeEvent event) {
-        if (context.config().getBoolean("features.log-inventory-clicks", false)) {
+        if (context.config().booleanValue("features.log-inventory-clicks", false)) {
             logger.info("{} creative slot={} drop={} item={}",
                     event.player().name(), event.rawSlot(), event.drop(), stackName(event.item()));
         }
@@ -96,7 +96,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onInventoryMoveItem(InventoryMoveItemEvent event) {
-        if (context.config().getBoolean("features.log-inventory-moves", false)) {
+        if (context.config().booleanValue("features.log-inventory-moves", false)) {
             logger.info("Inventory moved {} from {} to {} sourceInitiated={}",
                     stackName(event.item()), event.source().type(), event.destination().type(), event.sourceInitiated());
         }
@@ -104,14 +104,14 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onInventoryPickupItem(InventoryPickupItemEvent event) {
-        if (context.config().getBoolean("features.log-inventory-moves", false)) {
+        if (context.config().booleanValue("features.log-inventory-moves", false)) {
             logger.info("Inventory picked up {} into {}", stackName(event.item()), event.inventory().type());
         }
     }
 
     @Subscribe
     public void onHopperMoveItem(HopperMoveItemEvent event) {
-        if (context.config().getBoolean("features.log-inventory-moves", false)) {
+        if (context.config().booleanValue("features.log-inventory-moves", false)) {
             logger.info("Hopper moved {} at {} from {} to {} hopperInitiated={}",
                     stackName(event.item()),
                     compactLocation(event.hopperLocation()),
@@ -123,7 +123,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onHopperPickupItem(HopperPickupItemEvent event) {
-        if (context.config().getBoolean("features.log-inventory-moves", false)) {
+        if (context.config().booleanValue("features.log-inventory-moves", false)) {
             logger.info("Hopper picked up {} at {} itemEntity={}",
                     stackName(event.item()),
                     compactLocation(event.hopperLocation()),
@@ -133,7 +133,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onPrepareCraft(PrepareItemCraftEvent event) {
-        if (context.config().getBoolean("features.log-crafting-events", false)) {
+        if (context.config().booleanValue("features.log-crafting-events", false)) {
             logger.info("{} prepared craft recipe={} result={}",
                     event.player().name(),
                     event.recipe().map(recipe -> recipe.key().asString()).orElse("none"),
@@ -143,7 +143,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onCraft(CraftItemEvent event) {
-        if (context.config().getBoolean("features.log-crafting-events", false)) {
+        if (context.config().booleanValue("features.log-crafting-events", false)) {
             logger.info("{} crafted recipe={} result={} click={}",
                     event.player().name(),
                     event.recipe().map(recipe -> recipe.key().asString()).orElse("none"),
@@ -154,7 +154,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onPrepareEnchant(PrepareItemEnchantEvent event) {
-        if (context.config().getBoolean("features.log-workstation-events", false)) {
+        if (context.config().booleanValue("features.log-workstation-events", false)) {
             logger.info("{} prepared enchant item={} shelves={} offers={}",
                     event.player().name(), stackName(event.item()), event.bookshelfPower(), event.offers().size());
         }
@@ -162,7 +162,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onEnchantItem(EnchantItemEvent event) {
-        if (context.config().getBoolean("features.log-workstation-events", false)) {
+        if (context.config().booleanValue("features.log-workstation-events", false)) {
             logger.info("{} enchanted item={} result={} xpCost={} enchantments={}",
                     event.player().name(),
                     stackName(event.inputItem()),
@@ -174,7 +174,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onPrepareAnvil(PrepareAnvilEvent event) {
-        if (context.config().getBoolean("features.log-workstation-events", false)) {
+        if (context.config().booleanValue("features.log-workstation-events", false)) {
             logger.info("{} prepared anvil first={} second={} result={} cost={} rename={}",
                     event.player().name(),
                     stackName(event.firstItem()),
@@ -187,7 +187,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onPrepareSmithing(PrepareSmithingEvent event) {
-        if (context.config().getBoolean("features.log-workstation-events", false)) {
+        if (context.config().booleanValue("features.log-workstation-events", false)) {
             logger.info("{} prepared smithing recipe={} result={}",
                     event.player().name(),
                     event.recipe().map(recipe -> recipe.key().asString()).orElse("none"),
@@ -197,7 +197,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onPrepareTrade(PrepareTradeEvent event) {
-        if (context.config().getBoolean("features.log-workstation-events", false)) {
+        if (context.config().booleanValue("features.log-workstation-events", false)) {
             logger.info("{} prepared trade {} + {} -> {} xp={}",
                     event.player().name(),
                     stackName(event.firstCost()),
@@ -209,7 +209,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onTrade(InventoryTradeEvent event) {
-        if (context.config().getBoolean("features.log-workstation-events", false)) {
+        if (context.config().booleanValue("features.log-workstation-events", false)) {
             logger.info("{} traded {} + {} -> {} xp={}",
                     event.player().name(),
                     stackName(event.firstCost()),
@@ -221,7 +221,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onFurnaceBurn(FurnaceBurnEvent event) {
-        if (context.config().getBoolean("features.log-workstation-events", false)) {
+        if (context.config().booleanValue("features.log-workstation-events", false)) {
             logger.info("Furnace burn: {},{},{} fuel={} burnTime={}",
                     event.block().x(), event.block().y(), event.block().z(),
                     stackName(event.fuel()), event.burnTime());
@@ -230,7 +230,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onFurnaceStartSmelt(FurnaceStartSmeltEvent event) {
-        if (context.config().getBoolean("features.log-workstation-events", false)) {
+        if (context.config().booleanValue("features.log-workstation-events", false)) {
             logger.info("Furnace start smelt: {},{},{} source={} recipe={} totalCookTime={}",
                     event.block().x(), event.block().y(), event.block().z(),
                     stackName(event.source()),
@@ -241,7 +241,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onBlockCook(BlockCookEvent event) {
-        if (context.config().getBoolean("features.log-workstation-events", false)) {
+        if (context.config().booleanValue("features.log-workstation-events", false)) {
             logger.info("Block cook: {},{},{} source={} result={}",
                     event.block().x(), event.block().y(), event.block().z(),
                     stackName(event.source()),
@@ -251,7 +251,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onFurnaceSmelt(FurnaceSmeltEvent event) {
-        if (context.config().getBoolean("features.log-workstation-events", false)) {
+        if (context.config().booleanValue("features.log-workstation-events", false)) {
             logger.info("Furnace smelt: {},{},{} source={} result={} recipe={}",
                     event.block().x(), event.block().y(), event.block().z(),
                     stackName(event.source()),
@@ -262,7 +262,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onFurnaceExtract(FurnaceExtractEvent event) {
-        if (context.config().getBoolean("features.log-workstation-events", false)) {
+        if (context.config().booleanValue("features.log-workstation-events", false)) {
             logger.info("{} extracted {} x{} from furnace",
                     event.player().name(), stackName(event.item()), event.amount());
         }
@@ -270,7 +270,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onBrewingStandFuel(BrewingStandFuelEvent event) {
-        if (context.config().getBoolean("features.log-workstation-events", false)) {
+        if (context.config().booleanValue("features.log-workstation-events", false)) {
             logger.info("Brewing fuel: {},{},{} fuel={} power={} consume={}",
                     event.block().x(), event.block().y(), event.block().z(),
                     stackName(event.fuel()), event.fuelPower(), event.consumeAmount());
@@ -279,7 +279,7 @@ final class DemoInventoryEvents implements Listener {
 
     @Subscribe
     public void onBrew(BrewEvent event) {
-        if (context.config().getBoolean("features.log-workstation-events", false)) {
+        if (context.config().booleanValue("features.log-workstation-events", false)) {
             logger.info("Brewing stand: {},{},{} ingredient={} results={}",
                     event.block().x(), event.block().y(), event.block().z(),
                     stackName(event.ingredient()), event.results().size());

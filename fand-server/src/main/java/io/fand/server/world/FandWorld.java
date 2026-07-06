@@ -592,7 +592,7 @@ public final class FandWorld implements World {
         var checkedLocation = requireThisWorld(location);
         Objects.requireNonNull(item, "item");
         Objects.requireNonNull(options, "options");
-        if (item.isEmpty()) {
+        if (item.empty()) {
             return CompletableFuture.completedFuture(Optional.empty());
         }
         var future = new CompletableFuture<Optional<? extends ItemEntity>>();
@@ -1254,7 +1254,7 @@ public final class FandWorld implements World {
             if (currentState == null) {
                 currentState = handle.getBlockState(pos);
             }
-            boolean sameComponents = components.isEmpty()
+            boolean sameComponents = components.empty()
                     ? BlockComponentStorage.empty(handle, pos)
                     : BlockComponentStorage.snapshot(handle, pos).equals(components);
             if (currentState.getBlock() == block && sameComponents) {
@@ -1264,7 +1264,7 @@ public final class FandWorld implements World {
         if (!handle.setBlock(pos, state, blockUpdateFlags(options))) {
             throw new IllegalStateException("Failed to set block at " + pos.toShortString());
         }
-        if (components.isEmpty()) {
+        if (components.empty()) {
             BlockComponentStorage.clear(handle, pos);
         } else {
             BlockComponentStorage.put(handle, pos, components);

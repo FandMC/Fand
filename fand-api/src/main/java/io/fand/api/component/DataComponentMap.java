@@ -32,7 +32,7 @@ public record DataComponentMap(Map<Key, JsonElement> values) {
         values = Collections.unmodifiableMap(copied);
     }
 
-    public static DataComponentMap empty() {
+    public static DataComponentMap emptyMap() {
         return EMPTY;
     }
 
@@ -66,7 +66,7 @@ public record DataComponentMap(Map<Key, JsonElement> values) {
         return Collections.unmodifiableMap(copied);
     }
 
-    public boolean isEmpty() {
+    public boolean empty() {
         return values.isEmpty();
     }
 
@@ -74,22 +74,22 @@ public record DataComponentMap(Map<Key, JsonElement> values) {
         return values.keySet();
     }
 
-    public boolean has(Key key) {
+    public boolean contains(Key key) {
         return values.containsKey(key);
     }
 
-    public boolean has(DataComponentKey<?> key) {
-        return has(key.key());
+    public boolean contains(DataComponentKey<?> key) {
+        return contains(key.key());
     }
 
-    public Optional<JsonElement> get(Key key) {
+    public Optional<JsonElement> value(Key key) {
         var value = values.get(key);
         return value == null ? Optional.empty() : Optional.of(value.deepCopy());
     }
 
-    public <T> Optional<T> get(DataComponentKey<T> key) {
+    public <T> Optional<T> value(DataComponentKey<T> key) {
         Objects.requireNonNull(key, "key");
-        return get(key.key()).map(key::decode);
+        return value(key.key()).map(key::decode);
     }
 
     public DataComponentMap with(Key key, JsonElement value) {
@@ -122,7 +122,7 @@ public record DataComponentMap(Map<Key, JsonElement> values) {
 
     public DataComponentMap apply(DataComponentMap patch) {
         Objects.requireNonNull(patch, "patch");
-        if (patch.isEmpty()) {
+        if (patch.empty()) {
             return this;
         }
         var next = new LinkedHashMap<>(values);

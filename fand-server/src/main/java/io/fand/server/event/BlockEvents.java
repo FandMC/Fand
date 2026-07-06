@@ -159,7 +159,7 @@ public final class BlockEvents {
             BlockPos pos = entry.getKey();
             level.setBlock(pos, entry.getValue(), Block.UPDATE_ALL);
             DataComponentMap components = snapshot.components().getOrDefault(pos, DataComponentMap.EMPTY);
-            if (components.isEmpty()) {
+            if (components.empty()) {
                 BlockComponentStorage.clear(level, pos);
             } else {
                 BlockComponentStorage.put(level, pos, components);
@@ -251,7 +251,7 @@ public final class BlockEvents {
             LOGGER.warn("BlockDispenseEvent listener failed", failure);
             return itemStack;
         }
-        if (event.cancelled() || event.item().isEmpty()) {
+        if (event.cancelled() || event.item().empty()) {
             return null;
         }
         try {

@@ -49,7 +49,7 @@ class ApiGapModelsTest {
         var stack = new ItemStack(DIAMOND, 1)
                 .withPersistentData(PersistentDataContainer.EMPTY.withString(key, "alice"));
 
-        assertThat(stack.persistentData().getString(key)).contains("alice");
+        assertThat(stack.persistentData().string(key)).contains("alice");
 
         var cleared = stack.withoutPersistentData(key);
         assertThat(cleared.persistentData().empty()).isTrue();

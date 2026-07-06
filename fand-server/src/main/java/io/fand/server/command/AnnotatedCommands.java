@@ -166,24 +166,24 @@ public final class AnnotatedCommands {
 
     private static Argument<?> optional(Argument<?> argument, Class<?> type, Arg arg) {
         if (type == int.class || type == Integer.class) {
-            return cast(argument, Integer.class).optional(arg.defaultInt());
+            return cast(argument, Integer.class).asOptional(arg.defaultInt());
         }
         if (type == long.class || type == Long.class) {
-            return cast(argument, Long.class).optional(arg.defaultLong());
+            return cast(argument, Long.class).asOptional(arg.defaultLong());
         }
         if (type == boolean.class || type == Boolean.class) {
-            return cast(argument, Boolean.class).optional(arg.defaultBoolean());
+            return cast(argument, Boolean.class).asOptional(arg.defaultBoolean());
         }
         if (type == double.class || type == Double.class) {
-            return cast(argument, Double.class).optional(arg.defaultDouble());
+            return cast(argument, Double.class).asOptional(arg.defaultDouble());
         }
         if (type == float.class || type == Float.class) {
-            return cast(argument, Float.class).optional((float) arg.defaultDouble());
+            return cast(argument, Float.class).asOptional((float) arg.defaultDouble());
         }
         if (!arg.defaultValue().isBlank()) {
-            return cast(argument, String.class).optional(arg.defaultValue());
+            return cast(argument, String.class).asOptional(arg.defaultValue());
         }
-        return argument.optional();
+        return argument.asOptional();
     }
 
     private static <T> Argument<T> cast(Argument<?> argument, Class<T> type) {

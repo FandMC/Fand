@@ -183,7 +183,7 @@ public final class FandBlock implements Block {
             if (!level.setBlockAndUpdate(pos, fandType.handle().defaultBlockState())) {
                 return false;
             }
-            if (components.isEmpty()) {
+            if (components.empty()) {
                 BlockComponentStorage.clear(level, pos);
             } else {
                 BlockComponentStorage.put(level, pos, components);

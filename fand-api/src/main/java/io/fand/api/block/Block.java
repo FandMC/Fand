@@ -107,8 +107,8 @@ public interface Block {
         return physics().requiresTool();
     }
 
-    default boolean hasBlockEntity() {
-        return physics().hasBlockEntity();
+    default boolean blockEntityPresent() {
+        return physics().blockEntityPresent();
     }
 
     default boolean canSurvive() {

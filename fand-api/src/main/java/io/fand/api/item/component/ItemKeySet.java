@@ -73,11 +73,11 @@ public final class ItemKeySet implements ItemComponentData {
         return of(values);
     }
 
-    public boolean isTag() {
+    public boolean tagReference() {
         return tag != null;
     }
 
-    public boolean isEmpty() {
+    public boolean empty() {
         return tag == null && values.isEmpty();
     }
 

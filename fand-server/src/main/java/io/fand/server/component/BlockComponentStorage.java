@@ -103,7 +103,7 @@ public final class BlockComponentStorage {
         if (server == null) {
             return;
         }
-        if (components.isEmpty()) {
+        if (components.empty()) {
             clear(level, pos);
             return;
         }

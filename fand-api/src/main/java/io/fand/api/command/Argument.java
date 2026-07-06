@@ -54,7 +54,7 @@ public final class Argument<T> {
         return parser.parse(input);
     }
 
-    public boolean isOptional() {
+    public boolean optional() {
         return optional;
     }
 
@@ -74,11 +74,11 @@ public final class Argument<T> {
         return registry;
     }
 
-    public Argument<T> optional() {
+    public Argument<T> asOptional() {
         return new Argument<>(valueType, type, parser, true, defaultValue, optionalSender, suggestions, registry);
     }
 
-    public Argument<T> optional(T defaultValue) {
+    public Argument<T> asOptional(T defaultValue) {
         return new Argument<>(valueType, type, parser, true, Objects.requireNonNull(defaultValue, "defaultValue"), optionalSender, suggestions, registry);
     }
 

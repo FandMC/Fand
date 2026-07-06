@@ -52,7 +52,7 @@ public final class FandCustomItemRegistry implements CustomItemRegistry {
     @Override
     public Optional<Key> customId(ItemStack stack) {
         Objects.requireNonNull(stack, "stack");
-        if (stack.isEmpty()) {
+        if (stack.empty()) {
             return Optional.empty();
         }
         return stack.customData()
@@ -70,7 +70,7 @@ public final class FandCustomItemRegistry implements CustomItemRegistry {
     public ItemStack tag(ItemStack stack, Key id) {
         Objects.requireNonNull(stack, "stack");
         Objects.requireNonNull(id, "id");
-        if (stack.isEmpty()) {
+        if (stack.empty()) {
             return ItemStack.EMPTY;
         }
         JsonObject data = stack.customData().orElseGet(JsonObject::new);
@@ -81,7 +81,7 @@ public final class FandCustomItemRegistry implements CustomItemRegistry {
     @Override
     public ItemStack untag(ItemStack stack) {
         Objects.requireNonNull(stack, "stack");
-        if (stack.isEmpty()) {
+        if (stack.empty()) {
             return ItemStack.EMPTY;
         }
         var data = stack.customData();

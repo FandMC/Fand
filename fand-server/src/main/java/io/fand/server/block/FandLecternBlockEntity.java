@@ -28,7 +28,7 @@ public final class FandLecternBlockEntity extends FandBlockEntity implements Lec
     }
 
     @Override
-    public boolean hasBook() {
+    public boolean bookPresent() {
         return handle().hasBook();
     }
 

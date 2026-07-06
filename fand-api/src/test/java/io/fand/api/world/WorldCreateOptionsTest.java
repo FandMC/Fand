@@ -18,7 +18,7 @@ final class WorldCreateOptionsTest {
 
         assertThat(options.generator()).contains(generator);
         assertThat(options.generatorSettings().mode()).isEqualTo(GenerationMode.CUSTOM);
-        assertThat(options.isVoidWorld()).isFalse();
+        assertThat(options.voidWorld()).isFalse();
     }
 
     @Test

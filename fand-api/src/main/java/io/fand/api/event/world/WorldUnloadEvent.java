@@ -7,15 +7,9 @@ import java.util.Objects;
 /**
  * Fired on the server thread before a loaded world becomes unavailable.
  */
-public final class WorldUnloadEvent implements Event {
-
-    private final World world;
+public record WorldUnloadEvent(World world) implements Event {
 
     public WorldUnloadEvent(World world) {
         this.world = Objects.requireNonNull(world, "world");
-    }
-
-    public World world() {
-        return world;
     }
 }

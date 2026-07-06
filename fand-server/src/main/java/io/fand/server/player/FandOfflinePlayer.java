@@ -160,7 +160,7 @@ final class FandOfflinePlayer implements OfflinePlayer {
 
         @Override
         public ItemStack add(ItemStack stack) {
-            if (stack == null || stack.isEmpty()) {
+            if (stack == null || stack.empty()) {
                 return ItemStack.EMPTY;
             }
             var leftover = handle.addItem(FandItemStacks.toVanilla(stack));

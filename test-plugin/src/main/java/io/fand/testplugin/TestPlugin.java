@@ -87,30 +87,30 @@ public final class TestPlugin implements Plugin {
         context.events().subscribe(WorldUnloadEvent.class, event ->
                 context.logger().info("World unloading: {}", event.world().key().asString()));
         context.events().subscribe(WorldSaveEvent.class, event -> {
-            if (context.config().getBoolean("features.log-world-events", true)) {
+            if (context.config().booleanValue("features.log-world-events", true)) {
                 context.logger().info("World saving: {}", event.world().key().asString());
             }
         });
         context.events().subscribe(WeatherChangeEvent.class, event -> {
-            if (context.config().getBoolean("features.log-world-events", true)) {
+            if (context.config().booleanValue("features.log-world-events", true)) {
                 context.logger().info("Weather changed in {}: storm {} -> {}",
                         event.world().key().asString(), event.fromStorm(), event.toStorm());
             }
         });
         context.events().subscribe(ThunderChangeEvent.class, event -> {
-            if (context.config().getBoolean("features.log-world-events", true)) {
+            if (context.config().booleanValue("features.log-world-events", true)) {
                 context.logger().info("Thunder changed in {}: thunder {} -> {}",
                         event.world().key().asString(), event.fromThundering(), event.toThundering());
             }
         });
         context.events().subscribe(ChunkLoadEvent.class, event -> {
-            if (context.config().getBoolean("features.log-chunk-events", false)) {
+            if (context.config().booleanValue("features.log-chunk-events", false)) {
                 context.logger().info("Chunk loaded: {} [{},{}]",
                         event.world().key().asString(), event.chunkX(), event.chunkZ());
             }
         });
         context.events().subscribe(ChunkUnloadEvent.class, event -> {
-            if (context.config().getBoolean("features.log-chunk-events", false)) {
+            if (context.config().booleanValue("features.log-chunk-events", false)) {
                 context.logger().info("Chunk unloaded: {} [{},{}]",
                         event.world().key().asString(), event.chunkX(), event.chunkZ());
             }

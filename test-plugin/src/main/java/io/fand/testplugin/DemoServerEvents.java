@@ -26,39 +26,39 @@ final class DemoServerEvents implements Listener {
 
     @Subscribe
     public void onAsyncPlayerPreLogin(AsyncPlayerPreLoginEvent event) {
-        if (context.config().getBoolean("features.log-server-events", false)) {
+        if (context.config().booleanValue("features.log-server-events", false)) {
             logger.info("Async pre-login check: {} {} result={}", event.name(), event.address(), event.result());
         }
     }
 
     @Subscribe
     public void onPlayerPreLogin(PlayerPreLoginEvent event) {
-        if (context.config().getBoolean("features.log-server-events", false)) {
+        if (context.config().booleanValue("features.log-server-events", false)) {
             logger.info("Pre-login check: {} {} result={}", event.name(), event.address(), event.result());
         }
     }
 
     @Subscribe
     public void onPlayerLogin(PlayerLoginEvent event) {
-        if (context.config().getBoolean("features.log-server-events", false)) {
+        if (context.config().booleanValue("features.log-server-events", false)) {
             logger.info("Login check: {} {} result={}", event.name(), event.address(), event.result());
         }
     }
 
     @Subscribe
     public void onServerCommand(ServerCommandEvent event) {
-        if (context.config().getBoolean("features.log-server-events", false)) {
+        if (context.config().booleanValue("features.log-server-events", false)) {
             logger.info("{} issued console command /{}", event.sender().name(), event.commandLine());
         }
     }
 
     @Subscribe
     public void onServerListPing(ServerListPingEvent event) {
-        if (context.config().getBoolean("features.decorate-server-list", true)) {
+        if (context.config().booleanValue("features.decorate-server-list", true)) {
             event.setMotd(Component.text("Fand test server", NamedTextColor.AQUA)
                     .append(Component.text(" - events online", NamedTextColor.GRAY)));
         }
-        if (context.config().getBoolean("features.log-server-events", false)) {
+        if (context.config().booleanValue("features.log-server-events", false)) {
             logger.info("Server ping: online={} max={} hidden={}",
                     event.onlinePlayers(), event.maxPlayers(), event.hidePlayers());
         }
@@ -66,14 +66,14 @@ final class DemoServerEvents implements Listener {
 
     @Subscribe
     public void onPluginEnable(PluginEnableEvent event) {
-        if (context.config().getBoolean("features.log-server-events", false)) {
+        if (context.config().booleanValue("features.log-server-events", false)) {
             logger.info("Plugin enabled: {}", event.plugin().id());
         }
     }
 
     @Subscribe
     public void onPluginDisable(PluginDisableEvent event) {
-        if (context.config().getBoolean("features.log-server-events", false)) {
+        if (context.config().booleanValue("features.log-server-events", false)) {
             logger.info("Plugin disabled: {}", event.plugin().id());
         }
     }

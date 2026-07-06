@@ -7,21 +7,10 @@ import java.util.Objects;
 /**
  * Fired on the server thread when a player reports their client brand.
  */
-public final class PlayerClientBrandEvent implements Event {
-
-    private final Player player;
-    private final String brand;
+public record PlayerClientBrandEvent(Player player, String brand) implements Event {
 
     public PlayerClientBrandEvent(Player player, String brand) {
         this.player = Objects.requireNonNull(player, "player");
         this.brand = Objects.requireNonNull(brand, "brand");
-    }
-
-    public Player player() {
-        return player;
-    }
-
-    public String brand() {
-        return brand;
     }
 }

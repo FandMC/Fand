@@ -161,7 +161,7 @@ public final class PlayerEvents {
             LOGGER.warn("PlayerDropItemEvent listener failed", failure);
             return itemStack;
         }
-        if (event.cancelled() || event.item().isEmpty()) {
+        if (event.cancelled() || event.item().empty()) {
             if (thrownFromHand || randomly) {
                 player.getInventory().placeItemBackInInventory(itemStack.copy());
             }
@@ -192,7 +192,7 @@ public final class PlayerEvents {
             LOGGER.warn("PlayerPickupItemEvent listener failed", failure);
             return true;
         }
-        if (event.cancelled() || event.item().isEmpty()) {
+        if (event.cancelled() || event.item().empty()) {
             return false;
         }
         try {
@@ -727,7 +727,7 @@ public final class PlayerEvents {
             LOGGER.warn("PlayerBucketFillEvent listener failed", failure);
             return result;
         }
-        if (event.cancelled() || event.resultItem().isEmpty()) {
+        if (event.cancelled() || event.resultItem().empty()) {
             return null;
         }
         try {
@@ -767,7 +767,7 @@ public final class PlayerEvents {
             LOGGER.warn("PlayerBucketEmptyEvent listener failed", failure);
             return result;
         }
-        if (event.cancelled() || event.resultItem().isEmpty()) {
+        if (event.cancelled() || event.resultItem().empty()) {
             return null;
         }
         try {
@@ -1180,7 +1180,7 @@ public final class PlayerEvents {
             LOGGER.warn("PlayerEditBookEvent listener failed", failure);
             return newBook;
         }
-        if (event.cancelled() || event.newBook().isEmpty()) {
+        if (event.cancelled() || event.newBook().empty()) {
             return null;
         }
         try {

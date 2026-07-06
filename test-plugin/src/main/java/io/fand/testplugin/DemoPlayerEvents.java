@@ -90,21 +90,21 @@ final class DemoPlayerEvents implements Listener {
             event.player().sendMessage(Component.text("The kit navigator stays with you.", NamedTextColor.YELLOW));
             return;
         }
-        if (context.config().getBoolean("features.log-item-events", false)) {
+        if (context.config().booleanValue("features.log-item-events", false)) {
             logger.info("{} dropped {} hand={}", event.player().name(), stackName(event.item()), event.thrownFromHand());
         }
     }
 
     @Subscribe
     public void onPickup(PlayerPickupItemEvent event) {
-        if (context.config().getBoolean("features.log-item-events", false)) {
+        if (context.config().booleanValue("features.log-item-events", false)) {
             logger.info("{} picked up {}", event.player().name(), stackName(event.item()));
         }
     }
 
     @Subscribe
     public void onFish(PlayerFishEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} fishing state={} caught={} drops={}",
                     event.player().name(),
                     event.state(),
@@ -124,28 +124,28 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onItemDamage(PlayerItemDamageEvent event) {
-        if (context.config().getBoolean("features.log-item-events", false)) {
+        if (context.config().booleanValue("features.log-item-events", false)) {
             logger.info("{} item damage {} +{}", event.player().name(), stackName(event.item()), event.damage());
         }
     }
 
     @Subscribe
     public void onItemBreak(PlayerItemBreakEvent event) {
-        if (context.config().getBoolean("features.log-item-events", false)) {
+        if (context.config().booleanValue("features.log-item-events", false)) {
             logger.info("{} broke {}", event.player().name(), stackName(event.item()));
         }
     }
 
     @Subscribe
     public void onItemMend(PlayerItemMendEvent event) {
-        if (context.config().getBoolean("features.log-item-events", false)) {
+        if (context.config().booleanValue("features.log-item-events", false)) {
             logger.info("{} mended {} repair={}", event.player().name(), stackName(event.item()), event.repairAmount());
         }
     }
 
     @Subscribe
     public void onFoodLevelChange(PlayerFoodLevelChangeEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} food {} -> {} saturation {} -> {} cause={}",
                     event.player().name(), event.fromLevel(), event.toLevel(),
                     trim(event.fromSaturation()), trim(event.toSaturation()), event.cause());
@@ -157,21 +157,21 @@ final class DemoPlayerEvents implements Listener {
         if (event.amount() > 0) {
             event.player().sendActionBar(Component.text("XP +" + event.amount() + " observed by Fand.", NamedTextColor.GREEN));
         }
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} xp delta={}", event.player().name(), event.amount());
         }
     }
 
     @Subscribe
     public void onLevelChange(PlayerLevelChangeEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} level {} -> {}", event.player().name(), event.oldLevel(), event.newLevel());
         }
     }
 
     @Subscribe
     public void onMove(PlayerMoveEvent event) {
-        if (context.config().getBoolean("features.log-player-move-events", false)) {
+        if (context.config().booleanValue("features.log-player-move-events", false)) {
             logger.info("{} moved {} -> {}",
                     event.player().name(), compactLocation(event.from()), compactLocation(event.to()));
         }
@@ -188,25 +188,25 @@ final class DemoPlayerEvents implements Listener {
     @Subscribe
     public void onVelocity(PlayerVelocityEvent event) {
         double speedSquared = event.x() * event.x() + event.y() * event.y() + event.z() * event.z();
-        if (context.config().getBoolean("protections.limit-player-velocity", true) && speedSquared > 100.0) {
+        if (context.config().booleanValue("protections.limit-player-velocity", true) && speedSquared > 100.0) {
             event.setVelocity(0.0, Math.min(event.y(), 1.0), 0.0);
             event.player().sendActionBar(Component.text("Extreme velocity was limited by the test plugin.", NamedTextColor.YELLOW));
         }
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} velocity {},{},{}", event.player().name(), trim(event.x()), trim(event.y()), trim(event.z()));
         }
     }
 
     @Subscribe
     public void onChangedMainHand(PlayerChangedMainHandEvent event) {
-        if (context.config().getBoolean("features.log-player-state-events", false)) {
+        if (context.config().booleanValue("features.log-player-state-events", false)) {
             logger.info("{} main hand {} -> {}", event.player().name(), event.oldMainHand(), event.newMainHand());
         }
     }
 
     @Subscribe
     public void onStatisticIncrement(PlayerStatisticIncrementEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} stat {} {} -> {}",
                     event.player().name(), event.statistic().asString(), event.previousValue(), event.newValue());
         }
@@ -214,48 +214,48 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onRecipeDiscover(PlayerRecipeDiscoverEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} discovered recipes {}", event.player().name(), event.recipes().size());
         }
     }
 
     @Subscribe
     public void onToggleSneak(PlayerToggleSneakEvent event) {
-        if (context.config().getBoolean("features.log-player-state-events", false)) {
+        if (context.config().booleanValue("features.log-player-state-events", false)) {
             logger.info("{} sneaking={}", event.player().name(), event.sneaking());
         }
     }
 
     @Subscribe
     public void onToggleSprint(PlayerToggleSprintEvent event) {
-        if (context.config().getBoolean("features.log-player-state-events", false)) {
+        if (context.config().booleanValue("features.log-player-state-events", false)) {
             logger.info("{} sprinting={}", event.player().name(), event.sprinting());
         }
     }
 
     @Subscribe
     public void onToggleFlight(PlayerToggleFlightEvent event) {
-        if (context.config().getBoolean("features.log-player-state-events", false)) {
+        if (context.config().booleanValue("features.log-player-state-events", false)) {
             logger.info("{} flying={}", event.player().name(), event.flying());
         }
     }
 
     @Subscribe
     public void onAnimation(PlayerAnimationEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} animation={}", event.player().name(), event.animation());
         }
     }
 
     @Subscribe
     public void onTeleport(PlayerTeleportEvent event) {
-        if (context.config().getBoolean("protections.block-low-teleport", true)
+        if (context.config().booleanValue("protections.block-low-teleport", true)
                 && event.to().y() < -64.0) {
             //event.setCancelled(true);
             //event.player().sendMessage(Component.text("Teleport below world min height was cancelled.", NamedTextColor.RED));
             //return;
         }
-        if (context.config().getBoolean("features.log-teleports", false)) {
+        if (context.config().booleanValue("features.log-teleports", false)) {
             logger.info("{} teleport {} {} -> {}", event.player().name(), event.cause(),
                     compactLocation(event.from()), compactLocation(event.to()));
         }
@@ -293,14 +293,14 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onPortal(PlayerPortalEvent event) {
-        if (context.config().getBoolean("features.log-teleports", false)) {
+        if (context.config().booleanValue("features.log-teleports", false)) {
             logger.info("{} portal {} -> {}", event.player().name(), compactLocation(event.from()), compactLocation(event.to()));
         }
     }
 
     @Subscribe
     public void onChangedWorld(PlayerChangedWorldEvent event) {
-        if (context.config().getBoolean("features.log-teleports", false)) {
+        if (context.config().booleanValue("features.log-teleports", false)) {
             logger.info("{} changed world {} -> {}",
                     event.player().name(), event.fromWorld().key().asString(), event.toWorld().key().asString());
         }
@@ -314,7 +314,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onPlayerDeath(PlayerDeathEvent event) {
-        if (context.config().getBoolean("features.decorate-player-death-message", true)
+        if (context.config().booleanValue("features.decorate-player-death-message", true)
                 && event.deathMessage() != null) {
             event.setDeathMessage(event.deathMessage().append(Component.text(" [Fand]", NamedTextColor.GRAY)));
         }
@@ -322,7 +322,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onBedEnter(PlayerBedEnterEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} entered bed at {},{},{}",
                     event.player().name(), event.bed().x(), event.bed().y(), event.bed().z());
         }
@@ -330,7 +330,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onBedLeave(PlayerBedLeaveEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} left bed at {},{},{} forceful={}",
                     event.player().name(), event.bed().x(), event.bed().y(), event.bed().z(), event.forcefulWakeUp());
         }
@@ -338,42 +338,42 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onAdvancementDone(PlayerAdvancementDoneEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} completed advancement {}", event.player().name(), event.advancement().asString());
         }
     }
 
     @Subscribe
     public void onGameModeChange(PlayerGameModeChangeEvent event) {
-        if (context.config().getBoolean("features.log-player-state-events", false)) {
+        if (context.config().booleanValue("features.log-player-state-events", false)) {
             logger.info("{} game mode {} -> {}", event.player().name(), event.fromGameMode(), event.toGameMode());
         }
     }
 
     @Subscribe
     public void onLocaleChange(PlayerLocaleChangeEvent event) {
-        if (context.config().getBoolean("features.log-player-state-events", false)) {
+        if (context.config().booleanValue("features.log-player-state-events", false)) {
             logger.info("{} locale {} -> {}", event.player().name(), event.oldLocale(), event.newLocale());
         }
     }
 
     @Subscribe
     public void onClientBrand(PlayerClientBrandEvent event) {
-        if (context.config().getBoolean("features.log-player-state-events", false)) {
+        if (context.config().booleanValue("features.log-player-state-events", false)) {
             logger.info("{} client brand {}", event.player().name(), event.brand());
         }
     }
 
     @Subscribe
     public void onResourcePackStatus(PlayerResourcePackStatusEvent event) {
-        if (context.config().getBoolean("features.log-player-state-events", false)) {
+        if (context.config().booleanValue("features.log-player-state-events", false)) {
             logger.info("{} resource pack {} {}", event.player().name(), event.id(), event.status());
         }
     }
 
     @Subscribe
     public void onKick(PlayerKickEvent event) {
-        if (context.config().getBoolean("features.decorate-kick-reason", true)) {
+        if (context.config().booleanValue("features.decorate-kick-reason", true)) {
             event.setReason(event.reason().append(Component.text(" (via Fand event)", NamedTextColor.GRAY)));
         }
     }
@@ -393,7 +393,7 @@ final class DemoPlayerEvents implements Listener {
             event.player().sendActionBar(Component.text("Fand kit navigator opened.", NamedTextColor.AQUA));
             return;
         }
-        if (!context.config().getBoolean("features.report-right-clicks", false)
+        if (!context.config().booleanValue("features.report-right-clicks", false)
                 || event.hand() != PlayerInteractEvent.Hand.MAIN_HAND) {
             return;
         }
@@ -404,7 +404,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onRightClickBlock(PlayerRightClickBlockEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} right-click block hand={} block={} item={}",
                     event.player().name(),
                     event.hand(),
@@ -425,7 +425,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onRightClickAir(PlayerRightClickAirEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} right-click air hand={} item={}",
                     event.player().name(), event.hand(), stackName(event.item()));
         }
@@ -443,7 +443,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onInteractEntity(PlayerInteractEntityEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)
+        if (context.config().booleanValue("features.log-player-detail-events", false)
                 && event.hand() == PlayerInteractEvent.Hand.MAIN_HAND) {
             logger.info("{} interacted with {} item={} precise={}",
                     event.player().name(),
@@ -455,7 +455,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onShearEntity(PlayerShearEntityEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} sheared {} with {}",
                     event.player().name(),
                     event.entity().type().key().asString(),
@@ -465,7 +465,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onLeashEntity(PlayerLeashEntityEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} leashed {} to {} cause={}",
                     event.player().name(),
                     event.entity().type().key().asString(),
@@ -476,7 +476,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onUnleashEntity(PlayerUnleashEntityEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} unleashed {} holder={} dropLead={}",
                     event.player().name(),
                     event.entity().type().key().asString(),
@@ -487,7 +487,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onArmorStandManipulate(PlayerArmorStandManipulateEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} armor stand slot={} playerItem={} standItem={}",
                     event.player().name(),
                     event.slot(),
@@ -498,7 +498,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onEditBook(PlayerEditBookEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} edited book slot={} signing={} title={} new={}",
                     event.player().name(),
                     event.slot(),
@@ -510,7 +510,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onEggThrow(PlayerEggThrowEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} egg throw hatching={} count={}",
                     event.player().name(), event.hatching(), event.hatchCount());
         }
@@ -518,7 +518,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onItemHeld(PlayerItemHeldEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} hotbar {} -> {} item={}",
                     event.player().name(), event.previousSlot(), event.newSlot(), stackName(event.newItem()));
         }
@@ -526,7 +526,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onBucketFill(PlayerBucketFillEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} filled bucket at {},{},{} result={}",
                     event.player().name(), event.block().x(), event.block().y(), event.block().z(), stackName(event.resultItem()));
         }
@@ -534,7 +534,7 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onBucketEmpty(PlayerBucketEmptyEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} emptied bucket at {},{},{} fluid={} result={}",
                     event.player().name(), event.block().x(), event.block().y(), event.block().z(),
                     event.fluid().asString(), stackName(event.resultItem()));
@@ -543,14 +543,14 @@ final class DemoPlayerEvents implements Listener {
 
     @Subscribe
     public void onRiptide(PlayerRiptideEvent event) {
-        if (context.config().getBoolean("features.log-player-detail-events", false)) {
+        if (context.config().booleanValue("features.log-player-detail-events", false)) {
             logger.info("{} riptide with {}", event.player().name(), stackName(event.item()));
         }
     }
 
     @Subscribe
     public void onDamage(EntityDamageEvent event) {
-        if (context.config().getBoolean("protections.cancel-fall-damage", true)
+        if (context.config().booleanValue("protections.cancel-fall-damage", true)
                 && event.entity() instanceof Player player
                 && event.cause().equals("minecraft:fall")) {
             event.setCancelled(true);
@@ -559,7 +559,7 @@ final class DemoPlayerEvents implements Listener {
     }
 
     private void logDetailedTeleport(PlayerTeleportEvent event) {
-        if (context.config().getBoolean("features.log-teleports", false)) {
+        if (context.config().booleanValue("features.log-teleports", false)) {
             logger.info("{} detailed teleport {} {} -> {}",
                     event.player().name(),
                     event.getClass().getSimpleName(),
@@ -569,7 +569,7 @@ final class DemoPlayerEvents implements Listener {
     }
 
     private void reportDetailedRightClick(PlayerInteractEvent event, String kind) {
-        if (context.config().getBoolean("features.report-right-clicks", false)) {
+        if (context.config().booleanValue("features.report-right-clicks", false)) {
             event.player().sendActionBar(Component.text(
                     "Right-click " + kind + " via " + event.getClass().getSimpleName(),
                     NamedTextColor.GRAY));

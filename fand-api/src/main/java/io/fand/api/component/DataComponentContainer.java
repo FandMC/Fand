@@ -15,23 +15,23 @@ public interface DataComponentContainer {
     DataComponentMap snapshot();
 
     default boolean empty() {
-        return snapshot().isEmpty();
+        return snapshot().empty();
     }
 
-    default boolean has(Key key) {
-        return snapshot().has(key);
+    default boolean contains(Key key) {
+        return snapshot().contains(key);
     }
 
-    default boolean has(DataComponentKey<?> key) {
-        return has(key.key());
+    default boolean contains(DataComponentKey<?> key) {
+        return contains(key.key());
     }
 
-    default Optional<JsonElement> get(Key key) {
-        return snapshot().get(key);
+    default Optional<JsonElement> value(Key key) {
+        return snapshot().value(key);
     }
 
-    default <T> Optional<T> get(DataComponentKey<T> key) {
-        return snapshot().get(key);
+    default <T> Optional<T> value(DataComponentKey<T> key) {
+        return snapshot().value(key);
     }
 
     void set(Key key, JsonElement value);

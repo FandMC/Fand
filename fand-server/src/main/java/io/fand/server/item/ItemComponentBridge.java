@@ -21,7 +21,7 @@ final class ItemComponentBridge {
 
     static DataComponentPatch toVanilla(ItemComponents components) {
         Objects.requireNonNull(components, "components");
-        if (components.isEmpty()) {
+        if (components.empty()) {
             return DataComponentPatch.EMPTY;
         }
         return DataComponentPatch.CODEC.parse(ops(), components.toJsonPatch())

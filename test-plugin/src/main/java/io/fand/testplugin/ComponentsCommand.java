@@ -24,8 +24,8 @@ final class ComponentsCommand implements TestCommandHandler, TestCommandTabHandl
         Block block = location.world().blockAt(location.blockX(), location.blockY() - 1, location.blockZ());
         switch (mode) {
             case "set" -> {
-                int blockUses = block.components().get(DEMO_BLOCK_USES).orElse(0) + 1;
-                int entityUses = player.components().get(DEMO_ENTITY_USES).orElse(0) + 1;
+                int blockUses = block.components().value(DEMO_BLOCK_USES).orElse(0) + 1;
+                int entityUses = player.components().value(DEMO_ENTITY_USES).orElse(0) + 1;
                 block.components().set(DEMO_BLOCK_LABEL, "demo machine owned by " + player.name());
                 block.components().set(DEMO_BLOCK_USES, blockUses);
                 player.components().set(DEMO_ENTITY_LABEL, "demo tagged player");
@@ -42,10 +42,10 @@ final class ComponentsCommand implements TestCommandHandler, TestCommandTabHandl
                 sender.sendMessage(Component.text("Cleared demo components for " + player.name() + ".", NamedTextColor.YELLOW));
             }
             case "show" -> {
-                var blockLabel = block.components().get(DEMO_BLOCK_LABEL).orElse("<none>");
-                var blockUses = block.components().get(DEMO_BLOCK_USES).orElse(0);
-                var entityLabel = player.components().get(DEMO_ENTITY_LABEL).orElse("<none>");
-                var entityUses = player.components().get(DEMO_ENTITY_USES).orElse(0);
+                var blockLabel = block.components().value(DEMO_BLOCK_LABEL).orElse("<none>");
+                var blockUses = block.components().value(DEMO_BLOCK_USES).orElse(0);
+                var entityLabel = player.components().value(DEMO_ENTITY_LABEL).orElse("<none>");
+                var entityUses = player.components().value(DEMO_ENTITY_USES).orElse(0);
                 sender.sendMessage(Component.text(
                         "Block components: " + blockLabel + " uses=" + blockUses,
                         NamedTextColor.AQUA));

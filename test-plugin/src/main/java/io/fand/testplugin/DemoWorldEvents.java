@@ -22,7 +22,7 @@ final class DemoWorldEvents implements Listener {
 
     @Subscribe
     public void onSpawnChange(SpawnChangeEvent event) {
-        if (context.config().getBoolean("features.log-world-events", true)) {
+        if (context.config().booleanValue("features.log-world-events", true)) {
             logger.info("World spawn changed: {} -> {}",
                     compactLocation(event.previousSpawn()), compactLocation(event.newSpawn()));
         }
@@ -30,7 +30,7 @@ final class DemoWorldEvents implements Listener {
 
     @Subscribe
     public void onStructureGrow(StructureGrowEvent event) {
-        if (context.config().getBoolean("features.log-world-events", true)) {
+        if (context.config().booleanValue("features.log-world-events", true)) {
             logger.info("Structure grow: {} player={} bonemeal={} blocks={}",
                     compactLocation(event.location()),
                     event.player().map(player -> player.name()).orElse("none"),
@@ -41,7 +41,7 @@ final class DemoWorldEvents implements Listener {
 
     @Subscribe
     public void onTimeSkip(TimeSkipEvent event) {
-        if (context.config().getBoolean("features.log-world-events", true)) {
+        if (context.config().booleanValue("features.log-world-events", true)) {
             logger.info("World time skip: {} cause={} {} -> {}",
                     event.world().key().asString(), event.cause(), event.fromTime(), event.toTime());
         }

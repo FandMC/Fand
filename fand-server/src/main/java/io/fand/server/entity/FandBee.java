@@ -66,7 +66,7 @@ public final class FandBee extends FandAnimal implements Bee {
     }
 
     @Override
-    public boolean hasHive() {
+    public boolean hivePresent() {
         return handle().hasHive();
     }
 
@@ -84,23 +84,23 @@ public final class FandBee extends FandAnimal implements Bee {
     }
 
     @Override
-    public boolean hasNectar() {
+    public boolean nectar() {
         return handle().hasNectar();
     }
 
     @Override
-    public void setHasNectar(boolean hasNectar) {
-        runOnServerThread(() -> ReflectionFields.invoke(SET_HAS_NECTAR, handle(), hasNectar));
+    public void setNectar(boolean nectar) {
+        runOnServerThread(() -> ReflectionFields.invoke(SET_HAS_NECTAR, handle(), nectar));
     }
 
     @Override
-    public boolean hasStung() {
+    public boolean stung() {
         return handle().hasStung();
     }
 
     @Override
-    public void setHasStung(boolean hasStung) {
-        runOnServerThread(() -> ReflectionFields.invoke(SET_HAS_STUNG, handle(), hasStung));
+    public void setStung(boolean stung) {
+        runOnServerThread(() -> ReflectionFields.invoke(SET_HAS_STUNG, handle(), stung));
     }
 
     @Override
