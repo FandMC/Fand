@@ -64,6 +64,8 @@ final class FandServerRegistryLookupTest {
             assertThat(server.tags().tags(TagRegistryType.BLOCK)).isNotNull();
             assertThat(server.tags().tags(TagRegistryType.ITEM)).isNotNull();
             assertThat(server.tags().tags(TagRegistryType.ENTITY_TYPE)).isNotNull();
+            assertThat(server.tags().tags(TagRegistryType.FLUID)).isNotNull();
+            assertThat(server.tags().tags(TagRegistryType.DAMAGE_TYPE)).isNotNull();
         }
     }
 }

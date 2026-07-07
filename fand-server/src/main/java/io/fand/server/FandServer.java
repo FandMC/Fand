@@ -219,7 +219,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.regions = new FandRegionService(Path.of("regions"));
         this.dataPacks = new FandDataPackService(Path.of("datapacks"), minecraftServer::get);
         this.integrations = ExternalIntegrationStrategy.empty();
-        this.services = new FandServiceRegistry();
+        this.services = new FandServiceRegistry(permissions);
         this.nms = new FandNmsService(minecraftServer::get);
         this.pluginChannelAdvertisement = events.subscribe(
                 PlayerJoinEvent.class,
@@ -237,7 +237,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.bossBars = new FandBossBarService(minecraftServer::get, scheduler);
         this.placeholders = new FandPlaceholderService();
         this.miniMessages = new FandMiniMessageService(placeholders);
-        this.tags = new FandTagRegistry();
+        this.tags = new FandTagRegistry(minecraftServer::get);
         this.playerAccess = new FandPlayerAccessService(minecraftServer::get);
         this.simulatedPlayers = new FandSimulatedPlayerService(minecraftServer::get, players, events);
         this.loginAuthenticators = new FandLoginAuthenticationService();

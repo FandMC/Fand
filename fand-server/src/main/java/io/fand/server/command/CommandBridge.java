@@ -30,7 +30,7 @@ public final class CommandBridge {
         }
 
         var command = resolved.get();
-        var args = tokens.size() <= command.matchedLength() ? List.<String>of() : tokens.subList(command.matchedLength(), tokens.size());
+        var args = command.args();
         try {
             CommandEvents.runInCommandContext(() -> {
                 try {

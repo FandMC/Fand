@@ -156,7 +156,14 @@ public final class CommandManager implements CommandRegistry {
                     autoPermission = new PermissionDescriptor(info.permission(), PermissionDefault.OPERATOR);
                     permissions.register(autoPermission);
                 }
-                var entry = new CommandEntry(info, pending.executor(), pending.completer(), permissions, autoPermission, pending.strictArguments());
+                var entry = new CommandEntry(
+                        info,
+                        pending.route(),
+                        pending.executor(),
+                        pending.completer(),
+                        permissions,
+                        autoPermission,
+                        pending.strictArguments());
                 entries.add(entry);
                 for (var key : pathKeys(info)) {
                     namespacedPaths.computeIfAbsent(key, ignored -> new ArrayList<>()).add(entry);
@@ -202,20 +209,18 @@ public final class CommandManager implements CommandRegistry {
     }
 
     private Optional<ResolvedCommand> resolvePath(Snapshot current, CommandSender sender, String namespace, String root, List<String> tail) {
-        for (int length = tail.size(); length >= 0; length--) {
-            var key = toPathKey(namespace, root, tail.subList(0, length));
-            var entries = current.namespacedPaths.get(key);
-            if (entries == null) {
-                continue;
-            }
-            var args = tail.subList(length, tail.size());
-            for (var entry : entries) {
-                if (entry.allowed(sender) && entry.matchesArguments(args)) {
-                    return Optional.of(new ResolvedCommand(entry, length + 1, root));
+        var entries = rootEntries(current, rootOwner(namespace, root));
+        ResolvedCommand best = null;
+        for (var entry : entries) {
+            var match = entry.matchRoute(tail);
+            if (match.isPresent() && entry.allowed(sender)) {
+                var resolved = new ResolvedCommand(entry, match.get().matchedLength() + 1, root, match.get().args());
+                if (best == null || resolved.matchedLength() > best.matchedLength()) {
+                    best = resolved;
                 }
             }
         }
-        return Optional.empty();
+        return Optional.ofNullable(best);
     }
 
     private List<String> rootSuggestions(Snapshot current, CommandSender sender, String prefix) {
@@ -262,32 +267,7 @@ public final class CommandManager implements CommandRegistry {
             List<String> subTokens,
             LinkedHashSet<String> suggestions
     ) {
-        var path = entry.info.path();
-        if (subTokens.size() <= path.size()) {
-            for (int i = 0; i < subTokens.size() - 1; i++) {
-                if (!path.get(i).equals(subTokens.get(i))) {
-                    return;
-                }
-            }
-            var index = subTokens.size() - 1;
-            var expected = path.get(index);
-            var typed = subTokens.get(index);
-            if (expected.startsWith(typed)) {
-                suggestions.add(expected);
-            }
-            return;
-        }
-        for (int i = 0; i < path.size(); i++) {
-            if (!path.get(i).equals(subTokens.get(i))) {
-                return;
-            }
-        }
-        try {
-            var args = subTokens.subList(path.size(), subTokens.size());
-            suggestions.addAll(entry.complete(sender, localRoot(usedRoot), args));
-        } catch (Exception ex) {
-            throw new IllegalStateException("Command completer failed for " + entry.info.namespace() + ":" + entry.info.label(), ex);
-        }
+        entry.addSuggestions(sender, localRoot(usedRoot), subTokens, suggestions);
     }
 
     private void unregister(CommandEntry entry) {
@@ -402,7 +382,7 @@ public final class CommandManager implements CommandRegistry {
             String label,
             List<String> aliases,
             @Nullable String inheritedPermission,
-            ArrayList<String> path,
+            ArrayList<PathToken> route,
             ArrayList<RuntimeArgument> arguments,
             ArrayList<PendingEntry> pending
     ) {
@@ -410,27 +390,29 @@ public final class CommandManager implements CommandRegistry {
         var permission = nodePermission == null ? inheritedPermission : nodePermission;
         if (node.action() != null) {
             var runtimeArguments = List.copyOf(arguments);
-            var info = info(namespace, label, aliases, permission, path, runtimeArguments);
+            var runtimeRoute = List.copyOf(route);
+            var info = info(namespace, label, aliases, permission, runtimeRoute, runtimeArguments);
             pending.add(new PendingEntry(
                     info,
+                    runtimeRoute,
                     (sender, usedLabel, args) -> node.action().execute(context(sender, usedLabel, args, runtimeArguments)),
                     completer(runtimeArguments, node.suggestions()),
                     true));
         }
         for (var child : node.children()) {
             if (child.type() == CommandNodeType.LITERAL) {
-                if (!arguments.isEmpty()) {
-                    throw new IllegalArgumentException("Literal children after arguments are not supported: " + child.name());
-                }
-                path.add(normalizePart(child.name(), "subcommand"));
-                flattenNode(child, namespace, label, aliases, permission, path, arguments, pending);
-                path.removeLast();
+                route.add(PathToken.literal(normalizePart(child.name(), "subcommand")));
+                flattenNode(child, namespace, label, aliases, permission, route, arguments, pending);
+                route.removeLast();
             } else if (child.type() == CommandNodeType.ARGUMENT) {
-                arguments.add(new RuntimeArgument(normalizePart(child.name(), "argument"), child.argument()));
-                flattenNode(child, namespace, label, aliases, permission, path, arguments, pending);
+                var argument = new RuntimeArgument(normalizePart(child.name(), "argument"), child.argument());
+                arguments.add(argument);
+                route.add(PathToken.argument(argument));
+                flattenNode(child, namespace, label, aliases, permission, route, arguments, pending);
+                route.removeLast();
                 arguments.removeLast();
             } else {
-                flattenNode(child, namespace, label, aliases, permission, path, arguments, pending);
+                flattenNode(child, namespace, label, aliases, permission, route, arguments, pending);
             }
         }
     }
@@ -440,9 +422,13 @@ public final class CommandManager implements CommandRegistry {
             String label,
             List<String> aliases,
             @Nullable String permission,
-            List<String> path,
+            List<PathToken> route,
             List<RuntimeArgument> arguments
     ) {
+        var path = route.stream()
+                .filter(PathToken::literal)
+                .map(PathToken::name)
+                .toList();
         var typed = arguments.stream()
                 .map(argument -> argument.argument().metadata(argument.name()))
                 .toList();
@@ -670,10 +656,14 @@ public final class CommandManager implements CommandRegistry {
 
     private record PendingEntry(
             CommandInfo info,
+            List<PathToken> route,
             RuntimeCommandExecutor executor,
             RuntimeCommandCompleter completer,
             boolean strictArguments
     ) {
+        private PendingEntry {
+            route = List.copyOf(route);
+        }
     }
 
     private record RuntimeArgument(String name, Argument<?> argument) {
@@ -681,6 +671,60 @@ public final class CommandManager implements CommandRegistry {
             Objects.requireNonNull(name, "name");
             Objects.requireNonNull(argument, "argument");
         }
+    }
+
+    private static final class PathToken {
+
+        private final @Nullable String literal;
+        private final @Nullable RuntimeArgument argument;
+
+        private PathToken(@Nullable String literal, @Nullable RuntimeArgument argument) {
+            if ((literal == null) == (argument == null)) {
+                throw new IllegalArgumentException("Path token must contain either literal or argument");
+            }
+            this.literal = literal;
+            this.argument = argument;
+        }
+
+        static PathToken literal(String literal) {
+            return new PathToken(Objects.requireNonNull(literal, "literal"), null);
+        }
+
+        static PathToken argument(RuntimeArgument argument) {
+            return new PathToken(null, Objects.requireNonNull(argument, "argument"));
+        }
+
+        boolean literal() {
+            return literal != null;
+        }
+
+        boolean optionalArgument() {
+            return argument != null && argument.argument().optional();
+        }
+
+        String name() {
+            return literal != null ? literal : argument.name();
+        }
+
+        RuntimeArgument argument() {
+            if (argument == null) {
+                throw new IllegalStateException("Literal path token has no argument");
+            }
+            return argument;
+        }
+
+        boolean matchesArgument(String raw) {
+            if (argument == null) {
+                return false;
+            }
+            try {
+                argument.argument().parse(raw);
+                return true;
+            } catch (Exception failure) {
+                return false;
+            }
+        }
+
     }
 
     @FunctionalInterface
@@ -735,12 +779,16 @@ public final class CommandManager implements CommandRegistry {
         }
     }
 
-    public record ResolvedCommand(CommandEntry command, int matchedLength, String usedLabel) {
+    public record ResolvedCommand(CommandEntry command, int matchedLength, String usedLabel, List<String> args) {
+        public ResolvedCommand {
+            args = List.copyOf(args);
+        }
     }
 
     public static final class CommandEntry {
 
         private final CommandInfo info;
+        private final List<PathToken> route;
         private final RuntimeCommandExecutor executor;
         private final RuntimeCommandCompleter completer;
         private final PermissionService permissions;
@@ -750,6 +798,7 @@ public final class CommandManager implements CommandRegistry {
 
         private CommandEntry(
                 CommandInfo info,
+                List<PathToken> route,
                 RuntimeCommandExecutor executor,
                 RuntimeCommandCompleter completer,
                 PermissionService permissions,
@@ -757,6 +806,7 @@ public final class CommandManager implements CommandRegistry {
                 boolean strictArguments
         ) {
             this.info = info;
+            this.route = List.copyOf(route);
             this.executor = executor;
             this.completer = completer;
             this.permissions = permissions;
@@ -774,6 +824,84 @@ public final class CommandManager implements CommandRegistry {
 
         public List<String> complete(CommandSender sender, String label, List<String> args) throws Exception {
             return completer.complete(sender, label, args);
+        }
+
+        private void addSuggestions(
+                CommandSender sender,
+                String label,
+                List<String> subTokens,
+                LinkedHashSet<String> suggestions
+        ) {
+            if (subTokens.isEmpty()) {
+                return;
+            }
+            addRouteSuggestions(sender, label, subTokens, 0, 0, new ArrayList<>(), suggestions);
+        }
+
+        private void addRouteSuggestions(
+                CommandSender sender,
+                String label,
+                List<String> subTokens,
+                int routeIndex,
+                int tokenIndex,
+                ArrayList<String> args,
+                LinkedHashSet<String> suggestions
+        ) {
+            var completingIndex = subTokens.size() - 1;
+            if (routeIndex >= route.size()) {
+                if (tokenIndex <= completingIndex) {
+                    try {
+                        var remaining = subTokens.subList(tokenIndex, subTokens.size());
+                        suggestions.addAll(complete(sender, label, remaining));
+                    } catch (Exception ex) {
+                        throw new IllegalStateException("Command completer failed for " + info.namespace() + ":" + info.label(), ex);
+                    }
+                }
+                return;
+            }
+            var token = route.get(routeIndex);
+            if (tokenIndex > completingIndex) {
+                if (token.literal()) {
+                    suggestions.add(token.name());
+                } else if (token.optionalArgument()) {
+                    addRouteSuggestions(sender, label, subTokens, routeIndex + 1, tokenIndex, args, suggestions);
+                }
+                return;
+            }
+            var raw = subTokens.get(tokenIndex);
+            if (token.literal()) {
+                if (tokenIndex == completingIndex) {
+                    if (token.name().startsWith(raw)) {
+                        suggestions.add(token.name());
+                    }
+                    return;
+                }
+                if (token.name().equals(raw)) {
+                    addRouteSuggestions(sender, label, subTokens, routeIndex + 1, tokenIndex + 1, args, suggestions);
+                }
+                return;
+            }
+            if (tokenIndex == completingIndex) {
+                var completionArgs = new ArrayList<>(args);
+                completionArgs.add(raw);
+                try {
+                    suggestions.addAll(complete(sender, label, completionArgs));
+                } catch (Exception ex) {
+                    throw new IllegalStateException("Command completer failed for " + info.namespace() + ":" + info.label(), ex);
+                }
+                if (token.optionalArgument()) {
+                    addRouteSuggestions(sender, label, subTokens, routeIndex + 1, tokenIndex, args, suggestions);
+                }
+                return;
+            }
+            if (token.matchesArgument(raw)) {
+                args.add(raw);
+                addRouteSuggestions(sender, label, subTokens, routeIndex + 1, tokenIndex + 1, args, suggestions);
+                args.removeLast();
+            }
+            if (token.optionalArgument()) {
+                addRouteSuggestions(sender, label, subTokens, routeIndex + 1, tokenIndex, args, suggestions);
+            }
         }
 
         private void relinquishAutoPermission() {
@@ -818,8 +946,80 @@ public final class CommandManager implements CommandRegistry {
             return args.size() >= required && args.size() <= max;
         }
 
+        private Optional<RouteMatch> matchRoute(List<String> tail) {
+            return matchRoute(tail, 0, 0, new ArrayList<>());
+        }
+
+        private Optional<RouteMatch> matchRoute(
+                List<String> tail,
+                int routeIndex,
+                int tokenIndex,
+                ArrayList<String> args
+        ) {
+            if (routeIndex >= route.size()) {
+                var trailingArguments = tail.subList(tokenIndex, tail.size());
+                if (!matchesArguments(trailingArguments, args.size())) {
+                    return Optional.empty();
+                }
+                var allArgs = new ArrayList<>(args);
+                allArgs.addAll(trailingArguments);
+                return Optional.of(new RouteMatch(tokenIndex, allArgs));
+            }
+            var token = route.get(routeIndex);
+            if (tokenIndex >= tail.size()) {
+                if (token.optionalArgument()) {
+                    return matchRoute(tail, routeIndex + 1, tokenIndex, args);
+                }
+                return Optional.empty();
+            }
+            var raw = tail.get(tokenIndex);
+            if (token.literal()) {
+                if (!token.name().equals(raw)) {
+                    return Optional.empty();
+                }
+                return matchRoute(tail, routeIndex + 1, tokenIndex + 1, args);
+            }
+            if (token.matchesArgument(raw)) {
+                args.add(raw);
+                var matched = matchRoute(tail, routeIndex + 1, tokenIndex + 1, args);
+                args.removeLast();
+                if (matched.isPresent() || !token.optionalArgument()) {
+                    return matched;
+                }
+            } else if (!token.optionalArgument()) {
+                return Optional.empty();
+            }
+            return matchRoute(tail, routeIndex + 1, tokenIndex, args);
+        }
+
+        private boolean matchesArguments(List<String> args, int consumedRouteArguments) {
+            if (!strictArguments) {
+                return true;
+            }
+            var required = 0;
+            var max = 0;
+            var arguments = info.arguments().subList(consumedRouteArguments, info.arguments().size());
+            for (var argument : arguments) {
+                if (!argument.optional()) {
+                    required++;
+                }
+                max++;
+                if (argument.type() == CommandArgumentType.GREEDY_STRING) {
+                    max = Integer.MAX_VALUE;
+                    break;
+                }
+            }
+            return args.size() >= required && args.size() <= max;
+        }
+
         private boolean active() {
             return active;
+        }
+    }
+
+    private record RouteMatch(int matchedLength, List<String> args) {
+        private RouteMatch {
+            args = List.copyOf(args);
         }
     }
 }

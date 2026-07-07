@@ -5,16 +5,26 @@ import io.fand.api.tag.TagRegistryType;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import net.kyori.adventure.key.Key;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.tags.TagKey;
+import net.minecraft.server.MinecraftServer;
+import org.jspecify.annotations.Nullable;
 
 public final class FandTagRegistry implements TagRegistry {
+
+    private final Supplier<@Nullable MinecraftServer> server;
+
+    public FandTagRegistry(Supplier<@Nullable MinecraftServer> server) {
+        this.server = Objects.requireNonNull(server, "server");
+    }
 
     @Override
     public Set<Key> tagsContaining(TagRegistryType registry, Key value) {
@@ -24,7 +34,10 @@ public final class FandTagRegistry implements TagRegistry {
             case BLOCK -> tagsContaining(BuiltInRegistries.BLOCK, value);
             case ITEM -> tagsContaining(BuiltInRegistries.ITEM, value);
             case ENTITY_TYPE -> tagsContaining(BuiltInRegistries.ENTITY_TYPE, value);
-            case FLUID, DAMAGE_TYPE -> Set.of();
+            case FLUID -> tagsContaining(BuiltInRegistries.FLUID, value);
+            case DAMAGE_TYPE -> dynamicDamageTypes()
+                    .map(types -> tagsContaining(types, value))
+                    .orElseGet(Set::of);
         };
     }
 
@@ -36,7 +49,10 @@ public final class FandTagRegistry implements TagRegistry {
             case BLOCK -> values(BuiltInRegistries.BLOCK, FandTags.blockTagKey(tag));
             case ITEM -> values(BuiltInRegistries.ITEM, FandTags.itemTagKey(tag));
             case ENTITY_TYPE -> values(BuiltInRegistries.ENTITY_TYPE, FandTags.entityTypeTagKey(tag));
-            case FLUID, DAMAGE_TYPE -> Set.of();
+            case FLUID -> values(BuiltInRegistries.FLUID, FandTags.fluidTagKey(tag));
+            case DAMAGE_TYPE -> dynamicDamageTypes()
+                    .map(types -> values(types, FandTags.damageTypeTagKey(tag)))
+                    .orElseGet(Set::of);
         };
     }
 
@@ -47,8 +63,18 @@ public final class FandTagRegistry implements TagRegistry {
             case BLOCK -> tags(BuiltInRegistries.BLOCK);
             case ITEM -> tags(BuiltInRegistries.ITEM);
             case ENTITY_TYPE -> tags(BuiltInRegistries.ENTITY_TYPE);
-            case FLUID, DAMAGE_TYPE -> Set.of();
+            case FLUID -> tags(BuiltInRegistries.FLUID);
+            case DAMAGE_TYPE -> dynamicDamageTypes()
+                    .map(FandTagRegistry::tags)
+                    .orElseGet(Set::of);
         };
+    }
+
+    private java.util.Optional<Registry<net.minecraft.world.damagesource.DamageType>> dynamicDamageTypes() {
+        var current = server.get();
+        return current == null
+                ? java.util.Optional.empty()
+                : current.registryAccess().lookup(Registries.DAMAGE_TYPE);
     }
 
     private static <T> Set<Key> tagsContaining(Registry<T> registry, Key value) {

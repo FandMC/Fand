@@ -8,8 +8,11 @@ import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
 import io.fand.api.permission.PermissionGroup;
 import io.fand.api.permission.PermissionMeta;
+import io.fand.api.permission.PermissionProvider;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.permission.PermissionSubject;
+import io.fand.api.service.ServicePriority;
+import io.fand.api.service.ServiceRegistration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -39,6 +42,8 @@ public final class PermissionManager implements PermissionService {
     private final ConcurrentHashMap<String, List<PermissionChildParent>> childParents = new ConcurrentHashMap<>();
     private final Map<PermissionSubject, List<FandPermissionAttachment>> attachments =
             Collections.synchronizedMap(new IdentityHashMap<>());
+    private final LinkedHashMap<Long, ProviderRegistration> providers = new LinkedHashMap<>();
+    private long providerSequence;
 
     public PermissionManager() {
         this(null);
@@ -134,6 +139,23 @@ public final class PermissionManager implements PermissionService {
         return Optional.ofNullable(descriptorFor(normalizeAttachmentNode(node)));
     }
 
+    public ServiceRegistration<PermissionProvider> registerProvider(
+            net.kyori.adventure.key.Key key,
+            PermissionProvider provider,
+            ServicePriority priority,
+            String owner
+    ) {
+        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(provider, "provider");
+        Objects.requireNonNull(priority, "priority");
+        Objects.requireNonNull(owner, "owner");
+        synchronized (this) {
+            var registration = new ProviderRegistration(this, ++providerSequence, key, provider, priority, owner);
+            providers.put(registration.sequence(), registration);
+            return registration;
+        }
+    }
+
     @Override
     public boolean can(PermissionSubject subject, String node) {
         Objects.requireNonNull(subject, "subject");
@@ -146,6 +168,12 @@ public final class PermissionManager implements PermissionService {
     public PermissionMeta meta(PermissionSubject subject, PermissionContext context) {
         Objects.requireNonNull(subject, "subject");
         Objects.requireNonNull(context, "context");
+        for (var provider : providerSnapshot()) {
+            var meta = provider.provider().meta(subject, context);
+            if (!meta.equals(PermissionMeta.empty())) {
+                return meta;
+            }
+        }
         return PermissionMeta.empty();
     }
 
@@ -153,22 +181,40 @@ public final class PermissionManager implements PermissionService {
     public Optional<PermissionGroup> group(String name, PermissionContext context) {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(context, "context");
+        for (var provider : providerSnapshot()) {
+            var group = provider.provider().group(name, context);
+            if (group.isPresent()) {
+                return group;
+            }
+        }
         return Optional.empty();
     }
 
     @Override
     public Collection<PermissionGroup> groups(PermissionContext context) {
         Objects.requireNonNull(context, "context");
-        return List.of();
+        var groups = new LinkedHashMap<String, PermissionGroup>();
+        for (var provider : providerSnapshot()) {
+            for (var group : provider.provider().groups(context)) {
+                groups.putIfAbsent(group.name(), group);
+            }
+        }
+        return List.copyOf(groups.values());
     }
 
     @Override
     public void recalculate(PermissionSubject subject) {
         Objects.requireNonNull(subject, "subject");
+        for (var provider : providerSnapshot()) {
+            provider.provider().recalculate(subject);
+        }
     }
 
     @Override
     public void recalculateAll() {
+        for (var provider : providerSnapshot()) {
+            provider.provider().recalculateAll();
+        }
     }
 
     @Override
@@ -427,6 +473,100 @@ public final class PermissionManager implements PermissionService {
         throw new IllegalStateException("Permission already registered with different children: " + node);
     }
 
+    private List<ProviderRegistration> providerSnapshot() {
+        synchronized (this) {
+            return providers.values().stream()
+                    .filter(ProviderRegistration::active)
+                    .sorted(PermissionManager::compareProviders)
+                    .toList();
+        }
+    }
+
+    private static int compareProviders(ProviderRegistration left, ProviderRegistration right) {
+        int priority = Integer.compare(right.priority().ordinal(), left.priority().ordinal());
+        if (priority != 0) {
+            return priority;
+        }
+        return Long.compare(right.sequence(), left.sequence());
+    }
+
     private record PermissionChildParent(String node, boolean value) {
+    }
+
+    private static final class ProviderRegistration implements ServiceRegistration<PermissionProvider> {
+
+        private final PermissionManager owner;
+        private final long sequence;
+        private final net.kyori.adventure.key.Key key;
+        private final PermissionProvider provider;
+        private final ServicePriority priority;
+        private final String registeredOwner;
+        private boolean active = true;
+
+        private ProviderRegistration(
+                PermissionManager owner,
+                long sequence,
+                net.kyori.adventure.key.Key key,
+                PermissionProvider provider,
+                ServicePriority priority,
+                String registeredOwner
+        ) {
+            this.owner = owner;
+            this.sequence = sequence;
+            this.key = key;
+            this.provider = provider;
+            this.priority = priority;
+            this.registeredOwner = registeredOwner;
+        }
+
+        @Override
+        public net.kyori.adventure.key.Key key() {
+            return key;
+        }
+
+        @Override
+        public Class<PermissionProvider> type() {
+            return PermissionProvider.class;
+        }
+
+        @Override
+        public PermissionProvider service() {
+            return provider;
+        }
+
+        @Override
+        public String owner() {
+            return registeredOwner;
+        }
+
+        @Override
+        public ServicePriority priority() {
+            return priority;
+        }
+
+        @Override
+        public boolean active() {
+            synchronized (owner) {
+                return active;
+            }
+        }
+
+        @Override
+        public void unregister() {
+            synchronized (owner) {
+                if (active) {
+                    active = false;
+                    owner.providers.remove(sequence, this);
+                }
+            }
+        }
+
+        private long sequence() {
+            return sequence;
+        }
+
+        private PermissionProvider provider() {
+            return provider;
+        }
     }
 }

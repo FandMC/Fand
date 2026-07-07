@@ -207,6 +207,15 @@ context.commands().register("config", root -> root
                                         context.string("value")))))));
 ```
 
+命令树会保留声明顺序，参数节点后可以继续接字面量节点：
+
+```java
+context.commands().register("confirm", root -> root
+        .argument("target", Arguments.word(), target -> target
+                .literal("yes", yes -> yes
+                        .executes(context -> confirm(context.string("target"))))));
+```
+
 常用参数工厂在 `Arguments` 中：
 
 - `word()`：单个无空格词。
@@ -386,6 +395,20 @@ var allowed = context.permissions().can(player, "example.hello");
 `PermissionSubject.permissionValue(node)` 只表示主体自身显式声明的三态值，不会展开权限树、默认访问或附件；
 插件通常不应直接用它做最终权限判断。
 
+权限元数据由 `PermissionProvider` 提供，适合接入 LuckPerms 风格的 prefix、suffix、primary group 和 group
+列表。插件通过 `context.services()` 注册 provider 后，运行时会自动接入 `context.permissions().meta(...)`、
+`prefix(...)`、`group(...)` 和 `groups(...)`，插件禁用时也会自动清理：
+
+```java
+context.services().register(
+        Key.key("example", "permissions"),
+        PermissionProvider.class,
+        myPermissionProvider,
+        ServicePriority.HIGH);
+```
+
+多个 provider 按 `ServicePriority` 高到低查询，同优先级后注册者优先；当前 provider 注销后自动 fallback。
+
 ## 调度和线程
 
 `Scheduler` 提供主线程任务和异步任务：
@@ -407,6 +430,8 @@ var allowed = context.permissions().can(player, "example.hello");
 - `Server` 是 Adventure `ForwardingAudience`，`server().sendMessage(...)` 会广播给所有在线玩家。
 - `Server.players()`、`Server.worlds()` 等集合返回快照。
 - 世界、实体、方块、物品类型通过 Adventure `Key` 或生成的 vanilla key 查询。
+- `Server.tags()` 提供 vanilla data-pack 标签只读查询，覆盖 `BLOCK`、`ITEM`、`ENTITY_TYPE`、`FLUID` 和
+  `DAMAGE_TYPE`。
 - `Inventory` 提供槽位读写和批量工具：`contents()` 返回槽位快照，`setContents(...)` 从 0 号槽替换并清空剩余槽，
   `firstEmpty()` 查找空槽，`empty()` 判断是否全空，`count(...)` / `contains(...)` 支持按物品类型或完整
   `ItemStack` 查询，`remove(...)` 返回实际移除数量。没有查看者跟踪的库存 `viewers()` 返回空快照。

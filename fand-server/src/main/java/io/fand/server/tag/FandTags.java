@@ -15,6 +15,8 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.damagesource.DamageType;
+import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 
@@ -35,6 +37,14 @@ public final class FandTags {
             HolderSet.Named<net.minecraft.world.entity.EntityType<?>> handle
     ) {
         return new FandTag<>(handle, RegistryKind.ENTITY_TYPE, FandEntityType::of, FandTags::entityTypeHolder);
+    }
+
+    public static TagKey<Fluid> fluidTagKey(Key key) {
+        return TagKey.create(Registries.FLUID, identifier(key));
+    }
+
+    public static TagKey<DamageType> damageTypeTagKey(Key key) {
+        return TagKey.create(Registries.DAMAGE_TYPE, identifier(key));
     }
 
     public static TagKey<Block> blockTagKey(Key key) {

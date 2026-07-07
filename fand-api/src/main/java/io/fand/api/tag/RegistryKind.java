@@ -4,5 +4,7 @@ package io.fand.api.tag;
 public enum RegistryKind {
     BLOCK,
     ITEM,
-    ENTITY_TYPE
+    ENTITY_TYPE,
+    FLUID,
+    DAMAGE_TYPE
 }

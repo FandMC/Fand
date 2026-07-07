@@ -221,6 +221,25 @@ final class CommandManagerTest {
     }
 
     @Test
+    void resolvesLiteralChildrenAfterArguments() throws Exception {
+        var manager = new CommandManager(new PermissionManager());
+        var executed = new ArrayList<String>();
+        manager.register("demo", command -> command
+                .namespace("test")
+                .argument("value", Arguments.word().suggests("alpha"), value -> value
+                        .literal("confirm", confirm -> confirm
+                                .executes(context -> executed.add(context.string("value") + ":" + context.args())))));
+
+        var sender = new TestSender();
+        var resolved = manager.resolve(sender, List.of("demo", "alpha", "confirm")).orElseThrow();
+        resolved.command().execute(sender, resolved.usedLabel(), resolved.args());
+
+        assertThat(executed).containsExactly("alpha:[alpha]");
+        assertThat(manager.suggestions(sender, List.of("demo", "a"))).containsExactly("alpha");
+        assertThat(manager.suggestions(sender, List.of("demo", "alpha", "c"))).containsExactly("confirm");
+    }
+
+    @Test
     void commandInfoUsageOmitsBlankNamespacePrefix() {
         var local = new io.fand.api.command.CommandInfo("", "demo", List.of("reload"), List.of(), List.of(), null);
         var namespaced = new io.fand.api.command.CommandInfo("fand", "demo", List.of("reload"), List.of(), List.of(), null);

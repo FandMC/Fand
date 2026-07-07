@@ -4,6 +4,7 @@ import io.fand.api.service.ServicePriority;
 import io.fand.api.service.ServiceProvider;
 import io.fand.api.service.ServiceRegistration;
 import io.fand.api.service.ServiceRegistry;
+import io.fand.server.permission.PermissionManager;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -11,12 +12,22 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import net.kyori.adventure.key.Key;
+import org.jspecify.annotations.Nullable;
 
 public final class FandServiceRegistry implements ServiceRegistry, AutoCloseable {
 
     private final Object lock = new Object();
     private final LinkedHashMap<ServiceId, Registration<?>> registrations = new LinkedHashMap<>();
     private final AtomicLong sequence = new AtomicLong();
+    private final @Nullable PermissionManager permissions;
+
+    public FandServiceRegistry() {
+        this(null);
+    }
+
+    public FandServiceRegistry(@Nullable PermissionManager permissions) {
+        this.permissions = permissions;
+    }
 
     @Override
     public Collection<ServiceProvider<?>> providers() {
@@ -64,10 +75,17 @@ public final class FandServiceRegistry implements ServiceRegistry, AutoCloseable
         var provider = new ServiceProvider<>(
                 Objects.requireNonNull(key, "key"),
                 Objects.requireNonNull(type, "type"),
-                service,
+                Objects.requireNonNull(service, "service"),
                 Objects.requireNonNull(owner, "owner"),
                 Objects.requireNonNull(priority, "priority"));
-        var registration = new Registration<>(this, provider, sequence.incrementAndGet());
+        var permissionProvider = permissions != null && type == io.fand.api.permission.PermissionProvider.class
+                ? permissions.registerProvider(
+                        key,
+                        (io.fand.api.permission.PermissionProvider) service,
+                        priority,
+                        owner)
+                : null;
+        var registration = new Registration<>(this, provider, sequence.incrementAndGet(), permissionProvider);
         Registration<?> previous;
         synchronized (lock) {
             previous = registrations.put(new ServiceId(key, type), registration);
@@ -123,12 +141,19 @@ public final class FandServiceRegistry implements ServiceRegistry, AutoCloseable
         private final FandServiceRegistry owner;
         private final ServiceProvider<T> provider;
         private final long sequence;
+        private final @Nullable ServiceRegistration<?> linkedRegistration;
         private volatile boolean active = true;
 
-        private Registration(FandServiceRegistry owner, ServiceProvider<T> provider, long sequence) {
+        private Registration(
+                FandServiceRegistry owner,
+                ServiceProvider<T> provider,
+                long sequence,
+                @Nullable ServiceRegistration<?> linkedRegistration
+        ) {
             this.owner = owner;
             this.provider = provider;
             this.sequence = sequence;
+            this.linkedRegistration = linkedRegistration;
         }
 
         @Override
@@ -165,6 +190,7 @@ public final class FandServiceRegistry implements ServiceRegistry, AutoCloseable
         public void unregister() {
             if (active) {
                 active = false;
+                closeLinkedRegistration();
                 owner.release(this);
             }
         }
@@ -188,6 +214,13 @@ public final class FandServiceRegistry implements ServiceRegistry, AutoCloseable
 
         private void unregisterFromRegistry() {
             active = false;
+            closeLinkedRegistration();
+        }
+
+        private void closeLinkedRegistration() {
+            if (linkedRegistration != null && linkedRegistration.active()) {
+                linkedRegistration.unregister();
+            }
         }
     }
 }

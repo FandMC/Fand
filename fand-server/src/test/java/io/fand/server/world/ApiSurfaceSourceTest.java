@@ -793,7 +793,7 @@ final class ApiSurfaceSourceTest {
                 "registration.unregisterFromTracker()");
         assertThat(server).contains(
                 "private final FandServiceRegistry services",
-                "this.services = new FandServiceRegistry()",
+                "this.services = new FandServiceRegistry(permissions)",
                 "this.plugins.serviceRegistry(services)",
                 "public ServiceRegistry services()",
                 "services.close()");

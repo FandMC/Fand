@@ -6,9 +6,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.fand.api.permission.PermissionContext;
 import io.fand.api.permission.PermissionDefault;
 import io.fand.api.permission.PermissionDescriptor;
+import io.fand.api.permission.PermissionGroup;
 import io.fand.api.permission.PermissionMeta;
+import io.fand.api.permission.PermissionProvider;
+import io.fand.api.service.ServicePriority;
+import io.fand.server.service.FandServiceRegistry;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
 
 final class PermissionManagerTest {
@@ -213,6 +219,31 @@ final class PermissionManagerTest {
     }
 
     @Test
+    void permissionProvidersSupplyMetadataAndGroupsThroughServiceRegistry() {
+        var manager = new PermissionManager();
+        var services = new FandServiceRegistry(manager);
+        var subject = new PermissionSet(false);
+        var context = PermissionContext.of("world", "overworld");
+        var low = new TestPermissionProvider("low", "Low");
+        var high = new TestPermissionProvider("high", "High");
+
+        var lowRegistration = services.register(Key.key("test", "low"), PermissionProvider.class, low, ServicePriority.LOW);
+        var highRegistration = services.register(Key.key("test", "high"), PermissionProvider.class, high, ServicePriority.HIGH);
+
+        assertThat(manager.prefix(subject, context)).contains("High");
+        assertThat(manager.group("high", context)).map(PermissionGroup::displayName).contains(java.util.Optional.of("High"));
+        assertThat(manager.groups(context)).extracting(PermissionGroup::name).containsExactly("high", "low");
+
+        highRegistration.unregister();
+
+        assertThat(manager.prefix(subject, context)).contains("Low");
+
+        lowRegistration.unregister();
+
+        assertThat(manager.meta(subject, context)).isEqualTo(PermissionMeta.empty());
+    }
+
+    @Test
     void rejectsInvalidPermissionNodes() {
         var manager = new PermissionManager();
 
@@ -220,5 +251,29 @@ final class PermissionManagerTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> manager.can(new PermissionSet(false), "bad node"))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private record TestPermissionProvider(String group, String prefix) implements PermissionProvider {
+
+        @Override
+        public PermissionMeta meta(io.fand.api.permission.PermissionSubject subject, PermissionContext context) {
+            return PermissionMeta.builder()
+                    .prefix(prefix)
+                    .primaryGroup(group)
+                    .groups(List.of(group))
+                    .build();
+        }
+
+        @Override
+        public java.util.Optional<PermissionGroup> group(String name, PermissionContext context) {
+            return group.equals(name)
+                    ? java.util.Optional.of(PermissionGroup.builder(group).displayName(prefix).build())
+                    : java.util.Optional.empty();
+        }
+
+        @Override
+        public java.util.Collection<PermissionGroup> groups(PermissionContext context) {
+            return List.of(PermissionGroup.builder(group).displayName(prefix).build());
+        }
     }
 }
