@@ -169,7 +169,7 @@ final class PluginCommandIntegrationTest {
         }
 
         @Override
-        public boolean hasPermission(String permission) {
+        public boolean can(String permission) {
             return permissions.permissionValue(permission).orElse(false);
         }
 

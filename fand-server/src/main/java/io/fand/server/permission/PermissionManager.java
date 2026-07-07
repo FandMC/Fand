@@ -135,7 +135,7 @@ public final class PermissionManager implements PermissionService {
     }
 
     @Override
-    public boolean hasPermission(PermissionSubject subject, String node) {
+    public boolean can(PermissionSubject subject, String node) {
         Objects.requireNonNull(subject, "subject");
         var normalized = normalizeAttachmentNode(node);
 

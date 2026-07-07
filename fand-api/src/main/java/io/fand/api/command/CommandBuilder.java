@@ -16,6 +16,16 @@ public final class CommandBuilder {
     private final State state;
     private final MutableNode current;
 
+    public static CommandBuilder command(String label) {
+        return new CommandBuilder(label);
+    }
+
+    public static CommandDefinition define(String label, Consumer<CommandBuilder> builder) {
+        var command = command(label);
+        Objects.requireNonNull(builder, "builder").accept(command);
+        return command.build();
+    }
+
     public CommandBuilder(String label) {
         this.state = new State(Objects.requireNonNull(label, "label"));
         this.current = state.root;

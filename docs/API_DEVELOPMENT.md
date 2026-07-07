@@ -224,7 +224,7 @@ context.commands().register("config", root -> root
 ```java
 context.commands().register("giveitem", root -> root
         .argument("item", Arguments.item(), item -> item
-                .argument("amount", Arguments.integer(1, 2304).optional(1), amount -> amount
+                .argument("amount", Arguments.integer(1, 2304).asOptional(1), amount -> amount
                         .executes(context -> giveItem(
                                 context.sender(),
                                 context.item("item"),
@@ -251,11 +251,27 @@ context.commands().register("warp", root -> root
 - `label()`：玩家实际使用的根命令名，可能是别名。
 - `args()`：原始参数列表。
 - `arguments()`：已解析参数 map。
-- `has(name)`、`argument(name, type)`、`optionalArgument(name, type)`：通用访问。
+- `contains(name)`、`argument(name, type)`、`optionalArgument(name, type)`：通用访问。
 - `string(name)`、`intValue(name)`、`booleanValue(name)`、`player(name)`、`item(name)` 等：常用类型访问。
 
 `context.commands().register(...)` 会返回 `CommandRegistration`。如果命令只跟随插件生命周期，通常不需要保存；
 运行时会在插件禁用时清理。需要临时命令时，可以保存句柄并调用 `unregister()` 或 `close()`。
+
+需要先构造命令定义再注册时，可以使用 `CommandBuilder.command(...)` 或 `CommandBuilder.define(...)`：
+
+```java
+import io.fand.api.command.CommandBuilder;
+
+var definition = CommandBuilder.command("tool")
+        .literal("reload", reload -> reload.executes(context -> reloadTool(context.sender())))
+        .build();
+
+context.commands().register(definition);
+
+context.commands().register(CommandBuilder.define("echo", root -> root
+        .argument("message", Arguments.greedyString(), message -> message
+                .executes(context -> context.sender().sendMessage(Component.text(context.string("message")))))));
+```
 
 ### 注解命令
 
@@ -356,6 +372,20 @@ context.permissions().register(new PermissionDescriptor("example.hello", Permiss
 
 `PermissionDefault` 支持 `TRUE`、`FALSE`、`OPERATOR`、`NOT_OPERATOR`。
 
+权限检查使用 `can(...)`，`allowed(...)` 是同语义别名。命令发送者和玩家可以直接检查单个权限；
+需要完整权限解析、默认值、父子权限和附件覆盖时，优先通过 `PermissionService`：
+
+```java
+if (context.sender().can("example.admin")) {
+    context.sender().sendMessage(Component.text("Access granted"));
+}
+
+var allowed = context.permissions().can(player, "example.hello");
+```
+
+`PermissionSubject.permissionValue(node)` 只表示主体自身显式声明的三态值，不会展开权限树、默认访问或附件；
+插件通常不应直接用它做最终权限判断。
+
 ## 调度和线程
 
 `Scheduler` 提供主线程任务和异步任务：
@@ -377,6 +407,9 @@ context.permissions().register(new PermissionDescriptor("example.hello", Permiss
 - `Server` 是 Adventure `ForwardingAudience`，`server().sendMessage(...)` 会广播给所有在线玩家。
 - `Server.players()`、`Server.worlds()` 等集合返回快照。
 - 世界、实体、方块、物品类型通过 Adventure `Key` 或生成的 vanilla key 查询。
+- `Inventory` 提供槽位读写和批量工具：`contents()` 返回槽位快照，`setContents(...)` 从 0 号槽替换并清空剩余槽，
+  `firstEmpty()` 查找空槽，`empty()` 判断是否全空，`count(...)` / `contains(...)` 支持按物品类型或完整
+  `ItemStack` 查询，`remove(...)` 返回实际移除数量。没有查看者跟踪的库存 `viewers()` 返回空快照。
 - `RecipeRegistry.register` 会更新实时 vanilla 配方管理器，返回的注册句柄关闭后移除同一个配方。
 - `ScoreboardService` 操作持久 vanilla 计分板目标和队伍。
 - `ServiceRegistry.providers(type)` 按 `ServicePriority` 高到低返回；同优先级后注册者优先。

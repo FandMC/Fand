@@ -39,8 +39,8 @@ final class PluginPermissionService implements PermissionService {
     }
 
     @Override
-    public boolean hasPermission(PermissionSubject subject, String node) {
-        return delegate.hasPermission(subject, node);
+    public boolean can(PermissionSubject subject, String node) {
+        return delegate.can(subject, node);
     }
 
     @Override

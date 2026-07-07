@@ -24,12 +24,12 @@ final class PermissionManagerTest {
         var nonOp = new PermissionSet(false);
         var op = new PermissionSet(true);
 
-        assertThat(manager.hasPermission(nonOp, "fand.always")).isTrue();
-        assertThat(manager.hasPermission(nonOp, "fand.never")).isFalse();
-        assertThat(manager.hasPermission(nonOp, "fand.op-only")).isFalse();
-        assertThat(manager.hasPermission(nonOp, "fand.non-op")).isTrue();
-        assertThat(manager.hasPermission(op, "fand.op-only")).isTrue();
-        assertThat(manager.hasPermission(op, "fand.non-op")).isFalse();
+        assertThat(manager.can(nonOp, "fand.always")).isTrue();
+        assertThat(manager.can(nonOp, "fand.never")).isFalse();
+        assertThat(manager.can(nonOp, "fand.op-only")).isFalse();
+        assertThat(manager.can(nonOp, "fand.non-op")).isTrue();
+        assertThat(manager.can(op, "fand.op-only")).isTrue();
+        assertThat(manager.can(op, "fand.non-op")).isFalse();
     }
 
     @Test
@@ -39,7 +39,7 @@ final class PermissionManagerTest {
 
         var subject = new PermissionSet(false).set("fand.reload", true);
 
-        assertThat(manager.hasPermission(subject, "fand.reload")).isTrue();
+        assertThat(manager.can(subject, "fand.reload")).isTrue();
     }
 
     @Test
@@ -53,8 +53,8 @@ final class PermissionManagerTest {
                 .set("fand.command.*", true)
                 .set("fand.command.reload", false);
 
-        assertThat(manager.hasPermission(subject, "fand.command.info")).isTrue();
-        assertThat(manager.hasPermission(subject, "fand.command.reload")).isFalse();
+        assertThat(manager.can(subject, "fand.command.info")).isTrue();
+        assertThat(manager.can(subject, "fand.command.reload")).isFalse();
     }
 
     @Test
@@ -63,8 +63,8 @@ final class PermissionManagerTest {
         manager.register(new PermissionDescriptor("fand.command.*", PermissionDefault.OPERATOR));
 
         assertThat(manager.lookup("fand.command.reload")).isPresent();
-        assertThat(manager.hasPermission(new PermissionSet(false), "fand.command.reload")).isFalse();
-        assertThat(manager.hasPermission(new PermissionSet(true), "fand.command.reload")).isTrue();
+        assertThat(manager.can(new PermissionSet(false), "fand.command.reload")).isFalse();
+        assertThat(manager.can(new PermissionSet(true), "fand.command.reload")).isTrue();
     }
 
     @Test
@@ -80,12 +80,12 @@ final class PermissionManagerTest {
         ));
 
         var subject = new PermissionSet(false);
-        assertThat(manager.hasPermission(subject, "fand.command.reload")).isFalse();
+        assertThat(manager.can(subject, "fand.command.reload")).isFalse();
 
         subject.set("fand.admin", true);
 
-        assertThat(manager.hasPermission(subject, "fand.command.reload")).isTrue();
-        assertThat(manager.hasPermission(subject, "fand.command.danger")).isFalse();
+        assertThat(manager.can(subject, "fand.command.reload")).isTrue();
+        assertThat(manager.can(subject, "fand.command.danger")).isFalse();
     }
 
     @Test
@@ -101,7 +101,7 @@ final class PermissionManagerTest {
                 .set("fand.admin", true)
                 .set("fand.command.reload", false);
 
-        assertThat(manager.hasPermission(subject, "fand.command.reload")).isFalse();
+        assertThat(manager.can(subject, "fand.command.reload")).isFalse();
     }
 
     @Test
@@ -122,7 +122,7 @@ final class PermissionManagerTest {
                 .set("fand.admin", true)
                 .set("fand.admin.commands", true);
 
-        assertThat(manager.hasPermission(subject, "fand.command.reload")).isFalse();
+        assertThat(manager.can(subject, "fand.command.reload")).isFalse();
     }
 
     @Test
@@ -135,11 +135,11 @@ final class PermissionManagerTest {
         ));
 
         var subject = new PermissionSet(false).set("demo.admin", true);
-        assertThat(manager.hasPermission(subject, "demo.command.reload")).isTrue();
+        assertThat(manager.can(subject, "demo.command.reload")).isTrue();
 
         manager.unregisterNamespaces(Set.of("demo"));
 
-        assertThat(manager.hasPermission(subject, "demo.command.reload")).isFalse();
+        assertThat(manager.can(subject, "demo.command.reload")).isFalse();
     }
 
     @Test
@@ -149,11 +149,11 @@ final class PermissionManagerTest {
         var subject = new PermissionSet(false).set("fand.command.reload", false);
         var attachment = manager.attach(subject, "fand.command.reload", true);
 
-        assertThat(manager.hasPermission(subject, "fand.command.reload")).isTrue();
+        assertThat(manager.can(subject, "fand.command.reload")).isTrue();
 
         attachment.close();
 
-        assertThat(manager.hasPermission(subject, "fand.command.reload")).isFalse();
+        assertThat(manager.can(subject, "fand.command.reload")).isFalse();
     }
 
     @Test
@@ -164,18 +164,18 @@ final class PermissionManagerTest {
         manager.attach(subject, "fand.command.*", true);
         var newer = manager.attach(subject, "fand.command.reload", false);
 
-        assertThat(manager.hasPermission(subject, "fand.command.reload")).isFalse();
+        assertThat(manager.can(subject, "fand.command.reload")).isFalse();
 
         newer.close();
 
-        assertThat(manager.hasPermission(subject, "fand.command.reload")).isTrue();
+        assertThat(manager.can(subject, "fand.command.reload")).isTrue();
     }
 
     @Test
     void returnsFalseForUnknownPermissionsWithoutExplicitGrant() {
         var manager = new PermissionManager();
 
-        assertThat(manager.hasPermission(new PermissionSet(false), "fand.unknown")).isFalse();
+        assertThat(manager.can(new PermissionSet(false), "fand.unknown")).isFalse();
     }
 
     @Test
@@ -184,16 +184,16 @@ final class PermissionManagerTest {
         manager.register(new PermissionDescriptor("fand.command.reload", PermissionDefault.FALSE));
         var subject = new PermissionSet(false);
 
-        assertThat(manager.hasPermission(subject, "fand.command.reload")).isFalse();
+        assertThat(manager.can(subject, "fand.command.reload")).isFalse();
 
         subject.set("fand.command.reload", true);
         manager.recalculate(subject);
 
-        assertThat(manager.hasPermission(subject, "fand.command.reload")).isTrue();
+        assertThat(manager.can(subject, "fand.command.reload")).isTrue();
 
         manager.recalculateAll();
 
-        assertThat(manager.hasPermission(subject, "fand.command.reload")).isTrue();
+        assertThat(manager.can(subject, "fand.command.reload")).isTrue();
     }
 
     @Test
@@ -218,7 +218,7 @@ final class PermissionManagerTest {
 
         assertThatThrownBy(() -> manager.register(new PermissionDescriptor("Bad Node", PermissionDefault.FALSE)))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> manager.hasPermission(new PermissionSet(false), "bad node"))
+        assertThatThrownBy(() -> manager.can(new PermissionSet(false), "bad node"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }

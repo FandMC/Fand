@@ -734,10 +734,10 @@ final class PluginRuntimeTest {
         );
 
         manager.loadPlugins();
-        assertThat(permissions.hasPermission(PermissionAttachmentTestBridge.SUBJECT, "fand.injected")).isTrue();
+        assertThat(permissions.can(PermissionAttachmentTestBridge.SUBJECT, "fand.injected")).isTrue();
 
         manager.close();
-        assertThat(permissions.hasPermission(PermissionAttachmentTestBridge.SUBJECT, "fand.injected")).isFalse();
+        assertThat(permissions.can(PermissionAttachmentTestBridge.SUBJECT, "fand.injected")).isFalse();
     }
 
     @Test
@@ -848,8 +848,8 @@ final class PluginRuntimeTest {
 
             var subject = new io.fand.server.permission.PermissionSet(false).set("perms.admin", true);
             assertThat(permissions.lookup("perms.admin")).isPresent();
-            assertThat(permissions.hasPermission(subject, "perms.command.reload")).isTrue();
-            assertThat(permissions.hasPermission(subject, "perms.command.danger")).isFalse();
+            assertThat(permissions.can(subject, "perms.command.reload")).isTrue();
+            assertThat(permissions.can(subject, "perms.command.danger")).isFalse();
         } finally {
             manager.close();
         }

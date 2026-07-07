@@ -11,7 +11,11 @@ public interface PermissionService {
 
     Optional<PermissionDescriptor> lookup(String node);
 
-    boolean hasPermission(PermissionSubject subject, String node);
+    boolean can(PermissionSubject subject, String node);
+
+    default boolean allowed(PermissionSubject subject, String node) {
+        return can(subject, node);
+    }
 
     default PermissionMeta meta(PermissionSubject subject) {
         return meta(subject, PermissionContext.empty());

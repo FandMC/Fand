@@ -107,7 +107,7 @@ final class CommandTreeBridgeTest {
         }
 
         @Override
-        public boolean hasPermission(String permission) {
+        public boolean can(String permission) {
             return true;
         }
     }

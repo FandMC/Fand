@@ -19,5 +19,9 @@ public interface CommandSender extends Audience {
     @Override
     void sendMessage(net.kyori.adventure.text.Component message);
 
-    boolean hasPermission(String permission);
+    boolean can(String permission);
+
+    default boolean allowed(String permission) {
+        return can(permission);
+    }
 }

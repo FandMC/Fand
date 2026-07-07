@@ -794,9 +794,9 @@ public final class CommandManager implements CommandRegistry {
                 return true;
             }
             if (sender instanceof PermissionSubject subject) {
-                return permissions.hasPermission(subject, info.permission());
+                return permissions.can(subject, info.permission());
             }
-            return sender.hasPermission(info.permission());
+            return sender.can(info.permission());
         }
 
         private boolean matchesArguments(List<String> args) {

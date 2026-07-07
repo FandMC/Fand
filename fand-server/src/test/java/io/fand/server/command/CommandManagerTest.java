@@ -5,12 +5,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.fand.api.command.Arguments;
 import io.fand.api.command.CommandArgumentType;
+import io.fand.api.command.CommandBuilder;
+import io.fand.api.command.CommandContext;
 import io.fand.api.command.CommandSender;
 import io.fand.api.permission.PermissionSubject;
 import io.fand.server.permission.PermissionManager;
 import io.fand.server.permission.PermissionSet;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import net.kyori.adventure.text.Component;
 import org.junit.jupiter.api.Test;
 
@@ -162,6 +165,41 @@ final class CommandManagerTest {
     }
 
     @Test
+    void builderStaticEntrypointsCreateDefinitions() throws Exception {
+        var manager = new CommandManager(new PermissionManager());
+        var executed = new ArrayList<String>();
+
+        manager.register(CommandBuilder.command("tool")
+                .namespace("demo")
+                .literal("reload", reload -> reload.executes(context -> executed.add(context.label())))
+                .build());
+        manager.register(CommandBuilder.define("echo", command -> command
+                .namespace("demo")
+                .argument("value", Arguments.word(), value -> value
+                        .executes(context -> executed.add(context.string("value"))))));
+
+        var sender = new TestSender();
+        var reload = manager.resolve(sender, List.of("tool", "reload")).orElseThrow();
+        reload.command().execute(sender, reload.usedLabel(), List.of());
+        var echo = manager.resolve(sender, List.of("echo", "hello")).orElseThrow();
+        echo.command().execute(sender, echo.usedLabel(), List.of("hello"));
+
+        assertThat(executed).containsExactly("tool", "hello");
+    }
+
+    @Test
+    void commandContextContainsReportsParsedArguments() {
+        var context = new CommandContext(
+                new TestSender(),
+                "demo",
+                List.of("stone"),
+                Map.of("item", "stone"));
+
+        assertThat(context.contains("item")).isTrue();
+        assertThat(context.contains("amount")).isFalse();
+    }
+
+    @Test
     void builderRejectsDuplicateArgumentNameWithDifferentDefinition() {
         var builder = new io.fand.api.command.CommandBuilder("demo");
         builder.argument("value", Arguments.word());
@@ -212,7 +250,7 @@ final class CommandManagerTest {
         }
 
         @Override
-        public boolean hasPermission(String permission) {
+        public boolean can(String permission) {
             return permissions.permissionValue(permission).orElse(false);
         }
 

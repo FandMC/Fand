@@ -32,8 +32,8 @@ public final class CommandSourceSender implements CommandSender, PermissionSubje
     }
 
     @Override
-    public boolean hasPermission(String permission) {
-        return permissions.hasPermission(this, permission);
+    public boolean can(String permission) {
+        return permissions.can(this, permission);
     }
 
     @Override

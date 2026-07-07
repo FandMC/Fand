@@ -44,7 +44,7 @@ public final class CommandContext {
         return arguments;
     }
 
-    public boolean has(String name) {
+    public boolean contains(String name) {
         return arguments.containsKey(name);
     }
 

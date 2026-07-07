@@ -76,7 +76,7 @@ final class PerformanceCommandsTest {
         }
 
         @Override
-        public boolean hasPermission(String permission) {
+        public boolean can(String permission) {
             return permissions.operator();
         }
 

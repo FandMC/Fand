@@ -16,9 +16,11 @@ public interface CommandRegistry {
     }
 
     default CommandRegistration register(String label, Consumer<CommandBuilder> builder) {
-        var command = new CommandBuilder(label);
-        builder.accept(command);
-        return register(command.build());
+        return register(CommandBuilder.define(label, builder));
+    }
+
+    default CommandRegistration register(CommandBuilder builder) {
+        return register(builder.build());
     }
 
     CommandRegistration register(CommandDefinition definition);

@@ -1067,8 +1067,8 @@ public final class FandPlayer implements Player {
     }
 
     @Override
-    public boolean hasPermission(String permission) {
-        return permissions.hasPermission(this, permission);
+    public boolean can(String permission) {
+        return permissions.can(this, permission);
     }
 
     @Override
