@@ -13,6 +13,7 @@ import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
+import io.fand.api.hologram.HologramService;
 import io.fand.api.integration.ExternalIntegrationStrategy;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
@@ -84,6 +85,11 @@ public interface PluginContext {
     /** Boss bar service scoped to this plugin's lifecycle and namespace. */
     default BossBarService bossBars() {
         return BossBarService.empty();
+    }
+
+    /** Hologram service scoped to this plugin's lifecycle. */
+    default HologramService holograms() {
+        return HologramService.empty();
     }
 
     /** Per-viewer tab-list entry service scoped to this plugin's lifecycle. */

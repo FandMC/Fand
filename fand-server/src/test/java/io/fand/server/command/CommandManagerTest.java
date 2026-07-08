@@ -188,6 +188,26 @@ final class CommandManagerTest {
     }
 
     @Test
+    void builderSubcommandShortcutsCreateLiteralExecutors() throws Exception {
+        var manager = new CommandManager(new PermissionManager());
+        var executed = new ArrayList<String>();
+
+        manager.register(CommandBuilder.command("tool")
+                .namespace("demo")
+                .executesSubcommand("about", context -> executed.add("about"))
+                .subcommand("reload", "demo.reload", context -> executed.add("reload"))
+                .build());
+
+        var sender = new TestSender("demo.reload");
+        var about = manager.resolve(sender, List.of("tool", "about")).orElseThrow();
+        var reload = manager.resolve(sender, List.of("tool", "reload")).orElseThrow();
+        about.command().execute(sender, about.usedLabel(), List.of());
+        reload.command().execute(sender, reload.usedLabel(), List.of());
+
+        assertThat(executed).containsExactly("about", "reload");
+    }
+
+    @Test
     void commandContextContainsReportsParsedArguments() {
         var context = new CommandContext(
                 new TestSender(),

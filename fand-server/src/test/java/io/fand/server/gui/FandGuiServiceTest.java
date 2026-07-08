@@ -131,6 +131,29 @@ final class FandGuiServiceTest {
     }
 
     @Test
+    void replaceKeepsViewStateAndOpensReplacementInventory() {
+        bindServer();
+        var events = new EventDispatcher();
+        var service = new FandGuiService(events);
+        var player = player(UUID.randomUUID());
+        var closed = new AtomicInteger();
+
+        var view = service.open(player, gui("First", closed));
+        openResults.get(0).complete(true);
+        view.state("page", 2);
+        view.replace(gui("Second"));
+        openResults.get(1).complete(true);
+
+        assertThat(view.open()).isTrue();
+        assertThat(service.openView(player)).containsSame(view);
+        assertThat(view.state("page")).contains(2);
+        assertThat(view.gui().title()).isEqualTo(Component.text("Second"));
+        assertThat(view.inventory().title()).isEqualTo(Component.text("Second"));
+        assertThat(player.openInventory().orElseThrow().title()).isEqualTo(Component.text("Second"));
+        assertThat(closed).hasValue(0);
+    }
+
+    @Test
     void closeEventRemovesCurrentViewWhenReplacedViewWasNeverDisplayed() {
         bindServer();
         var events = new EventDispatcher();

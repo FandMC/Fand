@@ -14,6 +14,7 @@ import io.fand.api.entity.Player;
 import io.fand.api.event.EventBus;
 import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
+import io.fand.api.hologram.HologramService;
 import io.fand.api.integration.ExternalIntegrationStrategy;
 import io.fand.api.item.ItemTagKey;
 import io.fand.api.item.ItemType;
@@ -41,6 +42,8 @@ import io.fand.api.tablist.TabListService;
 import io.fand.api.text.MiniMessageService;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldCreateOptions;
+import io.fand.api.world.WorldSnapshot;
+import io.fand.api.world.WorldSnapshotOptions;
 import io.fand.api.world.WorldTemplate;
 import java.util.Collection;
 import java.util.Optional;
@@ -125,6 +128,10 @@ public interface Server extends ForwardingAudience {
 
     default BossBarService bossBars() {
         return BossBarService.empty();
+    }
+
+    default HologramService holograms() {
+        return HologramService.empty();
     }
 
     default TabListService tabLists() {
@@ -254,6 +261,35 @@ public interface Server extends ForwardingAudience {
     default CompletableFuture<? extends World> createWorld(Key key, WorldCreateOptions options) {
         return createWorld(key, options.template());
     }
+
+    default CompletableFuture<? extends World> copyWorld(World source, Key target) {
+        java.util.Objects.requireNonNull(source, "source");
+        return copyWorld(source.key(), target);
+    }
+
+    CompletableFuture<? extends World> copyWorld(Key source, Key target);
+
+    default CompletableFuture<? extends World> createWorld(Key key, WorldSnapshot snapshot) {
+        return createWorld(key, snapshot, WorldCreateOptions.of(WorldTemplate.OVERWORLD));
+    }
+
+    CompletableFuture<? extends World> createWorld(Key key, WorldSnapshot snapshot, WorldCreateOptions options);
+
+    default CompletableFuture<? extends WorldSnapshot> snapshotWorld(World world) {
+        java.util.Objects.requireNonNull(world, "world");
+        return snapshotWorld(world.key(), WorldSnapshotOptions.inMemory());
+    }
+
+    default CompletableFuture<? extends WorldSnapshot> snapshotWorld(Key key) {
+        return snapshotWorld(key, WorldSnapshotOptions.inMemory());
+    }
+
+    default CompletableFuture<? extends WorldSnapshot> snapshotWorld(World world, WorldSnapshotOptions options) {
+        java.util.Objects.requireNonNull(world, "world");
+        return snapshotWorld(world.key(), options);
+    }
+
+    CompletableFuture<? extends WorldSnapshot> snapshotWorld(Key key, WorldSnapshotOptions options);
 
     /**
      * Saves and unloads a dynamic world. Vanilla base dimensions cannot be

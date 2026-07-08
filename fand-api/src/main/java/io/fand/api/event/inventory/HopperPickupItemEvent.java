@@ -1,6 +1,6 @@
 package io.fand.api.event.inventory;
 
-import io.fand.api.entity.Entity;
+import io.fand.api.entity.ItemEntity;
 import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
 import io.fand.api.inventory.Inventory;
@@ -16,11 +16,11 @@ public final class HopperPickupItemEvent implements Event, Cancellable {
 
     private final Inventory hopper;
     private final Location hopperLocation;
-    private final Entity itemEntity;
+    private final ItemEntity itemEntity;
     private ItemStack item;
     private boolean cancelled;
 
-    public HopperPickupItemEvent(Inventory hopper, Location hopperLocation, Entity itemEntity, ItemStack item) {
+    public HopperPickupItemEvent(Inventory hopper, Location hopperLocation, ItemEntity itemEntity, ItemStack item) {
         this.hopper = Objects.requireNonNull(hopper, "hopper");
         this.hopperLocation = Objects.requireNonNull(hopperLocation, "hopperLocation");
         this.itemEntity = Objects.requireNonNull(itemEntity, "itemEntity");
@@ -35,7 +35,7 @@ public final class HopperPickupItemEvent implements Event, Cancellable {
         return hopperLocation;
     }
 
-    public Entity itemEntity() {
+    public ItemEntity itemEntity() {
         return itemEntity;
     }
 

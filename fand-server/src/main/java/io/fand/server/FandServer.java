@@ -22,6 +22,7 @@ import io.fand.api.event.world.WorldLoadEvent;
 import io.fand.api.event.world.WorldUnloadEvent;
 import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
+import io.fand.api.hologram.HologramService;
 import io.fand.api.integration.ExternalIntegrationStrategy;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
@@ -48,6 +49,8 @@ import io.fand.api.tablist.TabListService;
 import io.fand.api.text.MiniMessageService;
 import io.fand.api.world.World;
 import io.fand.api.world.WorldCreateOptions;
+import io.fand.api.world.WorldSnapshot;
+import io.fand.api.world.WorldSnapshotOptions;
 import io.fand.api.world.WorldTemplate;
 import io.fand.api.world.generation.GenerationMode;
 import io.fand.api.world.generation.VanillaBiomeSource;
@@ -73,6 +76,7 @@ import io.fand.server.enchantment.FandEnchantmentRegistry;
 import io.fand.server.event.EventDispatcher;
 import io.fand.server.gamerule.FandGameRuleService;
 import io.fand.server.gui.FandGuiService;
+import io.fand.server.hologram.FandHologramService;
 import io.fand.server.item.FandCustomItemRegistry;
 import io.fand.server.loot.FandLootTableService;
 import io.fand.server.map.FandMapService;
@@ -97,7 +101,10 @@ import io.fand.server.tag.FandTags;
 import io.fand.server.tablist.FandTabListService;
 import io.fand.server.text.FandMiniMessageService;
 import io.fand.server.util.ServerThreading;
+import io.fand.server.world.FandWorldSnapshot;
+import io.fand.server.world.WorldFileOperations;
 import io.fand.server.world.WorldRegistry;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.net.InetAddress;
 import java.util.Collection;
@@ -124,6 +131,7 @@ import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
+import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.network.chat.Component;
 import net.kyori.adventure.key.Key;
 import org.jspecify.annotations.Nullable;
@@ -165,6 +173,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final FandStructureService structures;
     private final FandMapService maps;
     private final FandBossBarService bossBars;
+    private final FandHologramService holograms;
     private final FandTabListService tabLists;
     private final FandPlaceholderService placeholders;
     private final FandMiniMessageService miniMessages;
@@ -235,6 +244,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.modProtocols = new ModProtocolCompatibility(pluginMessaging, events, structures, initialConfig.compat.modProtocols);
         this.maps = new FandMapService(minecraftServer::get);
         this.bossBars = new FandBossBarService(minecraftServer::get, scheduler);
+        this.holograms = new FandHologramService();
         this.placeholders = new FandPlaceholderService();
         this.miniMessages = new FandMiniMessageService(placeholders);
         this.tags = new FandTagRegistry(minecraftServer::get);
@@ -271,6 +281,7 @@ public final class FandServer implements Server, AutoCloseable {
                 structures,
                 maps,
                 bossBars,
+                holograms,
                 tabLists,
                 placeholders,
                 simulatedPlayers,
@@ -620,6 +631,11 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
+    public HologramService holograms() {
+        return holograms;
+    }
+
+    @Override
     public TabListService tabLists() {
         return tabLists;
     }
@@ -841,6 +857,58 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
+    public CompletableFuture<World> copyWorld(Key source, Key target) {
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(target, "target");
+        return copyWorldStem(source).thenCompose(stem ->
+                snapshotWorld(source).thenCompose(snapshot ->
+                        createWorld(target, snapshot, stem).whenComplete((world, failure) -> snapshot.close())));
+    }
+
+    @Override
+    public CompletableFuture<World> createWorld(Key key, WorldSnapshot snapshot, WorldCreateOptions options) {
+        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(snapshot, "snapshot");
+        Objects.requireNonNull(options, "options");
+        var server = minecraftServer.get();
+        var registry = worlds.get();
+        if (server == null || registry == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is not attached"));
+        }
+        if (server.isStopped()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is stopping"));
+        }
+        var dimension = dimensionKey(key);
+        return server.submit(() -> {
+            ensureTargetWorldAvailable(server, dimension);
+            return levelStem(server, key, options);
+        }).thenCompose(stem -> createWorld(key, snapshot, stem));
+    }
+
+    @Override
+    public CompletableFuture<WorldSnapshot> snapshotWorld(Key key, WorldSnapshotOptions options) {
+        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(options, "options");
+        var server = minecraftServer.get();
+        if (server == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is not attached"));
+        }
+        if (server.isStopped()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is stopping"));
+        }
+        var dimension = dimensionKey(key);
+        return server.submit(() -> {
+            if (server.getLevel(dimension) == null) {
+                throw new IllegalArgumentException("World is not loaded: " + key.asString());
+            }
+            if (!server.fand$saveLevelToDisk(dimension)) {
+                throw new IllegalStateException("Failed to save world before snapshot: " + key.asString());
+            }
+            return dimensionPath(server, dimension);
+        }).thenCompose(sourcePath -> CompletableFuture.supplyAsync(() -> createSnapshot(key, sourcePath, options)));
+    }
+
+    @Override
     public CompletableFuture<Boolean> unloadWorld(Key key) {
         Objects.requireNonNull(key, "key");
         var server = minecraftServer.get();
@@ -1003,6 +1071,7 @@ public final class FandServer implements Server, AutoCloseable {
         modProtocols.close();
         pluginMessaging.close();
         bossBars.close();
+        holograms.close();
         tabLists.close();
         simulatedPlayers.close();
         placeholders.close();
@@ -1034,6 +1103,78 @@ public final class FandServer implements Server, AutoCloseable {
 
     private static ResourceKey<Level> dimensionKey(Key key) {
         return ResourceKey.create(Registries.DIMENSION, identifier(key));
+    }
+
+    private CompletableFuture<LevelStem> copyWorldStem(Key source) {
+        var server = minecraftServer.get();
+        if (server == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is not attached"));
+        }
+        var dimension = dimensionKey(source);
+        return server.submit(() -> {
+            var level = server.getLevel(dimension);
+            if (level == null) {
+                throw new IllegalArgumentException("World is not loaded: " + source.asString());
+            }
+            return new LevelStem(level.dimensionTypeRegistration(), level.getChunkSource().getGenerator());
+        });
+    }
+
+    private CompletableFuture<World> createWorld(Key key, WorldSnapshot snapshot, LevelStem levelStem) {
+        var server = minecraftServer.get();
+        var registry = worlds.get();
+        if (server == null || registry == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is not attached"));
+        }
+        if (server.isStopped()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is stopping"));
+        }
+        var dimension = dimensionKey(key);
+        return server.submit(() -> {
+            ensureTargetWorldAvailable(server, dimension);
+            return dimensionPath(server, dimension);
+        }).thenCompose(targetPath -> CompletableFuture.runAsync(() -> copySnapshot(snapshot, targetPath)))
+                .thenCompose(ignored -> server.submit(() -> {
+                    var level = server.fand$createDynamicLevel(dimension, levelStem);
+                    World world = registry.wrap(level);
+                    events.fire(new WorldLoadEvent(world));
+                    return world;
+                }));
+    }
+
+    private static void ensureTargetWorldAvailable(MinecraftServer server, ResourceKey<Level> dimension) {
+        if (server.getLevel(dimension) != null) {
+            throw new IllegalArgumentException("World is already loaded: " + dimension.identifier());
+        }
+    }
+
+    private static Path dimensionPath(MinecraftServer server, ResourceKey<Level> dimension) {
+        return DimensionType.getStorageFolder(dimension, server.getWorldPath(LevelResource.ROOT));
+    }
+
+    private static WorldSnapshot createSnapshot(Key sourceWorld, Path sourcePath, WorldSnapshotOptions options) {
+        try {
+            Path target;
+            Path persistent = null;
+            if (options.memory()) {
+                target = java.nio.file.Files.createTempDirectory("fand-world-snapshot-");
+            } else {
+                target = options.path();
+                persistent = target;
+            }
+            WorldFileOperations.copyWorldDirectory(sourcePath, target);
+            return new FandWorldSnapshot(sourceWorld, target, options.memory(), persistent);
+        } catch (IOException failure) {
+            throw new java.io.UncheckedIOException("Failed to snapshot world " + sourceWorld.asString(), failure);
+        }
+    }
+
+    private static void copySnapshot(WorldSnapshot snapshot, Path targetPath) {
+        try {
+            WorldFileOperations.copyWorldDirectory(snapshot.path(), targetPath);
+        } catch (IOException failure) {
+            throw new java.io.UncheckedIOException("Failed to copy world snapshot to " + targetPath, failure);
+        }
     }
 
     private static ResourceKey<LevelStem> templateKey(WorldTemplate template) {

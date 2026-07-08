@@ -1,5 +1,6 @@
 package io.fand.api.event.player;
 
+import io.fand.api.entity.ItemEntity;
 import io.fand.api.entity.Player;
 import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
@@ -16,16 +17,22 @@ import java.util.Objects;
 public final class PlayerPickupItemEvent implements Event, Cancellable {
 
     private final Player player;
+    private final ItemEntity itemEntity;
     private ItemStack item;
     private boolean cancelled;
 
-    public PlayerPickupItemEvent(Player player, ItemStack item) {
+    public PlayerPickupItemEvent(Player player, ItemEntity itemEntity, ItemStack item) {
         this.player = Objects.requireNonNull(player, "player");
+        this.itemEntity = Objects.requireNonNull(itemEntity, "itemEntity");
         this.item = Objects.requireNonNull(item, "item");
     }
 
     public Player player() {
         return player;
+    }
+
+    public ItemEntity itemEntity() {
+        return itemEntity;
     }
 
     /** Item stack that vanilla will try to merge into the inventory. */

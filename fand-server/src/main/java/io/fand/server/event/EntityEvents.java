@@ -58,6 +58,7 @@ import io.fand.api.world.Location;
 import io.fand.api.world.World;
 import io.fand.server.block.FandBlock;
 import io.fand.server.block.FandBlockType;
+import io.fand.server.entity.FandItemEntity;
 import io.fand.server.entity.FandLivingEntity;
 import io.fand.server.entity.FandPlayer;
 import io.fand.server.hooks.FandHooks;
@@ -323,7 +324,10 @@ public final class EntityEvents {
             }
         }
         if (hasItemListeners && entity instanceof net.minecraft.world.entity.item.ItemEntity itemEntity) {
-            var event = new ItemSpawnEvent(fandEntity, FandItemStacks.fromVanilla(itemEntity.getItem()));
+            if (!(fandEntity instanceof FandItemEntity fandItemEntity)) {
+                return true;
+            }
+            var event = new ItemSpawnEvent(fandItemEntity, FandItemStacks.fromVanilla(itemEntity.getItem()));
             try {
                 bus.fire(event);
             } catch (RuntimeException failure) {
@@ -1042,10 +1046,10 @@ public final class EntityEvents {
             return true;
         }
         var fandEntity = FandHooks.wrapEntity(entity);
-        if (fandEntity == null) {
+        if (!(fandEntity instanceof FandItemEntity fandItemEntity)) {
             return true;
         }
-        var event = new ItemDespawnEvent(fandEntity, FandItemStacks.fromVanilla(entity.getItem()), age);
+        var event = new ItemDespawnEvent(fandItemEntity, FandItemStacks.fromVanilla(entity.getItem()), age);
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {
@@ -1065,12 +1069,13 @@ public final class EntityEvents {
         }
         var fandTarget = FandHooks.wrapEntity(target);
         var fandSource = FandHooks.wrapEntity(source);
-        if (fandTarget == null || fandSource == null) {
+        if (!(fandTarget instanceof FandItemEntity targetItem)
+                || !(fandSource instanceof FandItemEntity sourceItem)) {
             return true;
         }
         var event = new ItemMergeEvent(
-                fandTarget,
-                fandSource,
+                targetItem,
+                sourceItem,
                 FandItemStacks.fromVanilla(target.getItem()),
                 FandItemStacks.fromVanilla(source.getItem()));
         try {
@@ -1092,10 +1097,11 @@ public final class EntityEvents {
             return new PickupItemResult(true, itemStack);
         }
         var fandEntity = FandHooks.wrapLivingEntity(entity);
-        if (fandEntity == null) {
+        var fandItemEntity = FandHooks.wrapEntity(itemEntity);
+        if (fandEntity == null || !(fandItemEntity instanceof FandItemEntity fandItem)) {
             return new PickupItemResult(true, itemStack);
         }
-        var event = new EntityPickupItemEvent(fandEntity, FandItemStacks.fromVanilla(itemStack));
+        var event = new EntityPickupItemEvent(fandEntity, fandItem, FandItemStacks.fromVanilla(itemStack));
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {

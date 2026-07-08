@@ -83,6 +83,18 @@ public final class CommandBuilder {
         return this;
     }
 
+    public CommandBuilder subcommand(String name, Consumer<CommandBuilder> branch) {
+        return literal(name, branch);
+    }
+
+    public CommandBuilder executesSubcommand(String name, CommandAction action) {
+        return literal(name, branch -> branch.executes(action));
+    }
+
+    public CommandBuilder subcommand(String name, String permission, CommandAction action) {
+        return literal(name, branch -> branch.permission(permission).executes(action));
+    }
+
     public CommandBuilder argument(String name, Argument<?> argument) {
         return new CommandBuilder(state, current.argument(name, argument));
     }

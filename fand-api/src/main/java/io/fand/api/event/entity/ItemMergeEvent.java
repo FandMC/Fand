@@ -1,6 +1,6 @@
 package io.fand.api.event.entity;
 
-import io.fand.api.entity.Entity;
+import io.fand.api.entity.ItemEntity;
 import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
 import io.fand.api.item.ItemStack;
@@ -11,13 +11,13 @@ import java.util.Objects;
  */
 public final class ItemMergeEvent implements Event, Cancellable {
 
-    private final Entity target;
-    private final Entity source;
+    private final ItemEntity target;
+    private final ItemEntity source;
     private final ItemStack targetItem;
     private final ItemStack sourceItem;
     private boolean cancelled;
 
-    public ItemMergeEvent(Entity target, Entity source, ItemStack targetItem, ItemStack sourceItem) {
+    public ItemMergeEvent(ItemEntity target, ItemEntity source, ItemStack targetItem, ItemStack sourceItem) {
         this.target = Objects.requireNonNull(target, "target");
         this.source = Objects.requireNonNull(source, "source");
         this.targetItem = Objects.requireNonNull(targetItem, "targetItem");
@@ -25,12 +25,12 @@ public final class ItemMergeEvent implements Event, Cancellable {
     }
 
     /** Item entity that will receive the merged stack. */
-    public Entity target() {
+    public ItemEntity target() {
         return target;
     }
 
     /** Item entity that will shrink or disappear. */
-    public Entity source() {
+    public ItemEntity source() {
         return source;
     }
 

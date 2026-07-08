@@ -2,9 +2,10 @@ package io.fand.api.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.fand.api.entity.LivingEntity;
 import io.fand.api.entity.Entity;
 import io.fand.api.entity.GameMode;
+import io.fand.api.entity.ItemEntity;
+import io.fand.api.entity.LivingEntity;
 import io.fand.api.entity.Player;
 import io.fand.api.block.Block;
 import io.fand.api.block.BlockType;
@@ -269,13 +270,14 @@ final class EventPayloadTest {
     void inventoryMoveItemEventCarriesMutableItemAndDirection() {
         var source = proxy(Inventory.class);
         var destination = proxy(Inventory.class);
+        var itemEntity = proxy(ItemEntity.class);
         var stone = stack("minecraft:stone", 1);
         var diamond = stack("minecraft:diamond", 1);
 
         var event = new InventoryMoveItemEvent(source, destination, stone, true);
         event.setItem(diamond);
         event.setCancelled(true);
-        var pickup = new InventoryPickupItemEvent(destination, stone);
+        var pickup = new InventoryPickupItemEvent(destination, itemEntity, stone);
         pickup.setItem(diamond);
         pickup.setCancelled(true);
 
@@ -285,6 +287,7 @@ final class EventPayloadTest {
         assertThat(event.sourceInitiated()).isTrue();
         assertThat(event.cancelled()).isTrue();
         assertThat(pickup.inventory()).isSameAs(destination);
+        assertThat(pickup.itemEntity()).contains(itemEntity);
         assertThat(pickup.item()).isSameAs(diamond);
         assertThat(pickup.cancelled()).isTrue();
     }
@@ -399,13 +402,14 @@ final class EventPayloadTest {
     @Test
     void playerDropAndPickupEventsCarryMutableItems() {
         var player = proxy(Player.class);
+        var itemEntity = proxy(ItemEntity.class);
         var stone = stack("minecraft:stone", 3);
         var diamond = stack("minecraft:diamond", 1);
 
         var drop = new PlayerDropItemEvent(player, stone, true, false);
         drop.setItem(diamond);
         drop.setCancelled(true);
-        var pickup = new PlayerPickupItemEvent(player, stone);
+        var pickup = new PlayerPickupItemEvent(player, itemEntity, stone);
         pickup.setItem(diamond);
 
         assertThat(drop.player()).isSameAs(player);
@@ -413,6 +417,7 @@ final class EventPayloadTest {
         assertThat(drop.thrownFromHand()).isFalse();
         assertThat(drop.item()).isSameAs(diamond);
         assertThat(drop.cancelled()).isTrue();
+        assertThat(pickup.itemEntity()).isSameAs(itemEntity);
         assertThat(pickup.item()).isSameAs(diamond);
     }
 
@@ -1177,6 +1182,8 @@ final class EventPayloadTest {
         var player = proxy(Player.class);
         var entity = proxy(Entity.class);
         var vehicle = proxy(Entity.class);
+        var itemEntity = proxy(ItemEntity.class);
+        var otherItemEntity = proxy(ItemEntity.class);
         var inventory = proxy(Inventory.class);
         var block = proxy(Block.class);
         var from = location("minecraft:overworld", 0, 64, 0);
@@ -1200,12 +1207,12 @@ final class EventPayloadTest {
                 java.util.UUID.randomUUID(),
                 PlayerResourcePackStatusEvent.Status.ACCEPTED);
 
-        var itemSpawn = new ItemSpawnEvent(entity, stone);
+        var itemSpawn = new ItemSpawnEvent(itemEntity, stone);
         itemSpawn.setItem(diamond);
         itemSpawn.setCancelled(true);
-        var itemDespawn = new ItemDespawnEvent(entity, stone, -1);
+        var itemDespawn = new ItemDespawnEvent(itemEntity, stone, -1);
         itemDespawn.setCancelled(true);
-        var itemMerge = new ItemMergeEvent(entity, vehicle, stone, diamond);
+        var itemMerge = new ItemMergeEvent(itemEntity, otherItemEntity, stone, diamond);
         itemMerge.setCancelled(true);
         var hangingPlace = new HangingPlaceEvent(player, entity, block, BlockFace.NORTH, stone);
         hangingPlace.setCancelled(true);
@@ -1249,7 +1256,7 @@ final class EventPayloadTest {
         assertThat(itemSpawn.cancelled()).isTrue();
         assertThat(itemDespawn.age()).isZero();
         assertThat(itemDespawn.cancelled()).isTrue();
-        assertThat(itemMerge.source()).isSameAs(vehicle);
+        assertThat(itemMerge.source()).isSameAs(otherItemEntity);
         assertThat(itemMerge.cancelled()).isTrue();
         assertThat(hangingPlace.face()).isEqualTo(BlockFace.NORTH);
         assertThat(hangingPlace.cancelled()).isTrue();
@@ -1276,6 +1283,7 @@ final class EventPayloadTest {
         var player = proxy(Player.class);
         var entity = proxy(Entity.class);
         var living = proxy(LivingEntity.class);
+        var itemEntity = proxy(ItemEntity.class);
         var inventory = proxy(Inventory.class);
         var block = proxy(Block.class);
         var sourceBlock = proxy(Block.class);
@@ -1309,11 +1317,11 @@ final class EventPayloadTest {
         var hopperMove = new HopperMoveItemEvent(inventory, inventory, inventory, location, stone, true);
         hopperMove.setItem(diamond);
         hopperMove.setCancelled(true);
-        var hopperPickup = new HopperPickupItemEvent(inventory, location, entity, stone);
+        var hopperPickup = new HopperPickupItemEvent(inventory, location, itemEntity, stone);
         hopperPickup.setItem(diamond);
         hopperPickup.setCancelled(true);
 
-        var entityPickup = new EntityPickupItemEvent(living, stone);
+        var entityPickup = new EntityPickupItemEvent(living, itemEntity, stone);
         entityPickup.setItem(diamond);
         entityPickup.setCancelled(true);
         var entityDrop = new EntityDropItemEvent(entity, location, stone);
@@ -1359,10 +1367,11 @@ final class EventPayloadTest {
         assertThat(hopperMove.item()).isSameAs(diamond);
         assertThat(hopperMove.hopperInitiated()).isTrue();
         assertThat(hopperMove.cancelled()).isTrue();
-        assertThat(hopperPickup.itemEntity()).isSameAs(entity);
+        assertThat(hopperPickup.itemEntity()).isSameAs(itemEntity);
         assertThat(hopperPickup.item()).isSameAs(diamond);
         assertThat(hopperPickup.cancelled()).isTrue();
         assertThat(entityPickup.entity()).isSameAs(living);
+        assertThat(entityPickup.itemEntity()).isSameAs(itemEntity);
         assertThat(entityPickup.item()).isSameAs(diamond);
         assertThat(entityPickup.cancelled()).isTrue();
         assertThat(entityDrop.item()).isSameAs(diamond);

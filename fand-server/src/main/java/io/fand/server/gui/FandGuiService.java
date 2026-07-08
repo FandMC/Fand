@@ -277,8 +277,8 @@ public final class FandGuiService implements GuiService, AutoCloseable {
         private final FandGuiService owner;
         private final UUID id = UUID.randomUUID();
         private final Player player;
-        private final Gui gui;
-        private final Inventory inventory;
+        private volatile Gui gui;
+        private volatile Inventory inventory;
         private final ConcurrentHashMap<String, Object> state = new ConcurrentHashMap<>();
         private volatile boolean open = true;
         private volatile boolean displayed;
@@ -371,6 +371,17 @@ public final class FandGuiService implements GuiService, AutoCloseable {
                     owner.closeAfterFailedReopen(this);
                 }
             });
+        }
+
+        @Override
+        public void replace(Gui gui) {
+            java.util.Objects.requireNonNull(gui, "gui");
+            if (!open) {
+                return;
+            }
+            this.gui = gui;
+            this.inventory = gui.createInventory();
+            reopen();
         }
 
         @Override

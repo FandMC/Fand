@@ -14,6 +14,7 @@ import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
+import io.fand.api.hologram.HologramService;
 import io.fand.api.integration.ExternalIntegrationStrategy;
 import io.fand.api.lifecycle.PluginDisableEvent;
 import io.fand.api.lifecycle.PluginEnableEvent;
@@ -107,6 +108,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final StructureService structureService;
     private final MapService mapService;
     private final BossBarService bossBarService;
+    private final HologramService hologramService;
     private final TabListService tabListService;
     private final SimulatedPlayerService simulatedPlayerService;
     private final PlaceholderService placeholderService;
@@ -184,6 +186,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 StructureService.empty(),
                 MapService.empty(),
                 BossBarService.empty(),
+                HologramService.empty(),
                 TabListService.empty(),
                 PlaceholderService.empty(),
                 SimulatedPlayerService.empty(),
@@ -191,6 +194,67 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 customServices.blocks(),
                 new FandGuiService(eventBus),
                 true,
+                options
+        );
+    }
+
+    public PluginRuntime(
+            Path pluginsDirectory,
+            Path dataDirectoryRoot,
+            ClassLoader parentClassLoader,
+            CommandRegistry commandRegistry,
+            EventBus eventBus,
+            PermissionService permissions,
+            Scheduler scheduler,
+            RecipeRegistry recipeRegistry,
+            LootTableService lootTableService,
+            ScoreboardService scoreboardService,
+            PacketRegistry packetRegistry,
+            PluginMessaging pluginMessaging,
+            RegionService regionService,
+            DataPackService dataPackService,
+            AdvancementRegistry advancementRegistry,
+            EnchantmentRegistry enchantmentRegistry,
+            StructureService structureService,
+            MapService mapService,
+            BossBarService bossBarService,
+            HologramService hologramService,
+            TabListService tabListService,
+            PlaceholderService placeholderService,
+            SimulatedPlayerService simulatedPlayerService,
+            CustomItemRegistry customItemRegistry,
+            CustomBlockRegistry customBlockRegistry,
+            GuiService guiService,
+            Options options
+    ) {
+        this(
+                pluginsDirectory,
+                dataDirectoryRoot,
+                parentClassLoader,
+                commandRegistry,
+                eventBus,
+                permissions,
+                scheduler,
+                recipeRegistry,
+                lootTableService,
+                scoreboardService,
+                packetRegistry,
+                pluginMessaging,
+                regionService,
+                dataPackService,
+                advancementRegistry,
+                enchantmentRegistry,
+                structureService,
+                mapService,
+                bossBarService,
+                hologramService,
+                tabListService,
+                placeholderService,
+                simulatedPlayerService,
+                customItemRegistry,
+                customBlockRegistry,
+                guiService,
+                false,
                 options
         );
     }
@@ -256,6 +320,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 StructureService.empty(),
                 MapService.empty(),
                 BossBarService.empty(),
+                HologramService.empty(),
                 TabListService.empty(),
                 PlaceholderService.empty(),
                 SimulatedPlayerService.empty(),
@@ -307,6 +372,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 structureService,
                 mapService,
                 BossBarService.empty(),
+                HologramService.empty(),
                 TabListService.empty(),
                 PlaceholderService.empty(),
                 SimulatedPlayerService.empty(),
@@ -359,6 +425,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 structureService,
                 mapService,
                 BossBarService.empty(),
+                HologramService.empty(),
                 TabListService.empty(),
                 PlaceholderService.empty(),
                 SimulatedPlayerService.empty(),
@@ -417,6 +484,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 structureService,
                 mapService,
                 bossBarService,
+                HologramService.empty(),
                 tabListService,
                 placeholderService,
                 simulatedPlayerService,
@@ -446,6 +514,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             StructureService structureService,
             MapService mapService,
             BossBarService bossBarService,
+            HologramService hologramService,
             TabListService tabListService,
             CustomItemRegistry customItemRegistry,
             CustomBlockRegistry customBlockRegistry,
@@ -472,6 +541,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 structureService,
                 mapService,
                 bossBarService,
+                hologramService,
                 tabListService,
                 PlaceholderService.empty(),
                 SimulatedPlayerService.empty(),
@@ -523,6 +593,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 structureService,
                 mapService,
                 BossBarService.empty(),
+                HologramService.empty(),
                 TabListService.empty(),
                 PlaceholderService.empty(),
                 SimulatedPlayerService.empty(),
@@ -554,6 +625,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             StructureService structureService,
             MapService mapService,
             BossBarService bossBarService,
+            HologramService hologramService,
             TabListService tabListService,
             PlaceholderService placeholderService,
             SimulatedPlayerService simulatedPlayerService,
@@ -576,6 +648,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.structureService = structureService;
         this.mapService = mapService;
         this.bossBarService = bossBarService;
+        this.hologramService = hologramService;
         this.tabListService = tabListService;
         this.simulatedPlayerService = simulatedPlayerService;
         this.placeholderService = placeholderService;
@@ -1034,6 +1107,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new PluginStructureService(structureService, resources, artifact.descriptor.id()),
                 new PluginMapService(mapService, resources),
                 new PluginBossBarService(bossBarService, resources, id),
+                new PluginHologramService(hologramService, resources),
                 new PluginTabListService(tabListService, resources),
                 new PluginSimulatedPlayerService(simulatedPlayerService, resources),
                 pluginPlaceholders,

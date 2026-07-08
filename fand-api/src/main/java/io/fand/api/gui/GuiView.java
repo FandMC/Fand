@@ -33,6 +33,12 @@ public interface GuiView extends AutoCloseable {
 
     void reopen();
 
+    default void refresh() {
+        replace(gui());
+    }
+
+    void replace(Gui gui);
+
     @Override
     void close();
 

@@ -35,6 +35,10 @@ final class YamlConfigurationTest {
                   flags:
                     - online
                     - whitelist
+                  numbers:
+                    - 1
+                    - "2"
+                    - nope
                 rate: 1.5
                 enabled: true
                 """);
@@ -46,6 +50,9 @@ final class YamlConfigurationTest {
         assertThat(config.doubleValue("rate", 0.0)).isEqualTo(1.5);
         assertThat(config.booleanValue("enabled", false)).isTrue();
         assertThat(config.stringList("server.flags")).containsExactly("online", "whitelist");
+        assertThat(config.stringList("server.missing-flags", List.of("fallback"))).containsExactly("fallback");
+        assertThat(config.intList("server.numbers")).containsExactly(1, 2);
+        assertThat(config.intList("server.missing-numbers", List.of(7, 8))).containsExactly(7, 8);
         assertThat(config.contains("server.host")).isTrue();
         assertThat(config.contains("server.unknown")).isFalse();
     }

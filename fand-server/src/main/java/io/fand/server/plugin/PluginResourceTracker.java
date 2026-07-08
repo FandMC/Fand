@@ -14,6 +14,7 @@ import io.fand.api.enchantment.EnchantmentRegistration;
 import io.fand.api.event.EventSubscription;
 import io.fand.api.gamerule.GameRuleRegistration;
 import io.fand.api.gui.GuiView;
+import io.fand.api.hologram.Hologram;
 import io.fand.api.loot.LootTableRegistration;
 import io.fand.api.map.MapRenderer;
 import io.fand.api.map.MapService;
@@ -70,6 +71,7 @@ final class PluginResourceTracker {
     private final Set<TrackedCustomItemRegistration> customItemRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCustomBlockRegistration> customBlockRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedCustomBlockItemBinding> customBlockItemBindings = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedHologram> holograms = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedGuiView> guiViews = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedServiceRegistration<?>> serviceRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedNmsHookRegistration> nmsHookRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -559,6 +561,22 @@ final class PluginResourceTracker {
         return tracked;
     }
 
+    TrackedHologram track(Hologram delegate) {
+        var tracked = new TrackedHologram(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                holograms.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.closeFromTracker();
+        }
+        return tracked;
+    }
+
     <T> TrackedServiceRegistration<T> track(ServiceRegistration<T> delegate) {
         var tracked = new TrackedServiceRegistration<>(this, delegate);
         var dispose = false;
@@ -763,6 +781,12 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedHologram hologram) {
+        synchronized (lock) {
+            holograms.remove(hologram);
+        }
+    }
+
     void release(TrackedServiceRegistration<?> registration) {
         synchronized (lock) {
             serviceRegistrations.remove(registration);
@@ -796,6 +820,25 @@ final class PluginResourceTracker {
             return guiViews.stream()
                     .filter(view -> view.open() && view.gui() == gui)
                     .map(GuiView.class::cast)
+                    .toList();
+        }
+    }
+
+    Optional<Hologram> hologram(java.util.UUID id) {
+        synchronized (lock) {
+            return holograms.stream()
+                    .filter(hologram -> hologram.id().equals(id))
+                    .filter(Hologram::active)
+                    .map(Hologram.class::cast)
+                    .findFirst();
+        }
+    }
+
+    Collection<Hologram> holograms() {
+        synchronized (lock) {
+            return holograms.stream()
+                    .filter(Hologram::active)
+                    .map(Hologram.class::cast)
                     .toList();
         }
     }
@@ -840,6 +883,7 @@ final class PluginResourceTracker {
         List<TrackedCustomItemRegistration> customItemRegistrationsToClose;
         List<TrackedCustomBlockRegistration> customBlockRegistrationsToClose;
         List<TrackedCustomBlockItemBinding> customBlockItemBindingsToClose;
+        List<TrackedHologram> hologramsToClose;
         List<TrackedGuiView> guiViewsToClose;
         List<TrackedServiceRegistration<?>> serviceRegistrationsToClose;
         List<TrackedNmsHookRegistration> nmsHookRegistrationsToClose;
@@ -875,6 +919,7 @@ final class PluginResourceTracker {
             customItemRegistrationsToClose = new ArrayList<>(customItemRegistrations);
             customBlockRegistrationsToClose = new ArrayList<>(customBlockRegistrations);
             customBlockItemBindingsToClose = new ArrayList<>(customBlockItemBindings);
+            hologramsToClose = new ArrayList<>(holograms);
             guiViewsToClose = new ArrayList<>(guiViews);
             serviceRegistrationsToClose = new ArrayList<>(serviceRegistrations);
             nmsHookRegistrationsToClose = new ArrayList<>(nmsHookRegistrations);
@@ -906,6 +951,7 @@ final class PluginResourceTracker {
             customItemRegistrations.clear();
             customBlockRegistrations.clear();
             customBlockItemBindings.clear();
+            holograms.clear();
             guiViews.clear();
             serviceRegistrations.clear();
             nmsHookRegistrations.clear();
@@ -986,6 +1032,9 @@ final class PluginResourceTracker {
         }
         for (var binding : customBlockItemBindingsToClose) {
             binding.unregisterFromTracker();
+        }
+        for (var hologram : hologramsToClose) {
+            hologram.closeFromTracker();
         }
         for (var view : guiViewsToClose) {
             view.closeFromTracker();
@@ -2210,6 +2259,13 @@ final class PluginResourceTracker {
         }
 
         @Override
+        public void replace(io.fand.api.gui.Gui gui) {
+            if (!released) {
+                delegate.replace(gui);
+            }
+        }
+
+        @Override
         public void close() {
             if (!released) {
                 released = true;
@@ -2248,6 +2304,87 @@ final class PluginResourceTracker {
         @Override
         public void removeState(String key) {
             delegate.removeState(key);
+        }
+    }
+
+    static final class TrackedHologram implements Hologram {
+
+        private final PluginResourceTracker owner;
+        private final Hologram delegate;
+        private volatile boolean released;
+
+        TrackedHologram(PluginResourceTracker owner, Hologram delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public java.util.UUID id() {
+            return delegate.id();
+        }
+
+        @Override
+        public io.fand.api.world.Location location() {
+            return delegate.location();
+        }
+
+        @Override
+        public io.fand.api.hologram.HologramOptions options() {
+            return delegate.options();
+        }
+
+        @Override
+        public java.util.List<net.kyori.adventure.text.Component> lines() {
+            return delegate.lines();
+        }
+
+        @Override
+        public java.util.List<? extends io.fand.api.entity.TextDisplay> displays() {
+            return delegate.displays();
+        }
+
+        @Override
+        public java.util.concurrent.CompletableFuture<Void> teleport(io.fand.api.world.Location location) {
+            ensureOpen();
+            return delegate.teleport(location);
+        }
+
+        @Override
+        public java.util.concurrent.CompletableFuture<Void> setLines(
+                java.util.List<? extends net.kyori.adventure.text.Component> lines
+        ) {
+            ensureOpen();
+            return delegate.setLines(lines);
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void close() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.close();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void closeFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.close();
+            }
+        }
+
+        private void ensureOpen() {
+            if (released) {
+                throw new IllegalStateException("Hologram is closed");
+            }
         }
     }
 

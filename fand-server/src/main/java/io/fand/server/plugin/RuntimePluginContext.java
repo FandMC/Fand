@@ -13,6 +13,7 @@ import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
 import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
+import io.fand.api.hologram.HologramService;
 import io.fand.api.integration.ExternalIntegrationStrategy;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
@@ -60,6 +61,7 @@ public final class RuntimePluginContext implements PluginContext {
     private final StructureService structures;
     private final MapService maps;
     private final BossBarService bossBars;
+    private final HologramService holograms;
     private final TabListService tabLists;
     private final SimulatedPlayerService simulatedPlayers;
     private final PlaceholderService placeholders;
@@ -98,6 +100,7 @@ public final class RuntimePluginContext implements PluginContext {
             StructureService structures,
             MapService maps,
             BossBarService bossBars,
+            HologramService holograms,
             TabListService tabLists,
             SimulatedPlayerService simulatedPlayers,
             PlaceholderService placeholders,
@@ -132,6 +135,7 @@ public final class RuntimePluginContext implements PluginContext {
         this.structures = structures;
         this.maps = maps;
         this.bossBars = bossBars;
+        this.holograms = holograms;
         this.tabLists = tabLists;
         this.simulatedPlayers = simulatedPlayers;
         this.placeholders = placeholders;
@@ -213,6 +217,11 @@ public final class RuntimePluginContext implements PluginContext {
     @Override
     public BossBarService bossBars() {
         return bossBars;
+    }
+
+    @Override
+    public HologramService holograms() {
+        return holograms;
     }
 
     @Override

@@ -59,6 +59,7 @@ import io.fand.api.world.Location;
 import io.fand.api.world.World;
 import io.fand.server.block.FandBlock;
 import io.fand.server.command.AdventureBridge;
+import io.fand.server.entity.FandItemEntity;
 import io.fand.server.entity.GameModes;
 import io.fand.server.command.CommandEvents;
 import io.fand.server.entity.FandPlayer;
@@ -181,11 +182,12 @@ public final class PlayerEvents {
             return true;
         }
         FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
-        if (fandPlayer == null) {
+        var fandItemEntity = FandHooks.wrapEntity(entity);
+        if (fandPlayer == null || !(fandItemEntity instanceof FandItemEntity fandItem)) {
             return true;
         }
         var original = entity.getItem();
-        var event = new PlayerPickupItemEvent(fandPlayer, FandItemStacks.fromVanilla(original));
+        var event = new PlayerPickupItemEvent(fandPlayer, fandItem, FandItemStacks.fromVanilla(original));
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {

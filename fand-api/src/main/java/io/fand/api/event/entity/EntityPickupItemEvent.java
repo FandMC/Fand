@@ -1,5 +1,6 @@
 package io.fand.api.event.entity;
 
+import io.fand.api.entity.ItemEntity;
 import io.fand.api.entity.LivingEntity;
 import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
@@ -13,16 +14,22 @@ import java.util.Objects;
 public final class EntityPickupItemEvent implements Event, Cancellable {
 
     private final LivingEntity entity;
+    private final ItemEntity itemEntity;
     private ItemStack item;
     private boolean cancelled;
 
-    public EntityPickupItemEvent(LivingEntity entity, ItemStack item) {
+    public EntityPickupItemEvent(LivingEntity entity, ItemEntity itemEntity, ItemStack item) {
         this.entity = Objects.requireNonNull(entity, "entity");
+        this.itemEntity = Objects.requireNonNull(itemEntity, "itemEntity");
         this.item = Objects.requireNonNull(item, "item");
     }
 
     public LivingEntity entity() {
         return entity;
+    }
+
+    public ItemEntity itemEntity() {
+        return itemEntity;
     }
 
     public ItemStack item() {

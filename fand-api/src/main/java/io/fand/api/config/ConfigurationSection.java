@@ -44,6 +44,33 @@ public interface ConfigurationSection {
      */
     List<String> stringList(String path);
 
+    default List<String> stringList(String path, List<String> defaultValue) {
+        if (!(value(path) instanceof List<?>)) {
+            return List.copyOf(defaultValue);
+        }
+        var values = stringList(path);
+        return values;
+    }
+
+    default List<Integer> intList(String path) {
+        var value = value(path);
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream()
+                .map(ConfigurationSection::asInteger)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+    }
+
+    default List<Integer> intList(String path, List<Integer> defaultValue) {
+        if (!(value(path) instanceof List<?>)) {
+            return List.copyOf(defaultValue);
+        }
+        var values = intList(path);
+        return values;
+    }
+
     /**
      * Returns the sub-section at {@code path}, creating an empty one if it
      * does not exist. Mutations on the returned view affect this section.
@@ -56,4 +83,18 @@ public interface ConfigurationSection {
      * not persisted until {@link Configuration#save()} runs on the root.
      */
     void set(String path, @Nullable Object value);
+
+    private static @Nullable Integer asInteger(@Nullable Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text) {
+            try {
+                return Integer.parseInt(text);
+            } catch (NumberFormatException invalidNumber) {
+                return null;
+            }
+        }
+        return null;
+    }
 }

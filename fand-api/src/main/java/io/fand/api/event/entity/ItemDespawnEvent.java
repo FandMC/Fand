@@ -1,6 +1,6 @@
 package io.fand.api.event.entity;
 
-import io.fand.api.entity.Entity;
+import io.fand.api.entity.ItemEntity;
 import io.fand.api.event.Cancellable;
 import io.fand.api.event.Event;
 import io.fand.api.item.ItemStack;
@@ -11,18 +11,18 @@ import java.util.Objects;
  */
 public final class ItemDespawnEvent implements Event, Cancellable {
 
-    private final Entity entity;
+    private final ItemEntity entity;
     private final ItemStack item;
     private final int age;
     private boolean cancelled;
 
-    public ItemDespawnEvent(Entity entity, ItemStack item, int age) {
+    public ItemDespawnEvent(ItemEntity entity, ItemStack item, int age) {
         this.entity = Objects.requireNonNull(entity, "entity");
         this.item = Objects.requireNonNull(item, "item");
         this.age = Math.max(0, age);
     }
 
-    public Entity entity() {
+    public ItemEntity entity() {
         return entity;
     }
 

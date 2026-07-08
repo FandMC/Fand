@@ -28,6 +28,7 @@ import io.fand.api.event.inventory.PrepareSmithingEvent;
 import io.fand.api.inventory.InventoryType;
 import io.fand.api.item.ItemStack;
 import io.fand.api.world.Location;
+import io.fand.server.entity.FandItemEntity;
 import io.fand.server.entity.FandPlayer;
 import io.fand.server.block.FandBlock;
 import io.fand.server.hooks.FandHooks;
@@ -250,14 +251,17 @@ public final class InventoryEvents {
 
     public static MoveItemResult firePickupItem(
             Container inventory,
+            @Nullable ItemEntity itemEntity,
             net.minecraft.world.item.ItemStack itemStack
     ) {
         var bus = FandHooks.events();
         if (!bus.hasListeners(InventoryPickupItemEvent.class)) {
             return new MoveItemResult(true, itemStack);
         }
+        var fandEntity = itemEntity == null ? null : FandHooks.wrapEntity(itemEntity);
         var event = new InventoryPickupItemEvent(
                 new FandContainerInventory(inventory, InventoryType.UNKNOWN),
+                fandEntity instanceof FandItemEntity fandItemEntity ? fandItemEntity : null,
                 FandItemStacks.fromVanilla(itemStack));
         try {
             bus.fire(event);
@@ -287,13 +291,13 @@ public final class InventoryEvents {
         }
         var world = hopperWorld(inventory);
         var fandEntity = FandHooks.wrapEntity(itemEntity);
-        if (world == null || fandEntity == null) {
+        if (world == null || !(fandEntity instanceof FandItemEntity fandItemEntity)) {
             return new MoveItemResult(true, itemStack);
         }
         var event = new HopperPickupItemEvent(
                 new FandContainerInventory(inventory, InventoryType.HOPPER),
                 hopperLocation(world, hopper),
-                fandEntity,
+                fandItemEntity,
                 FandItemStacks.fromVanilla(itemStack));
         try {
             bus.fire(event);
