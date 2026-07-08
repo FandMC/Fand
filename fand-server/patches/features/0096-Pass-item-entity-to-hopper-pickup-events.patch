@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 9 Jul 2026 02:58:25 +0800
+Subject: [PATCH] Pass item entity to hopper pickup events
+
+
+diff --git a/net/minecraft/world/level/block/entity/HopperBlockEntity.java b/net/minecraft/world/level/block/entity/HopperBlockEntity.java
+index 916db5f1d0dfb05829eb19e392ffb67eaddb6731..639496d861e5fef83f0557557b312c7766962181 100644
+--- a/net/minecraft/world/level/block/entity/HopperBlockEntity.java
++++ b/net/minecraft/world/level/block/entity/HopperBlockEntity.java
+@@ -273,7 +273,7 @@ public class HopperBlockEntity extends RandomizableContainerBlockEntity implemen
+             return false;
+         }
+         copy = fandHopperPickup.itemStack();
+-        var fandPickup = io.fand.server.inventory.InventoryEvents.firePickupItem(container, copy);
++        var fandPickup = io.fand.server.inventory.InventoryEvents.firePickupItem(container, entity, copy);
+         if (!fandPickup.allowed()) {
+             return false;
+         }
