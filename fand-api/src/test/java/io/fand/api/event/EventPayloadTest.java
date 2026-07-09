@@ -485,12 +485,24 @@ final class EventPayloadTest {
     void playerDeathEventCarriesMutableDeathMessage() {
         var player = proxy(Player.class);
         var replacement = Component.text("custom death");
+        var stone = stack("minecraft:stone", 3);
+        var diamond = stack("minecraft:diamond", 1);
 
-        var event = new PlayerDeathEvent(player, Component.text("old death"));
+        var event = new PlayerDeathEvent(player, Component.text("old death"), List.of(stone), 42, true);
         event.setDeathMessage(replacement);
+        event.setDrops(List.of(ItemStack.EMPTY, diamond));
+        event.setDroppedExperience(-1);
+        event.setKeepInventory(false);
+        event.setKeepExperience(false);
 
         assertThat(event.player()).isSameAs(player);
         assertThat(event.deathMessage()).isEqualTo(replacement);
+        assertThat(event.drops()).containsExactly(diamond);
+        assertThat(event.droppedExperience()).isZero();
+        assertThat(event.droppedExperienceByDefault()).isEqualTo(42);
+        assertThat(event.keepInventory()).isFalse();
+        assertThat(event.keepInventoryByDefault()).isTrue();
+        assertThat(event.keepExperience()).isFalse();
     }
 
     @Test

@@ -11,6 +11,7 @@ import io.fand.api.event.player.PlayerChangedMainHandEvent;
 import io.fand.api.event.player.PlayerChangedWorldEvent;
 import io.fand.api.event.player.PlayerClientBrandEvent;
 import io.fand.api.event.player.PlayerCommandTeleportEvent;
+import io.fand.api.event.player.PlayerDeathEvent;
 import io.fand.api.event.player.PlayerEditBookEvent;
 import io.fand.api.event.player.PlayerEggThrowEvent;
 import io.fand.api.event.player.PlayerEnderPearlTeleportEvent;
@@ -73,6 +74,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import net.kyori.adventure.key.Key;
+import net.minecraft.network.chat.Component;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
@@ -85,6 +87,7 @@ import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.entity.Relative;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.portal.TeleportTransition;
@@ -174,6 +177,57 @@ public final class PlayerEvents {
             LOGGER.warn("PlayerDropItemEvent supplied an invalid item stack", failure);
             return itemStack;
         }
+    }
+
+    public static DeathResult fireDeath(
+            ServerPlayer player,
+            @Nullable Component deathMessage,
+            List<ItemStack> defaultDrops,
+            int droppedExperience,
+            boolean keepInventory
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerDeathEvent.class)) {
+            return new DeathResult(deathMessage, defaultDrops, droppedExperience, keepInventory, keepInventory);
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return new DeathResult(deathMessage, defaultDrops, droppedExperience, keepInventory, keepInventory);
+        }
+        net.kyori.adventure.text.@Nullable Component adventureMessage = null;
+        if (deathMessage != null) {
+            try {
+                adventureMessage = AdventureBridge.fromVanilla(deathMessage, player.registryAccess());
+            } catch (RuntimeException failure) {
+                LOGGER.warn("Skipping PlayerDeathEvent after death message conversion failure", failure);
+                return new DeathResult(deathMessage, defaultDrops, droppedExperience, keepInventory, keepInventory);
+            }
+        }
+        var event = FandHooks.fireOrLog(
+                bus,
+                new PlayerDeathEvent(
+                        fandPlayer,
+                        adventureMessage,
+                        defaultDrops.stream()
+                                .filter(stack -> !stack.isEmpty())
+                                .map(FandItemStacks::fromVanilla)
+                                .toList(),
+                        droppedExperience,
+                        keepInventory),
+                "PlayerDeathEvent");
+        Component nextMessage = event.deathMessage() == null
+                ? null
+                : AdventureBridge.toVanillaOrFallback(event.deathMessage(), deathMessage, player.registryAccess());
+        List<ItemStack> nextDrops = event.drops().stream()
+                .map(FandItemStacks::toVanilla)
+                .filter(stack -> !stack.isEmpty())
+                .toList();
+        return new DeathResult(
+                nextMessage,
+                nextDrops,
+                event.droppedExperience(),
+                event.keepInventory(),
+                event.keepExperience());
     }
 
     public static boolean firePickup(ServerPlayer player, ItemEntity entity) {
@@ -1489,6 +1543,19 @@ public final class PlayerEvents {
     }
 
     public record EggThrowResult(boolean hatching, int hatchCount) {
+    }
+
+    public record DeathResult(
+            @Nullable Component deathMessage,
+            List<ItemStack> drops,
+            int droppedExperience,
+            boolean keepInventory,
+            boolean keepExperience
+    ) {
+        public DeathResult {
+            drops = List.copyOf(drops);
+            droppedExperience = Math.max(0, droppedExperience);
+        }
     }
 }
 

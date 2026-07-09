@@ -1,0 +1,169 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 9 Jul 2026 11:26:52 +0800
+Subject: [PATCH] Expose player death outcome controls
+
+
+diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
+index d05b6319db473991fd22ae8264b8d7cb4a022ee5..7e8d602534fc3f641006817d8e1052797964ce8d 100644
+--- a/net/minecraft/server/level/ServerPlayer.java
++++ b/net/minecraft/server/level/ServerPlayer.java
+@@ -13,6 +13,7 @@ import com.mojang.serialization.DynamicOps;
+ import com.mojang.serialization.MapCodec;
+ import com.mojang.serialization.codecs.RecordCodecBuilder;
+ import java.net.InetSocketAddress;
++import java.util.ArrayList;
+ import java.util.Collection;
+ import java.util.HashSet;
+ import java.util.List;
+@@ -129,6 +130,7 @@ import net.minecraft.world.entity.EntitySpawnRequest;
+ import net.minecraft.world.entity.EntityType;
+ import net.minecraft.world.entity.EntityTypes;
+ import net.minecraft.world.entity.EquipmentSlot;
++import net.minecraft.world.entity.ExperienceOrb;
+ import net.minecraft.world.entity.LivingEntity;
+ import net.minecraft.world.entity.Mob;
+ import net.minecraft.world.entity.NeutralMob;
+@@ -172,6 +174,7 @@ import net.minecraft.world.item.ServerItemCooldowns;
+ import net.minecraft.world.item.component.WrittenBookContent;
+ import net.minecraft.world.item.crafting.Recipe;
+ import net.minecraft.world.item.crafting.RecipeHolder;
++import net.minecraft.world.item.enchantment.EnchantmentEffectComponents;
+ import net.minecraft.world.item.enchantment.EnchantmentHelper;
+ import net.minecraft.world.item.trading.MerchantOffers;
+ import net.minecraft.world.level.ChunkPos;
+@@ -262,6 +265,8 @@ public class ServerPlayer extends Player {
+     private int fandTabListOrder;
+     private int requestedViewDistance = 2;
+     private String language = "en_us";
++    private boolean fandKeepInventoryAfterDeath;
++    private boolean fandKeepExperienceAfterDeath;
+     private @Nullable Vec3 startingToFallPosition;
+     private @Nullable Vec3 enteredNetherPosition;
+     private @Nullable Vec3 enteredLavaOnVehiclePosition;
+@@ -911,30 +916,17 @@ public class ServerPlayer extends Player {
+         io.fand.server.event.EntityEvents.fireDeath(this, source);
+         boolean showDeathMessage = this.level().getGameRules().get(GameRules.SHOW_DEATH_MESSAGES);
+         Component deathMessage = showDeathMessage ? this.getCombatTracker().getDeathMessage() : null;
+-        var fandBus = io.fand.server.hooks.FandHooks.events();
+-        if (fandBus.hasListeners(io.fand.api.event.player.PlayerDeathEvent.class)) {
+-            var fandPlayer = io.fand.server.hooks.FandHooks.findPlayer(this.getUUID());
+-            if (fandPlayer != null) {
+-                net.kyori.adventure.text.Component fandDeathMessage = null;
+-                if (deathMessage != null) {
+-                    try {
+-                        fandDeathMessage = io.fand.server.command.AdventureBridge.fromVanilla(deathMessage, this.registryAccess());
+-                    } catch (RuntimeException fandFailure) {
+-                        LOGGER.warn("Skipping PlayerDeathEvent after fromVanilla failure", fandFailure);
+-                    }
+-                }
+-                var fandDeathEvent = io.fand.server.hooks.FandHooks.fireOrLog(
+-                        fandBus,
+-                        new io.fand.api.event.player.PlayerDeathEvent(fandPlayer, fandDeathMessage),
+-                        "PlayerDeathEvent");
+-                if (fandDeathEvent.deathMessage() == null) {
+-                    showDeathMessage = false;
+-                    deathMessage = null;
+-                } else if (deathMessage != null) {
+-                    deathMessage = io.fand.server.command.AdventureBridge.toVanillaOrFallback(fandDeathEvent.deathMessage(), deathMessage, this.registryAccess());
+-                }
+-            }
+-        }
++        boolean vanillaKeepInventory = this.level().getGameRules().get(GameRules.KEEP_INVENTORY) || this.isSpectator();
++        int defaultExperience = this.wasExperienceConsumed() ? 0 : this.getExperienceReward(this.level(), source.getEntity());
++        List<ItemStack> defaultDrops = vanillaKeepInventory ? List.of() : this.fandDefaultDeathDrops();
++        var deathResult = io.fand.server.event.PlayerEvents.fireDeath(
++                this,
++                deathMessage,
++                defaultDrops,
++                defaultExperience,
++                vanillaKeepInventory);
++        deathMessage = deathResult.deathMessage();
++        showDeathMessage = deathMessage != null;
+         if (showDeathMessage && deathMessage != null) {
+             final Component finalDeathMessage = deathMessage;
+             this.connection
+@@ -970,9 +962,9 @@ public class ServerPlayer extends Player {
+             this.tellNeutralMobsThatIDied();
+         }
+ 
+-        if (!this.isSpectator()) {
+-            this.dropAllDeathLoot(this.level(), source);
+-        }
++        this.fandApplyDeathDrops(deathResult);
++        this.fandKeepInventoryAfterDeath = deathResult.keepInventory();
++        this.fandKeepExperienceAfterDeath = deathResult.keepExperience();
+ 
+         this.level().getScoreboard().forAllObjectives(ObjectiveCriteria.DEATH_COUNT, this, ScoreAccess::increment);
+         LivingEntity killer = this.getKillCredit();
+@@ -1003,6 +995,30 @@ public class ServerPlayer extends Player {
+             .forEach(mob -> ((NeutralMob)mob).playerDied(this.level(), this));
+     }
+ 
++    private List<ItemStack> fandDefaultDeathDrops() {
++        var drops = new ArrayList<ItemStack>();
++        Inventory inventory = this.getInventory();
++        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
++            ItemStack itemStack = inventory.getItem(slot);
++            if (!itemStack.isEmpty() && !EnchantmentHelper.has(itemStack, EnchantmentEffectComponents.PREVENT_EQUIPMENT_DROP)) {
++                drops.add(itemStack.copy());
++            }
++        }
++        return drops;
++    }
++
++    private void fandApplyDeathDrops(io.fand.server.event.PlayerEvents.DeathResult deathResult) {
++        if (!deathResult.keepInventory()) {
++            this.getInventory().clearContent();
++        }
++        for (ItemStack itemStack : deathResult.drops()) {
++            this.drop(itemStack.copy(), true, false);
++        }
++        if (!deathResult.keepExperience() && deathResult.droppedExperience() > 0) {
++            ExperienceOrb.award(this.level(), this.position(), deathResult.droppedExperience());
++        }
++    }
++
+     @Override
+     public void awardKillScore(final Entity victim, final DamageSource killingBlow) {
+         if (victim != this) {
+@@ -1698,8 +1714,16 @@ public class ServerPlayer extends Player {
+             this.portalProcess = oldPlayer.portalProcess;
+         } else {
+             this.setHealth(this.getMaxHealth());
+-            if (this.level().getGameRules().get(GameRules.KEEP_INVENTORY) || oldPlayer.isSpectator()) {
+-                this.transferInventoryXpAndScore(oldPlayer);
++            boolean keepInventory = oldPlayer.fandKeepInventoryAfterDeath;
++            boolean keepExperience = oldPlayer.fandKeepExperienceAfterDeath;
++            if (keepInventory) {
++                this.transferInventory(oldPlayer);
++            }
++            if (keepExperience) {
++                this.transferExperience(oldPlayer);
++            }
++            if (keepInventory) {
++                this.setScore(oldPlayer.getScore());
+             }
+         }
+ 
+@@ -1723,11 +1747,19 @@ public class ServerPlayer extends Player {
+     }
+ 
+     private void transferInventoryXpAndScore(final Player oldPlayer) {
++        this.transferInventory(oldPlayer);
++        this.transferExperience(oldPlayer);
++        this.setScore(oldPlayer.getScore());
++    }
++
++    private void transferInventory(final Player oldPlayer) {
+         this.getInventory().replaceWith(oldPlayer.getInventory());
++    }
++
++    private void transferExperience(final Player oldPlayer) {
+         this.experienceLevel = oldPlayer.experienceLevel;
+         this.totalExperience = oldPlayer.totalExperience;
+         this.experienceProgress = oldPlayer.experienceProgress;
+-        this.setScore(oldPlayer.getScore());
+     }
+ 
+     @Override
