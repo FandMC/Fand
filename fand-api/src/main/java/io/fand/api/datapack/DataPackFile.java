@@ -16,7 +16,7 @@ public record DataPackFile(String packId, String path, long size) {
         }
     }
 
-    static String normalizeRelativePath(String value) {
+    public static String normalizeRelativePath(String value) {
         Objects.requireNonNull(value, "path");
         var normalized = value.replace('\\', '/');
         if (normalized.isBlank() || normalized.startsWith("/") || normalized.contains("://")) {

@@ -107,6 +107,8 @@ public final class ExamplePlugin implements Plugin {
 - `context.guis()`：轻量 GUI 路由服务。
 - `context.packets()`：包拦截和自定义 payload 通道。
 - `context.recipes()`：配方注册表。
+- `context.resourcePacks()`：插件作用域资源包文件树和构建服务。
+- `context.localization()`：插件 `messages/*.yml` 消息目录和本地化渲染。
 - `context.scoreboard()`：vanilla 计分板服务。
 - `context.services()`：跨插件 Java provider 注册表。
 - `context.customItems()` / `context.customBlocks()`：插件命名空间下的自定义物品和方块。
@@ -408,6 +410,68 @@ context.services().register(
 ```
 
 多个 provider 按 `ServicePriority` 高到低查询，同优先级后注册者优先；当前 provider 注销后自动 fallback。
+
+## 资源包和本地化
+
+`context.resourcePacks()` 提供插件作用域资源包文件树。运行时会把资源包 id 自动限制到插件命名空间下，
+插件禁用时会清理通过注册句柄创建的托管资源包。资源文件可以写入标准 vanilla 资源包路径，例如
+`assets/<plugin-id>/textures/...`、`assets/<plugin-id>/models/...`、`assets/<plugin-id>/lang/...`。
+
+```java
+var pack = context.resourcePacks().create("main", "Example plugin resources");
+context.resourcePacks().writeText(
+        "main",
+        "assets/example-plugin/lang/zh_cn.json",
+        """
+        {
+          "item.example-plugin.magic_wand": "魔法法杖"
+        }
+        """);
+
+var build = context.resourcePacks().build("main");
+context.logger().info("Built resource pack {} sha1={} size={}", build.file(), build.sha1(), build.size());
+```
+
+`build(...)` 会在服务端 `resourcepacks/builds` 下生成 zip，并返回 SHA-1、文件路径和大小。发送给玩家时仍需要
+一个客户端可访问的下载 URL：
+
+```java
+var request = context.resourcePacks().request("main", "https://cdn.example.com/example-plugin-main.zip", true, null);
+player.sendResourcePack(request);
+```
+
+第一版资源包 API 不内置 HTTP 托管。推荐插件把 build 产物上传到自己的 CDN、静态文件服务，或等待后续专门的
+资源包托管 API；核心服务端不在启动路径里额外打开下载服务。
+
+插件资源包可以写 `assets/minecraft/...` 用于语言、字体等 vanilla namespace 覆盖；除此之外，`assets/...`
+路径必须留在 `assets/<plugin-id>/...` 下。运行时会先规范化路径再检查命名空间，`../` 逃逸会被拒绝。
+
+`context.localization()` 读取插件数据目录的 `messages/*.yml`，文件名使用 locale id，例如 `zh_cn.yml`、
+`en_us.yml`。首次访问时，如果插件 jar 内带有 `messages/en_us.yml`，运行时会复制默认 fallback 文件到
+数据目录。消息查找顺序为：精确 locale、语言 fallback、默认 locale、默认语言，最后返回 key 本身。
+
+```yaml
+# plugins/example-plugin/messages/zh_cn.yml
+welcome: "<green>欢迎 {name}</green>"
+errors:
+  no_permission: "<red>你没有权限执行这个命令</red>"
+```
+
+```java
+var message = context.localization().message(
+        java.util.Locale.forLanguageTag("zh-CN"),
+        "welcome",
+        java.util.Map.of("name", player.name()));
+
+var component = context.localization().component(
+        player,
+        "errors.no_permission");
+player.sendMessage(component);
+```
+
+本地化文本会先应用 `{name}` 这种变量，再执行 Fand placeholder 替换，最后按 MiniMessage 渲染为
+Adventure `Component`。如果只需要纯文本，使用 `message(...)`；需要颜色、点击事件或 placeholder 时使用
+`component(...)`。
 
 ## 调度和线程
 

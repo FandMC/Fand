@@ -28,6 +28,7 @@ import io.fand.api.player.SimulatedPlayerService;
 import io.fand.api.region.RegionFlagRegistration;
 import io.fand.api.region.RegionRegistration;
 import io.fand.api.recipe.RecipeRegistration;
+import io.fand.api.resourcepack.ResourcePackRegistration;
 import io.fand.api.scheduler.Task;
 import io.fand.api.scoreboard.ScoreboardRegistration;
 import io.fand.api.service.ServiceRegistration;
@@ -62,6 +63,7 @@ final class PluginResourceTracker {
     private final Set<TrackedPluginMessageRegistration> pluginMessageRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedGameRuleRegistration> gameRuleRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedDataPackRegistration> dataPackRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<TrackedResourcePackRegistration> resourcePackRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedRegionRegistration> regionRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedRegionFlagRegistration> regionFlagRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<TrackedAdvancementRegistration> advancementRegistrations = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
@@ -363,6 +365,22 @@ final class PluginResourceTracker {
                 dispose = true;
             } else {
                 dataPackRegistrations.add(tracked);
+            }
+        }
+        if (dispose) {
+            tracked.closeFromTracker();
+        }
+        return tracked;
+    }
+
+    TrackedResourcePackRegistration track(ResourcePackRegistration delegate) {
+        var tracked = new TrackedResourcePackRegistration(this, delegate);
+        var dispose = false;
+        synchronized (lock) {
+            if (closed) {
+                dispose = true;
+            } else {
+                resourcePackRegistrations.add(tracked);
             }
         }
         if (dispose) {
@@ -727,6 +745,12 @@ final class PluginResourceTracker {
         }
     }
 
+    void release(TrackedResourcePackRegistration registration) {
+        synchronized (lock) {
+            resourcePackRegistrations.remove(registration);
+        }
+    }
+
     void release(TrackedRegionRegistration registration) {
         synchronized (lock) {
             regionRegistrations.remove(registration);
@@ -874,6 +898,7 @@ final class PluginResourceTracker {
         List<TrackedPluginMessageRegistration> pluginMessageRegistrationsToClose;
         List<TrackedGameRuleRegistration> gameRuleRegistrationsToClose;
         List<TrackedDataPackRegistration> dataPackRegistrationsToClose;
+        List<TrackedResourcePackRegistration> resourcePackRegistrationsToClose;
         List<TrackedRegionRegistration> regionRegistrationsToClose;
         List<TrackedRegionFlagRegistration> regionFlagRegistrationsToClose;
         List<TrackedAdvancementRegistration> advancementRegistrationsToClose;
@@ -910,6 +935,7 @@ final class PluginResourceTracker {
             pluginMessageRegistrationsToClose = new ArrayList<>(pluginMessageRegistrations);
             gameRuleRegistrationsToClose = new ArrayList<>(gameRuleRegistrations);
             dataPackRegistrationsToClose = new ArrayList<>(dataPackRegistrations);
+            resourcePackRegistrationsToClose = new ArrayList<>(resourcePackRegistrations);
             regionRegistrationsToClose = new ArrayList<>(regionRegistrations);
             regionFlagRegistrationsToClose = new ArrayList<>(regionFlagRegistrations);
             advancementRegistrationsToClose = new ArrayList<>(advancementRegistrations);
@@ -942,6 +968,7 @@ final class PluginResourceTracker {
             pluginMessageRegistrations.clear();
             gameRuleRegistrations.clear();
             dataPackRegistrations.clear();
+            resourcePackRegistrations.clear();
             regionRegistrations.clear();
             regionFlagRegistrations.clear();
             advancementRegistrations.clear();
@@ -1004,6 +1031,9 @@ final class PluginResourceTracker {
             registration.unregisterFromTracker();
         }
         for (var registration : dataPackRegistrationsToClose) {
+            registration.closeFromTracker();
+        }
+        for (var registration : resourcePackRegistrationsToClose) {
             registration.closeFromTracker();
         }
         for (var registration : regionRegistrationsToClose) {
@@ -1795,6 +1825,47 @@ final class PluginResourceTracker {
         private void ensureOpen() {
             if (released) {
                 throw new IllegalStateException("Data pack registration is closed");
+            }
+        }
+    }
+
+    static final class TrackedResourcePackRegistration implements ResourcePackRegistration {
+
+        private final PluginResourceTracker owner;
+        private final ResourcePackRegistration delegate;
+        private volatile boolean released;
+
+        TrackedResourcePackRegistration(PluginResourceTracker owner, ResourcePackRegistration delegate) {
+            this.owner = owner;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public String id() {
+            return delegate.id();
+        }
+
+        @Override
+        public boolean active() {
+            return !released && delegate.active();
+        }
+
+        @Override
+        public void delete() {
+            if (!released) {
+                released = true;
+                try {
+                    delegate.delete();
+                } finally {
+                    owner.release(this);
+                }
+            }
+        }
+
+        void closeFromTracker() {
+            if (!released) {
+                released = true;
+                delegate.close();
             }
         }
     }

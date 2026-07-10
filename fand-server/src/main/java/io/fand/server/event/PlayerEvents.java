@@ -28,6 +28,7 @@ import io.fand.api.event.player.PlayerItemConsumeEvent;
 import io.fand.api.event.player.PlayerItemDamageEvent;
 import io.fand.api.event.player.PlayerItemHeldEvent;
 import io.fand.api.event.player.PlayerItemMendEvent;
+import io.fand.api.event.player.PlayerJumpEvent;
 import io.fand.api.event.player.PlayerKickEvent;
 import io.fand.api.event.player.PlayerLevelChangeEvent;
 import io.fand.api.event.player.PlayerLocaleChangeEvent;
@@ -421,6 +422,22 @@ public final class PlayerEvents {
             return true;
         }
         return !event.cancelled();
+    }
+
+    public static void fireJump(ServerPlayer player) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerJumpEvent.class)) {
+            return;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return;
+        }
+        try {
+            bus.fire(new PlayerJumpEvent(fandPlayer));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerJumpEvent listener failed", failure);
+        }
     }
 
     public static void fireItemBreak(ServerPlayer player, net.minecraft.world.item.ItemStack itemStack) {

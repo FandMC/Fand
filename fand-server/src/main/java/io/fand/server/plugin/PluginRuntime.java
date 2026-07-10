@@ -33,6 +33,7 @@ import io.fand.api.plugin.Plugin;
 import io.fand.api.plugin.PluginDescriptor;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
+import io.fand.api.resourcepack.ResourcePackService;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.service.ServiceRegistry;
@@ -118,6 +119,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private volatile GameRuleService gameRuleService = GameRuleService.empty();
     private final RegionService regionService;
     private final DataPackService dataPackService;
+    private final ResourcePackService resourcePackService;
     private volatile ExternalIntegrationStrategy integrationStrategy = ExternalIntegrationStrategy.empty();
     private volatile ServiceRegistry serviceRegistry = new FandServiceRegistry();
     private volatile NmsService nmsService = NmsService.empty();
@@ -181,6 +183,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 null,
                 RegionService.empty(),
                 DataPackService.empty(),
+                ResourcePackService.empty(),
                 AdvancementRegistry.empty(),
                 EnchantmentRegistry.empty(),
                 StructureService.empty(),
@@ -194,6 +197,69 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 customServices.blocks(),
                 new FandGuiService(eventBus),
                 true,
+                options
+        );
+    }
+
+    public PluginRuntime(
+            Path pluginsDirectory,
+            Path dataDirectoryRoot,
+            ClassLoader parentClassLoader,
+            CommandRegistry commandRegistry,
+            EventBus eventBus,
+            PermissionService permissions,
+            Scheduler scheduler,
+            RecipeRegistry recipeRegistry,
+            LootTableService lootTableService,
+            ScoreboardService scoreboardService,
+            PacketRegistry packetRegistry,
+            PluginMessaging pluginMessaging,
+            RegionService regionService,
+            DataPackService dataPackService,
+            ResourcePackService resourcePackService,
+            AdvancementRegistry advancementRegistry,
+            EnchantmentRegistry enchantmentRegistry,
+            StructureService structureService,
+            MapService mapService,
+            BossBarService bossBarService,
+            HologramService hologramService,
+            TabListService tabListService,
+            PlaceholderService placeholderService,
+            SimulatedPlayerService simulatedPlayerService,
+            CustomItemRegistry customItemRegistry,
+            CustomBlockRegistry customBlockRegistry,
+            GuiService guiService,
+            Options options
+    ) {
+        this(
+                pluginsDirectory,
+                dataDirectoryRoot,
+                parentClassLoader,
+                commandRegistry,
+                eventBus,
+                permissions,
+                scheduler,
+                recipeRegistry,
+                lootTableService,
+                scoreboardService,
+                packetRegistry,
+                pluginMessaging,
+                regionService,
+                dataPackService,
+                resourcePackService,
+                advancementRegistry,
+                enchantmentRegistry,
+                structureService,
+                mapService,
+                bossBarService,
+                hologramService,
+                tabListService,
+                placeholderService,
+                simulatedPlayerService,
+                customItemRegistry,
+                customBlockRegistry,
+                guiService,
+                false,
                 options
         );
     }
@@ -242,6 +308,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 pluginMessaging,
                 regionService,
                 dataPackService,
+                ResourcePackService.empty(),
                 advancementRegistry,
                 enchantmentRegistry,
                 structureService,
@@ -315,6 +382,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 null,
                 RegionService.empty(),
                 DataPackService.empty(),
+                ResourcePackService.empty(),
                 AdvancementRegistry.empty(),
                 EnchantmentRegistry.empty(),
                 StructureService.empty(),
@@ -367,6 +435,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 defaultPluginMessaging(packetRegistry),
                 RegionService.empty(),
                 DataPackService.empty(),
+                ResourcePackService.empty(),
                 advancementRegistry,
                 enchantmentRegistry,
                 structureService,
@@ -420,6 +489,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 pluginMessaging,
                 RegionService.empty(),
                 DataPackService.empty(),
+                ResourcePackService.empty(),
                 advancementRegistry,
                 enchantmentRegistry,
                 structureService,
@@ -451,6 +521,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             PluginMessaging pluginMessaging,
             RegionService regionService,
             DataPackService dataPackService,
+            ResourcePackService resourcePackService,
             AdvancementRegistry advancementRegistry,
             EnchantmentRegistry enchantmentRegistry,
             StructureService structureService,
@@ -479,6 +550,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 pluginMessaging,
                 regionService,
                 dataPackService,
+                resourcePackService,
                 advancementRegistry,
                 enchantmentRegistry,
                 structureService,
@@ -536,6 +608,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 pluginMessaging,
                 RegionService.empty(),
                 DataPackService.empty(),
+                ResourcePackService.empty(),
                 advancementRegistry,
                 enchantmentRegistry,
                 structureService,
@@ -588,6 +661,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 pluginMessaging,
                 RegionService.empty(),
                 DataPackService.empty(),
+                ResourcePackService.empty(),
                 advancementRegistry,
                 enchantmentRegistry,
                 structureService,
@@ -620,6 +694,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             PluginMessaging pluginMessaging,
             RegionService regionService,
             DataPackService dataPackService,
+            ResourcePackService resourcePackService,
             AdvancementRegistry advancementRegistry,
             EnchantmentRegistry enchantmentRegistry,
             StructureService structureService,
@@ -657,6 +732,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         this.pluginMessaging = pluginMessaging == null ? defaultPluginMessaging(packetRegistry) : pluginMessaging;
         this.regionService = Objects.requireNonNull(regionService, "regionService");
         this.dataPackService = Objects.requireNonNull(dataPackService, "dataPackService");
+        this.resourcePackService = Objects.requireNonNull(resourcePackService, "resourcePackService");
         this.customItemRegistry = customItemRegistry;
         this.customBlockRegistry = customBlockRegistry;
         this.guiService = guiService;
@@ -1118,6 +1194,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new PluginGameRuleService(gameRuleService, resources, id),
                 new PluginRegionService(regionService, resources, id),
                 new PluginDataPackService(dataPackService, resources, id),
+                new PluginResourcePackService(resourcePackService, resources, id),
                 integrationStrategy,
                 new PluginServiceRegistry(serviceRegistry, resources, id),
                 new PluginNmsService(nmsService, resources, id),

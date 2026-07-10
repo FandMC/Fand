@@ -40,6 +40,7 @@ import io.fand.api.player.SimulatedPlayerService;
 import io.fand.api.region.RegionService;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.recipe.RecipeRegistry;
+import io.fand.api.resourcepack.ResourcePackService;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.service.ServiceRegistry;
@@ -90,6 +91,7 @@ import io.fand.server.performance.ServerPerformanceTracker;
 import io.fand.server.player.FandPlayerAccessService;
 import io.fand.server.player.FandSimulatedPlayerService;
 import io.fand.server.region.FandRegionService;
+import io.fand.server.resourcepack.FandResourcePackService;
 import io.fand.server.plugin.PluginRuntime;
 import io.fand.server.recipe.FandRecipeRegistry;
 import io.fand.server.scheduler.TaskScheduler;
@@ -158,6 +160,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final FandGameRuleService gameRules;
     private final FandRegionService regions;
     private final FandDataPackService dataPacks;
+    private final FandResourcePackService resourcePacks;
     private final ExternalIntegrationStrategy integrations;
     private final FandServiceRegistry services;
     private final FandNmsService nms;
@@ -227,6 +230,7 @@ public final class FandServer implements Server, AutoCloseable {
         this.gameRules = new FandGameRuleService();
         this.regions = new FandRegionService(Path.of("regions"));
         this.dataPacks = new FandDataPackService(Path.of("datapacks"), minecraftServer::get);
+        this.resourcePacks = new FandResourcePackService(Path.of("resourcepacks"));
         this.integrations = ExternalIntegrationStrategy.empty();
         this.services = new FandServiceRegistry(permissions);
         this.nms = new FandNmsService(minecraftServer::get);
@@ -276,6 +280,7 @@ public final class FandServer implements Server, AutoCloseable {
                 pluginMessaging,
                 regions,
                 dataPacks,
+                resourcePacks,
                 advancements,
                 enchantments,
                 structures,
@@ -569,6 +574,11 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public DataPackService dataPacks() {
         return dataPacks;
+    }
+
+    @Override
+    public ResourcePackService resourcePacks() {
+        return resourcePacks;
     }
 
     @Override

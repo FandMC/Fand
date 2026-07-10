@@ -32,6 +32,7 @@ import io.fand.api.player.SimulatedPlayerService;
 import io.fand.api.plugin.PluginManager;
 import io.fand.api.region.RegionService;
 import io.fand.api.recipe.RecipeRegistry;
+import io.fand.api.resourcepack.ResourcePackService;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.service.ServiceRegistry;
@@ -164,6 +165,10 @@ public interface Server extends ForwardingAudience {
 
     default DataPackService dataPacks() {
         return DataPackService.empty();
+    }
+
+    default ResourcePackService resourcePacks() {
+        return ResourcePackService.empty();
     }
 
     default ExternalIntegrationStrategy integrations() {

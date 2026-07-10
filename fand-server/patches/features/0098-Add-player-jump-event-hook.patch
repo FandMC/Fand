@@ -1,0 +1,18 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Fri, 10 Jul 2026 10:49:28 +0800
+Subject: [PATCH] Add player jump event hook
+
+
+diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
+index 7e8d602534fc3f641006817d8e1052797964ce8d..042636e7a652be95738388456ed39950649b2604 100644
+--- a/net/minecraft/server/level/ServerPlayer.java
++++ b/net/minecraft/server/level/ServerPlayer.java
+@@ -1635,6 +1635,7 @@ public class ServerPlayer extends Player {
+     @Override
+     public void jumpFromGround() {
+         super.jumpFromGround();
++        io.fand.server.event.PlayerEvents.fireJump(this);
+         this.awardStat(Stats.JUMP);
+         if (this.isSprinting()) {
+             this.causeFoodExhaustion(0.2F);

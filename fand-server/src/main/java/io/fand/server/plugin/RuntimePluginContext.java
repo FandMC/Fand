@@ -15,6 +15,7 @@ import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
 import io.fand.api.hologram.HologramService;
 import io.fand.api.integration.ExternalIntegrationStrategy;
+import io.fand.api.localization.LocalizationService;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
@@ -27,6 +28,7 @@ import io.fand.api.region.RegionService;
 import io.fand.api.plugin.PluginContext;
 import io.fand.api.plugin.PluginDescriptor;
 import io.fand.api.recipe.RecipeRegistry;
+import io.fand.api.resourcepack.ResourcePackService;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.service.ServiceRegistry;
@@ -36,6 +38,7 @@ import io.fand.api.tablist.TabListService;
 import io.fand.api.text.MiniMessageService;
 import io.fand.server.config.FandConfigurationService;
 import io.fand.server.config.YamlConfiguration;
+import io.fand.server.localization.FandLocalizationService;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -72,6 +75,7 @@ public final class RuntimePluginContext implements PluginContext {
     private final GameRuleService gameRules;
     private final RegionService regions;
     private final DataPackService dataPacks;
+    private final ResourcePackService resourcePacks;
     private final ExternalIntegrationStrategy integrations;
     private final ServiceRegistry services;
     private final NmsService nms;
@@ -85,6 +89,7 @@ public final class RuntimePluginContext implements PluginContext {
     private final ClassLoader pluginClassLoader;
     private volatile YamlConfiguration config;
     private volatile PluginStorage storage;
+    private volatile LocalizationService localization;
     private final AtomicBoolean closed = new AtomicBoolean();
 
     public RuntimePluginContext(
@@ -111,6 +116,7 @@ public final class RuntimePluginContext implements PluginContext {
             GameRuleService gameRules,
             RegionService regions,
             DataPackService dataPacks,
+            ResourcePackService resourcePacks,
             ExternalIntegrationStrategy integrations,
             ServiceRegistry services,
             NmsService nms,
@@ -146,6 +152,7 @@ public final class RuntimePluginContext implements PluginContext {
         this.gameRules = gameRules;
         this.regions = regions;
         this.dataPacks = dataPacks;
+        this.resourcePacks = resourcePacks;
         this.integrations = integrations;
         this.services = services;
         this.nms = nms;
@@ -272,6 +279,30 @@ public final class RuntimePluginContext implements PluginContext {
     @Override
     public DataPackService dataPacks() {
         return dataPacks;
+    }
+
+    @Override
+    public ResourcePackService resourcePacks() {
+        return resourcePacks;
+    }
+
+    @Override
+    public LocalizationService localization() {
+        var existing = localization;
+        if (existing != null) {
+            return existing;
+        }
+        synchronized (this) {
+            if (localization == null) {
+                localization = new FandLocalizationService(
+                        dataDirectory(),
+                        LocalizationService.DEFAULT_LOCALE,
+                        placeholders,
+                        miniMessages,
+                        pluginClassLoader);
+            }
+            return localization;
+        }
     }
 
     @Override

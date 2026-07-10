@@ -1,24 +1,24 @@
 package io.fand.server.plugin;
 
 import com.google.gson.JsonElement;
-import io.fand.api.datapack.DataPack;
-import io.fand.api.datapack.DataPackFile;
-import io.fand.api.datapack.DataPackRegistration;
-import io.fand.api.datapack.DataPackService;
+import io.fand.api.resourcepack.ResourcePack;
+import io.fand.api.resourcepack.ResourcePackBuild;
+import io.fand.api.resourcepack.ResourcePackFile;
+import io.fand.api.resourcepack.ResourcePackRegistration;
+import io.fand.api.resourcepack.ResourcePackService;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 
-public final class PluginDataPackService implements DataPackService {
+public final class PluginResourcePackService implements ResourcePackService {
 
-    private final DataPackService delegate;
+    private final ResourcePackService delegate;
     private final PluginResourceTracker tracker;
     private final String namespace;
 
-    public PluginDataPackService(DataPackService delegate, PluginResourceTracker tracker, String namespace) {
+    public PluginResourcePackService(ResourcePackService delegate, PluginResourceTracker tracker, String namespace) {
         this.delegate = Objects.requireNonNull(delegate, "delegate");
         this.tracker = Objects.requireNonNull(tracker, "tracker");
         this.namespace = Objects.requireNonNull(namespace, "namespace");
@@ -30,27 +30,37 @@ public final class PluginDataPackService implements DataPackService {
     }
 
     @Override
-    public Collection<DataPack> packs() {
+    public Path buildDirectory() {
+        return delegate.buildDirectory();
+    }
+
+    @Override
+    public Collection<ResourcePack> packs() {
         return delegate.packs().stream()
                 .filter(pack -> namespace.equals(pack.id()) || pack.id().startsWith(namespace + "."))
                 .toList();
     }
 
     @Override
-    public Optional<DataPack> pack(String id) {
+    public Optional<ResourcePack> pack(String id) {
         return delegate.pack(scopedId(id))
                 .filter(pack -> namespace.equals(pack.id()) || pack.id().startsWith(namespace + "."));
     }
 
     @Override
-    public DataPackRegistration create(String id, String description) {
-        return create(new DataPack(id, description, true));
+    public ResourcePackRegistration create(String id, String description) {
+        return tracker.track(delegate.create(scopedId(id), description));
     }
 
     @Override
-    public DataPackRegistration create(DataPack pack) {
+    public ResourcePackRegistration create(String id, String description, int packFormat) {
+        return tracker.track(delegate.create(scopedId(id), description, packFormat));
+    }
+
+    @Override
+    public ResourcePackRegistration create(ResourcePack pack) {
         Objects.requireNonNull(pack, "pack");
-        return tracker.track(delegate.create(new DataPack(scopedId(pack.id()), pack.description(), pack.enabled())));
+        return tracker.track(delegate.create(new ResourcePack(scopedId(pack.id()), pack.description(), pack.packFormat())));
     }
 
     @Override
@@ -74,7 +84,7 @@ public final class PluginDataPackService implements DataPackService {
     }
 
     @Override
-    public Collection<DataPackFile> files(String packId) {
+    public Collection<ResourcePackFile> files(String packId) {
         return delegate.files(scopedId(packId));
     }
 
@@ -89,23 +99,13 @@ public final class PluginDataPackService implements DataPackService {
     }
 
     @Override
-    public boolean enable(String packId) {
-        return delegate.enable(scopedId(packId));
-    }
-
-    @Override
-    public boolean disable(String packId) {
-        return delegate.disable(scopedId(packId));
-    }
-
-    @Override
-    public CompletableFuture<Boolean> reload() {
-        return delegate.reload();
+    public ResourcePackBuild build(String packId) {
+        return delegate.build(scopedId(packId));
     }
 
     private String scopedId(String id) {
         Objects.requireNonNull(id, "id");
-        var normalized = new DataPack(id, "", false).id();
+        var normalized = new ResourcePack(id, "", 1).id();
         if (namespace.equals(normalized)) {
             return normalized;
         }
@@ -117,11 +117,11 @@ public final class PluginDataPackService implements DataPackService {
 
     private String scopedPath(String path) {
         Objects.requireNonNull(path, "path");
-        var normalized = DataPackFile.normalizeRelativePath(path);
-        if (normalized.startsWith("data/")) {
-            var prefix = "data/" + namespace + "/";
-            if (!normalized.startsWith(prefix)) {
-                throw new IllegalArgumentException("Plugin data pack files must stay under data/" + namespace + ": " + path);
+        var normalized = ResourcePack.normalizeRelativePath(path);
+        if (normalized.startsWith("assets/")) {
+            var prefix = "assets/" + namespace + "/";
+            if (!normalized.startsWith(prefix) && !normalized.startsWith("assets/minecraft/")) {
+                throw new IllegalArgumentException("Plugin resource pack assets must stay under assets/" + namespace + " or assets/minecraft: " + path);
             }
         }
         return normalized;

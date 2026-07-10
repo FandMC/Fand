@@ -15,6 +15,7 @@ import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
 import io.fand.api.hologram.HologramService;
 import io.fand.api.integration.ExternalIntegrationStrategy;
+import io.fand.api.localization.LocalizationService;
 import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
@@ -25,6 +26,7 @@ import io.fand.api.permission.PermissionService;
 import io.fand.api.player.SimulatedPlayerService;
 import io.fand.api.region.RegionService;
 import io.fand.api.recipe.RecipeRegistry;
+import io.fand.api.resourcepack.ResourcePackService;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scoreboard.ScoreboardService;
 import io.fand.api.service.ServiceRegistry;
@@ -136,6 +138,16 @@ public interface PluginContext {
     /** Data-pack file tree service scoped to this plugin's lifecycle and namespace. */
     default DataPackService dataPacks() {
         return DataPackService.empty();
+    }
+
+    /** Resource-pack file tree and build service scoped to this plugin's namespace. */
+    default ResourcePackService resourcePacks() {
+        return ResourcePackService.empty();
+    }
+
+    /** Plugin message catalog loader backed by {@code dataDirectory()/messages}. */
+    default LocalizationService localization() {
+        return LocalizationService.empty();
     }
 
     /** External integration strategy visible to this plugin. */
