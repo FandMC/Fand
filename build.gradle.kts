@@ -3,7 +3,7 @@ plugins {
     id("io.papermc.paperweight.core") version "2.0.0-SNAPSHOT" apply false
 }
 
-val releaseVersion = providers.gradleProperty("releaseVersion").orElse("0.7.5").get()
+val releaseVersion = providers.gradleProperty("releaseVersion").orElse("0.7.6").get()
 
 allprojects {
     group = "io.fand"

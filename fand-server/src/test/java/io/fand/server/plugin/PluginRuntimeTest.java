@@ -169,6 +169,65 @@ final class PluginRuntimeTest {
     }
 
     @Test
+    void loadAfterSharesAvailablePluginClassesWithoutMakingPluginRequired() throws IOException {
+        var pluginsDir = tempDir.resolve("plugins");
+        Files.createDirectories(pluginsDir);
+        var baseJar = PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("base.jar"),
+                PluginRuntimeTestSupport.descriptorJson("base", "testplugins.base.BasePlugin", List.of()),
+                Map.of(
+                        "testplugins/base/BasePlugin.java",
+                        pluginSource("testplugins.base", "BasePlugin", null, null, null),
+                        "testplugins/base/SharedGreeter.java",
+                        "package testplugins.base; public final class SharedGreeter { public static String message() { return \"shared-after\"; } }"
+                ),
+                List.of()
+        );
+        PluginRuntimeTestSupport.createPluginJar(
+                tempDir,
+                pluginsDir.resolve("consumer.jar"),
+                PluginRuntimeTestSupport.descriptorJson(
+                        "consumer",
+                        "testplugins.consumer.ConsumerPlugin",
+                        List.of(),
+                        List.of("base"),
+                        List.of(),
+                        "[]"),
+                Map.of("testplugins/consumer/ConsumerPlugin.java", """
+                        package testplugins.consumer;
+
+                        import io.fand.api.plugin.Plugin;
+                        import io.fand.api.plugin.PluginContext;
+                        import testplugins.base.SharedGreeter;
+
+                        public final class ConsumerPlugin implements Plugin {
+                            @Override
+                            public void onLoad(PluginContext context) {
+                                System.setProperty("fand.test.load-after.class", SharedGreeter.message());
+                            }
+
+                            @Override
+                            public void onEnable(PluginContext context) {
+                            }
+                        }
+                        """),
+                List.of(baseJar)
+        );
+
+        var previousValue = System.getProperty("fand.test.load-after.class");
+        var manager = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), new CommandManager(), new EventDispatcher(), new PermissionManager(), new TaskScheduler());
+        try {
+            manager.loadPlugins();
+
+            assertThat(System.getProperty("fand.test.load-after.class")).isEqualTo("shared-after");
+        } finally {
+            manager.close();
+            PluginRuntimeTestSupport.restoreProperty("fand.test.load-after.class", previousValue);
+        }
+    }
+
+    @Test
     void loadAfterAndLoadBeforeIgnoreMissingSoftTargets() throws IOException {
         var pluginsDir = tempDir.resolve("plugins");
         Files.createDirectories(pluginsDir);

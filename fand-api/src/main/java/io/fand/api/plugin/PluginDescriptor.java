@@ -16,7 +16,7 @@ import java.util.Objects;
  * @param apiVersion Fand API version targeted by this plugin
  * @param authors   author names; may be empty
  * @param depends   plugin ids that must be loaded before this one
- * @param loadAfter plugin ids that should be loaded before this one when present; soft ordering only
+ * @param loadAfter plugin ids that should be loaded before this one when present and whose classes are visible when available
  * @param loadBefore plugin ids that should be loaded after this one when present; soft ordering only
  * @param permissions static permissions declared by this plugin
  */

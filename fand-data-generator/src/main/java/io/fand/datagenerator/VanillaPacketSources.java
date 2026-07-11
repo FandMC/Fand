@@ -210,9 +210,76 @@ final class VanillaPacketSources {
             collectGetterFields(source, fields);
             collectPrivateFields(source, fields);
         }
+        stabilizePacketFields(declaration.sourceClassName(), fields);
+        replaceable |= hasStableClassReplacement(declaration.sourceClassName());
         var view = new PacketViewModel(viewTypeName(declaration.sourceTypeName()), declaration.sourceClassName(), replaceable, new ArrayList<>(fields.values()));
         viewsBySourceClass.put(declaration.sourceClassName(), view);
         return view;
+    }
+
+    private static void stabilizePacketFields(
+            String sourceClassName,
+            Map<String, PacketFieldModel> fields
+    ) {
+        switch (sourceClassName) {
+            case "net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket" ->
+                    fields.put("slot", apiField(
+                            "slot",
+                            "io.fand.api.scoreboard.ScoreDisplaySlot",
+                            "io.fand.api.scoreboard.ScoreDisplaySlot.class",
+                            false));
+            case "net.minecraft.network.protocol.game.ClientboundSetObjectivePacket" -> {
+                fields.put("displayName", apiField(
+                        "displayName",
+                        "net.kyori.adventure.text.Component",
+                        "net.kyori.adventure.text.Component.class",
+                        false));
+                fields.put("renderType", apiField(
+                        "renderType",
+                        "io.fand.api.scoreboard.ScoreRenderType",
+                        "io.fand.api.scoreboard.ScoreRenderType.class",
+                        false));
+            }
+            case "net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket" ->
+                    fields.put("players", apiField(
+                            "players",
+                            "java.util.Collection<String>",
+                            "java.util.Collection.class",
+                            true));
+            case "net.minecraft.network.protocol.game.ClientboundTabListPacket" -> {
+                fields.put("header", apiField(
+                        "header",
+                        "net.kyori.adventure.text.Component",
+                        "net.kyori.adventure.text.Component.class",
+                        false));
+                fields.put("footer", apiField(
+                        "footer",
+                        "net.kyori.adventure.text.Component",
+                        "net.kyori.adventure.text.Component.class",
+                        false));
+            }
+            case "net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket" ->
+                    fields.put("profileIds", apiField(
+                            "profileIds",
+                            "java.util.List<java.util.UUID>",
+                            "java.util.List.class",
+                            true));
+            default -> {
+            }
+        }
+    }
+
+    private static boolean hasStableClassReplacement(String sourceClassName) {
+        return sourceClassName.equals("net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket");
+    }
+
+    private static PacketFieldModel apiField(
+            String name,
+            String apiType,
+            String classLiteral,
+            boolean wildcardType
+    ) {
+        return new PacketFieldModel(name, accessorName(name), apiType, classLiteral, wildcardType);
     }
 
     private static PacketViewModel playerInfoUpdateView(PacketDeclaration declaration) {

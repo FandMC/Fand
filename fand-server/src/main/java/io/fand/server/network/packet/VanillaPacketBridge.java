@@ -129,6 +129,7 @@ final class VanillaPacketBridge {
             if (packet instanceof ClientboundPlayerInfoUpdatePacket playerInfo) {
                 fields = playerInfoFields(fields, playerInfo);
             }
+            fields = normalizeApiFields(type, fields);
             currentView = viewFactory.view(type, fields);
         } catch (RuntimeException failure) {
             LOGGER.warn("Failed to read vanilla packet {}", packet.getClass().getName(), failure);
@@ -264,6 +265,44 @@ final class VanillaPacketBridge {
         apiFields.put("actions", packet.actions().stream().map(Enum::name).toList());
         apiFields.put("entries", FandTabListPackets.apiEntries(packet, registry.server().orElse(null)));
         return apiFields;
+    }
+
+    private static Map<String, Object> normalizeApiFields(PacketType type, Map<String, Object> fields) {
+        if (type != PacketType.PLAY_CLIENTBOUND_SET_DISPLAY_OBJECTIVE
+                && type != PacketType.PLAY_CLIENTBOUND_SET_OBJECTIVE
+                && type != PacketType.PLAY_CLIENTBOUND_TAB_LIST) {
+            return fields;
+        }
+        var apiFields = new LinkedHashMap<>(fields);
+        switch (type) {
+            case PLAY_CLIENTBOUND_SET_DISPLAY_OBJECTIVE -> {
+                var slot = apiFields.get("slot");
+                if (slot instanceof net.minecraft.world.scores.DisplaySlot displaySlot) {
+                    apiFields.put("slot", io.fand.api.scoreboard.ScoreDisplaySlot.valueOf(displaySlot.name()));
+                }
+            }
+            case PLAY_CLIENTBOUND_SET_OBJECTIVE -> {
+                normalizeComponent(apiFields, "displayName");
+                var renderType = apiFields.get("renderType");
+                if (renderType instanceof net.minecraft.world.scores.criteria.ObjectiveCriteria.RenderType vanillaType) {
+                    apiFields.put("renderType", io.fand.api.scoreboard.ScoreRenderType.valueOf(vanillaType.name()));
+                }
+            }
+            case PLAY_CLIENTBOUND_TAB_LIST -> {
+                normalizeComponent(apiFields, "header");
+                normalizeComponent(apiFields, "footer");
+            }
+            default -> {
+            }
+        }
+        return apiFields;
+    }
+
+    private static void normalizeComponent(Map<String, Object> fields, String name) {
+        var value = fields.get(name);
+        if (value instanceof net.minecraft.network.chat.Component component) {
+            fields.put(name, AdventureBridge.fromVanilla(component, null));
+        }
     }
 
     private static List<java.util.UUID> profileIds(PacketView view) {
@@ -555,6 +594,14 @@ final class VanillaPacketBridge {
         if (value instanceof net.kyori.adventure.text.Component component
                 && net.minecraft.network.chat.Component.class.isAssignableFrom(targetType)) {
             return AdventureBridge.toVanilla(component, null);
+        }
+        if (value instanceof io.fand.api.scoreboard.ScoreDisplaySlot slot
+                && net.minecraft.world.scores.DisplaySlot.class.isAssignableFrom(targetType)) {
+            return net.minecraft.world.scores.DisplaySlot.valueOf(slot.name());
+        }
+        if (value instanceof io.fand.api.scoreboard.ScoreRenderType renderType
+                && net.minecraft.world.scores.criteria.ObjectiveCriteria.RenderType.class.isAssignableFrom(targetType)) {
+            return net.minecraft.world.scores.criteria.ObjectiveCriteria.RenderType.valueOf(renderType.name());
         }
         return value;
     }

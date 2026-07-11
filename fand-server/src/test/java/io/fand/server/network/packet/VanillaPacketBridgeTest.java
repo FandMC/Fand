@@ -12,7 +12,13 @@ import io.fand.api.packet.PacketType;
 import io.fand.api.packet.PlayerInfoEntry;
 import io.fand.api.packet.view.ClientboundPlayerInfoUpdatePacketView;
 import io.fand.api.packet.view.ClientboundBlockChangedAckPacketView;
+import io.fand.api.packet.view.ClientboundPlayerInfoRemovePacketView;
+import io.fand.api.packet.view.ClientboundSetDisplayObjectivePacketView;
+import io.fand.api.packet.view.ClientboundSetPlayerTeamPacketView;
+import io.fand.api.packet.view.ClientboundTabListPacketView;
+import io.fand.api.scoreboard.ScoreDisplaySlot;
 import io.fand.api.tablist.TabListEntry;
+import io.fand.server.command.AdventureBridge;
 import io.fand.server.tablist.FandTabListPackets;
 import io.netty.buffer.Unpooled;
 import java.net.InetSocketAddress;
@@ -21,6 +27,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import net.minecraft.SharedConstants;
 import net.kyori.adventure.key.Key;
 import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.network.DisconnectionDetails;
@@ -33,11 +40,25 @@ import net.minecraft.network.protocol.common.custom.DiscardedPayload;
 import net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket;
+import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket;
+import net.minecraft.network.protocol.game.ClientboundTabListPacket;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.scores.DisplaySlot;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.Scoreboard;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeAll;
 
 final class VanillaPacketBridgeTest {
+
+    @BeforeAll
+    static void bootstrapMinecraft() {
+        SharedConstants.tryDetectVersion();
+        Bootstrap.bootStrap();
+    }
 
     @Test
     void typedReplacementChainRebuildsRecordPacket() {
@@ -189,8 +210,13 @@ final class VanillaPacketBridgeTest {
         var registry = new PacketRegistryImpl();
         var oldId = UUID.randomUUID();
         var newId = UUID.randomUUID();
-        registry.intercept(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_REMOVE, packet -> packet.replace(
-                registry.playerInfo().remove(List.of(newId))));
+        registry.intercept(
+                PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_REMOVE,
+                ClientboundPlayerInfoRemovePacketView.class,
+                packet -> {
+                    assertThat(packet.view().profileIds()).containsExactly(oldId);
+                    packet.replace(packet.view().withProfileIds(List.of(newId)));
+                });
 
         var intercepted = registry.interceptOutbound(
                 ConnectionProtocol.PLAY,
@@ -202,6 +228,75 @@ final class VanillaPacketBridgeTest {
 
         assertThat(intercepted).isInstanceOf(ClientboundPlayerInfoRemovePacket.class);
         assertThat(((ClientboundPlayerInfoRemovePacket) intercepted).profileIds()).containsExactly(newId);
+    }
+
+    @Test
+    void tabListComponentsAreExposedAndRebuiltAsAdventureComponents() {
+        var registry = new PacketRegistryImpl();
+        var originalHeader = net.kyori.adventure.text.Component.text("original-header");
+        var originalFooter = net.kyori.adventure.text.Component.text("original-footer");
+        var replacementHeader = net.kyori.adventure.text.Component.text("replacement-header");
+        registry.intercept(
+                PacketType.PLAY_CLIENTBOUND_TAB_LIST,
+                ClientboundTabListPacketView.class,
+                packet -> {
+                    assertThat(packet.view().header()).isEqualTo(originalHeader);
+                    assertThat(packet.view().footer()).isEqualTo(originalFooter);
+                    packet.replace(packet.view().withHeader(replacementHeader));
+                });
+
+        var intercepted = registry.interceptOutbound(
+                ConnectionProtocol.PLAY,
+                PacketFlow.CLIENTBOUND,
+                Optional.empty(),
+                Optional.empty(),
+                null,
+                new ClientboundTabListPacket(
+                        AdventureBridge.toVanilla(originalHeader, null),
+                        AdventureBridge.toVanilla(originalFooter, null)));
+
+        assertThat(intercepted).isInstanceOf(ClientboundTabListPacket.class);
+        var tabList = (ClientboundTabListPacket) intercepted;
+        assertThat(AdventureBridge.fromVanilla(tabList.header(), null)).isEqualTo(replacementHeader);
+        assertThat(AdventureBridge.fromVanilla(tabList.footer(), null)).isEqualTo(originalFooter);
+    }
+
+    @Test
+    void scoreboardViewsExposeStableSlotAndReplaceableTeamMembers() {
+        var registry = new PacketRegistryImpl();
+        registry.intercept(
+                PacketType.PLAY_CLIENTBOUND_SET_DISPLAY_OBJECTIVE,
+                ClientboundSetDisplayObjectivePacketView.class,
+                packet -> assertThat(packet.view().slot()).isEqualTo(ScoreDisplaySlot.SIDEBAR));
+        registry.intercept(
+                PacketType.PLAY_CLIENTBOUND_SET_PLAYER_TEAM,
+                ClientboundSetPlayerTeamPacketView.class,
+                packet -> {
+                    assertThat(packet.view().players()).containsExactlyInAnyOrder("Alice", "Bob");
+                    packet.replace(packet.view().withPlayers(List.of("Bob")));
+                });
+
+        var display = registry.interceptOutbound(
+                ConnectionProtocol.PLAY,
+                PacketFlow.CLIENTBOUND,
+                Optional.empty(),
+                Optional.empty(),
+                null,
+                new ClientboundSetDisplayObjectivePacket(DisplaySlot.SIDEBAR, null));
+        assertThat(display).isInstanceOf(ClientboundSetDisplayObjectivePacket.class);
+
+        var team = new PlayerTeam(new Scoreboard(), "other");
+        team.getPlayers().addAll(List.of("Alice", "Bob"));
+        var interceptedTeam = registry.interceptOutbound(
+                ConnectionProtocol.PLAY,
+                PacketFlow.CLIENTBOUND,
+                Optional.empty(),
+                Optional.empty(),
+                null,
+                ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(team, true));
+
+        assertThat(interceptedTeam).isInstanceOf(ClientboundSetPlayerTeamPacket.class);
+        assertThat(((ClientboundSetPlayerTeamPacket) interceptedTeam).getPlayers()).containsExactly("Bob");
     }
 
     @Test

@@ -1175,7 +1175,9 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         if (loadedPlugins.containsKey(id)) {
             throw new PluginLoadException("Plugin '" + id + "' is already loaded");
         }
-        var dependencies = dependencyClassLoaders(artifact.descriptor.depends());
+        var dependencies = dependencyClassLoaders(
+                artifact.descriptor.depends(),
+                artifact.descriptor.loadAfter());
         var libraryUrls = libraryResolver.resolve(artifact.jarPath, id).stream()
                 .map(PluginRuntime::toJarUrl)
                 .toList();
@@ -1820,12 +1822,20 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         return skipped;
     }
 
-    private List<PluginClassLoader> dependencyClassLoaders(List<String> dependencyIds) {
-        var dependencies = new ArrayList<PluginClassLoader>(dependencyIds.size());
-        for (var dependencyId : dependencyIds) {
+    private List<PluginClassLoader> dependencyClassLoaders(
+            List<String> requiredIds,
+            List<String> optionalIds
+    ) {
+        var visibleIds = new LinkedHashSet<>(requiredIds);
+        visibleIds.addAll(optionalIds);
+        var dependencies = new ArrayList<PluginClassLoader>(visibleIds.size());
+        for (var dependencyId : visibleIds) {
             var loadedPlugin = loadedPlugins.get(dependencyId);
             if (loadedPlugin == null) {
-                throw new PluginLoadException("Plugin '" + dependencyId + "' must be loaded before its dependents");
+                if (requiredIds.contains(dependencyId)) {
+                    throw new PluginLoadException("Plugin '" + dependencyId + "' must be loaded before its dependents");
+                }
+                continue;
             }
             dependencies.add(loadedPlugin.classLoader);
         }
