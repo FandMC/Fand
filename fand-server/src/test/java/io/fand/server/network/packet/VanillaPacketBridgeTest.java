@@ -206,6 +206,21 @@ final class VanillaPacketBridgeTest {
     }
 
     @Test
+    void playerInfoLatencyFactoryOnlyUpdatesLatency() {
+        var registry = new PacketRegistryImpl();
+        var entryId = UUID.randomUUID();
+
+        var packet = new VanillaPacketBridge(registry).toVanilla(registry.playerInfo().latency(entryId, 99));
+
+        assertThat(packet).isInstanceOf(ClientboundPlayerInfoUpdatePacket.class);
+        var info = (ClientboundPlayerInfoUpdatePacket) packet;
+        assertThat(info.actions()).containsExactly(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY);
+        assertThat(info.entries()).hasSize(1);
+        assertThat(info.entries().getFirst().profileId()).isEqualTo(entryId);
+        assertThat(info.entries().getFirst().latency()).isEqualTo(99);
+    }
+
+    @Test
     void playerInfoFactoryReplacementRebuildsRemovePacket() {
         var registry = new PacketRegistryImpl();
         var oldId = UUID.randomUUID();

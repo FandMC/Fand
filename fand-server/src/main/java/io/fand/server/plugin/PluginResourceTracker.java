@@ -294,7 +294,7 @@ final class PluginResourceTracker {
                     .toList();
         }
         for (var visibility : matches) {
-            visibility.release();
+            visibility.restore();
         }
     }
 

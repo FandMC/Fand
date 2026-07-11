@@ -19,7 +19,8 @@ public interface PlayerInfoPacketFactory {
 
     default PacketView latency(UUID entryId, int latency) {
         Objects.requireNonNull(entryId, "entryId");
-        return update(List.of(TabListEntry.builder(entryId, entryId.toString()).latency(latency).build()));
+        return update(List.of(TabListEntry.builder(entryId, entryId.toString().substring(0, 16)).latency(latency).build()))
+                .with("actions", List.of("UPDATE_LATENCY"));
     }
 
     static PlayerInfoPacketFactory unsupported() {

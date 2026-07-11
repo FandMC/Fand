@@ -106,7 +106,8 @@ public final class PluginClassLoader extends URLClassLoader {
                 || name.startsWith("org.slf4j.")
                 || name.startsWith("org.jspecify.")
                 || name.startsWith("net.kyori.")
-                || name.startsWith("com.google.gson.");
+                || name.startsWith("com.google.gson.")
+                || name.startsWith("com.google.common.");
     }
 
     private Class<?> resolveIfNeeded(Class<?> type, boolean resolve) {

@@ -16,10 +16,16 @@ public final class PluginTabListService implements TabListService {
 
     private final TabListService delegate;
     private final PluginResourceTracker tracker;
+    private final PluginTabListVisibilityRegistry visibilityRegistry;
 
-    public PluginTabListService(TabListService delegate, PluginResourceTracker tracker) {
+    public PluginTabListService(
+            TabListService delegate,
+            PluginResourceTracker tracker,
+            PluginTabListVisibilityRegistry visibilityRegistry
+    ) {
         this.delegate = Objects.requireNonNull(delegate, "delegate");
         this.tracker = Objects.requireNonNull(tracker, "tracker");
+        this.visibilityRegistry = Objects.requireNonNull(visibilityRegistry, "visibilityRegistry");
     }
 
     @Override
@@ -41,13 +47,13 @@ public final class PluginTabListService implements TabListService {
     public void setVisible(Player viewer, Player target, boolean visible) {
         Objects.requireNonNull(viewer, "viewer");
         Objects.requireNonNull(target, "target");
-        delegate.setVisible(viewer, target, visible);
         if (visible) {
             tracker.restoreTabListVisibility(viewer.uniqueId(), target.uniqueId());
         } else {
-            tracker.trackTabListVisibility(
+            hide(
                     viewer.uniqueId(),
                     target.uniqueId(),
+                    () -> delegate.setVisible(viewer, target, false),
                     () -> delegate.setVisible(viewer, target, true));
         }
     }
@@ -71,14 +77,15 @@ public final class PluginTabListService implements TabListService {
         for (var target : visibleTargets) {
             candidateIds.add(target.uniqueId());
         }
-        delegate.showOnly(viewer, visibleTargets);
+        var visibleIds = visibleTargets.stream().map(Player::uniqueId).collect(java.util.stream.Collectors.toSet());
         for (var targetId : candidateIds) {
-            if (targetId.equals(viewerId) || realPlayers.visibleInRealPlayerList(viewerId, targetId)) {
+            if (targetId.equals(viewerId) || visibleIds.contains(targetId)) {
                 tracker.restoreTabListVisibility(viewerId, targetId);
             } else {
-                tracker.trackTabListVisibility(
+                hide(
                         viewerId,
                         targetId,
+                        () -> realPlayers.setRealEntryVisible(viewerId, targetId, false),
                         () -> realPlayers.setRealEntryVisible(viewerId, targetId, true));
             }
         }
@@ -88,17 +95,26 @@ public final class PluginTabListService implements TabListService {
         Set<Player> candidates = new HashSet<>();
         candidates.addAll(viewer.world().players());
         candidates.addAll(visibleTargets);
-        delegate.showOnly(viewer, visibleTargets);
+        var visibleIds = visibleTargets.stream().map(Player::uniqueId).collect(java.util.stream.Collectors.toSet());
         for (var target : candidates) {
-            if (target.uniqueId().equals(viewer.uniqueId()) || delegate.visible(viewer, target)) {
+            if (target.uniqueId().equals(viewer.uniqueId()) || visibleIds.contains(target.uniqueId())) {
                 tracker.restoreTabListVisibility(viewer.uniqueId(), target.uniqueId());
             } else {
-                tracker.trackTabListVisibility(
+                hide(
                         viewer.uniqueId(),
                         target.uniqueId(),
+                        () -> delegate.setVisible(viewer, target, false),
                         () -> delegate.setVisible(viewer, target, true));
             }
         }
+    }
+
+    private void hide(UUID viewerId, UUID targetId, Runnable hide, Runnable show) {
+        visibilityRegistry.hide(tracker, viewerId, targetId, hide);
+        tracker.trackTabListVisibility(
+                viewerId,
+                targetId,
+                () -> visibilityRegistry.show(tracker, viewerId, targetId, show));
     }
 
     @Override

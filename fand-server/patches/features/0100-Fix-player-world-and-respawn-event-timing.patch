@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 12 Jul 2026 01:44:06 +0800
+Subject: [PATCH] Fix player world and respawn event timing
+
+
+diff --git a/net/minecraft/server/level/ServerPlayer.java b/net/minecraft/server/level/ServerPlayer.java
+index 042636e7a652be95738388456ed39950649b2604..80a29db1a5dbd09c4536dc81b4e2ddbaf5c9e607 100644
+--- a/net/minecraft/server/level/ServerPlayer.java
++++ b/net/minecraft/server/level/ServerPlayer.java
+@@ -1221,6 +1221,7 @@ public class ServerPlayer extends Player {
+         this.lastSentHealth = -1.0F;
+         this.lastSentFood = -1;
+         this.teleportSpectators(fandTransition, oldLevel);
++        io.fand.server.event.PlayerEvents.fireChangedWorld(this, oldLevel, newLevel);
+         return this;
+     }
+ 
+diff --git a/net/minecraft/server/players/PlayerList.java b/net/minecraft/server/players/PlayerList.java
+index c38769bba450a455ff069c4aec67f046666ddf42..8ff627f75d36b6272e7923791ad38eaca5917cd5 100644
+--- a/net/minecraft/server/players/PlayerList.java
++++ b/net/minecraft/server/players/PlayerList.java
+@@ -478,6 +478,8 @@ public abstract class PlayerList {
+ 
+         Vec3 pos = respawnInfo.position();
+         player.snapTo(pos.x, pos.y, pos.z, respawnInfo.yRot(), respawnInfo.xRot());
++        io.fand.server.hooks.FandHooks.players().onRespawn(player);
++        level = io.fand.server.event.PlayerEvents.fireRespawn(player, level, keepAllPlayerData, removalReason);
+         if (respawnInfo.missingRespawnBlock()) {
+             player.connection.send(new ClientboundGameEventPacket(ClientboundGameEventPacket.NO_RESPAWN_BLOCK_AVAILABLE, 0.0F));
+         }
+@@ -487,18 +489,16 @@ public abstract class PlayerList {
+         LevelData levelData = playerLevel.getLevelData();
+         player.connection.send(new ClientboundRespawnPacket(player.createCommonSpawnInfo(playerLevel), dataToKeep));
+         player.connection.teleport(player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
+-        player.connection.send(new ClientboundSetDefaultSpawnPositionPacket(level.getRespawnData()));
++        player.connection.send(new ClientboundSetDefaultSpawnPositionPacket(playerLevel.getRespawnData()));
+         player.connection.send(new ClientboundChangeDifficultyPacket(levelData.getDifficulty(), levelData.isDifficultyLocked()));
+         player.connection.send(new ClientboundSetExperiencePacket(player.experienceProgress, player.totalExperience, player.experienceLevel));
+         this.sendActivePlayerEffects(player);
+-        this.sendLevelInfo(player, level);
++        this.sendLevelInfo(player, playerLevel);
+         this.sendPlayerPermissionLevel(player);
+         this.players.add(player);
+         this.playersByUUID.put(player.getUUID(), player);
+         this.addPlayerNameIndex(player);
+-        io.fand.server.hooks.FandHooks.players().onRespawn(player);
+-        level = io.fand.server.event.PlayerEvents.fireRespawn(player, level, keepAllPlayerData, removalReason);
+-        level.addRespawnedPlayer(player);
++        playerLevel.addRespawnedPlayer(player);
+         player.initInventoryMenu();
+         player.setHealth(player.getHealth());
+         ServerPlayer.RespawnConfig respawnConfig = player.getRespawnConfig();

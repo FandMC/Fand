@@ -24,7 +24,7 @@ final class PluginTabListServiceTest {
     void tracksAndCleansPluginEntries() {
         var delegate = new FakeTabListService();
         var tracker = new PluginResourceTracker();
-        var service = new PluginTabListService(delegate, tracker);
+        var service = service(delegate, tracker);
         var viewer = fakePlayer(UUID.randomUUID());
         var entry = TabListEntry.builder(UUID.randomUUID(), "VirtualOne").latency(42).build();
 
@@ -42,7 +42,7 @@ final class PluginTabListServiceTest {
     @Test
     void updateDelegatesToTrackedRegistration() {
         var delegate = new FakeTabListService();
-        var service = new PluginTabListService(delegate, new PluginResourceTracker());
+        var service = service(delegate, new PluginResourceTracker());
         var viewer = fakePlayer(UUID.randomUUID());
         var entry = TabListEntry.builder(UUID.randomUUID(), "VirtualOne").build();
 
@@ -56,7 +56,7 @@ final class PluginTabListServiceTest {
     void restoresRealPlayerVisibilityWhenPluginCloses() {
         var delegate = new FakeTabListService();
         var tracker = new PluginResourceTracker();
-        var service = new PluginTabListService(delegate, tracker);
+        var service = service(delegate, tracker);
         var world = fakeWorld();
         var viewer = fakePlayer(UUID.randomUUID(), world);
         var target = fakePlayer(UUID.randomUUID(), world);
@@ -75,7 +75,7 @@ final class PluginTabListServiceTest {
     void explicitShowReleasesTrackedVisibilityRestore() {
         var delegate = new FakeTabListService();
         var tracker = new PluginResourceTracker();
-        var service = new PluginTabListService(delegate, tracker);
+        var service = service(delegate, tracker);
         var world = fakeWorld();
         var viewer = fakePlayer(UUID.randomUUID(), world);
         var target = fakePlayer(UUID.randomUUID(), world);
@@ -95,7 +95,7 @@ final class PluginTabListServiceTest {
     void showOnlyRestoresCrossWorldTargetsWhenPluginCloses() {
         var delegate = new FakeTabListService();
         var tracker = new PluginResourceTracker();
-        var service = new PluginTabListService(delegate, tracker);
+        var service = service(delegate, tracker);
         var viewerWorld = fakeWorld();
         var otherWorld = fakeWorld();
         var viewer = fakePlayer(UUID.randomUUID(), viewerWorld);
@@ -113,6 +113,36 @@ final class PluginTabListServiceTest {
         tracker.close();
 
         assertThat(delegate.visible(viewer, crossWorldTarget)).isTrue();
+    }
+
+    @Test
+    void keepsPlayerHiddenUntilEveryPluginReleasesVisibility() {
+        var delegate = new FakeTabListService();
+        var registry = new PluginTabListVisibilityRegistry();
+        var firstTracker = new PluginResourceTracker();
+        var secondTracker = new PluginResourceTracker();
+        var first = new PluginTabListService(delegate, firstTracker, registry);
+        var second = new PluginTabListService(delegate, secondTracker, registry);
+        var viewer = fakePlayer(UUID.randomUUID());
+        var target = fakePlayer(UUID.randomUUID());
+
+        first.setVisible(viewer, target, false);
+        second.setVisible(viewer, target, false);
+        firstTracker.close();
+
+        assertThat(delegate.visible(viewer, target)).isFalse();
+        assertThat(delegate.visibilityChanges).containsExactly(change(viewer, target, false));
+
+        secondTracker.close();
+
+        assertThat(delegate.visible(viewer, target)).isTrue();
+        assertThat(delegate.visibilityChanges).containsExactly(
+                change(viewer, target, false),
+                change(viewer, target, true));
+    }
+
+    private static PluginTabListService service(FakeTabListService delegate, PluginResourceTracker tracker) {
+        return new PluginTabListService(delegate, tracker, new PluginTabListVisibilityRegistry());
     }
 
     private static final class FakeTabListService implements TabListService, io.fand.server.tablist.RealPlayerTabListAccess {

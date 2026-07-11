@@ -1383,6 +1383,10 @@ public final class PlayerEvents {
         }
         if (level != player.level()) {
             player.setServerLevel(level);
+            var registry = FandHooks.playersOrNull();
+            if (registry != null) {
+                registry.onChangedWorld(player);
+            }
         }
         player.snapTo(
                 event.respawnLocation().x(),

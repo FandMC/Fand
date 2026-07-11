@@ -112,6 +112,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     private final BossBarService bossBarService;
     private final HologramService hologramService;
     private final TabListService tabListService;
+    private final PluginTabListVisibilityRegistry tabListVisibilityRegistry = new PluginTabListVisibilityRegistry();
     private final SimulatedPlayerService simulatedPlayerService;
     private final PlaceholderService placeholderService;
     private final ScoreboardService scoreboardService;
@@ -1198,7 +1199,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 new PluginMapService(mapService, resources),
                 new PluginBossBarService(bossBarService, resources, id),
                 new PluginHologramService(hologramService, resources),
-                new PluginTabListService(tabListService, resources),
+                new PluginTabListService(tabListService, resources, tabListVisibilityRegistry),
                 new PluginSimulatedPlayerService(simulatedPlayerService, resources),
                 pluginPlaceholders,
                 new FandMiniMessageService(pluginPlaceholders),
