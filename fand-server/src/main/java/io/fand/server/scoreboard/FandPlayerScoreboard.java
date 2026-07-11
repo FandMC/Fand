@@ -8,7 +8,6 @@ import io.fand.api.scoreboard.ScoreboardObjective;
 import io.fand.api.scoreboard.ScoreboardTeam;
 import io.fand.server.command.AdventureBridge;
 import io.fand.server.entity.FandPlayer;
-import io.fand.server.util.ServerThreading;
 import java.util.Collection;
 import java.util.EnumMap;
 import java.util.EnumSet;
@@ -17,7 +16,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import net.kyori.adventure.text.Component;
 import net.minecraft.core.RegistryAccess;
@@ -473,17 +471,14 @@ public final class FandPlayerScoreboard implements PlayerScoreboard {
 
     private boolean sendPacket(Packet<?> packet) {
         var server = player.handle().level().getServer();
-        var sent = new AtomicBoolean();
-        if (!ServerThreading.run(server, () -> {
+        return ScoreboardThreading.call(server, () -> {
             var handle = player.handle();
             if (player.online() && handle.connection != null) {
                 handle.connection.send(packet);
-                sent.set(true);
+                return true;
             }
-        })) {
             return false;
-        }
-        return sent.get();
+        });
     }
 
     private record DisplayObjective(ScoreboardObjective objective, Objective handle, Runnable ensureKnown) {
