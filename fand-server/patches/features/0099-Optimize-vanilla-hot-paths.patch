@@ -1,0 +1,2739 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 11 Jul 2026 09:08:39 +0800
+Subject: [PATCH] Optimize vanilla hot paths
+
+
+diff --git a/net/minecraft/core/Direction.java b/net/minecraft/core/Direction.java
+index bf30dedb613e57ce3e1fb9f445bbb7ec17923d26..a32bf0d021196e36a228a6d0ad4fcafe736ada1a 100644
+--- a/net/minecraft/core/Direction.java
++++ b/net/minecraft/core/Direction.java
+@@ -127,6 +127,11 @@ public enum Direction implements StringRepresentable {
+         return Util.shuffledCopy(values(), random);
+     }
+ 
++    // Fand: adapted from Lithium's Direction fast-util optimization (CaffeineMC), licensed under GNU LGPLv3.
++    public static Direction[] valuesCached() {
++        return VALUES;
++    }
++
+     public static Stream<Direction> stream() {
+         return Stream.of(VALUES);
+     }
+diff --git a/net/minecraft/nbt/CompoundTag.java b/net/minecraft/nbt/CompoundTag.java
+index 543232622a1a4bc0cc90343feaca44ab48543dba..c7c6a328e78ae12b08797bdce9b322ef06919d85 100644
+--- a/net/minecraft/nbt/CompoundTag.java
++++ b/net/minecraft/nbt/CompoundTag.java
+@@ -1,17 +1,16 @@
+ package net.minecraft.nbt;
+ 
+-import com.google.common.collect.Maps;
+ import com.mojang.logging.LogUtils;
+ import com.mojang.serialization.Codec;
+ import com.mojang.serialization.DataResult;
+ import com.mojang.serialization.Dynamic;
+ import com.mojang.serialization.DynamicOps;
+ import com.mojang.serialization.MapCodec;
++import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+ import java.io.DataInput;
+ import java.io.DataOutput;
+ import java.io.IOException;
+ import java.util.Collection;
+-import java.util.HashMap;
+ import java.util.Map;
+ import java.util.Objects;
+ import java.util.Optional;
+@@ -25,6 +24,7 @@ import org.slf4j.Logger;
+ 
+ public final class CompoundTag implements Tag {
+     private static final Logger LOGGER = LogUtils.getLogger();
++    // Fand: fastutil-backed NBT maps adapted from Lithium's alloc/nbt optimization (CaffeineMC), GNU LGPLv3.
+     public static final Codec<CompoundTag> CODEC = Codec.PASSTHROUGH
+         .comapFlatMap(
+             t -> {
+@@ -51,7 +51,7 @@ public final class CompoundTag implements Tag {
+ 
+         private static CompoundTag loadCompound(final DataInput input, final NbtAccounter accounter) throws IOException {
+             accounter.accountBytes(48L);
+-            Map<String, Tag> values = Maps.newHashMap();
++            Map<String, Tag> values = new Object2ObjectOpenHashMap<>();
+ 
+             byte tagType;
+             while ((tagType = input.readByte()) != 0) {
+@@ -165,7 +165,7 @@ public final class CompoundTag implements Tag {
+     }
+ 
+     public CompoundTag() {
+-        this(new HashMap<>());
++        this(new Object2ObjectOpenHashMap<>());
+     }
+ 
+     @Override
+@@ -389,12 +389,12 @@ public final class CompoundTag implements Tag {
+     }
+ 
+     CompoundTag shallowCopy() {
+-        return new CompoundTag(new HashMap<>(this.tags));
++        return new CompoundTag(new Object2ObjectOpenHashMap<>(this.tags));
+     }
+ 
+     @Override
+     public CompoundTag copy() {
+-        HashMap<String, Tag> newTags = new HashMap<>();
++        Map<String, Tag> newTags = new Object2ObjectOpenHashMap<>(this.tags.size());
+         this.tags.forEach((key, tag) -> newTags.put(key, tag.copy()));
+         return new CompoundTag(newTags);
+     }
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index feb5cda3411d991d8e38c9b4ed87e696c5ff4042..65891b392c4edc7c85d02891eea8a18ec6850bd2 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -583,7 +583,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+         profiler.popPush("tickBlocks");
+         if (tickSpeed > 0) {
+             LevelChunkSection[] sections = chunk.getSections();
++            // Fand: random-tick section mask follows Lithium's random block ticking optimization (CaffeineMC), GNU LGPLv3.
+             boolean randomTickPositionMask = io.fand.server.hooks.FandHooks.randomTickPositionMaskEnabled();
++            BlockPos.MutableBlockPos randomTickPos = new BlockPos.MutableBlockPos();
+ 
+             for (int sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+                 LevelChunkSection section = sections[sectionIndex];
+@@ -592,21 +594,28 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+                     int minYInSection = SectionPos.sectionToBlockCoord(sectionY);
+ 
+                     for (int i = 0; i < tickSpeed; i++) {
+-                        BlockPos pos = this.getBlockRandomPos(minX, minYInSection, minZ, 15);
++                        this.getBlockRandomPos(minX, minYInSection, minZ, 15, randomTickPos);
+                         profiler.push("randomTick");
+                         if (randomTickPositionMask
+-                            && !section.fand$mayRandomTickAt(pos.getX() - minX, pos.getY() - minYInSection, pos.getZ() - minZ)) {
++                            && !section.fand$mayRandomTickAt(
++                                randomTickPos.getX() - minX, randomTickPos.getY() - minYInSection, randomTickPos.getZ() - minZ
++                            )) {
+                             profiler.pop();
+                             continue;
+                         }
+-                        BlockState blockState = section.getBlockState(pos.getX() - minX, pos.getY() - minYInSection, pos.getZ() - minZ);
+-                        if (blockState.isRandomlyTicking()) {
+-                            blockState.randomTick(this, pos, this.random);
+-                        }
+-
++                        BlockState blockState = section.getBlockState(
++                            randomTickPos.getX() - minX, randomTickPos.getY() - minYInSection, randomTickPos.getZ() - minZ
++                        );
+                         FluidState fluidState = blockState.getFluidState();
+-                        if (fluidState.isRandomlyTicking()) {
+-                            fluidState.randomTick(this, pos, this.random);
++                        if (blockState.isRandomlyTicking() || fluidState.isRandomlyTicking()) {
++                            BlockPos pos = randomTickPos.immutable();
++                            if (blockState.isRandomlyTicking()) {
++                                blockState.randomTick(this, pos, this.random);
++                            }
++
++                            if (fluidState.isRandomlyTicking()) {
++                                fluidState.randomTick(this, pos, this.random);
++                            }
+                         }
+ 
+                         profiler.pop();
+diff --git a/net/minecraft/util/ClassInstanceMultiMap.java b/net/minecraft/util/ClassInstanceMultiMap.java
+index fc89d759f079c0e710f74e9083fdf8956dec7a7c..ae6bb7ed6b5cf19ae38c3303626b7dbd0de3022e 100644
+--- a/net/minecraft/util/ClassInstanceMultiMap.java
++++ b/net/minecraft/util/ClassInstanceMultiMap.java
+@@ -89,6 +89,11 @@ public class ClassInstanceMultiMap<T> extends AbstractCollection<T> {
+         return this.allInstances.isEmpty() ? Collections.emptyIterator() : Iterators.unmodifiableIterator(this.allInstances.iterator());
+     }
+ 
++    // Fand: direct entity-section iteration hook adapted from Lithium's entity iteration optimization (CaffeineMC), GNU LGPLv3.
++    public Iterator<T> fand$directIterator() {
++        return this.allInstances.iterator();
++    }
++
+     public List<T> getAllInstances() {
+         return ImmutableList.copyOf(this.allInstances);
+     }
+diff --git a/net/minecraft/util/SimpleBitStorage.java b/net/minecraft/util/SimpleBitStorage.java
+index c2a6c01d16c6c562a1fdee2eec2c838fc1355dca..7e7d6459c6be75cfc7265d3a73a1ec7fbb20d2c2 100644
+--- a/net/minecraft/util/SimpleBitStorage.java
++++ b/net/minecraft/util/SimpleBitStorage.java
+@@ -270,9 +270,8 @@ public class SimpleBitStorage implements BitStorage {
+     }
+ 
+     @Override
++    // Fand: hot-path validation removal adapted from Lithium's chunk/no_validation optimization (CaffeineMC), GNU LGPLv3.
+     public int getAndSet(final int index, final int value) {
+-        Validate.inclusiveBetween(0L, this.size - 1, index);
+-        Validate.inclusiveBetween(0L, this.mask, value);
+         int cellIndex = this.cellIndex(index);
+         long cellValue = this.data[cellIndex];
+         int bitIndex = (index - cellIndex * this.valuesPerLong) * this.bits;
+@@ -283,8 +282,6 @@ public class SimpleBitStorage implements BitStorage {
+ 
+     @Override
+     public void set(final int index, final int value) {
+-        Validate.inclusiveBetween(0L, this.size - 1, index);
+-        Validate.inclusiveBetween(0L, this.mask, value);
+         int cellIndex = this.cellIndex(index);
+         long cellValue = this.data[cellIndex];
+         int bitIndex = (index - cellIndex * this.valuesPerLong) * this.bits;
+@@ -293,7 +290,6 @@ public class SimpleBitStorage implements BitStorage {
+ 
+     @Override
+     public int get(final int index) {
+-        Validate.inclusiveBetween(0L, this.size - 1, index);
+         int cellIndex = this.cellIndex(index);
+         long cellValue = this.data[cellIndex];
+         int bitIndex = (index - cellIndex * this.valuesPerLong) * this.bits;
+diff --git a/net/minecraft/util/SortedArraySet.java b/net/minecraft/util/SortedArraySet.java
+index c08c8388b6a81f861caf6716c0c999205e1ae487..bbe67f344e28c4d6bf31cd5036964dde8a4fdb9e 100644
+--- a/net/minecraft/util/SortedArraySet.java
++++ b/net/minecraft/util/SortedArraySet.java
+@@ -6,6 +6,7 @@ import java.util.Arrays;
+ import java.util.Comparator;
+ import java.util.Iterator;
+ import java.util.NoSuchElementException;
++import java.util.function.Predicate;
+ import org.jspecify.annotations.Nullable;
+ 
+ public class SortedArraySet<T> extends AbstractSet<T> {
+@@ -175,6 +176,33 @@ public class SortedArraySet<T> extends AbstractSet<T> {
+         this.size = 0;
+     }
+ 
++    @Override
++    // Fand: bulk removeIf implementation adapted from Lithium's chunk ticket collection optimization (CaffeineMC), GNU LGPLv3.
++    public boolean removeIf(final Predicate<? super T> filter) {
++        int originalSize = this.size;
++        int writeIndex = 0;
++
++        for (int readIndex = 0; readIndex < originalSize; readIndex++) {
++            T value = this.contents[readIndex];
++            if (filter.test(value)) {
++                continue;
++            }
++
++            if (writeIndex != readIndex) {
++                this.contents[writeIndex] = value;
++            }
++            writeIndex++;
++        }
++
++        if (writeIndex == originalSize) {
++            return false;
++        }
++
++        Arrays.fill(this.contents, writeIndex, originalSize, null);
++        this.size = writeIndex;
++        return true;
++    }
++
+     @Override
+     public boolean equals(final Object o) {
+         if (this == o) {
+diff --git a/net/minecraft/util/ThreadUnsafeRandom.java b/net/minecraft/util/ThreadUnsafeRandom.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..fc8962061b089b1671b6738b9d0541ffb4271735
+--- /dev/null
++++ b/net/minecraft/util/ThreadUnsafeRandom.java
+@@ -0,0 +1,95 @@
++package net.minecraft.util;
++
++import net.minecraft.world.level.levelgen.BitRandomSource;
++import net.minecraft.world.level.levelgen.MarsagliaPolarGaussian;
++import net.minecraft.world.level.levelgen.PositionalRandomFactory;
++import net.minecraft.world.level.levelgen.RandomSupport;
++
++/*
++ * Original optimization from Moonrise, Copyright (c) Tuinity/Moonrise contributors.
++ * Licensed under GNU GPLv3.
++ *
++ * Modifications made by FandMC on 2026-07-10.
++ * Based on ca.spottedleaf.moonrise.common.util.ThreadUnsafeRandom from Moonrise.
++ */
++public final class ThreadUnsafeRandom implements BitRandomSource {
++    private static final long MULTIPLIER = 25214903917L;
++    private static final long ADDEND = 11L;
++    private static final int BITS = 48;
++    private static final long MASK = (1L << BITS) - 1L;
++
++    private long value;
++    private final MarsagliaPolarGaussian gaussianSource = new MarsagliaPolarGaussian(this);
++
++    public static ThreadUnsafeRandom create() {
++        return new ThreadUnsafeRandom(RandomSupport.generateUniqueSeed());
++    }
++
++    public ThreadUnsafeRandom(final long seed) {
++        this.setSeed(seed);
++    }
++
++    @Override
++    public void setSeed(final long seed) {
++        this.value = (seed ^ MULTIPLIER) & MASK;
++        this.gaussianSource.reset();
++    }
++
++    private long advanceSeed() {
++        this.value = this.value * MULTIPLIER + ADDEND & MASK;
++        return this.value;
++    }
++
++    @Override
++    public int next(final int bits) {
++        return (int)(this.advanceSeed() >>> BITS - bits);
++    }
++
++    @Override
++    public int nextInt() {
++        return (int)(this.advanceSeed() >>> BITS - Integer.SIZE);
++    }
++
++    @Override
++    public double nextGaussian() {
++        return this.gaussianSource.nextGaussian();
++    }
++
++    @Override
++    public RandomSource fork() {
++        return new ThreadUnsafeRandom(this.nextLong());
++    }
++
++    @Override
++    public PositionalRandomFactory forkPositional() {
++        return new ThreadUnsafeRandomPositionalFactory(this.nextLong());
++    }
++
++    public static final class ThreadUnsafeRandomPositionalFactory implements PositionalRandomFactory {
++        private final long seed;
++
++        public ThreadUnsafeRandomPositionalFactory(final long seed) {
++            this.seed = seed;
++        }
++
++        @Override
++        public RandomSource fromHashOf(final String string) {
++            return new ThreadUnsafeRandom((long)string.hashCode() ^ this.seed);
++        }
++
++        @Override
++        public RandomSource fromSeed(final long seed) {
++            return new ThreadUnsafeRandom(seed);
++        }
++
++        @Override
++        public RandomSource at(final int x, final int y, final int z) {
++            return new ThreadUnsafeRandom(Mth.getSeed(x, y, z) ^ this.seed);
++        }
++
++        @Override
++        public void parityConfigString(final StringBuilder stringBuilder) {
++            stringBuilder.append("ThreadUnsafeRandomPositionalFactory{").append(this.seed).append('}');
++        }
++    }
++}
+diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
+index b302e21d919292f9574ce0c0c0a99259cb15cba0..5d03df80c8c9501c5ab311996af249423a565f5e 100644
+--- a/net/minecraft/world/entity/Entity.java
++++ b/net/minecraft/world/entity/Entity.java
+@@ -4,7 +4,6 @@ import com.google.common.collect.ImmutableList;
+ import com.google.common.collect.Iterables;
+ import com.google.common.collect.Lists;
+ import com.google.common.collect.Sets;
+-import com.google.common.collect.ImmutableList.Builder;
+ import com.mojang.logging.LogUtils;
+ import com.mojang.serialization.Codec;
+ import it.unimi.dsi.fastutil.floats.FloatArraySet;
+@@ -87,6 +86,7 @@ import net.minecraft.util.BlockUtil;
+ import net.minecraft.util.Mth;
+ import net.minecraft.util.ProblemReporter;
+ import net.minecraft.util.RandomSource;
++import net.minecraft.util.ThreadUnsafeRandom;
+ import net.minecraft.util.Util;
+ import net.minecraft.util.debug.DebugEntityBlockIntersection;
+ import net.minecraft.util.debug.DebugSubscriptions;
+@@ -248,7 +248,8 @@ public abstract class Entity
+     public double yOld;
+     public double zOld;
+     public boolean noPhysics;
+-    protected final RandomSource random = RandomSource.create();
++    // Fand: private entity random avoids CAS, adapted from Moonrise's random optimization (Tuinity), GNU GPLv3.
++    protected final RandomSource random = ThreadUnsafeRandom.create();
+     public int tickCount;
+     private int remainingFireTicks;
+     private final EntityFluidInteraction fluidInteraction = new EntityFluidInteraction(Set.of(FluidTags.WATER, FluidTags.LAVA));
+@@ -1170,7 +1171,10 @@ public abstract class Entity
+         }
+ 
+         AABB aabb = this.getBoundingBox();
+-        List<VoxelShape> entityColliders = this.level().getEntityCollisions(this, aabb.expandTowards(movement));
++        AABB movementArea = aabb.expandTowards(movement);
++        List<VoxelShape> entityColliders = io.fand.server.hooks.FandHooks.entityMovementLazyCollidersEnabled() && hasSingleAxisMovement(movement)
++            ? new LazyEntityCollisionList(this.level(), this, movementArea)
++            : this.level().getEntityCollisions(this, movementArea);
+         Vec3 movementStep = collideBoundingBox(this, movement, aabb, this.level(), entityColliders);
+         boolean xCollision = movement.x != movementStep.x;
+         boolean yCollision = movement.y != movementStep.y;
+@@ -1249,31 +1253,55 @@ public abstract class Entity
+     private static List<VoxelShape> collectCollidersIgnoringWorldBorder(
+         final @Nullable Entity source, final Level level, final List<VoxelShape> entityColliders, final AABB boundingBox
+     ) {
+-        Builder<VoxelShape> colliders = ImmutableList.builderWithExpectedSize(entityColliders.size() + 1);
+-        if (!entityColliders.isEmpty()) {
+-            colliders.addAll(entityColliders);
+-        }
++        List<VoxelShape> colliders = null;
+ 
+         WorldBorder worldBorder = level.getWorldBorder();
+         boolean isEntityInsideCloseToBorder = source != null && worldBorder.isInsideCloseToBorder(source, boundingBox);
++        if (!(entityColliders instanceof Entity.LazyEntityCollisionList) && !entityColliders.isEmpty()) {
++            colliders = new ArrayList<>(entityColliders.size() + 1);
++            colliders.addAll(entityColliders);
++        }
++
+         if (isEntityInsideCloseToBorder) {
++            if (colliders == null) {
++                colliders = new ArrayList<>(1);
++            }
+             colliders.add(worldBorder.getCollisionShape());
+         }
+ 
+-        colliders.addAll(level.getBlockCollisions(source, boundingBox));
+-        return colliders.build();
++        for (VoxelShape blockCollider : level.getBlockCollisions(source, boundingBox)) {
++            if (colliders == null) {
++                colliders = new ArrayList<>();
++            }
++            colliders.add(blockCollider);
++        }
++        if (entityColliders instanceof Entity.LazyEntityCollisionList) {
++            if (!entityColliders.isEmpty()) {
++                if (colliders == null) {
++                    colliders = new ArrayList<>(entityColliders.size());
++                }
++                colliders.addAll(entityColliders);
++            }
++        }
++        return colliders == null ? List.of() : colliders;
+     }
+ 
+     private static List<VoxelShape> collectCollidersIgnoringWorldBorder(
+         final CollisionContext source, final Level level, final List<VoxelShape> entityColliders, final AABB boundingBox
+     ) {
+-        Builder<VoxelShape> colliders = ImmutableList.builderWithExpectedSize(entityColliders.size() + 1);
++        List<VoxelShape> colliders = null;
+         if (!entityColliders.isEmpty()) {
++            colliders = new ArrayList<>(entityColliders.size());
+             colliders.addAll(entityColliders);
+         }
+ 
+-        colliders.addAll(level.getBlockCollisionsFromContext(source, boundingBox));
+-        return colliders.build();
++        for (VoxelShape blockCollider : level.getBlockCollisionsFromContext(source, boundingBox)) {
++            if (colliders == null) {
++                colliders = new ArrayList<>();
++            }
++            colliders.add(blockCollider);
++        }
++        return colliders == null ? List.of() : colliders;
+     }
+ 
+     private static Iterable<VoxelShape> collectCollidersIterable(
+@@ -1282,6 +1310,12 @@ public abstract class Entity
+         Iterable<VoxelShape> blockColliders = level.getBlockCollisions(source, boundingBox);
+         WorldBorder worldBorder = level.getWorldBorder();
+         boolean isEntityInsideCloseToBorder = source != null && worldBorder.isInsideCloseToBorder(source, boundingBox);
++        if (entityColliders instanceof Entity.LazyEntityCollisionList) {
++            if (isEntityInsideCloseToBorder) {
++                return Iterables.concat(blockColliders, List.of(worldBorder.getCollisionShape()), entityColliders);
++            }
++            return Iterables.concat(blockColliders, entityColliders);
++        }
+         if (isEntityInsideCloseToBorder) {
+             Iterable<VoxelShape> borderCollider = List.of(worldBorder.getCollisionShape());
+             return entityColliders.isEmpty()
+@@ -1305,6 +1339,44 @@ public abstract class Entity
+         return axes == 1;
+     }
+ 
++    // Fand: lazy entity collision collection adapted from Lithium's entity collision movement optimization (CaffeineMC), GNU LGPLv3.
++    private static final class LazyEntityCollisionList extends java.util.AbstractList<VoxelShape> {
++        private final Level level;
++        private final @Nullable Entity source;
++        private final AABB searchArea;
++        private @Nullable List<VoxelShape> collisions;
++
++        private LazyEntityCollisionList(final Level level, final @Nullable Entity source, final AABB searchArea) {
++            this.level = level;
++            this.source = source;
++            this.searchArea = searchArea;
++        }
++
++        private List<VoxelShape> collisions() {
++            List<VoxelShape> result = this.collisions;
++            if (result == null) {
++                result = this.level.getEntityCollisions(this.source, this.searchArea);
++                this.collisions = result;
++            }
++            return result;
++        }
++
++        @Override
++        public VoxelShape get(final int index) {
++            return this.collisions().get(index);
++        }
++
++        @Override
++        public int size() {
++            return this.collisions().size();
++        }
++
++        @Override
++        public boolean isEmpty() {
++            return this.collisions().isEmpty();
++        }
++    }
++
+     private static Vec3 collideWithShapes(final Vec3 movement, final AABB boundingBox, final List<VoxelShape> shapes) {
+         if (shapes.isEmpty()) {
+             return movement;
+diff --git a/net/minecraft/world/entity/EntityType.java b/net/minecraft/world/entity/EntityType.java
+index 7832afb384ae816ac9650b01bff54703f591a978..548b3ea09919f73fc8364c22fd3b7ab57f17a491 100644
+--- a/net/minecraft/world/entity/EntityType.java
++++ b/net/minecraft/world/entity/EntityType.java
+@@ -72,11 +72,21 @@ public class EntityType<T extends Entity> implements EntityTypeTest<Entity, T>,
+     private final float spawnDimensionsScale;
+     private final FeatureFlagSet requiredFeatures;
+     private final boolean allowedInPeaceful;
++    // Fand: set by MobSpawnSettings to skip biome lookups for types without spawn costs, adapted from Moonrise (Tuinity), GNU GPLv3.
++    private boolean fand$hasAnyBiomeCost;
+ 
+     public static Identifier getKey(final EntityType<?> type) {
+         return BuiltInRegistries.ENTITY_TYPE.getKey(type);
+     }
+ 
++    public boolean fand$hasAnyBiomeCost() {
++        return this.fand$hasAnyBiomeCost;
++    }
++
++    public void fand$setHasAnyBiomeCost() {
++        this.fand$hasAnyBiomeCost = true;
++    }
++
+     public EntityType(
+         final EntityType.EntityFactory<T> factory,
+         final MobCategory category,
+diff --git a/net/minecraft/world/entity/item/PrimedTnt.java b/net/minecraft/world/entity/item/PrimedTnt.java
+index a12a2501497f2cb4d33af02d536beec4b8bc3a0a..f8d41b4545ea4c93c2c07bc7867bc11d6f672386 100644
+--- a/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -52,6 +52,13 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+         ) {
+             return block.is(Blocks.NETHER_PORTAL) ? Optional.empty() : super.getBlockExplosionResistance(explosion, level, pos, block, fluid);
+         }
++
++        @Override
++        public float getBlockExplosionResistanceValue(
++            final Explosion explosion, final BlockGetter level, final BlockPos pos, final BlockState block, final FluidState fluid
++        ) {
++            return block.is(Blocks.NETHER_PORTAL) ? Float.NaN : super.getBlockExplosionResistanceValue(explosion, level, pos, block, fluid);
++        }
+     };
+     private @Nullable EntityReference<LivingEntity> owner;
+     private boolean usedPortal;
+diff --git a/net/minecraft/world/entity/monster/Shulker.java b/net/minecraft/world/entity/monster/Shulker.java
+index 9cee5aacb5fa397f57dea96f30aaa72a96d3957f..d8bc14409d290dde3411ce437476bb98ba679ce7 100644
+--- a/net/minecraft/world/entity/monster/Shulker.java
++++ b/net/minecraft/world/entity/monster/Shulker.java
+@@ -352,7 +352,7 @@ public class Shulker extends AbstractGolem implements Enemy {
+     }
+ 
+     protected @Nullable Direction findAttachableSurface(final BlockPos target) {
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             if (this.canStayAt(target, direction)) {
+                 return direction;
+             }
+diff --git a/net/minecraft/world/level/BlockCollisions.java b/net/minecraft/world/level/BlockCollisions.java
+index bb24e687e7c7629b1760610b789dc9168b4df45c..696e562e04772fe9d111e4d4fef8d38af0654c69 100644
+--- a/net/minecraft/world/level/BlockCollisions.java
++++ b/net/minecraft/world/level/BlockCollisions.java
+@@ -3,12 +3,14 @@ package net.minecraft.world.level;
+ import com.google.common.collect.AbstractIterator;
+ import java.util.function.BiFunction;
+ import net.minecraft.core.BlockPos;
+-import net.minecraft.core.Cursor3D;
+ import net.minecraft.core.SectionPos;
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.chunk.ChunkAccess;
++import net.minecraft.world.level.chunk.LevelChunk;
++import net.minecraft.world.level.chunk.LevelChunkSection;
+ import net.minecraft.world.phys.AABB;
+ import net.minecraft.world.phys.shapes.BooleanOp;
+ import net.minecraft.world.phys.shapes.CollisionContext;
+@@ -17,15 +19,28 @@ import net.minecraft.world.phys.shapes.VoxelShape;
+ import org.jspecify.annotations.Nullable;
+ 
+ public class BlockCollisions<T> extends AbstractIterator<T> {
++    // Fand: chunk-aware collision sweeping adapted from Lithium's entity collision optimizations (CaffeineMC), GNU LGPLv3.
+     private final AABB box;
+     private final CollisionContext context;
+-    private final Cursor3D cursor;
+     private final BlockPos.MutableBlockPos pos;
+     private final VoxelShape entityShape;
+     private final CollisionGetter collisionGetter;
+     private final boolean onlySuffocatingBlocks;
+     private @Nullable BlockGetter cachedBlockGetter;
++    private boolean cachedBlockGetterValid;
++    private @Nullable ChunkAccess cachedChunk;
++    private @Nullable LevelChunkSection cachedSection;
+     private long cachedBlockGetterPos;
++    private int cachedSectionIndex = Integer.MIN_VALUE;
++    private final int minX;
++    private final int minY;
++    private final int minZ;
++    private final int maxX;
++    private final int maxY;
++    private final int maxZ;
++    private int cursorX;
++    private int cursorY;
++    private int cursorZ;
+     private final BiFunction<BlockPos.MutableBlockPos, VoxelShape, T> resultProvider;
+ 
+     public BlockCollisions(
+@@ -52,57 +67,158 @@ public class BlockCollisions<T> extends AbstractIterator<T> {
+         this.box = box;
+         this.onlySuffocatingBlocks = onlySuffocatingBlocks;
+         this.resultProvider = resultProvider;
+-        int x0 = Mth.floor(box.minX - 1.0E-7) - 1;
+-        int x1 = Mth.floor(box.maxX + 1.0E-7) + 1;
+-        int y0 = Mth.floor(box.minY - 1.0E-7) - 1;
+-        int y1 = Mth.floor(box.maxY + 1.0E-7) + 1;
+-        int z0 = Mth.floor(box.minZ - 1.0E-7) - 1;
+-        int z1 = Mth.floor(box.maxZ + 1.0E-7) + 1;
+-        this.cursor = new Cursor3D(x0, y0, z0, x1, y1, z1);
++        this.minX = Mth.floor(box.minX - 1.0E-7) - 1;
++        this.maxX = Mth.floor(box.maxX + 1.0E-7) + 1;
++        this.minY = Mth.floor(box.minY - 1.0E-7) - 1;
++        this.maxY = Mth.floor(box.maxY + 1.0E-7) + 1;
++        this.minZ = Mth.floor(box.minZ - 1.0E-7) - 1;
++        this.maxZ = Mth.floor(box.maxZ + 1.0E-7) + 1;
++        this.cursorX = this.minX;
++        this.cursorY = this.minY;
++        this.cursorZ = this.minZ;
+     }
+ 
+     private @Nullable BlockGetter getChunk(final int x, final int z) {
+         int chunkX = SectionPos.blockToSectionCoord(x);
+         int chunkZ = SectionPos.blockToSectionCoord(z);
+         long chunkPos = ChunkPos.pack(chunkX, chunkZ);
+-        if (this.cachedBlockGetter != null && this.cachedBlockGetterPos == chunkPos) {
++        if (this.cachedBlockGetterValid && this.cachedBlockGetterPos == chunkPos) {
+             return this.cachedBlockGetter;
+         }
+ 
+         BlockGetter result = this.collisionGetter.getChunkForCollisions(chunkX, chunkZ);
++        this.cachedBlockGetterValid = true;
+         this.cachedBlockGetter = result;
++        this.cachedChunk = result instanceof ChunkAccess chunk && canUseSectionFastPath(chunk) ? chunk : null;
++        this.cachedSection = null;
++        this.cachedSectionIndex = Integer.MIN_VALUE;
+         this.cachedBlockGetterPos = chunkPos;
+         return result;
+     }
+ 
++    private static boolean canUseSectionFastPath(final ChunkAccess chunk) {
++        return !(chunk instanceof LevelChunk levelChunk) || !levelChunk.getLevel().isDebug();
++    }
++
++    private @Nullable BlockState getBlockState(final BlockGetter chunk, final int x, final int y, final int z) {
++        ChunkAccess chunkAccess = this.cachedChunk;
++        if (chunkAccess == null) {
++            return chunk.getBlockState(this.pos.set(x, y, z));
++        }
++
++        int sectionIndex = chunkAccess.getSectionIndex(y);
++        if (sectionIndex < 0 || sectionIndex >= chunkAccess.getSections().length) {
++            this.pos.set(x, y, z);
++            return Blocks.AIR.defaultBlockState();
++        }
++
++        LevelChunkSection section = this.cachedSection;
++        if (section == null || this.cachedSectionIndex != sectionIndex) {
++            section = chunkAccess.getSection(sectionIndex);
++            this.cachedSection = section;
++            this.cachedSectionIndex = sectionIndex;
++        }
++        if (!this.sectionMayHaveCollision(section)) {
++            return null;
++        }
++
++        this.pos.set(x, y, z);
++        return section.getBlockState(x & 15, y & 15, z & 15);
++    }
++
++    private boolean sectionMayHaveCollision(final LevelChunkSection section) {
++        return section.mayHaveEntityCollision() || section.hasFluid();
++    }
++
++    private int getCursorFaceType(final int x, final int y, final int z) {
++        int type = 0;
++        if (x == this.minX || x == this.maxX) {
++            type++;
++        }
++
++        if (y == this.minY || y == this.maxY) {
++            type++;
++        }
++
++        if (z == this.minZ || z == this.maxZ) {
++            type++;
++        }
++
++        return type;
++    }
++
++    private void advanceCursor() {
++        if (this.cursorX < this.maxX) {
++            this.cursorX++;
++            return;
++        }
++
++        this.cursorX = this.minX;
++        if (this.cursorY < this.maxY) {
++            this.cursorY++;
++            return;
++        }
++
++        this.cursorY = this.minY;
++        this.cursorZ++;
++    }
++
++    private void skipCurrentChunkXRange(final int x) {
++        int chunkEndX = SectionPos.sectionToBlockCoord(SectionPos.blockToSectionCoord(x)) + 15;
++        int skipThroughX = Math.min(this.maxX, chunkEndX);
++        if (skipThroughX < this.maxX) {
++            this.cursorX = skipThroughX + 1;
++            return;
++        }
++
++        this.cursorX = this.minX;
++        if (this.cursorY < this.maxY) {
++            this.cursorY++;
++            return;
++        }
++
++        this.cursorY = this.minY;
++        this.cursorZ++;
++    }
++
+     @Override
+     protected T computeNext() {
+-        while (this.cursor.advance()) {
+-            int x = this.cursor.nextX();
+-            int y = this.cursor.nextY();
+-            int z = this.cursor.nextZ();
+-            int cursorFaceType = this.cursor.getNextType();
+-            if (cursorFaceType != Cursor3D.TYPE_CORNER) {
++        while (this.cursorZ <= this.maxZ) {
++            int x = this.cursorX;
++            int y = this.cursorY;
++            int z = this.cursorZ;
++            int cursorFaceType = this.getCursorFaceType(x, y, z);
++            if (cursorFaceType != 3) {
+                 BlockGetter chunk = this.getChunk(x, z);
+-                if (chunk != null) {
+-                    this.pos.set(x, y, z);
+-                    BlockState blockState = chunk.getBlockState(this.pos);
+-                    if ((!this.onlySuffocatingBlocks || blockState.isSuffocating(chunk, this.pos))
+-                        && (cursorFaceType != Cursor3D.TYPE_FACE || blockState.hasLargeCollisionShape())
+-                        && (cursorFaceType != Cursor3D.TYPE_EDGE || blockState.is(Blocks.MOVING_PISTON))) {
+-                        VoxelShape blockShape = this.context.getCollisionShape(blockState, this.collisionGetter, this.pos);
+-                        if (blockShape == Shapes.block()) {
+-                            if (this.box.intersects(x, y, z, x + 1.0, y + 1.0, z + 1.0)) {
+-                                return this.resultProvider.apply(this.pos, blockShape.move(this.pos));
+-                            }
+-                        } else {
+-                            VoxelShape shape = blockShape.move(this.pos);
+-                            if (!shape.isEmpty() && Shapes.joinIsNotEmpty(shape, this.entityShape, BooleanOp.AND)) {
+-                                return this.resultProvider.apply(this.pos, shape);
+-                            }
++                if (chunk == null) {
++                    this.skipCurrentChunkXRange(x);
++                    continue;
++                }
++
++                BlockState blockState = this.getBlockState(chunk, x, y, z);
++                if (blockState == null) {
++                    this.skipCurrentChunkXRange(x);
++                    continue;
++                }
++
++                this.advanceCursor();
++                if ((!this.onlySuffocatingBlocks || blockState.isSuffocating(chunk, this.pos))
++                    && (cursorFaceType != 1 || blockState.hasLargeCollisionShape())
++                    && (cursorFaceType != 2 || blockState.is(Blocks.MOVING_PISTON))) {
++                    VoxelShape blockShape = this.context.getCollisionShape(blockState, this.collisionGetter, this.pos);
++                    if (blockShape == Shapes.block()) {
++                        if (this.box.intersects(x, y, z, x + 1.0, y + 1.0, z + 1.0)) {
++                            return this.resultProvider.apply(this.pos, blockShape.move(this.pos));
++                        }
++                    } else {
++                        VoxelShape shape = blockShape.move(this.pos);
++                        if (!shape.isEmpty() && Shapes.joinIsNotEmpty(shape, this.entityShape, BooleanOp.AND)) {
++                            return this.resultProvider.apply(this.pos, shape);
+                         }
+                     }
+                 }
++            } else {
++                this.advanceCursor();
+             }
+         }
+ 
+diff --git a/net/minecraft/world/level/CollisionGetter.java b/net/minecraft/world/level/CollisionGetter.java
+index b42f2a64be50b38e29ed7286ffa3984c800262e7..2f2c1e29994349e76897490df59a987b47b57d3f 100644
+--- a/net/minecraft/world/level/CollisionGetter.java
++++ b/net/minecraft/world/level/CollisionGetter.java
+@@ -6,8 +6,13 @@ import java.util.Optional;
+ import java.util.stream.StreamSupport;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
++import net.minecraft.core.SectionPos;
++import net.minecraft.util.Mth;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.chunk.ChunkAccess;
++import net.minecraft.world.level.chunk.LevelChunk;
++import net.minecraft.world.level.chunk.LevelChunkSection;
+ import net.minecraft.world.level.border.WorldBorder;
+ import net.minecraft.world.phys.AABB;
+ import net.minecraft.world.phys.BlockHitResult;
+@@ -57,6 +62,10 @@ public interface CollisionGetter extends BlockGetter {
+     }
+ 
+     default boolean noBlockCollision(final @Nullable Entity entity, final AABB aabb, final boolean alwaysCollideWithFluids) {
++        if (this.hasOnlyEmptyCollisionSections(aabb)) {
++            return true;
++        }
++
+         for (VoxelShape blockCollision : alwaysCollideWithFluids ? this.getBlockAndLiquidCollisions(entity, aabb) : this.getBlockCollisions(entity, aabb)) {
+             if (!blockCollision.isEmpty()) {
+                 return false;
+@@ -66,6 +75,45 @@ public interface CollisionGetter extends BlockGetter {
+         return true;
+     }
+ 
++    // Fand: empty collision-section fast path adapted from Lithium's entity collision optimizations (CaffeineMC), GNU LGPLv3.
++    private boolean hasOnlyEmptyCollisionSections(final AABB box) {
++        int minX = Mth.floor(box.minX - 1.0E-7) - 1;
++        int maxX = Mth.floor(box.maxX + 1.0E-7) + 1;
++        int minY = Mth.floor(box.minY - 1.0E-7) - 1;
++        int maxY = Mth.floor(box.maxY + 1.0E-7) + 1;
++        int minZ = Mth.floor(box.minZ - 1.0E-7) - 1;
++        int maxZ = Mth.floor(box.maxZ + 1.0E-7) + 1;
++        int minChunkX = SectionPos.blockToSectionCoord(minX);
++        int maxChunkX = SectionPos.blockToSectionCoord(maxX);
++        int minChunkZ = SectionPos.blockToSectionCoord(minZ);
++        int maxChunkZ = SectionPos.blockToSectionCoord(maxZ);
++
++        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
++            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
++                BlockGetter blockGetter = this.getChunkForCollisions(chunkX, chunkZ);
++                if (!(blockGetter instanceof ChunkAccess chunk) || chunk instanceof LevelChunk levelChunk && levelChunk.getLevel().isDebug()) {
++                    return false;
++                }
++
++                LevelChunkSection[] sections = chunk.getSections();
++                int minSection = Math.max(0, chunk.getSectionIndex(minY));
++                int maxSection = Math.min(sections.length - 1, chunk.getSectionIndex(maxY));
++                if (minSection > maxSection) {
++                    continue;
++                }
++
++                for (int sectionIndex = minSection; sectionIndex <= maxSection; sectionIndex++) {
++                    LevelChunkSection section = sections[sectionIndex];
++                    if (section.mayHaveEntityCollision() || section.hasFluid()) {
++                        return false;
++                    }
++                }
++            }
++        }
++
++        return true;
++    }
++
+     default boolean noEntityCollision(final @Nullable Entity entity, final AABB aabb) {
+         return this.getEntityCollisions(entity, aabb).isEmpty();
+     }
+diff --git a/net/minecraft/world/level/EntityBasedExplosionDamageCalculator.java b/net/minecraft/world/level/EntityBasedExplosionDamageCalculator.java
+index 356a3a0dda09af007c3fbddfe360b38f4d7204ce..ec15bf92ac1d8a59107d1dfdbd0e8c6294927eff 100644
+--- a/net/minecraft/world/level/EntityBasedExplosionDamageCalculator.java
++++ b/net/minecraft/world/level/EntityBasedExplosionDamageCalculator.java
+@@ -17,8 +17,18 @@ public class EntityBasedExplosionDamageCalculator extends ExplosionDamageCalcula
+     public Optional<Float> getBlockExplosionResistance(
+         final Explosion explosion, final BlockGetter level, final BlockPos pos, final BlockState block, final FluidState fluid
+     ) {
+-        return super.getBlockExplosionResistance(explosion, level, pos, block, fluid)
+-            .map(resistance -> this.source.getBlockExplosionResistance(explosion, level, pos, block, fluid, resistance));
++        float resistance = this.getBlockExplosionResistanceValue(explosion, level, pos, block, fluid);
++        return Float.isNaN(resistance) ? Optional.empty() : Optional.of(resistance);
++    }
++
++    @Override
++    public float getBlockExplosionResistanceValue(
++        final Explosion explosion, final BlockGetter level, final BlockPos pos, final BlockState block, final FluidState fluid
++    ) {
++        float blockResistance = super.getBlockExplosionResistanceValue(explosion, level, pos, block, fluid);
++        return Float.isNaN(blockResistance)
++            ? Float.NaN
++            : this.source.getBlockExplosionResistance(explosion, level, pos, block, fluid, blockResistance);
+     }
+ 
+     @Override
+diff --git a/net/minecraft/world/level/ExplosionDamageCalculator.java b/net/minecraft/world/level/ExplosionDamageCalculator.java
+index fc9f57a850923ce9d0f0dbd1f7e5ad376a89bfca..1e32751062101f1ecb2f5da1095682f477ba5033 100644
+--- a/net/minecraft/world/level/ExplosionDamageCalculator.java
++++ b/net/minecraft/world/level/ExplosionDamageCalculator.java
+@@ -10,10 +10,18 @@ import net.minecraft.world.phys.Vec3;
+ public class ExplosionDamageCalculator {
+     public Optional<Float> getBlockExplosionResistance(
+         final Explosion explosion, final BlockGetter level, final BlockPos pos, final BlockState block, final FluidState fluid
++    ) {
++        float resistance = this.getBlockExplosionResistanceValue(explosion, level, pos, block, fluid);
++        return Float.isNaN(resistance) ? Optional.empty() : Optional.of(resistance);
++    }
++
++    // Fand: primitive explosion resistance path adapted from Lithium's alloc/explosion_behavior optimization (CaffeineMC), GNU LGPLv3.
++    public float getBlockExplosionResistanceValue(
++        final Explosion explosion, final BlockGetter level, final BlockPos pos, final BlockState block, final FluidState fluid
+     ) {
+         return block.isAir() && fluid.isEmpty()
+-            ? Optional.empty()
+-            : Optional.of(Math.max(block.getBlock().getExplosionResistance(), fluid.getExplosionResistance()));
++            ? Float.NaN
++            : Math.max(block.getBlock().getExplosionResistance(), fluid.getExplosionResistance());
+     }
+ 
+     public boolean shouldBlockExplode(final Explosion explosion, final BlockGetter level, final BlockPos pos, final BlockState state, final float power) {
+diff --git a/net/minecraft/world/level/Level.java b/net/minecraft/world/level/Level.java
+index 1cb733fc86cb1b5dbe2f58eaa3fa1a5d08dc8b4a..809a923652657cf70f475a74b03420c8891554b8 100644
+--- a/net/minecraft/world/level/Level.java
++++ b/net/minecraft/world/level/Level.java
+@@ -1,10 +1,9 @@
+ package net.minecraft.world.level;
+ 
+-import com.google.common.collect.ImmutableList;
+-import com.google.common.collect.ImmutableList.Builder;
+ import com.google.common.collect.Lists;
+ import com.mojang.serialization.Codec;
+ import java.io.IOException;
++import java.util.ArrayList;
+ import java.util.Collection;
+ import java.util.Iterator;
+ import java.util.List;
+@@ -39,6 +38,7 @@ import net.minecraft.util.AbortableIterationConsumer;
+ import net.minecraft.util.Mth;
+ import net.minecraft.util.RandomSource;
+ import net.minecraft.util.StringRepresentable;
++import net.minecraft.util.ThreadUnsafeRandom;
+ import net.minecraft.util.profiling.Profiler;
+ import net.minecraft.util.random.WeightedList;
+ import net.minecraft.world.TickRateManager;
+@@ -137,7 +137,8 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+     protected float rainLevel;
+     protected float oThunderLevel;
+     protected float thunderLevel;
+-    protected final RandomSource random = RandomSource.create();
++    // Fand: private level random avoids CAS, adapted from Moonrise's random optimization (Tuinity), GNU GPLv3.
++    protected final RandomSource random = ThreadUnsafeRandom.create();
+     @Deprecated
+     private final RandomSource soundSeedGenerator = RandomSource.createThreadSafe();
+     private final Holder<DimensionType> dimensionTypeRegistration;
+@@ -1075,28 +1076,30 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+ 
+         Profiler.get().incrementCounter("getEntities");
+         Predicate<Entity> canCollide = source == null ? EntitySelector.CAN_BE_COLLIDED_WITH : EntitySelector.NO_SPECTATORS.and(source::canCollideWith);
+-        MutableObject<Builder<VoxelShape>> shapes = new MutableObject<>();
++        MutableObject<List<VoxelShape>> shapes = new MutableObject<>();
+         AABB searchArea = testArea.inflate(1.0E-7);
+         this.getEntityCollisionCandidates(source, searchArea, entity -> {
+             if (entity != source && canCollide.test(entity)) {
+-                if (shapes.getValue() == null) {
+-                    shapes.setValue(ImmutableList.builder());
+-                }
+-                shapes.getValue().add(Shapes.create(entity.getBoundingBox()));
++                addEntityCollisionShape(shapes, Shapes.create(entity.getBoundingBox()));
+             }
+             return AbortableIterationConsumer.Continuation.CONTINUE;
+         });
+ 
+         for (EnderDragonPart dragonPart : this.dragonParts()) {
+             if (dragonPart != source && dragonPart.parentMob != source && canCollide.test(dragonPart) && searchArea.intersects(dragonPart.getBoundingBox())) {
+-                if (shapes.getValue() == null) {
+-                    shapes.setValue(ImmutableList.builder());
+-                }
+-                shapes.getValue().add(Shapes.create(dragonPart.getBoundingBox()));
++                addEntityCollisionShape(shapes, Shapes.create(dragonPart.getBoundingBox()));
+             }
+         }
+ 
+-        return shapes.getValue() == null ? List.of() : shapes.getValue().build();
++        return shapes.getValue() == null ? List.of() : shapes.getValue();
++    }
++
++    // Fand: lazy collision-list allocation adapted from Lithium's entity collision optimizations (CaffeineMC), GNU LGPLv3.
++    private static void addEntityCollisionShape(final MutableObject<List<VoxelShape>> shapes, final VoxelShape shape) {
++        if (shapes.getValue() == null) {
++            shapes.setValue(new ArrayList<>());
++        }
++        shapes.getValue().add(shape);
+     }
+ 
+     public List<Entity> getPushableEntities(final Entity pusher, final AABB boundingBox) {
+@@ -1413,11 +1416,20 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+     public abstract RecipeAccess recipeAccess();
+ 
+     public BlockPos getBlockRandomPos(final int xo, final int yo, final int zo, final int yMask) {
+-        this.randValue = this.randValue * 3 + 1013904223;
+-        int val = this.randValue >> 2;
++        int val = this.nextBlockRandomValue();
+         return new BlockPos(xo + (val & 15), yo + (val >> 16 & yMask), zo + (val >> 8 & 15));
+     }
+ 
++    protected void getBlockRandomPos(final int xo, final int yo, final int zo, final int yMask, final BlockPos.MutableBlockPos pos) {
++        int val = this.nextBlockRandomValue();
++        pos.set(xo + (val & 15), yo + (val >> 16 & yMask), zo + (val >> 8 & 15));
++    }
++
++    private int nextBlockRandomValue() {
++        this.randValue = this.randValue * 3 + 1013904223;
++        return this.randValue >> 2;
++    }
++
+     public boolean noSave() {
+         return false;
+     }
+diff --git a/net/minecraft/world/level/NaturalSpawner.java b/net/minecraft/world/level/NaturalSpawner.java
+index 184af997dfd69ab26499a45159e18867757512ee..a5db80fd98f6f8b82cd567ba0be431f25acbe6e0 100644
+--- a/net/minecraft/world/level/NaturalSpawner.java
++++ b/net/minecraft/world/level/NaturalSpawner.java
+@@ -78,8 +78,13 @@ public final class NaturalSpawner {
+                 MobCategory category = entity.getType().getCategory();
+                 if (category != MobCategory.MISC) {
+                     BlockPos pos = entity.blockPosition();
++                    EntityType<?> type = entity.getType();
+                     chunkGetter.query(ChunkPos.pack(pos), chunk -> {
+-                        MobSpawnSettings.MobSpawnCost mobSpawnCost = getRoughBiome(pos, chunk).getMobSettings().getMobSpawnCost(entity.getType());
++                        // Fand: avoid biome lookup for the common case where the entity type has no spawn cost.
++                        // Adapted from Moonrise mob spawning optimization (Tuinity), GNU GPLv3.
++                        MobSpawnSettings.MobSpawnCost mobSpawnCost = type.fand$hasAnyBiomeCost()
++                            ? getRoughBiome(pos, chunk).getMobSettings().getMobSpawnCost(type)
++                            : null;
+                         if (mobSpawnCost != null) {
+                             spawnPotential.addCharge(entity.blockPosition(), mobSpawnCost.charge());
+                         }
+@@ -490,7 +495,9 @@ public final class NaturalSpawner {
+         private boolean canSpawn(final EntityType<?> type, final BlockPos testPos, final ChunkAccess chunk) {
+             this.lastCheckedPos = testPos;
+             this.lastCheckedType = type;
+-            MobSpawnSettings.MobSpawnCost mobSpawnCost = NaturalSpawner.getRoughBiome(testPos, chunk).getMobSettings().getMobSpawnCost(type);
++            MobSpawnSettings.MobSpawnCost mobSpawnCost = type.fand$hasAnyBiomeCost()
++                ? NaturalSpawner.getRoughBiome(testPos, chunk).getMobSettings().getMobSpawnCost(type)
++                : null;
+             if (mobSpawnCost == null) {
+                 this.lastCharge = 0.0;
+                 return true;
+@@ -509,7 +516,9 @@ public final class NaturalSpawner {
+             if (pos.equals(this.lastCheckedPos) && type == this.lastCheckedType) {
+                 charge = this.lastCharge;
+             } else {
+-                MobSpawnSettings.MobSpawnCost mobSpawnCost = NaturalSpawner.getRoughBiome(pos, chunk).getMobSettings().getMobSpawnCost(type);
++                MobSpawnSettings.MobSpawnCost mobSpawnCost = type.fand$hasAnyBiomeCost()
++                    ? NaturalSpawner.getRoughBiome(pos, chunk).getMobSettings().getMobSpawnCost(type)
++                    : null;
+                 if (mobSpawnCost != null) {
+                     charge = mobSpawnCost.charge();
+                 } else {
+diff --git a/net/minecraft/world/level/ServerExplosion.java b/net/minecraft/world/level/ServerExplosion.java
+index d15be9689e6f116c67956cc0ce0ce151bc6a98b9..76a33be9a713971c61a6dce522014502d27aebd2 100644
+--- a/net/minecraft/world/level/ServerExplosion.java
++++ b/net/minecraft/world/level/ServerExplosion.java
+@@ -1,14 +1,15 @@
+ package net.minecraft.world.level;
+ 
+ import it.unimi.dsi.fastutil.objects.ObjectArrayList;
++import it.unimi.dsi.fastutil.longs.LongIterator;
++import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
++import it.unimi.dsi.fastutil.longs.LongSet;
+ import java.util.ArrayList;
+ import java.util.HashMap;
+-import java.util.HashSet;
+ import java.util.List;
+ import java.util.Map;
+-import java.util.Optional;
+-import java.util.Set;
+ import net.minecraft.core.BlockPos;
++import net.minecraft.core.SectionPos;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.tags.EntityTypeTags;
+ import net.minecraft.util.Mth;
+@@ -29,6 +30,8 @@ import net.minecraft.world.level.block.BaseFireBlock;
+ import net.minecraft.world.level.block.Block;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.chunk.ChunkAccess;
++import net.minecraft.world.level.chunk.LevelChunkSection;
+ import net.minecraft.world.level.gameevent.GameEvent;
+ import net.minecraft.world.level.gamerules.GameRules;
+ import net.minecraft.world.level.material.FluidState;
+@@ -204,62 +207,87 @@ public class ServerExplosion implements Explosion {
+         return this.center;
+     }
+ 
++    // Fand: explosion ray/block cache and air-skip optimizations adapted from Lithium (CaffeineMC), GNU LGPLv3.
+     private List<BlockPos> calculateExplodedPositions() {
+-        Set<BlockPos> toBlowSet = new HashSet<>();
++        LongSet toBlowSet = new LongOpenHashSet();
+         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+         io.fand.server.world.ExplosionBlockCache fandBlockCache =
+             io.fand.server.hooks.FandHooks.explosionBlockCacheEnabled() ? this.level.fand$explosionBlockCache() : null;
++        ExplosionChunkCursor chunkCursor = this.radius <= MAX_SYNC_CHUNK_LOADING_RADIUS ? null : new ExplosionChunkCursor();
+ 
+         for (RayDirection ray : RAYS) {
+             float remainingPower = this.radius * (0.7F + this.level.random.nextFloat() * 0.6F);
+             double xp = this.center.x;
+             double yp = this.center.y;
+             double zp = this.center.z;
++            int previousX = Integer.MIN_VALUE;
++            int previousY = Integer.MIN_VALUE;
++            int previousZ = Integer.MIN_VALUE;
++            float previousResistance = 0.0F;
+ 
+             for (float stepSize = 0.3F; remainingPower > 0.0F; remainingPower -= 0.22500001F) {
+-                pos.set(xp, yp, zp);
+-                BlockState block;
+-                boolean inWorldBounds;
+-                boolean canExplodeBlock = true;
++                int blockX = Mth.floor(xp);
++                int blockY = Mth.floor(yp);
++                int blockZ = Mth.floor(zp);
+                 float fandResistance;
+-                io.fand.server.world.ExplosionBlockCache.Entry fandCached =
+-                    fandBlockCache == null ? null : fandBlockCache.get(pos.asLong());
+-                if (fandCached != null) {
+-                    block = fandCached.state();
+-                    inWorldBounds = fandCached.inWorldBounds();
+-                    fandResistance = fandCached.resistance();
+-                    canExplodeBlock = this.radius <= MAX_SYNC_CHUNK_LOADING_RADIUS || !block.isAir() || !Float.isNaN(fandResistance);
+-                } else {
+-                    inWorldBounds = this.level.isInWorldBounds(pos);
+-                    BlockState loadedBlock = this.fandGetLoadedExplosionBlockState(pos);
+-                    if (loadedBlock == null) {
+-                        block = Blocks.AIR.defaultBlockState();
+-                        fandResistance = Float.NaN;
+-                        canExplodeBlock = false;
++                if (blockX != previousX || blockY != previousY || blockZ != previousZ) {
++                    pos.set(blockX, blockY, blockZ);
++                    BlockState block;
++                    boolean inWorldBounds;
++                    boolean canExplodeBlock = true;
++                    io.fand.server.world.ExplosionBlockCache.Entry fandCached =
++                        fandBlockCache == null ? null : fandBlockCache.get(pos.asLong());
++                    if (fandCached != null) {
++                        block = fandCached.state();
++                        inWorldBounds = fandCached.inWorldBounds();
++                        fandResistance = fandCached.resistance();
++                        canExplodeBlock = this.radius <= MAX_SYNC_CHUNK_LOADING_RADIUS || !block.isAir() || !Float.isNaN(fandResistance);
+                     } else {
+-                        block = loadedBlock;
+-                        FluidState fluid = this.fandGetExplosionFluidState(pos);
+-                        Optional<Float> resistance = inWorldBounds
+-                            ? this.damageCalculator.getBlockExplosionResistance(this, this.level, pos, block, fluid)
+-                            : Optional.empty();
+-                        fandResistance = resistance.orElse(Float.NaN);
++                        inWorldBounds = this.fandIsInWorldBounds(blockX, blockY, blockZ);
++                        BlockState loadedBlock = this.radius <= MAX_SYNC_CHUNK_LOADING_RADIUS
++                            ? this.level.getBlockState(pos)
++                            : this.fandGetLoadedExplosionBlockState(blockX, blockY, blockZ, chunkCursor);
++                        if (loadedBlock == null) {
++                            block = air();
++                            fandResistance = Float.NaN;
++                            canExplodeBlock = false;
++                        } else {
++                            block = loadedBlock;
++                            FluidState fluid = this.radius <= MAX_SYNC_CHUNK_LOADING_RADIUS
++                                ? this.level.getFluidState(pos)
++                                : this.fandGetExplosionFluidState(block);
++                            fandResistance = inWorldBounds
++                                ? this.damageCalculator.getBlockExplosionResistanceValue(this, this.level, pos, block, fluid)
++                                : Float.NaN;
++                        }
++                        if (fandBlockCache != null) {
++                            fandBlockCache.put(pos.asLong(), block, fandResistance, inWorldBounds);
++                        }
+                     }
+-                    if (fandBlockCache != null) {
+-                        fandBlockCache.put(pos.asLong(), block, fandResistance, inWorldBounds);
++                    if (!inWorldBounds) {
++                        break;
+                     }
+-                }
+-                if (!inWorldBounds) {
+-                    break;
+-                }
+ 
+-                if (!Float.isNaN(fandResistance)) {
+-                    remainingPower -= (fandResistance + 0.3F) * 0.3F;
+-                }
++                    if (!Float.isNaN(fandResistance)) {
++                        remainingPower -= (fandResistance + 0.3F) * 0.3F;
++                    }
+ 
+-                if (canExplodeBlock
+-                    && remainingPower > 0.0F
+-                    && this.damageCalculator.shouldBlockExplode(this, this.level, pos, block, remainingPower)) {
+-                    toBlowSet.add(pos.immutable());
++                    if (canExplodeBlock
++                        && remainingPower > 0.0F
++                        && (this.fire || !block.isAir())
++                        && this.damageCalculator.shouldBlockExplode(this, this.level, pos, block, remainingPower)) {
++                        toBlowSet.add(pos.asLong());
++                    }
++
++                    previousX = blockX;
++                    previousY = blockY;
++                    previousZ = blockZ;
++                    previousResistance = fandResistance;
++                } else {
++                    fandResistance = previousResistance;
++                    if (!Float.isNaN(fandResistance)) {
++                        remainingPower -= (fandResistance + 0.3F) * 0.3F;
++                    }
+                 }
+ 
+                 xp += ray.x * 0.3F;
+@@ -268,7 +296,12 @@ public class ServerExplosion implements Explosion {
+             }
+         }
+ 
+-        return new ObjectArrayList<>(toBlowSet);
++        ObjectArrayList<BlockPos> toBlow = new ObjectArrayList<>(toBlowSet.size());
++        LongIterator iterator = toBlowSet.iterator();
++        while (iterator.hasNext()) {
++            toBlow.add(BlockPos.of(iterator.nextLong()));
++        }
++        return toBlow;
+     }
+ 
+     private BlockState fandGetExplosionBlockState(final BlockPos pos) {
+@@ -277,7 +310,7 @@ public class ServerExplosion implements Explosion {
+         }
+ 
+         BlockState state = this.level.getBlockStateIfLoaded(pos);
+-        return state == null ? Blocks.AIR.defaultBlockState() : state;
++        return state == null ? air() : state;
+     }
+ 
+     private FluidState fandGetExplosionFluidState(final BlockPos pos) {
+@@ -286,7 +319,7 @@ public class ServerExplosion implements Explosion {
+         }
+ 
+         FluidState fluid = this.level.getFluidIfLoaded(pos);
+-        return fluid == null ? Fluids.EMPTY.defaultFluidState() : fluid;
++        return fluid == null ? emptyFluid() : fluid;
+     }
+ 
+     private @Nullable BlockState fandGetLoadedExplosionBlockState(final BlockPos pos) {
+@@ -297,6 +330,45 @@ public class ServerExplosion implements Explosion {
+         return this.level.getBlockStateIfLoaded(pos);
+     }
+ 
++    private @Nullable BlockState fandGetLoadedExplosionBlockState(
++        final int x, final int y, final int z, final ExplosionChunkCursor chunkCursor
++    ) {
++        if (!this.fandIsInValidBounds(x, y, z)) {
++            return voidAir();
++        }
++
++        int chunkX = SectionPos.blockToSectionCoord(x);
++        int chunkZ = SectionPos.blockToSectionCoord(z);
++        ChunkAccess chunk = chunkCursor.getChunk(this.level, chunkX, chunkZ);
++        if (chunk == null) {
++            return null;
++        }
++
++        int sectionIndex = chunk.getSectionIndex(y);
++        LevelChunkSection[] sections = chunk.getSections();
++        if (sectionIndex < 0 || sectionIndex >= sections.length) {
++            return air();
++        }
++
++        LevelChunkSection section = chunkCursor.getSection(chunk, sectionIndex);
++        return section.hasOnlyAir() ? air() : section.getBlockState(x & 15, y & 15, z & 15);
++    }
++
++    private FluidState fandGetExplosionFluidState(final BlockState block) {
++        return block.isAir() ? emptyFluid() : block.getFluidState();
++    }
++
++    private boolean fandIsInWorldBounds(final int x, final int y, final int z) {
++        return y >= this.level.getMinY() && y <= this.level.getMaxY()
++            && x >= -Level.MAX_LEVEL_SIZE && z >= -Level.MAX_LEVEL_SIZE
++            && x < Level.MAX_LEVEL_SIZE && z < Level.MAX_LEVEL_SIZE;
++    }
++
++    private boolean fandIsInValidBounds(final int x, final int y, final int z) {
++        return y >= this.level.getMinY() && y <= this.level.getMaxY()
++            && ChunkPos.isValid(SectionPos.blockToSectionCoord(x), SectionPos.blockToSectionCoord(z));
++    }
++
+     private static RayDirection[] createRays() {
+         List<RayDirection> rays = new ArrayList<>(1352);
+         for (int xx = 0; xx < 16; xx++) {
+@@ -315,6 +387,18 @@ public class ServerExplosion implements Explosion {
+         return rays.toArray(RayDirection[]::new);
+     }
+ 
++    private static BlockState air() {
++        return Blocks.AIR.defaultBlockState();
++    }
++
++    private static BlockState voidAir() {
++        return Blocks.VOID_AIR.defaultBlockState();
++    }
++
++    private static FluidState emptyFluid() {
++        return Fluids.EMPTY.defaultFluidState();
++    }
++
+     private void hurtEntities() {
+         if (!(this.radius < 1.0E-5F)) {
+             float doubleRadius = this.radius * 2.0F;
+@@ -476,6 +560,37 @@ public class ServerExplosion implements Explosion {
+     private record RayDirection(double x, double y, double z) {
+     }
+ 
++    private static final class ExplosionChunkCursor {
++        private int chunkX = Integer.MIN_VALUE;
++        private int chunkZ = Integer.MIN_VALUE;
++        private boolean chunkValid;
++        private @Nullable ChunkAccess chunk;
++        private int sectionIndex = Integer.MIN_VALUE;
++        private @Nullable LevelChunkSection section;
++
++        private @Nullable ChunkAccess getChunk(final ServerLevel level, final int chunkX, final int chunkZ) {
++            if (!this.chunkValid || this.chunkX != chunkX || this.chunkZ != chunkZ) {
++                this.chunk = level.getChunkIfLoadedImmediately(chunkX, chunkZ);
++                this.chunkX = chunkX;
++                this.chunkZ = chunkZ;
++                this.chunkValid = true;
++                this.sectionIndex = Integer.MIN_VALUE;
++                this.section = null;
++            }
++            return this.chunk;
++        }
++
++        private LevelChunkSection getSection(final ChunkAccess chunk, final int sectionIndex) {
++            LevelChunkSection cached = this.section;
++            if (cached == null || this.sectionIndex != sectionIndex) {
++                cached = chunk.getSection(sectionIndex);
++                this.section = cached;
++                this.sectionIndex = sectionIndex;
++            }
++            return cached;
++        }
++    }
++
+     @Override
+     public ServerLevel level() {
+         return this.level;
+diff --git a/net/minecraft/world/level/SimpleExplosionDamageCalculator.java b/net/minecraft/world/level/SimpleExplosionDamageCalculator.java
+index dcc517cf7bbf93c90dec5e00d32795558add383f..fb5ede3c2138cb8b5e1f78f77d82b5489a512687 100644
+--- a/net/minecraft/world/level/SimpleExplosionDamageCalculator.java
++++ b/net/minecraft/world/level/SimpleExplosionDamageCalculator.java
+@@ -27,11 +27,19 @@ public class SimpleExplosionDamageCalculator extends ExplosionDamageCalculator {
+     @Override
+     public Optional<Float> getBlockExplosionResistance(
+         final Explosion explosion, final BlockGetter level, final BlockPos pos, final BlockState block, final FluidState fluid
++    ) {
++        float resistance = this.getBlockExplosionResistanceValue(explosion, level, pos, block, fluid);
++        return Float.isNaN(resistance) ? Optional.empty() : Optional.of(resistance);
++    }
++
++    @Override
++    public float getBlockExplosionResistanceValue(
++        final Explosion explosion, final BlockGetter level, final BlockPos pos, final BlockState block, final FluidState fluid
+     ) {
+         if (this.immuneBlocks.isPresent()) {
+-            return block.is(this.immuneBlocks.get()) ? Optional.of(3600000.0F) : Optional.empty();
++            return block.is(this.immuneBlocks.get()) ? 3600000.0F : Float.NaN;
+         } else {
+-            return super.getBlockExplosionResistance(explosion, level, pos, block, fluid);
++            return super.getBlockExplosionResistanceValue(explosion, level, pos, block, fluid);
+         }
+     }
+ 
+diff --git a/net/minecraft/world/level/biome/MobSpawnSettings.java b/net/minecraft/world/level/biome/MobSpawnSettings.java
+index cbef5192bb22bd3dd992759ea1a789da0ba8152a..039eb4d986435eb0e0a33703959fc0715664b1a7 100644
+--- a/net/minecraft/world/level/biome/MobSpawnSettings.java
++++ b/net/minecraft/world/level/biome/MobSpawnSettings.java
+@@ -53,6 +53,11 @@ public class MobSpawnSettings {
+         this.creatureGenerationProbability = creatureGenerationProbability;
+         this.spawners = ImmutableMap.copyOf(spawners);
+         this.mobSpawnCosts = ImmutableMap.copyOf(mobSpawnCosts);
++        // Fand: mark entity types with any biome spawn cost so NaturalSpawner can avoid cold biome lookups.
++        // Adapted from Moonrise mob spawning optimization (Tuinity), GNU GPLv3.
++        for (EntityType<?> type : this.mobSpawnCosts.keySet()) {
++            type.fand$setHasAnyBiomeCost();
++        }
+     }
+ 
+     public WeightedList<MobSpawnSettings.SpawnerData> getMobs(final MobCategory category) {
+diff --git a/net/minecraft/world/level/block/BaseCoralPlantTypeBlock.java b/net/minecraft/world/level/block/BaseCoralPlantTypeBlock.java
+index 4d7f2928e746b31d407a5152a9dd7f0c9e33ce38..abd5435c393b10319ba25936e9832da921785d37 100644
+--- a/net/minecraft/world/level/block/BaseCoralPlantTypeBlock.java
++++ b/net/minecraft/world/level/block/BaseCoralPlantTypeBlock.java
+@@ -45,7 +45,7 @@ public abstract class BaseCoralPlantTypeBlock extends Block implements SimpleWat
+             return true;
+         }
+ 
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             if (level.getFluidState(blockPos.relative(direction)).is(FluidTags.WATER)) {
+                 return true;
+             }
+diff --git a/net/minecraft/world/level/block/BaseFireBlock.java b/net/minecraft/world/level/block/BaseFireBlock.java
+index ab2f318ed497740e798114251fdcac47304c8a1f..1f8422c3d8675cfde3ad18761447c6c532400471 100644
+--- a/net/minecraft/world/level/block/BaseFireBlock.java
++++ b/net/minecraft/world/level/block/BaseFireBlock.java
+@@ -234,7 +234,7 @@ public abstract class BaseFireBlock extends Block {
+         BlockPos.MutableBlockPos testPos = pos.mutable();
+         boolean hasObsidian = false;
+ 
+-        for (Direction face : Direction.values()) {
++        for (Direction face : Direction.valuesCached()) {
+             if (level.getBlockState(testPos.set(pos).move(face)).is(Blocks.OBSIDIAN)) {
+                 hasObsidian = true;
+                 break;
+diff --git a/net/minecraft/world/level/block/ComposterBlock.java b/net/minecraft/world/level/block/ComposterBlock.java
+index 2d1693e8eda1b88c7935c0cffa42056b26ae894f..5a08e2eca9f01e6da7cff4c82687c6024c9204b1 100644
+--- a/net/minecraft/world/level/block/ComposterBlock.java
++++ b/net/minecraft/world/level/block/ComposterBlock.java
+@@ -48,6 +48,8 @@ public class ComposterBlock extends Block implements WorldlyContainerHolder {
+     public static final int MAX_LEVEL = 7;
+     public static final IntegerProperty LEVEL = BlockStateProperties.LEVEL_COMPOSTER;
+     public static final Object2FloatMap<ItemLike> COMPOSTABLES = new Object2FloatOpenHashMap<>();
++    private static final int[] NO_SLOTS = new int[0];
++    private static final int[] SLOT_ZERO = new int[]{0};
+     private static final int HOLE_WIDTH = 12;
+     private static final VoxelShape[] SHAPES = Util.make(
+         () -> {
+@@ -380,7 +382,7 @@ public class ComposterBlock extends Block implements WorldlyContainerHolder {
+ 
+         @Override
+         public int[] getSlotsForFace(final Direction direction) {
+-            return new int[0];
++            return NO_SLOTS;
+         }
+ 
+         @Override
+@@ -414,7 +416,7 @@ public class ComposterBlock extends Block implements WorldlyContainerHolder {
+ 
+         @Override
+         public int[] getSlotsForFace(final Direction direction) {
+-            return direction == Direction.UP ? new int[]{0} : new int[0];
++            return direction == Direction.UP ? SLOT_ZERO : NO_SLOTS;
+         }
+ 
+         @Override
+@@ -459,7 +461,7 @@ public class ComposterBlock extends Block implements WorldlyContainerHolder {
+ 
+         @Override
+         public int[] getSlotsForFace(final Direction direction) {
+-            return direction == Direction.DOWN ? new int[]{0} : new int[0];
++            return direction == Direction.DOWN ? SLOT_ZERO : NO_SLOTS;
+         }
+ 
+         @Override
+diff --git a/net/minecraft/world/level/block/ConcretePowderBlock.java b/net/minecraft/world/level/block/ConcretePowderBlock.java
+index 3e7c563a97ddf3c43385f5941383a26b169171ec..ba9e48c51e2699821e36489e1071d91819229fda 100644
+--- a/net/minecraft/world/level/block/ConcretePowderBlock.java
++++ b/net/minecraft/world/level/block/ConcretePowderBlock.java
+@@ -56,7 +56,7 @@ public class ConcretePowderBlock extends FallingBlock {
+         boolean touchesLiquid = false;
+         BlockPos.MutableBlockPos testPos = pos.mutable();
+ 
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             BlockState blockState = level.getBlockState(testPos);
+             if (direction != Direction.DOWN || canSolidify(blockState)) {
+                 testPos.setWithOffset(pos, direction);
+diff --git a/net/minecraft/world/level/block/CoralBlock.java b/net/minecraft/world/level/block/CoralBlock.java
+index 8b4863c525cb6d19cb4d7c010aa958607611ea01..4082fb2cccb91daff99095e91547ba746feaaf38 100644
+--- a/net/minecraft/world/level/block/CoralBlock.java
++++ b/net/minecraft/world/level/block/CoralBlock.java
+@@ -60,7 +60,7 @@ public class CoralBlock extends Block {
+     }
+ 
+     protected boolean scanForWater(final BlockGetter level, final BlockPos blockPos) {
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             FluidState fluidState = level.getFluidState(blockPos.relative(direction));
+             if (fluidState.is(FluidTags.WATER)) {
+                 return true;
+diff --git a/net/minecraft/world/level/block/DiodeBlock.java b/net/minecraft/world/level/block/DiodeBlock.java
+index bf80cc005066d15aaedaea3dfb295a00e3b23aeb..61f2d74672292cbbb693688e8f50372e53b47c1f 100644
+--- a/net/minecraft/world/level/block/DiodeBlock.java
++++ b/net/minecraft/world/level/block/DiodeBlock.java
+@@ -79,7 +79,7 @@ public abstract class DiodeBlock extends HorizontalDirectionalBlock {
+                 dropResources(state, level, pos, blockEntity);
+                 level.removeBlock(pos, false);
+ 
+-                for (Direction direction : Direction.values()) {
++                for (Direction direction : Direction.valuesCached()) {
+                     level.updateNeighborsAt(pos.relative(direction), this);
+                 }
+             }
+diff --git a/net/minecraft/world/level/block/FireBlock.java b/net/minecraft/world/level/block/FireBlock.java
+index 19fc124bad8be50ec6ead006eba899afe131ea9f..ee04d58c3524aa79ce07f4c4576e8cdd828d1439 100644
+--- a/net/minecraft/world/level/block/FireBlock.java
++++ b/net/minecraft/world/level/block/FireBlock.java
+@@ -118,7 +118,7 @@ public class FireBlock extends BaseFireBlock {
+         if (!this.canBurn(belowState) && !belowState.isFaceSturdy(level, below, Direction.UP)) {
+             BlockState result = this.defaultBlockState();
+ 
+-            for (Direction direction : Direction.values()) {
++            for (Direction direction : Direction.valuesCached()) {
+                 BooleanProperty property = PROPERTY_BY_DIRECTION.get(direction);
+                 if (property != null) {
+                     result = result.setValue(property, this.canBurn(level.getBlockState(pos.relative(direction))));
+@@ -275,7 +275,7 @@ public class FireBlock extends BaseFireBlock {
+     }
+ 
+     private boolean isValidFireLocation(final BlockGetter level, final BlockPos pos) {
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             if (this.canBurn(level.getBlockState(pos.relative(direction)))) {
+                 return true;
+             }
+@@ -291,7 +291,7 @@ public class FireBlock extends BaseFireBlock {
+ 
+         int odds = 0;
+ 
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             BlockState blockState = level.getBlockState(pos.relative(direction));
+             odds = Math.max(this.getIgniteOdds(blockState), odds);
+         }
+diff --git a/net/minecraft/world/level/block/RedStoneOreBlock.java b/net/minecraft/world/level/block/RedStoneOreBlock.java
+index e65806cf837a3083c35ac8905786155d1908f5c2..12d0188c0bc68019c9fee0685181fabab9736d9b 100644
+--- a/net/minecraft/world/level/block/RedStoneOreBlock.java
++++ b/net/minecraft/world/level/block/RedStoneOreBlock.java
+@@ -109,7 +109,7 @@ public class RedStoneOreBlock extends Block {
+         double offset = 0.5625;
+         RandomSource random = level.getRandom();
+ 
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             BlockPos relative = pos.relative(direction);
+             if (!level.getBlockState(relative).isSolidRender()) {
+                 Direction.Axis axis = direction.getAxis();
+diff --git a/net/minecraft/world/level/block/RedStoneWireBlock.java b/net/minecraft/world/level/block/RedStoneWireBlock.java
+index 0a4beae404f803c0990bf8f85c7da4ce2ab69d4b..9feb94ae69d4c17f3cd6fdb0570edaf28cf957ee 100644
+--- a/net/minecraft/world/level/block/RedStoneWireBlock.java
++++ b/net/minecraft/world/level/block/RedStoneWireBlock.java
+@@ -298,7 +298,7 @@ public class RedStoneWireBlock extends Block {
+         if (level.getBlockState(pos).is(this)) {
+             level.updateNeighborsAt(pos, this);
+ 
+-            for (Direction direction : Direction.values()) {
++            for (Direction direction : Direction.valuesCached()) {
+                 level.updateNeighborsAt(pos.relative(direction), this);
+             }
+         }
+@@ -320,7 +320,7 @@ public class RedStoneWireBlock extends Block {
+     @Override
+     protected void affectNeighborsAfterRemoval(final BlockState state, final ServerLevel level, final BlockPos pos, final boolean movedByPiston) {
+         if (!movedByPiston) {
+-            for (Direction direction : Direction.values()) {
++            for (Direction direction : Direction.valuesCached()) {
+                 level.updateNeighborsAt(pos.relative(direction), this);
+             }
+ 
+diff --git a/net/minecraft/world/level/block/RedstoneTorchBlock.java b/net/minecraft/world/level/block/RedstoneTorchBlock.java
+index a0c5370fe3f5c1f1d44f274e173d14a44fe224a9..6c4234836c941eee37efb6c5c38a9725bb685842 100644
+--- a/net/minecraft/world/level/block/RedstoneTorchBlock.java
++++ b/net/minecraft/world/level/block/RedstoneTorchBlock.java
+@@ -49,7 +49,7 @@ public class RedstoneTorchBlock extends BaseTorchBlock {
+     private void notifyNeighbors(final Level level, final BlockPos pos, final BlockState state) {
+         Orientation orientation = this.randomOrientation(level, state);
+ 
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             level.updateNeighborsAt(pos.relative(direction), this, ExperimentalRedstoneUtils.withFront(orientation, direction));
+         }
+     }
+diff --git a/net/minecraft/world/level/block/RespawnAnchorBlock.java b/net/minecraft/world/level/block/RespawnAnchorBlock.java
+index ca21ee71bc9a13aecda7a7172c599b06a2dd5040..c0855e01b75e5c07a60ca4a5f338a2982aaa7a66 100644
+--- a/net/minecraft/world/level/block/RespawnAnchorBlock.java
++++ b/net/minecraft/world/level/block/RespawnAnchorBlock.java
+@@ -169,6 +169,15 @@ public class RespawnAnchorBlock extends Block {
+                     ? Optional.of(Blocks.WATER.getExplosionResistance())
+                     : super.getBlockExplosionResistance(explosion, levelx, testPos, block, fluid);
+             }
++
++            @Override
++            public float getBlockExplosionResistanceValue(
++                final Explosion explosion, final BlockGetter levelx, final BlockPos testPos, final BlockState block, final FluidState fluid
++            ) {
++                return testPos.equals(pos) && inWater
++                    ? Blocks.WATER.getExplosionResistance()
++                    : super.getBlockExplosionResistanceValue(explosion, levelx, testPos, block, fluid);
++            }
+         };
+         Vec3 boomPos = Vec3.atCenterOf(pos);
+         level.explode(null, level.damageSources().badRespawnPointExplosion(boomPos), damageCalculator, boomPos, 5.0F, true, Level.ExplosionInteraction.BLOCK);
+diff --git a/net/minecraft/world/level/block/SculkSensorBlock.java b/net/minecraft/world/level/block/SculkSensorBlock.java
+index 65946cc66bb68f98088dfe1297516927a4706eb4..715912a2af35b181f06e49068fce85ed3f9e93e9 100644
+--- a/net/minecraft/world/level/block/SculkSensorBlock.java
++++ b/net/minecraft/world/level/block/SculkSensorBlock.java
+@@ -232,7 +232,7 @@ public class SculkSensorBlock extends BaseEntityBlock implements SimpleWaterlogg
+     }
+ 
+     public static void tryResonateVibration(final @Nullable Entity sourceEntity, final Level level, final BlockPos pos, final int vibrationFrequency) {
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             BlockPos relativePos = pos.relative(direction);
+             BlockState blockState = level.getBlockState(relativePos);
+             if (blockState.is(BlockTags.VIBRATION_RESONATORS)) {
+diff --git a/net/minecraft/world/level/block/piston/PistonBaseBlock.java b/net/minecraft/world/level/block/piston/PistonBaseBlock.java
+index 346fbc0bca5fe22be9d6634af1d97ef3ae017a89..ddc29b26d8bfed184ac8918c240719c2b688f001 100644
+--- a/net/minecraft/world/level/block/piston/PistonBaseBlock.java
++++ b/net/minecraft/world/level/block/piston/PistonBaseBlock.java
+@@ -126,7 +126,7 @@ public class PistonBaseBlock extends DirectionalBlock {
+     }
+ 
+     private boolean getNeighborSignal(final SignalGetter level, final BlockPos pos, final Direction pushDirection) {
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             if (direction != pushDirection && level.hasSignal(pos.relative(direction), direction)) {
+                 return true;
+             }
+@@ -138,7 +138,7 @@ public class PistonBaseBlock extends DirectionalBlock {
+ 
+         BlockPos above = pos.above();
+ 
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             if (direction != Direction.DOWN && level.hasSignal(above.relative(direction), direction)) {
+                 return true;
+             }
+diff --git a/net/minecraft/world/level/block/state/pattern/BlockPattern.java b/net/minecraft/world/level/block/state/pattern/BlockPattern.java
+index ed5a5fb38bfe8fb9216c7eab00b833485c4bbade..e6195faa27c3d1940db085977c3e21f550e4bbd4 100644
+--- a/net/minecraft/world/level/block/state/pattern/BlockPattern.java
++++ b/net/minecraft/world/level/block/state/pattern/BlockPattern.java
+@@ -78,8 +78,8 @@ public class BlockPattern {
+         int dist = Math.max(Math.max(this.width, this.height), this.depth);
+ 
+         for (BlockPos testPos : BlockPos.betweenClosed(origin, origin.offset(dist - 1, dist - 1, dist - 1))) {
+-            for (Direction forwards : Direction.values()) {
+-                for (Direction up : Direction.values()) {
++            for (Direction forwards : Direction.valuesCached()) {
++                for (Direction up : Direction.valuesCached()) {
+                     if (up != forwards && up != forwards.getOpposite()) {
+                         BlockPattern.BlockPatternMatch match = this.matches(testPos, forwards, up, cache);
+                         if (match != null) {
+diff --git a/net/minecraft/world/level/chunk/ChunkAccess.java b/net/minecraft/world/level/chunk/ChunkAccess.java
+index ce8bbe0c3f07164c3acce909fecbfbb705dadd2e..9d0d13402faac54281767d5e566d087753532d38 100644
+--- a/net/minecraft/world/level/chunk/ChunkAccess.java
++++ b/net/minecraft/world/level/chunk/ChunkAccess.java
+@@ -82,6 +82,11 @@ public abstract class ChunkAccess implements LightChunk, StructureAccess, BiomeM
+     protected final Map<BlockPos, BlockEntity> blockEntities = new Object2ObjectOpenHashMap<>();
+     protected final LevelHeightAccessor levelHeightAccessor;
+     protected final LevelChunkSection[] sections;
++    // Fand: cached height bounds for block/biome read hot paths, adapted from Moonrise getblock optimization (Tuinity), GNU GPLv3.
++    protected final int minSectionY;
++    protected final int maxSectionY;
++    protected final int minQuartY;
++    protected final int maxQuartY;
+ 
+     public ChunkAccess(
+         final ChunkPos chunkPos,
+@@ -99,6 +104,10 @@ public abstract class ChunkAccess implements LightChunk, StructureAccess, BiomeM
+         this.upgradeData = upgradeData;
+         this.levelHeightAccessor = levelHeightAccessor;
+         this.sections = new LevelChunkSection[levelHeightAccessor.getSectionsCount()];
++        this.minSectionY = levelHeightAccessor.getMinSectionY();
++        this.maxSectionY = levelHeightAccessor.getMaxSectionY();
++        this.minQuartY = QuartPos.fromBlock(levelHeightAccessor.getMinY());
++        this.maxQuartY = this.minQuartY + QuartPos.fromBlock(levelHeightAccessor.getHeight()) - 1;
+         this.inhabitedTime = inhabitedTime;
+         this.postProcessing = new ShortList[levelHeightAccessor.getSectionsCount()];
+         this.blendingData = blendingData;
+@@ -440,10 +449,8 @@ public abstract class ChunkAccess implements LightChunk, StructureAccess, BiomeM
+     @Override
+     public Holder<Biome> getNoiseBiome(final int quartX, final int quartY, final int quartZ) {
+         try {
+-            int quartMinY = QuartPos.fromBlock(this.getMinY());
+-            int quartMaxY = quartMinY + QuartPos.fromBlock(this.getHeight()) - 1;
+-            int clampedQuartY = Mth.clamp(quartY, quartMinY, quartMaxY);
+-            int sectionIndex = this.getSectionIndex(QuartPos.toBlock(clampedQuartY));
++            int clampedQuartY = Mth.clamp(quartY, this.minQuartY, this.maxQuartY);
++            int sectionIndex = (clampedQuartY >> 2) - this.minSectionY;
+             return this.sections[sectionIndex].getNoiseBiome(quartX & 3, clampedQuartY & 3, quartZ & 3);
+         } catch (Throwable t) {
+             CrashReport report = CrashReport.forThrowable(t, "Getting biome");
+diff --git a/net/minecraft/world/level/chunk/LevelChunk.java b/net/minecraft/world/level/chunk/LevelChunk.java
+index 74ff8a449b538c6940b945e1caaa706054eaddae..f581317d6fbb6fd239ff221b35440b3a3c4adb89 100644
+--- a/net/minecraft/world/level/chunk/LevelChunk.java
++++ b/net/minecraft/world/level/chunk/LevelChunk.java
+@@ -66,6 +66,8 @@ import org.slf4j.Logger;
+ 
+ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+     private static final Logger LOGGER = LogUtils.getLogger();
++    private static final BlockState AIR_BLOCKSTATE = Blocks.AIR.defaultBlockState();
++    private static final FluidState EMPTY_FLUIDSTATE = Fluids.EMPTY.defaultFluidState();
+     private static final TickingBlockEntity NULL_TICKER = new TickingBlockEntity() {
+         @Override
+         public void tick() {
+@@ -96,6 +98,7 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+     private final LevelChunkTicks<Fluid> fluidTicks;
+     private LevelChunk.UnsavedListener unsavedListener = chunkPos -> {};
+     private int lightningTick;
++    private final boolean debug;
+ 
+     public LevelChunk(final Level level, final ChunkPos pos) {
+         this(level, pos, UpgradeData.EMPTY, new LevelChunkTicks<>(), new LevelChunkTicks<>(), 0L, null, null, null);
+@@ -114,6 +117,7 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+     ) {
+         super(pos, upgradeData, level, level.palettedContainerFactory(), inhabitedTime, sections, blendingData);
+         this.level = level;
++        this.debug = level.isDebug();
+         this.gameEventListenerRegistrySections = new Int2ObjectOpenHashMap<>();
+ 
+         for (Heightmap.Types type : Heightmap.Types.values()) {
+@@ -222,7 +226,8 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+     }
+ 
+     public BlockState getBlockStateFinal(final int x, final int y, final int z) {
+-        if (this.level.isDebug()) {
++        // Fand: slim block read hot path adapted from Moonrise getblock optimization (Tuinity), GNU GPLv3.
++        if (this.debug) {
+             BlockState blockState = null;
+             if (y == 60) {
+                 blockState = Blocks.BARRIER.defaultBlockState();
+@@ -232,17 +237,17 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+                 blockState = DebugLevelSource.getBlockStateFor(x, z);
+             }
+ 
+-            return blockState == null ? Blocks.AIR.defaultBlockState() : blockState;
++            return blockState == null ? AIR_BLOCKSTATE : blockState;
+         }
+ 
+-        int sectionIndex = this.getSectionIndex(y);
++        int sectionIndex = (y >> 4) - this.minSectionY;
+         if (sectionIndex < 0 || sectionIndex >= this.sections.length) {
+-            return Blocks.AIR.defaultBlockState();
++            return AIR_BLOCKSTATE;
+         }
+ 
+         LevelChunkSection section = this.sections[sectionIndex];
+         if (section.hasOnlyAir()) {
+-            return Blocks.AIR.defaultBlockState();
++            return AIR_BLOCKSTATE;
+         }
+ 
+         return section.getBlockState((y & 15) << 8 | (z & 15) << 4 | x & 15);
+@@ -267,7 +272,8 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+ 
+     public FluidState getFluidState(final int x, final int y, final int z) {
+         try {
+-            int sectionIndex = this.getSectionIndex(y);
++            // Fand: slim fluid read hot path adapted from Moonrise getblock optimization (Tuinity), GNU GPLv3.
++            int sectionIndex = (y >> 4) - this.minSectionY;
+             if (sectionIndex >= 0 && sectionIndex < this.sections.length) {
+                 LevelChunkSection currentSection = this.sections[sectionIndex];
+                 if (!currentSection.hasOnlyAir()) {
+@@ -275,7 +281,7 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+                 }
+             }
+ 
+-            return Fluids.EMPTY.defaultFluidState();
++            return EMPTY_FLUIDSTATE;
+         } catch (Throwable t) {
+             CrashReport report = CrashReport.forThrowable(t, "Getting fluid state");
+             CrashReportCategory category = report.addCategory("Block being got");
+diff --git a/net/minecraft/world/level/chunk/LevelChunkSection.java b/net/minecraft/world/level/chunk/LevelChunkSection.java
+index 802b77ae87bc52d75c9f44874e4803660ec10259..d8d12a425ee408fecc056a67118dc744131aff5e 100644
+--- a/net/minecraft/world/level/chunk/LevelChunkSection.java
++++ b/net/minecraft/world/level/chunk/LevelChunkSection.java
+@@ -18,6 +18,8 @@ public class LevelChunkSection {
+     private static final int RANDOM_TICK_MASK_WORDS = SECTION_SIZE / Long.SIZE;
+     private short nonEmptyBlockCount;
+     private short fluidCount;
++    // Fand: section collision/random-tick metadata adapted from Lithium section-data optimizations (CaffeineMC), GNU LGPLv3.
++    private short collisionBlockCount;
+     private short tickingBlockCount;
+     private short tickingFluidCount;
+     private long[] fandRandomTickingPositionMask;
+@@ -27,6 +29,7 @@ public class LevelChunkSection {
+     private LevelChunkSection(final LevelChunkSection source) {
+         this.nonEmptyBlockCount = source.nonEmptyBlockCount;
+         this.fluidCount = source.fluidCount;
++        this.collisionBlockCount = source.collisionBlockCount;
+         this.tickingBlockCount = source.tickingBlockCount;
+         this.tickingFluidCount = source.tickingFluidCount;
+         this.fandRandomTickingPositionMask = source.fandRandomTickingPositionMask == null ? null : Arrays.copyOf(source.fandRandomTickingPositionMask, RANDOM_TICK_MASK_WORDS);
+@@ -70,15 +73,13 @@ public class LevelChunkSection {
+     }
+ 
+     public BlockState setBlockState(final int sectionX, final int sectionY, final int sectionZ, final BlockState state, final boolean checkThreading) {
+-        BlockState previous;
+-        if (checkThreading) {
+-            previous = this.states.getAndSet(sectionX, sectionY, sectionZ, state);
+-        } else {
+-            previous = this.states.getAndSetUnchecked(sectionX, sectionY, sectionZ, state);
+-        }
++        BlockState previous = this.states.getAndSetUnchecked(sectionX, sectionY, sectionZ, state);
+ 
+         if (!previous.isAir()) {
+             this.nonEmptyBlockCount--;
++            if (hasEntityCollision(previous)) {
++                this.collisionBlockCount--;
++            }
+             if (previous.isRandomlyTicking()) {
+                 this.tickingBlockCount--;
+             }
+@@ -94,6 +95,9 @@ public class LevelChunkSection {
+ 
+         if (!state.isAir()) {
+             this.nonEmptyBlockCount++;
++            if (hasEntityCollision(state)) {
++                this.collisionBlockCount++;
++            }
+             if (state.isRandomlyTicking()) {
+                 this.tickingBlockCount++;
+             }
+@@ -119,6 +123,10 @@ public class LevelChunkSection {
+         return this.fluidCount > 0;
+     }
+ 
++    public boolean mayHaveEntityCollision() {
++        return this.collisionBlockCount > 0;
++    }
++
+     public boolean isRandomlyTicking() {
+         return this.isRandomlyTickingBlocks() || this.isRandomlyTickingFluids();
+     }
+@@ -144,6 +152,7 @@ public class LevelChunkSection {
+         class BlockCounter implements PalettedContainer.CountConsumer<BlockState> {
+             public int nonEmptyBlockCount;
+             public int fluidCount;
++            public int collisionBlockCount;
+             public int tickingBlockCount;
+             public int tickingFluidCount;
+ 
+@@ -151,6 +160,9 @@ public class LevelChunkSection {
+             public void accept(final BlockState state, final int count) {
+                 if (!state.isAir()) {
+                     this.nonEmptyBlockCount += count;
++                    if (hasEntityCollision(state)) {
++                        this.collisionBlockCount += count;
++                    }
+                     if (state.isRandomlyTicking()) {
+                         this.tickingBlockCount += count;
+                     }
+@@ -170,11 +182,16 @@ public class LevelChunkSection {
+         this.states.count(blockCounter);
+         this.nonEmptyBlockCount = (short)blockCounter.nonEmptyBlockCount;
+         this.fluidCount = (short)blockCounter.fluidCount;
++        this.collisionBlockCount = (short)blockCounter.collisionBlockCount;
+         this.tickingBlockCount = (short)blockCounter.tickingBlockCount;
+         this.tickingFluidCount = (short)blockCounter.tickingFluidCount;
+         this.rebuildRandomTickingPositionMask();
+     }
+ 
++    private static boolean hasEntityCollision(final BlockState state) {
++        return state.hasLargeCollisionShape() || !state.getCollisionShape(null, null).isEmpty();
++    }
++
+     private void rebuildRandomTickingPositionMask() {
+         if (this.tickingBlockCount <= 0 && this.tickingFluidCount <= 0) {
+             this.fandRandomTickingPositionMask = null;
+@@ -240,6 +257,7 @@ public class LevelChunkSection {
+         PalettedContainer<Holder<Biome>> biomes = this.biomes.recreate();
+         biomes.read(buffer);
+         this.biomes = biomes;
++        this.rebuildCollisionBlockCount();
+         this.rebuildRandomTickingPositionMask();
+     }
+ 
+@@ -264,6 +282,23 @@ public class LevelChunkSection {
+         return this.states.maybeHas(predicate);
+     }
+ 
++    private void rebuildCollisionBlockCount() {
++        class CollisionCounter implements PalettedContainer.CountConsumer<BlockState> {
++            public int collisionBlockCount;
++
++            @Override
++            public void accept(final BlockState state, final int count) {
++                if (!state.isAir() && hasEntityCollision(state)) {
++                    this.collisionBlockCount += count;
++                }
++            }
++        }
++
++        CollisionCounter counter = new CollisionCounter();
++        this.states.count(counter);
++        this.collisionBlockCount = (short)counter.collisionBlockCount;
++    }
++
+     public Holder<Biome> getNoiseBiome(final int quartX, final int quartY, final int quartZ) {
+         return this.biomes.get(quartX, quartY, quartZ);
+     }
+diff --git a/net/minecraft/world/level/chunk/PalettedContainer.java b/net/minecraft/world/level/chunk/PalettedContainer.java
+index ee92b9ae8110b266ba0be723d1e228501b2c23aa..e3228f156304ae56232bfba909fe43cb631eea50 100644
+--- a/net/minecraft/world/level/chunk/PalettedContainer.java
++++ b/net/minecraft/world/level/chunk/PalettedContainer.java
+@@ -18,7 +18,6 @@ import net.minecraft.network.FriendlyByteBuf;
+ import net.minecraft.util.BitStorage;
+ import net.minecraft.util.ExtraCodecs;
+ import net.minecraft.util.SimpleBitStorage;
+-import net.minecraft.util.ThreadingDetector;
+ import net.minecraft.util.ZeroBitStorage;
+ import org.jspecify.annotations.Nullable;
+ 
+@@ -26,14 +25,12 @@ public class PalettedContainer<T> implements PaletteResize<T>, PalettedContainer
+     private static final int MIN_PALETTE_BITS = 0;
+     private volatile PalettedContainer.Data<T> data;
+     private final Strategy<T> strategy;
+-    private final ThreadingDetector threadingDetector = new ThreadingDetector("PalettedContainer");
+ 
++    // Fand: no-locking palette access follows Lithium's chunk/no_locking optimization (CaffeineMC), GNU LGPLv3.
+     public void acquire() {
+-        this.threadingDetector.checkAndLock();
+     }
+ 
+     public void release() {
+-        this.threadingDetector.checkAndUnlock();
+     }
+ 
+     public static <T> Codec<PalettedContainer<T>> codecRW(final Codec<T> elementCodec, final Strategy<T> strategy, final T defaultValue) {
+diff --git a/net/minecraft/world/level/entity/EntitySection.java b/net/minecraft/world/level/entity/EntitySection.java
+index 839c6d1f7eb40cb238a1f7d970cd9da128c23364..219ee17918aa6b9685084deb208f24d6f05e0988 100644
+--- a/net/minecraft/world/level/entity/EntitySection.java
++++ b/net/minecraft/world/level/entity/EntitySection.java
+@@ -2,6 +2,7 @@ package net.minecraft.world.level.entity;
+ 
+ import com.mojang.logging.LogUtils;
+ import java.util.Collection;
++import java.util.Iterator;
+ import java.util.stream.Stream;
+ import net.minecraft.util.AbortableIterationConsumer;
+ import net.minecraft.util.ClassInstanceMultiMap;
+@@ -53,7 +54,9 @@ public class EntitySection<T extends EntityAccess> {
+     }
+ 
+     public AbortableIterationConsumer.Continuation getEntities(final AABB bb, final AbortableIterationConsumer<T> entities) {
+-        for (T entity : this.storage) {
++        // Fand: direct iteration avoids wrapper allocation, adapted from Lithium's entity iteration optimization (CaffeineMC), GNU LGPLv3.
++        for (Iterator<T> iterator = this.storage.fand$directIterator(); iterator.hasNext();) {
++            T entity = iterator.next();
+             if (entity.getBoundingBox().intersects(bb) && entities.accept(entity).shouldAbort()) {
+                 return AbortableIterationConsumer.Continuation.ABORT;
+             }
+@@ -63,7 +66,8 @@ public class EntitySection<T extends EntityAccess> {
+     }
+ 
+     public AbortableIterationConsumer.Continuation getEntityCollisionCandidates(final AABB bb, final AbortableIterationConsumer<T> entities) {
+-        for (T entity : this.entityCollisionCandidates) {
++        for (Iterator<T> iterator = this.entityCollisionCandidates.fand$directIterator(); iterator.hasNext();) {
++            T entity = iterator.next();
+             if (entity.getBoundingBox().intersects(bb) && entities.accept(entity).shouldAbort()) {
+                 return AbortableIterationConsumer.Continuation.ABORT;
+             }
+@@ -73,7 +77,8 @@ public class EntitySection<T extends EntityAccess> {
+     }
+ 
+     public AbortableIterationConsumer.Continuation getHardEntityCollisionCandidates(final AABB bb, final AbortableIterationConsumer<T> entities) {
+-        for (T entity : this.hardEntityCollisionCandidates) {
++        for (Iterator<T> iterator = this.hardEntityCollisionCandidates.fand$directIterator(); iterator.hasNext();) {
++            T entity = iterator.next();
+             if (entity.getBoundingBox().intersects(bb) && entities.accept(entity).shouldAbort()) {
+                 return AbortableIterationConsumer.Continuation.ABORT;
+             }
+diff --git a/net/minecraft/world/level/gameevent/vibrations/VibrationSystem.java b/net/minecraft/world/level/gameevent/vibrations/VibrationSystem.java
+index dd0abf0c8bb7c4ca6e0e0681477313a28822b333..d1bea7bbeb91ca4a569c6252f6472589bc26843a 100644
+--- a/net/minecraft/world/level/gameevent/vibrations/VibrationSystem.java
++++ b/net/minecraft/world/level/gameevent/vibrations/VibrationSystem.java
+@@ -264,7 +264,7 @@ public interface VibrationSystem {
+             Vec3 from = new Vec3(Mth.floor(origin.x) + 0.5, Mth.floor(origin.y) + 0.5, Mth.floor(origin.z) + 0.5);
+             Vec3 to = new Vec3(Mth.floor(dest.x) + 0.5, Mth.floor(dest.y) + 0.5, Mth.floor(dest.z) + 0.5);
+ 
+-            for (Direction direction : Direction.values()) {
++            for (Direction direction : Direction.valuesCached()) {
+                 Vec3 nudgedSource = from.relative(direction, 1.0E-5F);
+                 if (level.isBlockInLine(new ClipBlockStateContext(nudgedSource, to, state -> state.is(BlockTags.OCCLUDES_VIBRATION_SIGNALS))).getType()
+                     != HitResult.Type.BLOCK) {
+diff --git a/net/minecraft/world/level/levelgen/feature/BlueIceFeature.java b/net/minecraft/world/level/levelgen/feature/BlueIceFeature.java
+index e17a778cfa6bc704200702e36674500dd0fd197c..fb87a6145e8038b2940057beec49b5360a707b97 100644
+--- a/net/minecraft/world/level/levelgen/feature/BlueIceFeature.java
++++ b/net/minecraft/world/level/levelgen/feature/BlueIceFeature.java
+@@ -30,7 +30,7 @@ public class BlueIceFeature extends Feature<NoneFeatureConfiguration> {
+ 
+         boolean foundPackedIce = false;
+ 
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             if (direction != Direction.DOWN && level.getBlockState(origin.relative(direction)).is(Blocks.PACKED_ICE)) {
+                 foundPackedIce = true;
+                 break;
+@@ -54,7 +54,7 @@ public class BlueIceFeature extends Feature<NoneFeatureConfiguration> {
+                 BlockPos placePos = origin.offset(random.nextInt(xzDiff) - random.nextInt(xzDiff), yOff, random.nextInt(xzDiff) - random.nextInt(xzDiff));
+                 BlockState placeState = level.getBlockState(placePos);
+                 if (placeState.isAir() || placeState.is(Blocks.WATER) || placeState.is(Blocks.PACKED_ICE) || placeState.is(Blocks.ICE)) {
+-                    for (Direction direction : Direction.values()) {
++                    for (Direction direction : Direction.valuesCached()) {
+                         BlockState relativeBlockState = level.getBlockState(placePos.relative(direction));
+                         if (relativeBlockState.is(Blocks.BLUE_ICE)) {
+                             level.setBlock(placePos, Blocks.BLUE_ICE.defaultBlockState(), Block.UPDATE_CLIENTS);
+diff --git a/net/minecraft/world/level/levelgen/feature/Feature.java b/net/minecraft/world/level/levelgen/feature/Feature.java
+index bf5996cdc07fc6e0b708bab617d259b22700d138..728b7ec4e05927d647477cee90ac4ae6e2c7f6f5 100644
+--- a/net/minecraft/world/level/levelgen/feature/Feature.java
++++ b/net/minecraft/world/level/levelgen/feature/Feature.java
+@@ -195,7 +195,7 @@ public abstract class Feature<FC extends FeatureConfiguration> {
+     public static boolean checkNeighbors(final Function<BlockPos, BlockState> blockGetter, final BlockPos pos, final Predicate<BlockState> predicate) {
+         BlockPos.MutableBlockPos neighborPos = new BlockPos.MutableBlockPos();
+ 
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             neighborPos.setWithOffset(pos, direction);
+             if (predicate.test(blockGetter.apply(neighborPos))) {
+                 return true;
+diff --git a/net/minecraft/world/level/levelgen/feature/GlowstoneFeature.java b/net/minecraft/world/level/levelgen/feature/GlowstoneFeature.java
+index 9bc19412533a6687f70bcdd679d87998df763781..70055e63c46339ddc7f2cd7318547777bc43c57f 100644
+--- a/net/minecraft/world/level/levelgen/feature/GlowstoneFeature.java
++++ b/net/minecraft/world/level/levelgen/feature/GlowstoneFeature.java
+@@ -36,7 +36,7 @@ public class GlowstoneFeature extends Feature<NoneFeatureConfiguration> {
+             if (level.getBlockState(placePos).isAir()) {
+                 int neighbours = 0;
+ 
+-                for (Direction direction : Direction.values()) {
++                for (Direction direction : Direction.valuesCached()) {
+                     if (level.getBlockState(placePos.relative(direction)).is(Blocks.GLOWSTONE)) {
+                         neighbours++;
+                     }
+diff --git a/net/minecraft/world/level/levelgen/feature/VinesFeature.java b/net/minecraft/world/level/levelgen/feature/VinesFeature.java
+index a1f86df2b128bf15f2cf84313d73dad33a29beac..f7d7bd07b5db361e4c7a15ebf13b3028e819d9d7 100644
+--- a/net/minecraft/world/level/levelgen/feature/VinesFeature.java
++++ b/net/minecraft/world/level/levelgen/feature/VinesFeature.java
+@@ -23,7 +23,7 @@ public class VinesFeature extends Feature<NoneFeatureConfiguration> {
+             return false;
+         }
+ 
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             if (direction != Direction.DOWN && VineBlock.isAcceptableNeighbour(level, origin.relative(direction), direction)) {
+                 level.setBlock(origin, Blocks.VINE.defaultBlockState().setValue(VineBlock.getPropertyForFace(direction), true), Block.UPDATE_CLIENTS);
+                 return true;
+diff --git a/net/minecraft/world/level/material/FlowingFluid.java b/net/minecraft/world/level/material/FlowingFluid.java
+index 9c7c44bc173ec2f947cb9b3f6aade8e603426c51..4ca7cb1a90fd389ee41e110db281c7ccff698f62 100644
+--- a/net/minecraft/world/level/material/FlowingFluid.java
++++ b/net/minecraft/world/level/material/FlowingFluid.java
+@@ -12,7 +12,6 @@ import net.minecraft.SharedConstants;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.server.level.ServerLevel;
+-import net.minecraft.tags.BlockTags;
+ import net.minecraft.world.level.BlockGetter;
+ import net.minecraft.world.level.Level;
+ import net.minecraft.world.level.LevelAccessor;
+@@ -22,6 +21,7 @@ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.DoorBlock;
+ import net.minecraft.world.level.block.IceBlock;
+ import net.minecraft.world.level.block.LiquidBlockContainer;
++import net.minecraft.world.level.block.SignBlock;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.block.state.StateDefinition;
+ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+@@ -45,6 +45,13 @@ public abstract class FlowingFluid extends Fluid {
+         return map;
+     });
+     private static final ThreadLocal<FlowingFluid.SpreadTargets> SPREAD_TARGETS = ThreadLocal.withInitial(FlowingFluid.SpreadTargets::new);
++    // Fand: allocation-reduced fluid spreading adapted from Lithium's block/fluid/flow optimization (CaffeineMC), GNU LGPLv3.
++    private static final Direction[] HORIZONTAL_DIRECTIONS = {
++        Direction.NORTH,
++        Direction.EAST,
++        Direction.SOUTH,
++        Direction.WEST
++    };
+     private final Map<FluidState, VoxelShape> shapes = Maps.newIdentityHashMap();
+ 
+     @Override
+@@ -160,12 +167,12 @@ public abstract class FlowingFluid extends Fluid {
+ 
+     private void spreadToSidesArray(final ServerLevel level, final BlockPos pos, final BlockState state) {
+         FlowingFluid.SpreadTargets targets = SPREAD_TARGETS.get();
+-        int count = this.getSpreadArray(level, pos, state, targets.directions, targets.fluids);
++        int count = this.getSpreadArray(level, pos, state, targets.directions, targets.fluids, targets.positions, targets.states);
+         try {
+             for (int i = 0; i < count; i++) {
+                 Direction spread = targets.directions[i];
+-                BlockPos neighborPos = pos.relative(spread);
+-                this.spreadTo(level, neighborPos, level.getBlockState(neighborPos), spread, targets.fluids[i]);
++                BlockPos neighborPos = targets.positions[i];
++                this.spreadTo(level, neighborPos, targets.states[i], spread, targets.fluids[i]);
+             }
+         } finally {
+             targets.clear(count);
+@@ -337,8 +344,8 @@ public abstract class FlowingFluid extends Fluid {
+     private boolean isWaterHole(
+         final BlockGetter level, final BlockPos topPos, final BlockState topState, final BlockPos bottomPos, final BlockState bottomState
+     ) {
+-        return canPassThroughWall(Direction.DOWN, level, topPos, topState, bottomPos, bottomState)
+-            && (bottomState.getFluidState().getType().isSame(this) || canHoldFluid(level, bottomPos, bottomState, this.getFlowing()));
++        return (bottomState.getFluidState().getType().isSame(this) || canHoldFluid(level, bottomPos, bottomState, this.getFlowing()))
++            && canPassThroughWall(Direction.DOWN, level, topPos, topState, bottomPos, bottomState);
+     }
+ 
+     private boolean canPassThrough(
+@@ -351,8 +358,8 @@ public abstract class FlowingFluid extends Fluid {
+         final BlockState testState,
+         final FluidState testFluidState
+     ) {
+-        return this.canMaybePassThrough(level, sourcePos, sourceState, direction, testPos, testState, testFluidState)
+-            && canHoldSpecificFluid(level, testPos, testState, fluid);
++        return canHoldSpecificFluid(level, testPos, testState, fluid)
++            && this.canMaybePassThrough(level, sourcePos, sourceState, direction, testPos, testState, testFluidState);
+     }
+ 
+     private boolean canMaybePassThrough(
+@@ -435,44 +442,89 @@ public abstract class FlowingFluid extends Fluid {
+         final BlockPos pos,
+         final BlockState state,
+         final Direction[] directions,
+-        final FluidState[] fluids
++        final FluidState[] fluids,
++        final BlockPos[] positions,
++        final BlockState[] states
+     ) {
+         int lowest = 1000;
+         int count = 0;
+         FlowingFluid.SpreadContext context = null;
++        Direction onlyDirection = null;
++        BlockPos onlyPos = null;
++        BlockState onlyState = null;
+ 
+-        for (Direction direction : Direction.Plane.HORIZONTAL) {
++        for (Direction direction : HORIZONTAL_DIRECTIONS) {
++            BlockPos testPos = pos.relative(direction);
++            BlockState testState = level.getBlockState(testPos);
++            if (canHoldFluid(level, testPos, testState, this.getSource())) {
++                if (onlyDirection != null) {
++                    onlyDirection = null;
++                    onlyPos = null;
++                    onlyState = null;
++                    break;
++                }
++
++                onlyDirection = direction;
++                onlyPos = testPos;
++                onlyState = testState;
++            }
++        }
++
++        if (onlyDirection != null) {
++            FluidState onlyFluidState = onlyState.getFluidState();
++            if (this.canMaybePassThrough(level, pos, state, onlyDirection, onlyPos, onlyState, onlyFluidState)) {
++                FluidState newFluid = this.getNewLiquid(level, onlyPos, onlyState);
++                if (canHoldSpecificFluid(level, onlyPos, onlyState, newFluid.getType())
++                    && onlyFluidState.canBeReplacedWith(level, onlyPos, newFluid.getType(), onlyDirection)) {
++                    directions[0] = onlyDirection;
++                    fluids[0] = newFluid;
++                    positions[0] = onlyPos;
++                    states[0] = onlyState;
++                    return 1;
++                }
++            }
++
++            return 0;
++        }
++
++        for (Direction direction : HORIZONTAL_DIRECTIONS) {
+             BlockPos testPos = pos.relative(direction);
+             BlockState testState = level.getBlockState(testPos);
+             FluidState testFluidState = testState.getFluidState();
+-            if (this.canMaybePassThrough(level, pos, state, direction, testPos, testState, testFluidState)) {
+-                FluidState newFluid = this.getNewLiquid(level, testPos, testState);
+-                if (canHoldSpecificFluid(level, testPos, testState, newFluid.getType())) {
+-                    if (context == null) {
+-                        context = new FlowingFluid.SpreadContext(level, pos);
+-                    }
++            if (!this.canMaybePassThrough(level, pos, state, direction, testPos, testState, testFluidState)) {
++                continue;
++            }
+ 
+-                    int distance;
+-                    if (context.isHole(testPos)) {
+-                        distance = 0;
+-                    } else {
+-                        distance = this.getSlopeDistance(level, testPos, 1, direction.getOpposite(), testState, context);
+-                    }
++            FluidState newFluid = this.getNewLiquid(level, testPos, testState);
++            if (!canHoldSpecificFluid(level, testPos, testState, newFluid.getType())) {
++                continue;
++            }
+ 
+-                    if (distance < lowest) {
+-                        count = 0;
+-                    }
++            if (context == null) {
++                context = new FlowingFluid.SpreadContext(level, pos);
++            }
+ 
+-                    if (distance <= lowest) {
+-                        if (testFluidState.canBeReplacedWith(level, testPos, newFluid.getType(), direction)) {
+-                            directions[count] = direction;
+-                            fluids[count] = newFluid;
+-                            count++;
+-                        }
++            int distance;
++            if (context.isHole(testPos)) {
++                distance = 0;
++            } else {
++                distance = this.getSlopeDistance(level, testPos, 1, direction.getOpposite(), testState, context);
++            }
+ 
+-                        lowest = distance;
+-                    }
++            if (distance < lowest) {
++                count = 0;
++            }
++
++            if (distance <= lowest) {
++                if (testFluidState.canBeReplacedWith(level, testPos, newFluid.getType(), direction)) {
++                    directions[count] = direction;
++                    fluids[count] = newFluid;
++                    positions[count] = testPos;
++                    states[count] = testState;
++                    count++;
+                 }
++
++                lowest = distance;
+             }
+         }
+ 
+@@ -484,7 +536,7 @@ public abstract class FlowingFluid extends Fluid {
+         return block instanceof LiquidBlockContainer
+             || !state.blocksMotion()
+                 && !(block instanceof DoorBlock)
+-                && !state.is(BlockTags.SIGNS)
++                && !(block instanceof SignBlock)
+                 && !state.is(Blocks.LADDER)
+                 && !state.is(Blocks.SUGAR_CANE)
+                 && !state.is(Blocks.BUBBLE_COLUMN)
+@@ -576,11 +628,15 @@ public abstract class FlowingFluid extends Fluid {
+     private static final class SpreadTargets {
+         private final Direction[] directions = new Direction[4];
+         private final FluidState[] fluids = new FluidState[4];
++        private final BlockPos[] positions = new BlockPos[4];
++        private final BlockState[] states = new BlockState[4];
+ 
+         private void clear(final int count) {
+             for (int i = 0; i < count; i++) {
+                 this.directions[i] = null;
+                 this.fluids[i] = null;
++                this.positions[i] = null;
++                this.states[i] = null;
+             }
+         }
+     }
+diff --git a/net/minecraft/world/level/material/LavaFluid.java b/net/minecraft/world/level/material/LavaFluid.java
+index 582a3b4d75cca6a39ad767bb9336f86850cfd59f..b4450c40e3b8ddfbceb778f59c3f6ee0b45e4730 100644
+--- a/net/minecraft/world/level/material/LavaFluid.java
++++ b/net/minecraft/world/level/material/LavaFluid.java
+@@ -125,7 +125,7 @@ public abstract class LavaFluid extends FlowingFluid {
+     }
+ 
+     private boolean hasFlammableNeighbours(final LevelReader level, final BlockPos pos) {
+-        for (Direction direction : Direction.values()) {
++        for (Direction direction : Direction.valuesCached()) {
+             if (this.isFlammable(level, pos.relative(direction))) {
+                 return true;
+             }
+diff --git a/net/minecraft/world/level/pathfinder/AmphibiousNodeEvaluator.java b/net/minecraft/world/level/pathfinder/AmphibiousNodeEvaluator.java
+index 21d969b49e22c00f456befc7bea25a927de6f2fb..e039a46263678a769ec5480133c94d9f1f44cb99 100644
+--- a/net/minecraft/world/level/pathfinder/AmphibiousNodeEvaluator.java
++++ b/net/minecraft/world/level/pathfinder/AmphibiousNodeEvaluator.java
+@@ -97,7 +97,7 @@ public class AmphibiousNodeEvaluator extends WalkNodeEvaluator {
+         if (blockPathType == PathType.WATER) {
+             BlockPos.MutableBlockPos reusablePos = new BlockPos.MutableBlockPos();
+ 
+-            for (Direction direction : Direction.values()) {
++            for (Direction direction : Direction.valuesCached()) {
+                 reusablePos.set(x, y, z).move(direction);
+                 PathType pathType = context.getPathTypeFromState(reusablePos.getX(), reusablePos.getY(), reusablePos.getZ());
+                 if (pathType == PathType.BLOCKED) {
+diff --git a/net/minecraft/world/level/pathfinder/SwimNodeEvaluator.java b/net/minecraft/world/level/pathfinder/SwimNodeEvaluator.java
+index e55558448f91410f6174548edc88327191358825..f572b7c45965188a3817e6d1f1f15e377a9cf679 100644
+--- a/net/minecraft/world/level/pathfinder/SwimNodeEvaluator.java
++++ b/net/minecraft/world/level/pathfinder/SwimNodeEvaluator.java
+@@ -1,9 +1,7 @@
+ package net.minecraft.world.level.pathfinder;
+ 
+-import com.google.common.collect.Maps;
+ import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+-import java.util.Map;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.tags.FluidTags;
+@@ -49,28 +47,57 @@ public class SwimNodeEvaluator extends NodeEvaluator {
+     @Override
+     public int getNeighbors(final Node[] neighbors, final Node pos) {
+         int count = 0;
+-        Map<Direction, Node> nodes = Maps.newEnumMap(Direction.class);
++        Node down = this.findAcceptedNode(pos.x, pos.y - 1, pos.z);
++        if (this.isNodeValid(down)) {
++            neighbors[count++] = down;
++        }
+ 
+-        for (Direction direction : Direction.values()) {
+-            Node node = this.findAcceptedNode(pos.x + direction.getStepX(), pos.y + direction.getStepY(), pos.z + direction.getStepZ());
+-            nodes.put(direction, node);
+-            if (this.isNodeValid(node)) {
+-                neighbors[count++] = node;
+-            }
++        Node up = this.findAcceptedNode(pos.x, pos.y + 1, pos.z);
++        if (this.isNodeValid(up)) {
++            neighbors[count++] = up;
+         }
+ 
+-        for (Direction direction : Direction.Plane.HORIZONTAL) {
+-            Direction secondDirection = direction.getClockWise();
+-            if (hasMalus(nodes.get(direction)) && hasMalus(nodes.get(secondDirection))) {
+-                Node diagonalNode = this.findAcceptedNode(
+-                    pos.x + direction.getStepX() + secondDirection.getStepX(), pos.y, pos.z + direction.getStepZ() + secondDirection.getStepZ()
+-                );
+-                if (this.isNodeValid(diagonalNode)) {
+-                    neighbors[count++] = diagonalNode;
+-                }
+-            }
++        Node north = this.findAcceptedNode(pos.x, pos.y, pos.z - 1);
++        if (this.isNodeValid(north)) {
++            neighbors[count++] = north;
++        }
++
++        Node south = this.findAcceptedNode(pos.x, pos.y, pos.z + 1);
++        if (this.isNodeValid(south)) {
++            neighbors[count++] = south;
++        }
++
++        Node west = this.findAcceptedNode(pos.x - 1, pos.y, pos.z);
++        if (this.isNodeValid(west)) {
++            neighbors[count++] = west;
++        }
++
++        Node east = this.findAcceptedNode(pos.x + 1, pos.y, pos.z);
++        if (this.isNodeValid(east)) {
++            neighbors[count++] = east;
+         }
+ 
++        if (hasMalus(north) && hasMalus(east)) {
++            count = this.addDiagonalNeighbor(neighbors, count, pos.x + 1, pos.y, pos.z - 1);
++        }
++        if (hasMalus(east) && hasMalus(south)) {
++            count = this.addDiagonalNeighbor(neighbors, count, pos.x + 1, pos.y, pos.z + 1);
++        }
++        if (hasMalus(south) && hasMalus(west)) {
++            count = this.addDiagonalNeighbor(neighbors, count, pos.x - 1, pos.y, pos.z + 1);
++        }
++        if (hasMalus(west) && hasMalus(north)) {
++            count = this.addDiagonalNeighbor(neighbors, count, pos.x - 1, pos.y, pos.z - 1);
++        }
++
++        return count;
++    }
++
++    private int addDiagonalNeighbor(final Node[] neighbors, int count, final int x, final int y, final int z) {
++        Node diagonalNode = this.findAcceptedNode(x, y, z);
++        if (this.isNodeValid(diagonalNode)) {
++            neighbors[count++] = diagonalNode;
++        }
+         return count;
+     }
+ 
+diff --git a/net/minecraft/world/level/redstone/DefaultRedstoneWireEvaluator.java b/net/minecraft/world/level/redstone/DefaultRedstoneWireEvaluator.java
+index 9138bc139c199a41a05a549c3c913f20f682b4ec..648f112fc1feb2a1be488f333674606fef453534 100644
+--- a/net/minecraft/world/level/redstone/DefaultRedstoneWireEvaluator.java
++++ b/net/minecraft/world/level/redstone/DefaultRedstoneWireEvaluator.java
+@@ -32,7 +32,7 @@ public class DefaultRedstoneWireEvaluator extends RedstoneWireEvaluator {
+             Set<BlockPos> toUpdate = Sets.newHashSet();
+             toUpdate.add(pos);
+ 
+-            for (Direction direction : Direction.values()) {
++            for (Direction direction : Direction.valuesCached()) {
+                 toUpdate.add(pos.relative(direction));
+             }
+ 
+diff --git a/net/minecraft/world/ticks/LevelChunkTicks.java b/net/minecraft/world/ticks/LevelChunkTicks.java
+index cec7442a5401b2886f5ce7c473386c15f64fe0a3..08eabe36ccef9dc8f34312fb084c1cf281e58ffa 100644
+--- a/net/minecraft/world/ticks/LevelChunkTicks.java
++++ b/net/minecraft/world/ticks/LevelChunkTicks.java
+@@ -1,13 +1,15 @@
+ package net.minecraft.world.ticks;
+ 
+-import it.unimi.dsi.fastutil.objects.ObjectOpenCustomHashSet;
++import it.unimi.dsi.fastutil.HashCommon;
++import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
++import it.unimi.dsi.fastutil.ints.IntSet;
++import it.unimi.dsi.fastutil.longs.Long2ReferenceAVLTreeMap;
++import it.unimi.dsi.fastutil.longs.Long2ReferenceMap;
++import it.unimi.dsi.fastutil.objects.Reference2IntOpenHashMap;
+ import java.util.ArrayList;
++import java.util.Arrays;
+ import java.util.Comparator;
+-import java.util.Iterator;
+ import java.util.List;
+-import java.util.PriorityQueue;
+-import java.util.Queue;
+-import java.util.Set;
+ import java.util.function.BiConsumer;
+ import java.util.function.Predicate;
+ import java.util.stream.Stream;
+@@ -15,11 +17,16 @@ import net.minecraft.core.BlockPos;
+ import org.jspecify.annotations.Nullable;
+ 
+ public class LevelChunkTicks<T> implements TickContainerAccess<T>, SerializableTickContainer<T> {
++    // Fand: bucketed chunk tick storage adapted from Lithium's world/tick_scheduler optimization (CaffeineMC), GNU LGPLv3.
++    private static final int TICK_TYPE_BITS = 12;
++    private static final int MAX_TICK_TYPES = 1 << TICK_TYPE_BITS;
+     private static final Comparator<ScheduledTick<?>> SUB_TICK_ORDERING = Comparator.comparingLong(ScheduledTick::subTickOrder);
+-    private final Queue<ScheduledTick<T>> tickQueue = new PriorityQueue<>(ScheduledTick.DRAIN_ORDER);
++    private static volatile Reference2IntOpenHashMap<Object> typeToIndex = makeTypeIndexMap();
++    private final Long2ReferenceAVLTreeMap<TickBucket<T>> ticksByTimeAndPriority = new Long2ReferenceAVLTreeMap<>();
++    private final IntSet ticksPerPosition = new IntOpenHashSet();
+     private @Nullable List<SavedTick<T>> pendingTicks;
+-    private final Set<ScheduledTick<?>> ticksPerPosition = new ObjectOpenCustomHashSet<>(ScheduledTick.UNIQUE_TICK_HASH);
+     private @Nullable BiConsumer<LevelChunkTicks<T>, ScheduledTick<T>> onTickAdded;
++    private @Nullable ScheduledTick<T> nextTick;
+ 
+     public LevelChunkTicks() {
+     }
+@@ -28,77 +35,110 @@ public class LevelChunkTicks<T> implements TickContainerAccess<T>, SerializableT
+         this.pendingTicks = pendingTicks;
+ 
+         for (SavedTick<T> pendingTick : pendingTicks) {
+-            this.ticksPerPosition.add(ScheduledTick.probe(pendingTick.type(), pendingTick.pos()));
++            this.ticksPerPosition.add(tickKey(pendingTick.pos(), pendingTick.type()));
+         }
+     }
+ 
++    private static Reference2IntOpenHashMap<Object> makeTypeIndexMap() {
++        Reference2IntOpenHashMap<Object> map = new Reference2IntOpenHashMap<>();
++        map.defaultReturnValue(-1);
++        return map;
++    }
++
+     public void setOnTickAdded(final @Nullable BiConsumer<LevelChunkTicks<T>, ScheduledTick<T>> onTickAdded) {
+         this.onTickAdded = onTickAdded;
+     }
+ 
+     public @Nullable ScheduledTick<T> peek() {
+-        return this.tickQueue.peek();
++        return this.nextTick;
+     }
+ 
+     public @Nullable ScheduledTick<T> poll() {
+-        ScheduledTick<T> result = this.tickQueue.poll();
+-        if (result != null) {
+-            this.ticksPerPosition.remove(result);
++        ScheduledTick<T> result = this.nextTick;
++        if (result == null) {
++            return null;
++        }
++
++        TickBucket<T> bucket = this.ticksByTimeAndPriority.firstEntry().getValue();
++        ScheduledTick<T> polled = bucket.poll();
++        if (polled != result) {
++            throw new IllegalStateException("Scheduled tick queue head mismatch");
++        }
++        if (bucket.isEmpty()) {
++            this.ticksByTimeAndPriority.remove(this.ticksByTimeAndPriority.firstLongKey());
+         }
+ 
++        this.ticksPerPosition.remove(tickKey(result.pos(), result.type()));
++        this.updateNextTick();
+         return result;
+     }
+ 
+     @Override
+     public void schedule(final ScheduledTick<T> tick) {
+-        if (this.ticksPerPosition.add(tick)) {
++        if (this.ticksPerPosition.add(tickKey(tick.pos(), tick.type()))) {
+             this.scheduleUnchecked(tick);
+         }
+     }
+ 
+     private void scheduleUnchecked(final ScheduledTick<T> tick) {
+-        this.tickQueue.add(tick);
+-        if (this.onTickAdded != null) {
++        ScheduledTick<T> previousNextTick = this.nextTick;
++        long bucketKey = bucketKey(tick);
++        TickBucket<T> bucket = this.ticksByTimeAndPriority.get(bucketKey);
++        if (bucket == null) {
++            bucket = new TickBucket<>();
++            this.ticksByTimeAndPriority.put(bucketKey, bucket);
++        }
++        bucket.add(tick);
++        if (this.nextTick == null || ScheduledTick.DRAIN_ORDER.compare(tick, this.nextTick) < 0) {
++            this.nextTick = tick;
++        }
++        if (this.onTickAdded != null && this.nextTick != previousNextTick) {
+             this.onTickAdded.accept(this, tick);
+         }
+     }
+ 
+     @Override
+     public boolean hasScheduledTick(final BlockPos pos, final T type) {
+-        return this.ticksPerPosition.contains(ScheduledTick.probe(type, pos));
++        return this.ticksPerPosition.contains(tickKey(pos, type));
+     }
+ 
+     public void removeIf(final Predicate<ScheduledTick<T>> test) {
+-        Iterator<ScheduledTick<T>> iterator = this.tickQueue.iterator();
++        for (var iterator = this.ticksByTimeAndPriority.long2ReferenceEntrySet().iterator(); iterator.hasNext();) {
++            Long2ReferenceMap.Entry<TickBucket<T>> entry = iterator.next();
++            TickBucket<T> bucket = entry.getValue();
++            bucket.removeIf(tick -> {
++                if (!test.test(tick)) {
++                    return false;
++                }
+ 
+-        while (iterator.hasNext()) {
+-            ScheduledTick<T> tick = iterator.next();
+-            if (test.test(tick)) {
++                this.ticksPerPosition.remove(tickKey(tick.pos(), tick.type()));
++                return true;
++            });
++            if (bucket.isEmpty()) {
+                 iterator.remove();
+-                this.ticksPerPosition.remove(tick);
+             }
+         }
++
++        this.updateNextTick();
+     }
+ 
+     public Stream<ScheduledTick<T>> getAll() {
+-        return this.tickQueue.stream();
++        return this.ticksByTimeAndPriority.values().stream().flatMap(TickBucket::stream);
+     }
+ 
+     @Override
+     public int count() {
+-        return this.tickQueue.size() + (this.pendingTicks != null ? this.pendingTicks.size() : 0);
++        return this.ticksPerPosition.size();
+     }
+ 
+     @Override
+     public List<SavedTick<T>> pack(final long currentTick) {
+-        List<SavedTick<T>> ticks = new ArrayList<>(this.tickQueue.size());
++        List<SavedTick<T>> ticks = new ArrayList<>(this.count());
+         if (this.pendingTicks != null) {
+             ticks.addAll(this.pendingTicks);
+         }
+ 
+-        List<ScheduledTick<T>> sortedTicks = new ArrayList<>(this.tickQueue);
+-        sortedTicks.sort(SUB_TICK_ORDERING);
+-
++        List<ScheduledTick<T>> sortedTicks = this.getAll().sorted(SUB_TICK_ORDERING).toList();
+         for (ScheduledTick<T> tick : sortedTicks) {
+             ticks.add(tick.toSavedTick(currentTick));
+         }
+@@ -117,4 +157,182 @@ public class LevelChunkTicks<T> implements TickContainerAccess<T>, SerializableT
+ 
+         this.pendingTicks = null;
+     }
++
++    private void updateNextTick() {
++        this.nextTick = this.ticksByTimeAndPriority.isEmpty() ? null : this.ticksByTimeAndPriority.get(this.ticksByTimeAndPriority.firstLongKey()).peek();
++    }
++
++    private static long bucketKey(final ScheduledTick<?> tick) {
++        return tick.triggerTick() << 4 | priorityIndex(tick.priority());
++    }
++
++    private static int priorityIndex(final TickPriority priority) {
++        return priority.ordinal();
++    }
++
++    private static int tickKey(final BlockPos pos, final Object type) {
++        return typeIndex(type) << 20
++            | (pos.getX() & 15) << 16
++            | (pos.getY() & 0xFFF) << 4
++            | pos.getZ() & 15;
++    }
++
++    private static int typeIndex(final Object type) {
++        int index = typeToIndex.getInt(type);
++        if (index != -1) {
++            return index;
++        }
++
++        return registerTypeIndex(type);
++    }
++
++    private static synchronized int registerTypeIndex(final Object type) {
++        int index = typeToIndex.getInt(type);
++        if (index != -1) {
++            return index;
++        }
++
++        Reference2IntOpenHashMap<Object> copy = typeToIndex.clone();
++        index = copy.size();
++        if (index >= MAX_TICK_TYPES) {
++            throw new IllegalStateException("Too many scheduled tick types registered");
++        }
++
++        copy.put(type, index);
++        typeToIndex = copy;
++        return index;
++    }
++
++    private static final class TickBucket<T> {
++        private static final int INITIAL_CAPACITY = 4;
++        private ScheduledTick<T>[] ticks = newTickArray(INITIAL_CAPACITY);
++        private boolean sorted = true;
++        private @Nullable ScheduledTick<T> unsortedPeek;
++        private int head;
++        private int tail;
++        private long maxSubTickOrder = Long.MIN_VALUE;
++
++        void add(final ScheduledTick<T> tick) {
++            this.ensureCapacity();
++            if (tick.subTickOrder() <= this.maxSubTickOrder) {
++                ScheduledTick<T> currentPeek = this.sorted ? this.peekSorted() : this.unsortedPeek;
++                this.unsortedPeek = currentPeek == null || tick.subTickOrder() < currentPeek.subTickOrder() ? tick : currentPeek;
++                this.sorted = false;
++            } else {
++                this.maxSubTickOrder = tick.subTickOrder();
++            }
++
++            this.ticks[this.tail++] = tick;
++        }
++
++        @Nullable ScheduledTick<T> peek() {
++            return this.sorted ? this.peekSorted() : this.unsortedPeek;
++        }
++
++        @Nullable ScheduledTick<T> poll() {
++            this.sortIfNeeded();
++            if (this.head >= this.tail) {
++                return null;
++            }
++
++            ScheduledTick<T> result = this.ticks[this.head];
++            this.ticks[this.head++] = null;
++            if (this.head >= this.tail) {
++                this.clear();
++            }
++            return result;
++        }
++
++        void removeIf(final Predicate<ScheduledTick<T>> test) {
++            this.sortIfNeeded();
++            int writeIndex = this.head;
++
++            for (int readIndex = this.head; readIndex < this.tail; readIndex++) {
++                ScheduledTick<T> tick = this.ticks[readIndex];
++                if (test.test(tick)) {
++                    this.ticks[readIndex] = null;
++                    continue;
++                }
++
++                if (writeIndex != readIndex) {
++                    this.ticks[writeIndex] = tick;
++                    this.ticks[readIndex] = null;
++                }
++                writeIndex++;
++            }
++
++            this.tail = writeIndex;
++            this.refreshMaxSubTickOrder();
++        }
++
++        Stream<ScheduledTick<T>> stream() {
++            return Arrays.stream(this.ticks, this.head, this.tail);
++        }
++
++        boolean isEmpty() {
++            return this.head >= this.tail;
++        }
++
++        private void sortIfNeeded() {
++            if (this.sorted) {
++                return;
++            }
++
++            Arrays.sort(this.ticks, this.head, this.tail, SUB_TICK_ORDERING);
++            this.sorted = true;
++            this.unsortedPeek = null;
++            this.refreshMaxSubTickOrder();
++        }
++
++        private @Nullable ScheduledTick<T> peekSorted() {
++            return this.head < this.tail ? this.ticks[this.head] : null;
++        }
++
++        private void ensureCapacity() {
++            if (this.tail < this.ticks.length) {
++                return;
++            }
++
++            if (this.head > 0) {
++                this.compact();
++                if (this.tail < this.ticks.length) {
++                    return;
++                }
++            }
++
++            this.ticks = Arrays.copyOf(this.ticks, HashCommon.nextPowerOfTwo(this.ticks.length + 1));
++        }
++
++        private void compact() {
++            int size = this.tail - this.head;
++            if (size > 0) {
++                System.arraycopy(this.ticks, this.head, this.ticks, 0, size);
++            }
++            Arrays.fill(this.ticks, size, this.tail, null);
++            this.head = 0;
++            this.tail = size;
++        }
++
++        private void clear() {
++            Arrays.fill(this.ticks, null);
++            this.head = 0;
++            this.tail = 0;
++            this.sorted = true;
++            this.unsortedPeek = null;
++            this.maxSubTickOrder = Long.MIN_VALUE;
++        }
++
++        private void refreshMaxSubTickOrder() {
++            this.maxSubTickOrder = this.head < this.tail ? this.ticks[this.tail - 1].subTickOrder() : Long.MIN_VALUE;
++            if (this.isEmpty()) {
++                this.head = 0;
++                this.tail = 0;
++            }
++        }
++
++        @SuppressWarnings("unchecked")
++        private static <T> ScheduledTick<T>[] newTickArray(final int capacity) {
++            return (ScheduledTick<T>[])new ScheduledTick[capacity];
++        }
++    }
+ }

@@ -81,6 +81,9 @@ vanilla integration, performance optimization, and server runtime design.
 - [Lithium](https://github.com/CaffeineMC/lithium)
 - [ScalableLux](https://github.com/RelativityMC/ScalableLux)
 
+Some adapted optimization code carries additional upstream license notes. See
+`THIRD_PARTY_NOTICES.md` for details, including Lithium's GNU LGPLv3 notice.
+
 ## License
 
 Fand is licensed under the GNU General Public License v3.0. See `LICENSE` for

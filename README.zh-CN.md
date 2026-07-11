@@ -66,6 +66,9 @@ Fand 使用并参考了 Paper、Gale、Leaf、Leaves、Moonrise、C2ME、Lithium
 - [Lithium](https://github.com/CaffeineMC/lithium)
 - [ScalableLux](https://github.com/RelativityMC/ScalableLux)
 
+部分适配的优化代码带有额外的上游许可证声明。详情请参阅
+`THIRD_PARTY_NOTICES.md`，其中包含 Lithium 的 GNU LGPLv3 声明。
+
 ## 许可证
 
 Fand 使用 GNU General Public License v3.0 授权。完整许可证文本请参阅 `LICENSE`。
