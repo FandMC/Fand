@@ -2,8 +2,8 @@ package io.fand.server.gui;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.fand.api.Fand;
 import io.fand.api.Server;
+import io.fand.api.internal.FandRuntime;
 import io.fand.api.entity.Player;
 import io.fand.api.event.inventory.InventoryCloseEvent;
 import io.fand.api.gui.Gui;
@@ -31,7 +31,7 @@ final class FandGuiServiceTest {
     @AfterEach
     void unbindServer() {
         if (boundServer != null) {
-            Fand.unbind(boundServer);
+            FandRuntime.unbind(boundServer);
             boundServer = null;
         }
     }
@@ -184,7 +184,7 @@ final class FandGuiServiceTest {
                     default -> throw new UnsupportedOperationException(method.toString());
                 });
         boundServer = (Server) proxy;
-        Fand.bind(boundServer);
+        FandRuntime.bind(boundServer);
     }
 
     private Player player(UUID id) {

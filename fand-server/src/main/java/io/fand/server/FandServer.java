@@ -4,7 +4,7 @@ import com.mojang.authlib.Environment;
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.exceptions.AuthenticationUnavailableException;
 import com.mojang.authlib.yggdrasil.ProfileResult;
-import io.fand.api.Fand;
+import io.fand.api.internal.FandRuntime;
 import io.fand.api.Server;
 import io.fand.api.advancement.AdvancementRegistry;
 import io.fand.api.bossbar.BossBarService;
@@ -317,7 +317,7 @@ public final class FandServer implements Server, AutoCloseable {
         if (!phase.compareAndSet(LifecyclePhase.BOOTSTRAP, LifecyclePhase.LOADED)) {
             throw new IllegalStateException("Fand runtime already started, current phase: " + phase.get());
         }
-        Fand.bind(this);
+        FandRuntime.bind(this);
         plugins.loadPlugins();
         LOGGER.info("Loaded Fand {} for Minecraft {}", version(), minecraftVersion());
     }
@@ -1093,7 +1093,7 @@ public final class FandServer implements Server, AutoCloseable {
         scheduler.close();
         guiThemes.close();
         performance.close();
-        Fand.unbind(this);
+        FandRuntime.unbind(this);
         phase.set(LifecyclePhase.STOPPED);
         LOGGER.info("Fand runtime stopped");
     }

@@ -58,7 +58,7 @@ import org.jspecify.annotations.Nullable;
  * Top-level handle to a running Fand server instance.
  *
  * <p>Obtain the singleton via {@link Fand#server()}. The instance is bound during
- * server bootstrap and remains valid for the lifetime of the JVM.
+ * server bootstrap and remains valid until the server runtime shuts down.
  *
  * <p>{@code Server} is an Adventure {@link ForwardingAudience} that forwards to
  * every online player. {@code server().sendMessage(component)} broadcasts to

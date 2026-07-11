@@ -602,6 +602,13 @@ final class PluginRuntimeTest {
 
             assertThat(manager.isEnabled("listener")).isTrue();
             assertThatCode(() -> dispatcher.fire(new CleanupTestEvent())).doesNotThrowAnyException();
+            var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+            try {
+                assertThatCode(() -> dispatcher.fireAsync(new CleanupTestEvent(), executor).join())
+                        .doesNotThrowAnyException();
+            } finally {
+                executor.shutdownNow();
+            }
         } finally {
             manager.close();
         }

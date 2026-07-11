@@ -55,6 +55,12 @@ public interface ResourcePackService {
 
     boolean delete(String packId);
 
+    /**
+     * Builds a pack into its managed ZIP artifact.
+     *
+     * <p>Implementations serialize concurrent builds of the same pack and
+     * atomically publish the completed artifact.
+     */
     ResourcePackBuild build(String packId);
 
     default ResourcePackRequest request(String packId, String url) {
@@ -65,6 +71,10 @@ public interface ResourcePackService {
         return build(packId).request(url, required, prompt);
     }
 
+    /**
+     * Builds a pack asynchronously. Concurrent calls for the same pack are
+     * safe and each future observes a complete artifact.
+     */
     default CompletableFuture<ResourcePackBuild> buildAsync(String packId) {
         return CompletableFuture.supplyAsync(() -> build(packId));
     }

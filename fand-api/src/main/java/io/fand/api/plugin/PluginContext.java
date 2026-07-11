@@ -47,7 +47,15 @@ public interface PluginContext {
     /** Logger pre-configured with the plugin's id as its name. */
     Logger logger();
 
-    /** Event dispatcher scoped to this plugin's lifecycle. */
+    /**
+     * Event dispatcher scoped to this plugin's lifecycle.
+     *
+     * <p>Uncaught failures from listeners registered through this context are
+     * logged and isolated from event dispatch. They do not cause {@link
+     * EventBus#fireAsync(io.fand.api.event.Event, java.util.concurrent.Executor)}
+     * to complete exceptionally. Failures from other global listeners retain
+     * the normal {@link EventBus} contract.
+     */
     EventBus events();
 
     /** Permission service visible to this plugin. */

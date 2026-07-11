@@ -11,6 +11,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Collection;
@@ -18,6 +19,8 @@ import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import net.minecraft.SharedConstants;
@@ -27,6 +30,7 @@ public final class FandResourcePackService implements ResourcePackService {
 
     private final Path rootDirectory;
     private final Path buildDirectory;
+    private final ConcurrentHashMap<String, ReentrantLock> buildLocks = new ConcurrentHashMap<>();
 
     public FandResourcePackService(Path rootDirectory) {
         this.rootDirectory = Objects.requireNonNull(rootDirectory, "rootDirectory").toAbsolutePath().normalize();
@@ -166,21 +170,35 @@ public final class FandResourcePackService implements ResourcePackService {
     @Override
     public ResourcePackBuild build(String packId) {
         var id = normalizeId(packId);
+        var lock = buildLocks.computeIfAbsent(id, ignored -> new ReentrantLock());
+        lock.lock();
+        try {
+            return buildLocked(id);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private ResourcePackBuild buildLocked(String id) {
         var directory = packDirectory(id);
         ensurePackExists(id);
         ensureBuildRoot();
         var output = buildDirectory.resolve(id + ".zip").normalize();
         try {
-            Files.deleteIfExists(output);
-            Files.createDirectories(output.getParent());
-            try (var zip = new ZipOutputStream(Files.newOutputStream(output))) {
-                for (var file : sortedPackFiles(directory)) {
-                    var relative = directory.relativize(file).toString().replace('\\', '/');
-                    var entry = new ZipEntry(relative);
-                    zip.putNextEntry(entry);
-                    Files.copy(file, zip);
-                    zip.closeEntry();
+            var temporary = Files.createTempFile(buildDirectory, id + "-", ".zip");
+            try {
+                try (var zip = new ZipOutputStream(Files.newOutputStream(temporary))) {
+                    for (var file : sortedPackFiles(directory)) {
+                        var relative = directory.relativize(file).toString().replace('\\', '/');
+                        var entry = new ZipEntry(relative);
+                        zip.putNextEntry(entry);
+                        Files.copy(file, zip);
+                        zip.closeEntry();
+                    }
                 }
+                publish(temporary, output);
+            } finally {
+                Files.deleteIfExists(temporary);
             }
             return new ResourcePackBuild(id, output, sha1(output), Files.size(output));
         } catch (IOException failure) {
@@ -232,6 +250,14 @@ public final class FandResourcePackService implements ResourcePackService {
                     .filter(Files::isRegularFile)
                     .sorted(Comparator.comparing(path -> directory.relativize(path).toString().replace('\\', '/')))
                     .toList();
+        }
+    }
+
+    private static void publish(Path temporary, Path output) throws IOException {
+        try {
+            Files.move(temporary, output, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException unsupportedAtomicMove) {
+            Files.move(temporary, output, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 

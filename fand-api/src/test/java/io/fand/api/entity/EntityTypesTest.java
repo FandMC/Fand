@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.fand.api.Fand;
 import io.fand.api.Server;
+import io.fand.api.internal.FandRuntime;
 import java.lang.reflect.Proxy;
+import java.util.Arrays;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import net.kyori.adventure.key.Key;
@@ -19,7 +21,7 @@ final class EntityTypesTest {
     @AfterEach
     void unbindServer() {
         if (boundServer != null) {
-            Fand.unbind(boundServer);
+            FandRuntime.unbind(boundServer);
             boundServer = null;
         }
     }
@@ -45,6 +47,12 @@ final class EntityTypesTest {
                 .hasMessageContaining("minecraft:not_real");
     }
 
+    @Test
+    void publicFandApiDoesNotExposeRuntimeBinding() {
+        assertThat(Arrays.stream(Fand.class.getDeclaredMethods()).map(method -> method.getName()))
+                .containsExactly("server");
+    }
+
     private void bindServer(EntityTypeLookup lookup) {
         Object proxy = Proxy.newProxyInstance(
                 Server.class.getClassLoader(),
@@ -57,7 +65,7 @@ final class EntityTypesTest {
                     default -> throw new UnsupportedOperationException(method.toString());
                 });
         boundServer = (Server) proxy;
-        Fand.bind(boundServer);
+        FandRuntime.bind(boundServer);
     }
 
     @FunctionalInterface
