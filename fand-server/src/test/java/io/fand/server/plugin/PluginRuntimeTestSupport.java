@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.jar.JarEntry;
@@ -18,6 +19,40 @@ final class PluginRuntimeTestSupport {
     }
 
     static Path createPluginJar(Path tempDir, Path jarPath, String descriptorJson, Map<String, String> sources, List<Path> extraClasspath) throws IOException {
+        return createPluginJar(tempDir, jarPath, descriptorJson, sources, extraClasspath, Map.of());
+    }
+
+    static Path createPluginJar(
+            Path tempDir,
+            Path jarPath,
+            String descriptorJson,
+            Map<String, String> sources,
+            List<Path> extraClasspath,
+            Map<String, String> resources
+    ) throws IOException {
+        var entries = new LinkedHashMap<>(resources);
+        if (entries.put("fand-plugin.json", descriptorJson) != null) {
+            throw new IllegalArgumentException("resources must not contain fand-plugin.json");
+        }
+        return createCompiledJar(tempDir, jarPath, sources, extraClasspath, entries);
+    }
+
+    static Path createJavaJar(
+            Path tempDir,
+            Path jarPath,
+            Map<String, String> sources,
+            List<Path> extraClasspath
+    ) throws IOException {
+        return createCompiledJar(tempDir, jarPath, sources, extraClasspath, Map.of());
+    }
+
+    private static Path createCompiledJar(
+            Path tempDir,
+            Path jarPath,
+            Map<String, String> sources,
+            List<Path> extraClasspath,
+            Map<String, String> resources
+    ) throws IOException {
         var sourceDir = Files.createDirectories(tempDir.resolve("src-" + jarPath.getFileName()));
         var classesDir = Files.createDirectories(tempDir.resolve("classes-" + jarPath.getFileName()));
         for (var entry : sources.entrySet()) {
@@ -53,9 +88,11 @@ final class PluginRuntimeTestSupport {
         try (var out = new JarOutputStream(Files.newOutputStream(jarPath));
              var classStream = Files.walk(classesDir)) {
             classStream.filter(Files::isRegularFile).forEach(path -> writeJarEntry(out, classesDir, path));
-            out.putNextEntry(new JarEntry("fand-plugin.json"));
-            out.write(descriptorJson.getBytes(StandardCharsets.UTF_8));
-            out.closeEntry();
+            for (var entry : resources.entrySet()) {
+                out.putNextEntry(new JarEntry(entry.getKey()));
+                out.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
+                out.closeEntry();
+            }
         }
         return jarPath;
     }

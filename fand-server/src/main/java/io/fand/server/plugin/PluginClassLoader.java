@@ -3,6 +3,7 @@ package io.fand.server.plugin;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -17,8 +18,24 @@ public final class PluginClassLoader extends URLClassLoader {
     private final List<PluginClassLoader> dependencies;
 
     public PluginClassLoader(URL jarUrl, ClassLoader parent, List<PluginClassLoader> dependencies) {
-        super(new URL[] {jarUrl}, parent);
+        this(jarUrl, List.of(), parent, dependencies);
+    }
+
+    public PluginClassLoader(
+            URL jarUrl,
+            List<URL> libraryUrls,
+            ClassLoader parent,
+            List<PluginClassLoader> dependencies
+    ) {
+        super(classPath(jarUrl, libraryUrls), parent);
         this.dependencies = List.copyOf(dependencies);
+    }
+
+    private static URL[] classPath(URL jarUrl, List<URL> libraryUrls) {
+        var urls = new ArrayList<URL>(libraryUrls.size() + 1);
+        urls.add(jarUrl);
+        urls.addAll(libraryUrls);
+        return urls.toArray(URL[]::new);
     }
 
     @Override

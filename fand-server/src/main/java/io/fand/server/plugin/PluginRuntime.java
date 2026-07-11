@@ -98,6 +98,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
 
     private final Path pluginsDirectory;
     private final Path dataDirectoryRoot;
+    private final PluginLibraryResolver libraryResolver;
     private final ClassLoader parentClassLoader;
     private final CommandRegistry commandRegistry;
     private final EventBus eventBus;
@@ -712,6 +713,9 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     ) {
         this.pluginsDirectory = pluginsDirectory;
         this.dataDirectoryRoot = dataDirectoryRoot;
+        this.libraryResolver = new PluginLibraryResolver(
+                pluginsDirectory.toAbsolutePath().normalize().resolveSibling("libraries")
+        );
         this.parentClassLoader = parentClassLoader;
         this.commandRegistry = commandRegistry;
         this.eventBus = eventBus;
@@ -1152,6 +1156,11 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         disabledPlugins.clear();
         loaded = false;
         enabled = false;
+        try {
+            libraryResolver.close();
+        } catch (RuntimeException failure) {
+            LOGGER.warn("Failed to close plugin library resolver", failure);
+        }
         if (closeGuiService && guiService instanceof AutoCloseable closeable) {
             try {
                 closeable.close();
@@ -1167,7 +1176,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             throw new PluginLoadException("Plugin '" + id + "' is already loaded");
         }
         var dependencies = dependencyClassLoaders(artifact.descriptor.depends());
-        var classLoader = new PluginClassLoader(toJarUrl(artifact.jarPath), parentClassLoader, dependencies);
+        var libraryUrls = libraryResolver.resolve(artifact.jarPath, id).stream()
+                .map(PluginRuntime::toJarUrl)
+                .toList();
+        var classLoader = new PluginClassLoader(toJarUrl(artifact.jarPath), libraryUrls, parentClassLoader, dependencies);
         var resources = new PluginResourceTracker();
         var pluginPlaceholders = new PluginPlaceholderService(placeholderService, resources, id);
         var context = new RuntimePluginContext(

@@ -53,6 +53,50 @@ jar 会被诊断为对应 Bukkit/Paper/Fabric/Forge 等插件，而不会作为 
 不提供 classloader 可见性，也不会参与卸载级联依赖。软排序与硬依赖共同形成加载顺序图；出现循环时，
 严格模式报错，默认容错模式会跳过循环中的插件。
 
+## 外部库
+
+插件可以在 jar 根目录放置可选的 `libraries.json`，让 Fand 在加载插件前下载未打包进插件 jar 的运行时库：
+
+```json
+{
+  "repositories": [
+    "https://repo.maven.apache.org/maven2/"
+  ],
+  "libraries": [
+    "org.xerial:sqlite-jdbc:3.49.1.0",
+    "org.postgresql:postgresql:42.7.5"
+  ]
+}
+```
+
+`repositories` 按声明顺序回退，只接受不含凭据、查询参数和 fragment 的绝对 `http` 或 `https` URL。
+`libraries` 中的根依赖必须使用固定的 `group:artifact:version`，不接受动态版本。Fand 使用 Maven Resolver 读取
+POM，并按 runtime classpath 语义解析传递依赖、scope、optional、exclusion 和同一依赖图中的版本冲突。
+插件 jar 始终位于解析出的库之前；Fand API、Adventure、SLF4J 等平台类型仍由父 classloader 提供。
+
+下载结果按 Maven 目录结构缓存在服务端根目录的 `libraries/`，相同坐标只保存一份。两个插件使用同一版本时会
+复用缓存文件；声明不同版本时，两个版本会同时保留并由各自插件 classloader 隔离。Fand 不会把不同版本强制合并，
+因为全局选择“最高版本”可能让原本兼容的插件在运行时产生链接错误。
+
+每个仓库请求会对瞬时网络错误以及 HTTP 429、503 最多重试 3 次，再按声明顺序尝试后续仓库。远程仓库必须提供
+可通过的 Maven 校验和；下载后 Fand 还会计算并持久化 `.sha256`，后续加载发现缓存内容变化时拒绝使用。
+
+需要可复现供应链锁定时，可以增加 `sha256` 对象。键使用 Maven artifact 坐标，值为 64 位十六进制 SHA-256：
+
+```json
+{
+  "repositories": ["https://repo.example.com/releases/"],
+  "libraries": ["com.example:standalone:1.0.0"],
+  "sha256": {
+    "com.example:standalone:1.0.0": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  }
+}
+```
+
+一旦提供 `sha256`，它必须完整覆盖 Maven 解析出的每个 jar，且不能包含未解析的条目。这同时锁定依赖图和文件内容；
+任一传递依赖缺少哈希、出现额外依赖或内容不匹配时，对应插件加载失败。非标准 artifact 可以使用
+`group:artifact:extension:version` 或 `group:artifact:extension:classifier:version` 作为键。
+
 ```java
 package com.example;
 
