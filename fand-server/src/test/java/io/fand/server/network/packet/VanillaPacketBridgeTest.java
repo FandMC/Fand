@@ -2,12 +2,15 @@ package io.fand.server.network.packet;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.mojang.authlib.GameProfile;
 import io.fand.api.packet.CustomPacket;
 import io.fand.api.packet.CustomPacketDefinition;
 import io.fand.api.packet.PacketContext;
 import io.fand.api.packet.PacketDirection;
 import io.fand.api.packet.PacketProtocol;
 import io.fand.api.packet.PacketType;
+import io.fand.api.packet.PlayerInfoEntry;
+import io.fand.api.packet.view.ClientboundPlayerInfoUpdatePacketView;
 import io.fand.api.packet.view.ClientboundBlockChangedAckPacketView;
 import io.fand.api.tablist.TabListEntry;
 import io.fand.server.tablist.FandTabListPackets;
@@ -102,14 +105,15 @@ final class VanillaPacketBridgeTest {
     }
 
     @Test
-    void playerInfoPacketCanBeReplacedThroughGenericFields() {
+    void playerInfoPacketUsesApiEntriesAndPreservesPartialActions() {
         var registry = new PacketRegistryImpl();
         var entryId = UUID.randomUUID();
+        var profile = new GameProfile(entryId, "CaseSensitive");
         var original = FandTabListPackets.packet(
                 EnumSet.of(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY),
                 List.of(new ClientboundPlayerInfoUpdatePacket.Entry(
                         entryId,
-                        null,
+                        profile,
                         true,
                         42,
                         GameType.DEFAULT_MODE,
@@ -117,20 +121,17 @@ final class VanillaPacketBridgeTest {
                         true,
                         0,
                         null)));
-        var replacementEntries = List.of(new ClientboundPlayerInfoUpdatePacket.Entry(
-                entryId,
-                null,
-                true,
-                99,
-                GameType.DEFAULT_MODE,
-                null,
-                true,
-                0,
-                null));
-        registry.intercept(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE, packet -> {
-            assertThat(packet.view().value("entries", List.class)).hasSize(1);
-            packet.replace(packet.view().with("entries", replacementEntries));
-        });
+        registry.intercept(
+                PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE,
+                ClientboundPlayerInfoUpdatePacketView.class,
+                packet -> {
+                    assertThat(packet.view().actions()).containsExactly("UPDATE_LATENCY");
+                    assertThat(packet.view().entries()).hasSize(1);
+                    var entry = packet.view().entries().getFirst();
+                    assertThat(entry).isInstanceOf(PlayerInfoEntry.class);
+                    assertThat(entry.profile().name()).isEqualTo("CaseSensitive");
+                    packet.replace(packet.view().withEntries(List.of(entry.withLatency(99))));
+                });
 
         var intercepted = registry.interceptOutbound(
                 ConnectionProtocol.PLAY,
@@ -144,8 +145,8 @@ final class VanillaPacketBridgeTest {
         assertThat(intercepted).isNotSameAs(original);
         var info = (ClientboundPlayerInfoUpdatePacket) intercepted;
         assertThat(info.actions()).containsExactly(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY);
-        assertThat(info.entries()).containsExactlyElementsOf(replacementEntries);
         assertThat(info.entries().getFirst().latency()).isEqualTo(99);
+        assertThat(info.entries().getFirst().profile()).isSameAs(profile);
     }
 
     @Test

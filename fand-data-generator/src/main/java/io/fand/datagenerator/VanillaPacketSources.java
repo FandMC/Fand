@@ -191,6 +191,12 @@ final class VanillaPacketSources {
         if (existing != null) {
             return existing;
         }
+        if (declaration.sourceClassName().equals(
+                "net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket")) {
+            var view = playerInfoUpdateView(declaration);
+            viewsBySourceClass.put(declaration.sourceClassName(), view);
+            return view;
+        }
         var sourceFile = sources.resolve(packetSourcePath(declaration));
         var source = sources.read(sourceFile);
         var recordComponents = recordComponents(source, simpleSourceName(declaration.sourceTypeName()));
@@ -207,6 +213,26 @@ final class VanillaPacketSources {
         var view = new PacketViewModel(viewTypeName(declaration.sourceTypeName()), declaration.sourceClassName(), replaceable, new ArrayList<>(fields.values()));
         viewsBySourceClass.put(declaration.sourceClassName(), view);
         return view;
+    }
+
+    private static PacketViewModel playerInfoUpdateView(PacketDeclaration declaration) {
+        return new PacketViewModel(
+                viewTypeName(declaration.sourceTypeName()),
+                declaration.sourceClassName(),
+                true,
+                List.of(
+                        new PacketFieldModel(
+                                "actions",
+                                "actions",
+                                "java.util.List<String>",
+                                "java.util.List.class",
+                                true),
+                        new PacketFieldModel(
+                                "entries",
+                                "entries",
+                                "java.util.List<io.fand.api.packet.PlayerInfoEntry>",
+                                "java.util.List.class",
+                                true)));
     }
 
     private void collectGetterFields(String source, Map<String, PacketFieldModel> fields) {

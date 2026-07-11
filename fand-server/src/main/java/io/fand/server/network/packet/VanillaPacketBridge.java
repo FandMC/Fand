@@ -6,6 +6,7 @@ import io.fand.api.packet.PacketDirection;
 import io.fand.api.packet.PacketProtocol;
 import io.fand.api.packet.PacketType;
 import io.fand.api.packet.PacketView;
+import io.fand.api.packet.PlayerInfoEntry;
 import io.fand.api.player.PlayerProfile;
 import io.fand.api.tablist.TabListEntry;
 import io.fand.server.command.AdventureBridge;
@@ -33,6 +34,7 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
 import net.minecraft.network.protocol.common.custom.DiscardedPayload;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.resources.Identifier;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -123,7 +125,11 @@ final class VanillaPacketBridge {
         var shape = shape(packet.getClass());
         PacketView currentView;
         try {
-            currentView = viewFactory.view(type, shape.read(packet));
+            var fields = shape.read(packet);
+            if (packet instanceof ClientboundPlayerInfoUpdatePacket playerInfo) {
+                fields = playerInfoFields(fields, playerInfo);
+            }
+            currentView = viewFactory.view(type, fields);
         } catch (RuntimeException failure) {
             LOGGER.warn("Failed to read vanilla packet {}", packet.getClass().getName(), failure);
             return packet;
@@ -156,7 +162,7 @@ final class VanillaPacketBridge {
             return packet;
         }
         try {
-            var rebuilt = toVanilla(currentView);
+            var rebuilt = toVanilla(currentView, packet);
             if (rebuilt != null) {
                 return rebuilt;
             }
@@ -169,8 +175,12 @@ final class VanillaPacketBridge {
     }
 
     @Nullable Packet<?> toVanilla(PacketView view) {
+        return toVanilla(view, null);
+    }
+
+    private @Nullable Packet<?> toVanilla(PacketView view, @Nullable Packet<?> original) {
         Objects.requireNonNull(view, "view");
-        var rebuilt = rebuildPlayerInfo(view);
+        var rebuilt = rebuildPlayerInfo(view, original);
         if (rebuilt != null) {
             return rebuilt;
         }
@@ -207,10 +217,11 @@ final class VanillaPacketBridge {
         }
     }
 
-    private @Nullable Packet<?> rebuildPlayerInfo(PacketView view) {
+    private @Nullable Packet<?> rebuildPlayerInfo(PacketView view, @Nullable Packet<?> original) {
         if (view.packetType() == PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE && isApiPlayerInfoUpdate(view)) {
             var server = registry.server().orElse(null);
-            return FandTabListPackets.packetFromApi(actions(view), tabListEntries(view), server);
+            var originalInfo = original instanceof ClientboundPlayerInfoUpdatePacket info ? info : null;
+            return FandTabListPackets.packetFromApi(actions(view), playerInfoEntries(view), server, originalInfo);
         }
         if (view.packetType() == PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_REMOVE && view.has("profileIds")) {
             return new ClientboundPlayerInfoRemovePacket(profileIds(view));
@@ -228,7 +239,7 @@ final class VanillaPacketBridge {
             return false;
         }
         return entries instanceof List<?> entryList
-                && entryList.stream().allMatch(entry -> entry instanceof TabListEntry);
+                && entryList.stream().allMatch(entry -> entry instanceof PlayerInfoEntry || entry instanceof TabListEntry);
     }
 
     private static List<String> actions(PacketView view) {
@@ -237,10 +248,22 @@ final class VanillaPacketBridge {
                 .toList();
     }
 
-    private static List<TabListEntry> tabListEntries(PacketView view) {
+    private static List<PlayerInfoEntry> playerInfoEntries(PacketView view) {
         return view.value("entries", List.class).stream()
-                .map(TabListEntry.class::cast)
+                .map(entry -> entry instanceof PlayerInfoEntry playerInfo
+                        ? playerInfo
+                        : PlayerInfoEntry.from((TabListEntry) entry))
                 .toList();
+    }
+
+    private Map<String, Object> playerInfoFields(
+            Map<String, Object> fields,
+            ClientboundPlayerInfoUpdatePacket packet
+    ) {
+        var apiFields = new LinkedHashMap<>(fields);
+        apiFields.put("actions", packet.actions().stream().map(Enum::name).toList());
+        apiFields.put("entries", FandTabListPackets.apiEntries(packet, registry.server().orElse(null)));
+        return apiFields;
     }
 
     private static List<java.util.UUID> profileIds(PacketView view) {

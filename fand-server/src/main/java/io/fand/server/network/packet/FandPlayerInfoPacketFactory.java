@@ -2,6 +2,7 @@ package io.fand.server.network.packet;
 
 import io.fand.api.packet.PacketType;
 import io.fand.api.packet.PacketView;
+import io.fand.api.packet.PlayerInfoEntry;
 import io.fand.api.packet.PlayerInfoPacketFactory;
 import io.fand.api.tablist.TabListEntry;
 import java.util.Collection;
@@ -35,6 +36,6 @@ public final class FandPlayerInfoPacketFactory implements PlayerInfoPacketFactor
         Objects.requireNonNull(entries, "entries");
         return views.view(PacketType.PLAY_CLIENTBOUND_PLAYER_INFO_UPDATE, Map.of(
                 "actions", List.copyOf(actions),
-                "entries", List.copyOf(entries)));
+                "entries", entries.stream().map(PlayerInfoEntry::from).toList()));
     }
 }

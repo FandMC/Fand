@@ -2,6 +2,7 @@ package io.fand.server.tablist;
 
 import com.mojang.authlib.GameProfile;
 import io.fand.api.entity.GameMode;
+import io.fand.api.packet.PlayerInfoEntry;
 import io.fand.api.tablist.TabListEntry;
 import io.fand.server.command.AdventureBridge;
 import io.fand.server.player.PlayerProfiles;
@@ -76,8 +77,17 @@ public final class FandTabListPackets {
 
     public static ClientboundPlayerInfoUpdatePacket packetFromApi(
             Collection<String> actions,
-            Collection<TabListEntry> entries,
+            Collection<PlayerInfoEntry> entries,
             @Nullable MinecraftServer server
+    ) {
+        return packetFromApi(actions, entries, server, null);
+    }
+
+    public static ClientboundPlayerInfoUpdatePacket packetFromApi(
+            Collection<String> actions,
+            Collection<PlayerInfoEntry> entries,
+            @Nullable MinecraftServer server,
+            @Nullable ClientboundPlayerInfoUpdatePacket original
     ) {
         Objects.requireNonNull(actions, "actions");
         Objects.requireNonNull(entries, "entries");
@@ -85,11 +95,25 @@ public final class FandTabListPackets {
         for (var action : actions) {
             convertedActions.add(ClientboundPlayerInfoUpdatePacket.Action.valueOf(action));
         }
+        if (convertedActions.contains(ClientboundPlayerInfoUpdatePacket.Action.ADD_PLAYER)
+                && entries.stream().anyMatch(entry -> entry.profile() == null)) {
+            throw new IllegalArgumentException("ADD_PLAYER entries require a profile");
+        }
         return packet(
                 convertedActions,
                 entries.stream()
-                        .map(entry -> entry(entry, server))
+                        .map(entry -> entry(entry, server, originalEntry(original, entry.profileId())))
                         .toList());
+    }
+
+    public static List<PlayerInfoEntry> apiEntries(
+            ClientboundPlayerInfoUpdatePacket packet,
+            @Nullable MinecraftServer server
+    ) {
+        Objects.requireNonNull(packet, "packet");
+        return packet.entries().stream()
+                .map(entry -> apiEntry(entry, server))
+                .toList();
     }
 
     public static ClientboundPlayerInfoUpdatePacket rewrite(
@@ -130,20 +154,40 @@ public final class FandTabListPackets {
 
     private static ClientboundPlayerInfoUpdatePacket.Entry entry(TabListEntry entry, @Nullable MinecraftServer server) {
         Objects.requireNonNull(entry, "entry");
+        return entry(PlayerInfoEntry.from(entry), server, null);
+    }
+
+    private static ClientboundPlayerInfoUpdatePacket.Entry entry(
+            PlayerInfoEntry entry,
+            @Nullable MinecraftServer server,
+            ClientboundPlayerInfoUpdatePacket.@Nullable Entry original
+    ) {
+        Objects.requireNonNull(entry, "entry");
         return new ClientboundPlayerInfoUpdatePacket.Entry(
-                entry.profile().uniqueId(),
-                profile(entry),
+                entry.profileId(),
+                profile(entry, original),
                 entry.listed(),
                 entry.latency(),
                 gameMode(entry.gameMode()),
-                displayName(entry, server),
+                displayName(entry, server, original),
                 entry.showHat(),
                 entry.order(),
-                (RemoteChatSession.Data) null);
+                original == null ? (RemoteChatSession.Data) null : original.chatSession());
     }
 
-    private static GameProfile profile(TabListEntry entry) {
-        return PlayerProfiles.toGameProfile(entry.profile());
+    private static @Nullable GameProfile profile(
+            PlayerInfoEntry entry,
+            ClientboundPlayerInfoUpdatePacket.@Nullable Entry original
+    ) {
+        var profile = entry.profile();
+        if (profile == null) {
+            return null;
+        }
+        if (original != null && original.profile() != null
+                && profile.equals(PlayerProfiles.fromVanilla(original.profile()))) {
+            return original.profile();
+        }
+        return PlayerProfiles.toGameProfile(profile);
     }
 
     private static GameType gameMode(GameMode mode) {
@@ -155,15 +199,64 @@ public final class FandTabListPackets {
         };
     }
 
-    private static @Nullable Component displayName(TabListEntry entry, @Nullable MinecraftServer server) {
+    private static @Nullable Component displayName(
+            PlayerInfoEntry entry,
+            @Nullable MinecraftServer server,
+            ClientboundPlayerInfoUpdatePacket.@Nullable Entry original
+    ) {
         var displayName = entry.displayName();
         if (displayName == null) {
             return null;
+        }
+        if (original != null && original.displayName() != null
+                && displayName.equals(AdventureBridge.fromVanilla(
+                        original.displayName(), server == null ? null : server.registryAccess()))) {
+            return original.displayName();
         }
         if (server == null) {
             throw new IllegalStateException("Minecraft server is not attached");
         }
         return AdventureBridge.toVanilla(displayName, server.registryAccess());
+    }
+
+    private static PlayerInfoEntry apiEntry(
+            ClientboundPlayerInfoUpdatePacket.Entry entry,
+            @Nullable MinecraftServer server
+    ) {
+        return new PlayerInfoEntry(
+                entry.profileId(),
+                entry.profile() == null ? null : PlayerProfiles.fromVanilla(entry.profile()),
+                entry.listed(),
+                entry.latency(),
+                gameMode(entry.gameMode()),
+                entry.displayName() == null ? null : AdventureBridge.fromVanilla(
+                        entry.displayName(), server == null ? null : server.registryAccess()),
+                entry.showHat(),
+                entry.listOrder());
+    }
+
+    private static GameMode gameMode(GameType mode) {
+        return switch (mode) {
+            case SURVIVAL -> GameMode.SURVIVAL;
+            case CREATIVE -> GameMode.CREATIVE;
+            case ADVENTURE -> GameMode.ADVENTURE;
+            case SPECTATOR -> GameMode.SPECTATOR;
+        };
+    }
+
+    private static ClientboundPlayerInfoUpdatePacket.@Nullable Entry originalEntry(
+            @Nullable ClientboundPlayerInfoUpdatePacket packet,
+            UUID profileId
+    ) {
+        if (packet == null) {
+            return null;
+        }
+        for (var entry : packet.entries()) {
+            if (entry.profileId().equals(profileId)) {
+                return entry;
+            }
+        }
+        return null;
     }
 
     private static ClientboundPlayerInfoUpdatePacket.Entry withLatency(

@@ -3,6 +3,7 @@ package io.fand.api.packet;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.fand.api.packet.view.ClientboundAddEntityPacketView;
+import io.fand.api.packet.view.ClientboundPlayerInfoUpdatePacketView;
 import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
 
@@ -28,5 +29,15 @@ final class PacketMetadataTest {
     void generatedViewsUsePrimitiveReturnTypes() throws NoSuchMethodException {
         assertThat(ClientboundAddEntityPacketView.class.getMethod("id").getReturnType()).isEqualTo(int.class);
         assertThat(ClientboundAddEntityPacketView.class.getMethod("xRot").getReturnType()).isEqualTo(float.class);
+    }
+
+    @Test
+    void playerInfoViewUsesStableApiEntryTypes() throws NoSuchMethodException {
+        assertThat(ClientboundPlayerInfoUpdatePacketView.class.getMethod("actions").getGenericReturnType().getTypeName())
+                .isEqualTo("java.util.List<java.lang.String>");
+        assertThat(ClientboundPlayerInfoUpdatePacketView.class.getMethod("entries").getGenericReturnType().getTypeName())
+                .isEqualTo("java.util.List<io.fand.api.packet.PlayerInfoEntry>");
+        assertThat(ClientboundPlayerInfoUpdatePacketView.class.getMethod("withEntries", java.util.List.class))
+                .isNotNull();
     }
 }

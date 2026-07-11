@@ -5,12 +5,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 final class EventHookSourceTest {
+
+    private static final Set<String> PROVIDER_FIRED_EVENTS = Set.of(
+            "PlayerDisguiseStateChangeEvent",
+            "PlayerVanishStateChangeEvent");
 
     @Test
     void damageAttackerUsesGenericWrapperThenChecksLivingType() throws IOException {
@@ -247,13 +252,13 @@ final class EventHookSourceTest {
         var orphaned = new ArrayList<String>();
 
         for (var event : apiEventClasses()) {
-            if (!sourceIndex.contains(event)) {
+            if (!sourceIndex.contains(event) && !PROVIDER_FIRED_EVENTS.contains(event)) {
                 orphaned.add(event);
             }
         }
 
         assertThat(orphaned)
-                .as("API event classes must be referenced by server dispatchers, plugin runtime, or Minecraft hooks")
+                .as("API events must be server-wired or explicitly designated as provider-fired")
                 .isEmpty();
     }
 
