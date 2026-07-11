@@ -304,7 +304,7 @@ context.commands().register("warp", root -> root
 
 - `sender()` / `sender(SomeSender.class)`：命令发送者。
 - `label()`：玩家实际使用的根命令名，可能是别名。
-- `args()`：原始参数列表。
+- `args()`：原始参数列表；补全时包含玩家当前正在输入的未完成参数。
 - `arguments()`：已解析参数 map。
 - `contains(name)`、`argument(name, type)`、`optionalArgument(name, type)`：通用访问。
 - `string(name)`、`intValue(name)`、`booleanValue(name)`、`player(name)`、`item(name)` 等：常用类型访问。

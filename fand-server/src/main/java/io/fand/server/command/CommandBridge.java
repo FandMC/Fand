@@ -52,7 +52,7 @@ public final class CommandBridge {
 
     public static Optional<SuggestionResult> suggestions(CommandSourceStack source, String rawCommand) {
         var runtime = io.fand.server.Main.runtime();
-        var sender = new CommandSourceSender(source, runtime.permissions());
+        var sender = CommandEvents.sender(source);
         var normalized = stripCommandPrefix(rawCommand);
         var tokens = tokenize(normalized.command(), true);
         var registry = runtime.commands();

@@ -82,8 +82,7 @@ public final class CommandManager implements CommandRegistry {
         if (tokens.isEmpty()) {
             return false;
         }
-        var normalizedTokens = normalizeTokens(tokens);
-        var first = normalizedTokens.getFirst();
+        var first = normalizeInput(tokens.getFirst());
         var current = snapshot;
         if (first.contains(":")) {
             return claimsNamespacedRoot(current, first);
@@ -109,11 +108,12 @@ public final class CommandManager implements CommandRegistry {
         if (tokens.isEmpty()) {
             return Optional.empty();
         }
-        var normalizedTokens = normalizeTokens(tokens);
+        var root = normalizeInput(tokens.getFirst());
+        var tail = tokens.subList(1, tokens.size());
         var current = snapshot;
-        return normalizedTokens.getFirst().contains(":")
-                ? resolveNamespaced(current, sender, normalizedTokens)
-                : resolveLocal(current, sender, normalizedTokens);
+        return root.contains(":")
+                ? resolveNamespaced(current, sender, root, tail)
+                : resolveLocal(current, sender, root, tail);
     }
 
     @Override
@@ -124,18 +124,17 @@ public final class CommandManager implements CommandRegistry {
         if (tokens.isEmpty()) {
             return rootSuggestions(current, sender, "");
         }
-        var normalizedTokens = normalizeTokens(tokens);
-        if (normalizedTokens.size() == 1) {
-            return rootSuggestions(current, sender, normalizedTokens.getFirst());
+        var root = normalizeInput(tokens.getFirst());
+        if (tokens.size() == 1) {
+            return rootSuggestions(current, sender, root);
         }
-        var root = normalizedTokens.getFirst();
         var entries = root.contains(":")
                 ? rootEntries(current, root)
                 : current.uniqueLocalRoots.containsKey(root) ? rootEntries(current, current.uniqueLocalRoots.get(root)) : List.<CommandEntry>of();
         if (entries.isEmpty()) {
             return List.of();
         }
-        return childOrArgumentSuggestions(sender, entries, root, normalizedTokens.subList(1, normalizedTokens.size()));
+        return childOrArgumentSuggestions(sender, entries, root, tokens.subList(1, tokens.size()));
     }
 
     private CommandRegistration registerAll(List<PendingEntry> pendingEntries) {
@@ -188,24 +187,33 @@ public final class CommandManager implements CommandRegistry {
         }
     }
 
-    private Optional<ResolvedCommand> resolveNamespaced(Snapshot current, CommandSender sender, List<String> tokens) {
-        var first = tokens.getFirst();
-        var separator = first.indexOf(':');
-        if (separator <= 0 || separator == first.length() - 1) {
+    private Optional<ResolvedCommand> resolveNamespaced(
+            Snapshot current,
+            CommandSender sender,
+            String rootToken,
+            List<String> tail
+    ) {
+        var separator = rootToken.indexOf(':');
+        if (separator <= 0 || separator == rootToken.length() - 1) {
             return Optional.empty();
         }
-        var namespace = first.substring(0, separator);
-        var root = first.substring(separator + 1);
-        return resolvePath(current, sender, namespace, root, tokens.subList(1, tokens.size()));
+        var namespace = rootToken.substring(0, separator);
+        var root = rootToken.substring(separator + 1);
+        return resolvePath(current, sender, namespace, root, tail);
     }
 
-    private Optional<ResolvedCommand> resolveLocal(Snapshot current, CommandSender sender, List<String> tokens) {
-        var owner = current.uniqueLocalRoots.get(tokens.getFirst());
+    private Optional<ResolvedCommand> resolveLocal(
+            Snapshot current,
+            CommandSender sender,
+            String root,
+            List<String> tail
+    ) {
+        var owner = current.uniqueLocalRoots.get(root);
         if (owner == null) {
             return Optional.empty();
         }
         var separator = owner.indexOf(':');
-        return resolvePath(current, sender, owner.substring(0, separator), tokens.getFirst(), tokens.subList(1, tokens.size()));
+        return resolvePath(current, sender, owner.substring(0, separator), root, tail);
     }
 
     private Optional<ResolvedCommand> resolvePath(Snapshot current, CommandSender sender, String namespace, String root, List<String> tail) {
@@ -491,7 +499,8 @@ public final class CommandManager implements CommandRegistry {
     private static CommandContext partialContext(CommandSender sender, String label, List<String> args, List<RuntimeArgument> runtimeArguments) throws Exception {
         var completed = args.isEmpty() ? List.<String>of() : args.subList(0, args.size() - 1);
         var usableArguments = runtimeArguments.subList(0, Math.min(completed.size(), runtimeArguments.size()));
-        return context(sender, label, completed, usableArguments);
+        var parsed = context(sender, label, completed, usableArguments);
+        return new CommandContext(sender, label, args, parsed.arguments());
     }
 
     private static void addMissingArgument(CommandSender sender, LinkedHashMap<String, Object> values, RuntimeArgument runtimeArgument) {
@@ -618,14 +627,6 @@ public final class CommandManager implements CommandRegistry {
     private static String pathRoot(String pathKey) {
         var separator = pathKey.indexOf(' ');
         return separator < 0 ? pathKey : pathKey.substring(0, separator);
-    }
-
-    private static List<String> normalizeTokens(List<String> tokens) {
-        var normalized = new ArrayList<String>(tokens.size());
-        for (var token : tokens) {
-            normalized.add(normalizeInput(token));
-        }
-        return normalized;
     }
 
     private static String normalizeInput(String value) {
@@ -871,12 +872,12 @@ public final class CommandManager implements CommandRegistry {
             var raw = subTokens.get(tokenIndex);
             if (token.literal()) {
                 if (tokenIndex == completingIndex) {
-                    if (token.name().startsWith(raw)) {
+                    if (startsWithIgnoreCase(token.name(), raw)) {
                         suggestions.add(token.name());
                     }
                     return;
                 }
-                if (token.name().equals(raw)) {
+                if (token.name().equalsIgnoreCase(raw)) {
                     addRouteSuggestions(sender, label, subTokens, routeIndex + 1, tokenIndex + 1, args, suggestions);
                 }
                 return;
@@ -974,7 +975,7 @@ public final class CommandManager implements CommandRegistry {
             }
             var raw = tail.get(tokenIndex);
             if (token.literal()) {
-                if (!token.name().equals(raw)) {
+                if (!token.name().equalsIgnoreCase(raw)) {
                     return Optional.empty();
                 }
                 return matchRoute(tail, routeIndex + 1, tokenIndex + 1, args);
@@ -990,6 +991,11 @@ public final class CommandManager implements CommandRegistry {
                 return Optional.empty();
             }
             return matchRoute(tail, routeIndex + 1, tokenIndex, args);
+        }
+
+        private static boolean startsWithIgnoreCase(String value, String prefix) {
+            return prefix.length() <= value.length()
+                    && value.regionMatches(true, 0, prefix, 0, prefix.length());
         }
 
         private boolean matchesArguments(List<String> args, int consumedRouteArguments) {

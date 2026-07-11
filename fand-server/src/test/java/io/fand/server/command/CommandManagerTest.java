@@ -80,6 +80,31 @@ final class CommandManagerTest {
         assertThat(manager.suggestions(sender, List.of("fand:config", "r"))).containsExactly("reload");
         assertThat(manager.suggestions(sender, List.of("config", "reload", "s"))).containsExactly("suggested");
         assertThat(manager.suggestions(sender, List.of("fand:config", "reload", "s"))).containsExactly("suggested");
+        assertThat(manager.resolve(sender, List.of("CONFIG", "RELOAD", "NOW"))).isPresent();
+    }
+
+    @Test
+    void preservesRawArgumentCaseForExecutionAndSuggestions() throws Exception {
+        var manager = new CommandManager(new PermissionManager());
+        var executed = new ArrayList<String>();
+        var completionArgs = new ArrayList<List<String>>();
+        manager.register("home", command -> command
+                .namespace("demo")
+                .argument("target", Arguments.greedyString(), target -> target
+                        .suggests(context -> {
+                            completionArgs.add(context.args());
+                            return List.of("MC20018.Home");
+                        })
+                        .executes(context -> executed.add(context.string("target")))));
+
+        var sender = new TestSender();
+        var resolved = manager.resolve(sender, List.of("HOME", "MC20018.Home")).orElseThrow();
+        resolved.command().execute(sender, resolved.usedLabel(), resolved.args());
+
+        assertThat(executed).containsExactly("MC20018.Home");
+        assertThat(manager.suggestions(sender, List.of("HOME", "MC20018.")))
+                .containsExactly("MC20018.Home");
+        assertThat(completionArgs).containsExactly(List.of("MC20018."));
     }
 
     @Test
