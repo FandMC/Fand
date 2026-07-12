@@ -4,6 +4,7 @@ import io.fand.api.packet.CustomPacketDefinition;
 import io.fand.api.packet.CustomPacketHandler;
 import io.fand.api.packet.PacketDirection;
 import io.fand.api.packet.PacketInterceptor;
+import io.fand.api.packet.PacketPriority;
 import io.fand.api.packet.PacketProtocol;
 import io.fand.api.packet.PacketRegistration;
 import io.fand.api.packet.PacketRegistry;
@@ -84,7 +85,16 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
 
     @Override
     public PacketRegistration intercept(PacketType type, PacketInterceptor<PacketView> interceptor) {
-        return intercept(type, PacketView.class, interceptor);
+        return intercept(type, PacketView.class, PacketPriority.NORMAL, interceptor);
+    }
+
+    @Override
+    public PacketRegistration intercept(
+            PacketType type,
+            PacketPriority priority,
+            PacketInterceptor<PacketView> interceptor
+    ) {
+        return intercept(type, PacketView.class, priority, interceptor);
     }
 
     @Override
@@ -93,19 +103,31 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
             Class<T> viewType,
             PacketInterceptor<T> interceptor
     ) {
+        return intercept(type, viewType, PacketPriority.NORMAL, interceptor);
+    }
+
+    @Override
+    public <T extends PacketView> PacketRegistration intercept(
+            PacketType type,
+            Class<T> viewType,
+            PacketPriority priority,
+            PacketInterceptor<T> interceptor
+    ) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(viewType, "viewType");
+        Objects.requireNonNull(priority, "priority");
         Objects.requireNonNull(interceptor, "interceptor");
         if (!viewType.isAssignableFrom(type.viewType())) {
             throw new IllegalArgumentException(
                     "View type " + viewType.getName() + " is not compatible with " + type.viewType().getName());
         }
-        var registration = new InterceptorRegistration<>(this, type, viewType, interceptor);
+        var registration = new InterceptorRegistration<>(this, type, viewType, priority, interceptor);
         // compute (not computeIfAbsent + add) so the insert is atomic with the
         // empty-list removal in release(); both lock the same map bin.
         interceptors.compute(type, (ignored, registrations) -> {
             var target = registrations == null ? new CopyOnWriteArrayList<InterceptorRegistration<? extends PacketView>>() : registrations;
             target.add(registration);
+            target.sort(java.util.Comparator.comparing(InterceptorRegistration::priority));
             return target;
         });
         return registration;
@@ -228,6 +250,7 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
         private final PacketRegistryImpl owner;
         private final PacketType type;
         private final Class<T> viewType;
+        private final PacketPriority priority;
         private final PacketInterceptor<T> interceptor;
         private volatile boolean active = true;
 
@@ -235,11 +258,13 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
                 PacketRegistryImpl owner,
                 PacketType type,
                 Class<T> viewType,
+                PacketPriority priority,
                 PacketInterceptor<T> interceptor
         ) {
             this.owner = owner;
             this.type = type;
             this.viewType = viewType;
+            this.priority = priority;
             this.interceptor = interceptor;
         }
 
@@ -249,6 +274,10 @@ public final class PacketRegistryImpl implements PacketRegistry, AutoCloseable {
 
         public Class<T> viewType() {
             return viewType;
+        }
+
+        public PacketPriority priority() {
+            return priority;
         }
 
         public PacketInterceptor<T> interceptor() {

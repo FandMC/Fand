@@ -1,11 +1,13 @@
 package io.fand.server.messaging;
 
 import io.fand.api.entity.Player;
+import io.fand.api.messaging.ConfigurationPluginMessageHandler;
 import io.fand.api.messaging.PluginMessageChannel;
 import io.fand.api.messaging.PluginMessageDirection;
 import io.fand.api.messaging.PluginMessageHandler;
 import io.fand.api.messaging.PluginMessageRegistration;
 import io.fand.api.messaging.PluginMessaging;
+import io.fand.api.player.PlayerProfile;
 import io.fand.api.packet.CustomPacketDefinition;
 import io.fand.api.packet.PacketDirection;
 import io.fand.api.packet.PacketRegistration;
@@ -26,6 +28,7 @@ import net.minecraft.network.protocol.common.custom.DiscardedPayload;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.network.ConfigurationTask;
 import net.minecraft.server.network.ServerConfigurationPacketListenerImpl;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,7 +39,8 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
     private final PacketRegistryImpl packets;
     private final PluginChannelAdvertiser advertiser;
     private final ConcurrentMap<Key, ChannelState> channels = new ConcurrentHashMap<>();
-    private final ConcurrentMap<Key, ConfigurationHandlerRegistration> configurationHandlers = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Key, CopyOnWriteArrayList<ConfigurationHandlerRegistration>> configurationHandlers =
+            new ConcurrentHashMap<>();
 
     public FandPluginMessaging(PacketRegistryImpl packets) {
         this(packets, java.util.List::of);
@@ -102,28 +106,73 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
         return new PluginChannelConfigurationTask(serverboundChannels(), configurationServerboundChannels());
     }
 
-    public ConfigurationMessageRegistration registerConfiguration(Key channel, ConfigurationMessageHandler handler) {
+    @Override
+    public PluginMessageRegistration registerConfiguration(Key channel, ConfigurationPluginMessageHandler handler) {
+        Objects.requireNonNull(handler, "handler");
+        return registerConfigurationHandler(channel, (listener, profile, payload) -> handler.handle(
+                Objects.requireNonNull(profile, "profile"),
+                new PluginMessageChannel(channel, PluginMessageDirection.SERVERBOUND),
+                payload));
+    }
+
+    public ConfigurationMessageRegistration registerInternalConfiguration(
+            Key channel,
+            ConfigurationMessageHandler handler
+    ) {
+        Objects.requireNonNull(handler, "handler");
+        return registerConfigurationHandler(channel, (listener, profile, payload) -> handler.handle(
+                listener,
+                payload));
+    }
+
+    private ConfigurationMessageRegistration registerConfigurationHandler(
+            Key channel,
+            ConfigurationDispatchHandler handler
+    ) {
         Objects.requireNonNull(channel, "channel");
         Objects.requireNonNull(handler, "handler");
         var registration = new ConfigurationHandlerRegistration(this, channel, handler);
-        var existing = configurationHandlers.putIfAbsent(channel, registration);
-        if (existing != null) {
-            throw new IllegalArgumentException("Configuration plugin messaging channel already registered: " + channel.asString());
-        }
+        configurationHandlers.computeIfAbsent(channel, ignored -> new CopyOnWriteArrayList<>()).add(registration);
         return registration;
     }
 
     public boolean handleConfigurationPayload(ServerConfigurationPacketListenerImpl listener, Identifier id, byte[] payload) {
-        var registration = configurationHandlers.get(key(id));
-        if (registration == null || !registration.active()) {
+        return handleConfigurationPayload(
+                listener,
+                listener == null ? null : new PlayerProfile(listener.getOwner().id(), listener.getOwner().name()),
+                id,
+                payload);
+    }
+
+    boolean handleConfigurationProfilePayload(PlayerProfile profile, Identifier id, byte[] payload) {
+        return handleConfigurationPayload(null, Objects.requireNonNull(profile, "profile"), id, payload);
+    }
+
+    private boolean handleConfigurationPayload(
+            @Nullable ServerConfigurationPacketListenerImpl listener,
+            @Nullable PlayerProfile profile,
+            Identifier id,
+            byte[] payload
+    ) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(payload, "payload");
+        var registrations = configurationHandlers.get(key(id));
+        if (registrations == null || registrations.isEmpty()) {
             return false;
         }
-        try {
-            registration.handler().handle(listener, Arrays.copyOf(payload, payload.length));
-        } catch (RuntimeException failure) {
-            LOGGER.warn("Configuration plugin message handler failed for {}", id, failure);
+        boolean handled = false;
+        for (var registration : registrations) {
+            if (!registration.active()) {
+                continue;
+            }
+            handled = true;
+            try {
+                registration.handler().handle(listener, profile, Arrays.copyOf(payload, payload.length));
+            } catch (RuntimeException failure) {
+                LOGGER.warn("Configuration plugin message handler failed for {}", id, failure);
+            }
         }
-        return true;
+        return handled;
     }
 
     @Override
@@ -132,6 +181,8 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
             state.close();
         }
         channels.clear();
+        configurationHandlers.values().forEach(registrations ->
+                registrations.forEach(ConfigurationHandlerRegistration::release));
         configurationHandlers.clear();
     }
 
@@ -362,7 +413,17 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
         void handle(ServerConfigurationPacketListenerImpl listener, byte[] payload);
     }
 
-    public interface ConfigurationMessageRegistration extends AutoCloseable {
+    @FunctionalInterface
+    private interface ConfigurationDispatchHandler {
+
+        void handle(
+                @Nullable ServerConfigurationPacketListenerImpl listener,
+                @Nullable PlayerProfile profile,
+                byte[] payload
+        );
+    }
+
+    public interface ConfigurationMessageRegistration extends PluginMessageRegistration {
 
         boolean active();
 
@@ -374,20 +435,20 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
 
         private final FandPluginMessaging owner;
         private final Key channel;
-        private final ConfigurationMessageHandler handler;
+        private final ConfigurationDispatchHandler handler;
         private volatile boolean active = true;
 
         private ConfigurationHandlerRegistration(
                 FandPluginMessaging owner,
                 Key channel,
-                ConfigurationMessageHandler handler
+                ConfigurationDispatchHandler handler
         ) {
             this.owner = owner;
             this.channel = channel;
             this.handler = handler;
         }
 
-        private ConfigurationMessageHandler handler() {
+        private ConfigurationDispatchHandler handler() {
             return handler;
         }
 
@@ -400,8 +461,15 @@ public final class FandPluginMessaging implements PluginMessaging, AutoCloseable
         public void close() {
             if (active) {
                 active = false;
-                owner.configurationHandlers.remove(channel, this);
+                owner.configurationHandlers.computeIfPresent(channel, (ignored, registrations) -> {
+                    registrations.remove(this);
+                    return registrations.isEmpty() ? null : registrations;
+                });
             }
+        }
+
+        private void release() {
+            active = false;
         }
     }
 }

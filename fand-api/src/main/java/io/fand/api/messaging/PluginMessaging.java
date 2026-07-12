@@ -20,6 +20,21 @@ public interface PluginMessaging {
         throw new UnsupportedOperationException("Plugin messaging channels are not supported");
     }
 
+    /**
+     * Registers a serverbound handler for messages received during the
+     * configuration protocol, before a {@link Player} exists.
+     *
+     * @param channel channel to advertise and receive
+     * @param handler handler receiving the connecting player's stable profile
+     * @return registration used to stop receiving messages
+     */
+    default PluginMessageRegistration registerConfiguration(
+            Key channel,
+            ConfigurationPluginMessageHandler handler
+    ) {
+        throw new UnsupportedOperationException("Configuration plugin messaging channels are not supported");
+    }
+
     default void send(Player player, Key channel, byte[] payload) {
         throw new UnsupportedOperationException("Plugin messaging channels are not supported");
     }

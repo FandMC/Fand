@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.fand.api.entity.Player;
+import io.fand.api.messaging.PluginMessageChannel;
+import io.fand.api.player.PlayerProfile;
 import io.fand.api.messaging.PluginMessageDirection;
 import io.fand.api.messaging.PluginMessageHandler;
 import io.fand.api.packet.CustomPacket;
@@ -16,6 +18,7 @@ import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import net.kyori.adventure.key.Key;
@@ -229,7 +232,9 @@ final class FandPluginMessagingTest {
     @Test
     void pluginChannelConfigurationTaskAdvertisesConfigurationChannelsToFabricClients() {
         var messaging = new FandPluginMessaging(new PacketRegistryImpl());
-        messaging.registerConfiguration(Key.key("fabric:recipe_sync/supported_serializers"), (listener, payload) -> {});
+        messaging.registerInternalConfiguration(
+                Key.key("fabric:recipe_sync/supported_serializers"),
+                (listener, payload) -> {});
         var packets = new ArrayList<Packet<?>>();
         var task = messaging.pluginChannelConfigurationTask();
 
@@ -246,7 +251,9 @@ final class FandPluginMessagingTest {
     void configurationPayloadIsDispatchedToRegisteredHandler() {
         var messaging = new FandPluginMessaging(new PacketRegistryImpl());
         var received = new AtomicReference<byte[]>();
-        messaging.registerConfiguration(Key.key("fabric:recipe_sync/supported_serializers"), (listener, payload) -> received.set(payload));
+        messaging.registerInternalConfiguration(
+                Key.key("fabric:recipe_sync/supported_serializers"),
+                (listener, payload) -> received.set(payload));
 
         boolean handled = messaging.handleConfigurationPayload(
                 null,
@@ -255,6 +262,49 @@ final class FandPluginMessagingTest {
 
         assertThat(handled).isTrue();
         assertThat(received.get()).containsExactly(1, 2, 3);
+    }
+
+    @Test
+    void configurationPayloadIsIsolatedForEachHandler() {
+        var messaging = new FandPluginMessaging(new PacketRegistryImpl());
+        var received = new AtomicReference<byte[]>();
+        var channel = Key.key("fabric:recipe_sync/supported_serializers");
+        messaging.registerInternalConfiguration(channel, (listener, payload) -> payload[0] = 9);
+        messaging.registerInternalConfiguration(channel, (listener, payload) -> received.set(payload));
+
+        boolean handled = messaging.handleConfigurationPayload(
+                null,
+                net.minecraft.resources.Identifier.parse(channel.asString()),
+                new byte[] {1, 2, 3});
+
+        assertThat(handled).isTrue();
+        assertThat(received.get()).containsExactly(1, 2, 3);
+    }
+
+    @Test
+    void publicConfigurationHandlerReceivesStableProfileAndChannel() {
+        var messaging = new FandPluginMessaging(new PacketRegistryImpl());
+        var playerId = UUID.randomUUID();
+        var profile = new PlayerProfile(playerId, "CaseSensitive");
+        var receivedProfile = new AtomicReference<PlayerProfile>();
+        var receivedChannel = new AtomicReference<PluginMessageChannel>();
+        var channel = Key.key("tab:bridge-6");
+        messaging.registerConfiguration(channel, (receivedPlayer, registeredChannel, payload) -> {
+            receivedProfile.set(receivedPlayer);
+            receivedChannel.set(registeredChannel);
+        });
+
+        boolean handled = messaging.handleConfigurationProfilePayload(
+                profile,
+                net.minecraft.resources.Identifier.parse(channel.asString()),
+                new byte[] {1});
+
+        assertThat(handled).isTrue();
+        assertThat(receivedProfile.get().uniqueId()).isEqualTo(playerId);
+        assertThat(receivedProfile.get().name()).isEqualTo("CaseSensitive");
+        assertThat(receivedChannel.get()).isEqualTo(new PluginMessageChannel(
+                channel,
+                PluginMessageDirection.SERVERBOUND));
     }
 
     @Test

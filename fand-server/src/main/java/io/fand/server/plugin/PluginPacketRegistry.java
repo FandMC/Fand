@@ -4,6 +4,7 @@ import io.fand.api.packet.CustomPacketDefinition;
 import io.fand.api.packet.CustomPacketHandler;
 import io.fand.api.packet.PacketDirection;
 import io.fand.api.packet.PacketInterceptor;
+import io.fand.api.packet.PacketPriority;
 import io.fand.api.packet.PacketProtocol;
 import io.fand.api.packet.PacketRegistration;
 import io.fand.api.packet.PacketRegistry;
@@ -64,12 +65,31 @@ public final class PluginPacketRegistry implements PacketRegistry {
     }
 
     @Override
+    public PacketRegistration intercept(
+            PacketType type,
+            PacketPriority priority,
+            PacketInterceptor<PacketView> interceptor
+    ) {
+        return tracker.track(delegate.intercept(type, priority, interceptor));
+    }
+
+    @Override
     public <T extends PacketView> PacketRegistration intercept(
             PacketType type,
             Class<T> viewType,
             PacketInterceptor<T> interceptor
     ) {
         return tracker.track(delegate.intercept(type, viewType, interceptor));
+    }
+
+    @Override
+    public <T extends PacketView> PacketRegistration intercept(
+            PacketType type,
+            Class<T> viewType,
+            PacketPriority priority,
+            PacketInterceptor<T> interceptor
+    ) {
+        return tracker.track(delegate.intercept(type, viewType, priority, interceptor));
     }
 
     @Override

@@ -8,6 +8,7 @@ import io.fand.api.packet.CustomPacketDefinition;
 import io.fand.api.packet.PacketContext;
 import io.fand.api.packet.PacketDirection;
 import io.fand.api.packet.PacketProtocol;
+import io.fand.api.packet.PacketPriority;
 import io.fand.api.packet.PacketType;
 import io.fand.api.packet.PlayerInfoEntry;
 import io.fand.api.packet.view.ClientboundPlayerInfoUpdatePacketView;
@@ -74,6 +75,34 @@ final class VanillaPacketBridgeTest {
                     assertThat(packet.view().sequence()).isEqualTo(2);
                     packet.replace(packet.view().withSequence(3));
                 });
+
+        var intercepted = registry.interceptOutbound(
+                ConnectionProtocol.PLAY,
+                PacketFlow.CLIENTBOUND,
+                Optional.empty(),
+                Optional.empty(),
+                null,
+                new ClientboundBlockChangedAckPacket(1));
+
+        assertThat(intercepted).isInstanceOf(ClientboundBlockChangedAckPacket.class);
+        assertThat(((ClientboundBlockChangedAckPacket) intercepted).sequence()).isEqualTo(3);
+    }
+
+    @Test
+    void higherPriorityInterceptorRunsAfterLaterNormalRegistration() {
+        var registry = new PacketRegistryImpl();
+        registry.intercept(
+                PacketType.PLAY_CLIENTBOUND_BLOCK_CHANGED_ACK,
+                ClientboundBlockChangedAckPacketView.class,
+                PacketPriority.HIGHEST,
+                packet -> {
+                    assertThat(packet.view().sequence()).isEqualTo(2);
+                    packet.replace(packet.view().withSequence(3));
+                });
+        registry.intercept(
+                PacketType.PLAY_CLIENTBOUND_BLOCK_CHANGED_ACK,
+                ClientboundBlockChangedAckPacketView.class,
+                packet -> packet.replace(packet.view().withSequence(2)));
 
         var intercepted = registry.interceptOutbound(
                 ConnectionProtocol.PLAY,

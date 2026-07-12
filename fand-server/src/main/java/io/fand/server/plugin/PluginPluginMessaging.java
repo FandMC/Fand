@@ -1,6 +1,7 @@
 package io.fand.server.plugin;
 
 import io.fand.api.entity.Player;
+import io.fand.api.messaging.ConfigurationPluginMessageHandler;
 import io.fand.api.messaging.PluginMessageChannel;
 import io.fand.api.messaging.PluginMessageDirection;
 import io.fand.api.messaging.PluginMessageHandler;
@@ -33,6 +34,14 @@ public final class PluginPluginMessaging implements PluginMessaging {
     @Override
     public PluginMessageRegistration register(Key channel, PluginMessageDirection direction, PluginMessageHandler handler) {
         return tracker.track(delegate.register(channel, direction, handler));
+    }
+
+    @Override
+    public PluginMessageRegistration registerConfiguration(
+            Key channel,
+            ConfigurationPluginMessageHandler handler
+    ) {
+        return tracker.track(delegate.registerConfiguration(channel, handler));
     }
 
     @Override

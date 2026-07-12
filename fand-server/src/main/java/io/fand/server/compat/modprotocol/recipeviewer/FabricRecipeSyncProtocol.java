@@ -62,7 +62,9 @@ public final class FabricRecipeSyncProtocol implements AutoCloseable {
             .build();
 
     public FabricRecipeSyncProtocol(FandPluginMessaging messaging, EventDispatcher events) {
-        this.serializersRegistration = messaging.registerConfiguration(SUPPORTED_SERIALIZERS, this::handleSupportedSerializers);
+        this.serializersRegistration = messaging.registerInternalConfiguration(
+                SUPPORTED_SERIALIZERS,
+                this::handleSupportedSerializers);
         this.joinSubscription = events.subscribe(PlayerJoinEvent.class, EventPriority.OBSERVER, this::syncOnJoin);
         this.quitSubscription = events.subscribe(PlayerQuitEvent.class, EventPriority.OBSERVER, this::forgetOnQuit);
     }

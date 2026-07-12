@@ -191,6 +191,7 @@ public final class FandResourcePackService implements ResourcePackService {
                     for (var file : sortedPackFiles(directory)) {
                         var relative = directory.relativize(file).toString().replace('\\', '/');
                         var entry = new ZipEntry(relative);
+                        entry.setTime(0L);
                         zip.putNextEntry(entry);
                         Files.copy(file, zip);
                         zip.closeEntry();

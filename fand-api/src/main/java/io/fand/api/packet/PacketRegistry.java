@@ -40,10 +40,33 @@ public interface PacketRegistry {
 
     PacketRegistration intercept(PacketType type, PacketInterceptor<PacketView> interceptor);
 
+    default PacketRegistration intercept(
+            PacketType type,
+            PacketPriority priority,
+            PacketInterceptor<PacketView> interceptor
+    ) {
+        if (priority != PacketPriority.NORMAL) {
+            throw new UnsupportedOperationException("Packet interceptor priorities are not supported");
+        }
+        return intercept(type, interceptor);
+    }
+
     <T extends PacketView> PacketRegistration intercept(
             PacketType type,
             Class<T> viewType,
             PacketInterceptor<T> interceptor);
+
+    default <T extends PacketView> PacketRegistration intercept(
+            PacketType type,
+            Class<T> viewType,
+            PacketPriority priority,
+            PacketInterceptor<T> interceptor
+    ) {
+        if (priority != PacketPriority.NORMAL) {
+            throw new UnsupportedOperationException("Packet interceptor priorities are not supported");
+        }
+        return intercept(type, viewType, interceptor);
+    }
 
     /**
      * Registers a custom channel that this server may send to clients.
