@@ -514,6 +514,15 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
+    public io.fand.api.network.ProxyForwardingMode proxyForwardingMode() {
+        return switch (proxyForwarding.mode()) {
+            case NONE -> io.fand.api.network.ProxyForwardingMode.NONE;
+            case BUNGEE_LEGACY -> io.fand.api.network.ProxyForwardingMode.BUNGEE_LEGACY;
+            case VELOCITY_MODERN -> io.fand.api.network.ProxyForwardingMode.VELOCITY_MODERN;
+        };
+    }
+
+    @Override
     public PluginManager plugins() {
         return plugins;
     }

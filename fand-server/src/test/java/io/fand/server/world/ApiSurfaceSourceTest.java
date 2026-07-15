@@ -20,6 +20,12 @@ final class ApiSurfaceSourceTest {
                 "public PlayerScoreboard scoreboard()",
                 "public void setSkin(@Nullable PlayerSkin skin)",
                 "public void refreshSkin()",
+                "EntityVisibility.trackedBy(viewer, player)",
+                "EntityVisibility.hide(viewer, player)",
+                "EntityVisibility.show(viewer, player)",
+                "new ClientboundRespawnPacket(",
+                "ClientboundRespawnPacket.KEEP_ALL_DATA",
+                "playerList.sendActivePlayerEffects(player)",
                 "public Location eyeLocation()",
                 "public float flySpeed()",
                 "public void setFlySpeed(float speed)",
@@ -41,6 +47,7 @@ final class ApiSurfaceSourceTest {
         assertThat(visibility).contains(
                 "ChunkMap.class",
                 "\"TrackedEntity\"",
+                "\"seenBy\"",
                 "\"removePlayer\"",
                 "\"updatePlayer\"");
         assertThat(registry).contains("new FandPlayer(handle, permissions, this, scoreboards, tabLists)");

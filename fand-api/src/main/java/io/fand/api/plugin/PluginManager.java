@@ -12,6 +12,11 @@ public interface PluginManager {
     /** Snapshot of all currently loaded plugins. */
     Collection<Plugin> loaded();
 
+    /** Descriptor snapshot for loaded plugins, in the same lifecycle order as {@link #loaded()}. */
+    default Collection<PluginDescriptor> loadedDescriptors() {
+        return java.util.List.of();
+    }
+
     Optional<Plugin> byId(String id);
 
     /** Whether the plugin with the given id is currently enabled. */

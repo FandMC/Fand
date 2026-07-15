@@ -914,6 +914,18 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     }
 
     @Override
+    public Collection<PluginDescriptor> loadedDescriptors() {
+        var descriptors = new ArrayList<PluginDescriptor>(loadOrder.size());
+        for (var pluginId : loadOrder) {
+            var loadedPlugin = loadedPlugins.get(pluginId);
+            if (loadedPlugin != null) {
+                descriptors.add(loadedPlugin.descriptor);
+            }
+        }
+        return List.copyOf(descriptors);
+    }
+
+    @Override
     public Optional<Plugin> byId(String id) {
         var loadedPlugin = loadedPlugins.get(id);
         return loadedPlugin == null ? Optional.empty() : Optional.of(loadedPlugin.plugin);

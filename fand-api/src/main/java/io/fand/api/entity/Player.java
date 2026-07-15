@@ -83,15 +83,12 @@ public interface Player extends LivingEntity, CommandSender, PermissionSubject {
         return profile().skin();
     }
 
-    /**
-     * Replaces the player's skin texture and refreshes player-info packets for
-     * online viewers.
-     */
+    /** Replaces the player's skin texture and refreshes it for the player and online viewers. */
     default void setSkin(@Nullable PlayerSkin skin) {
         throw new UnsupportedOperationException("Player skin changes are not supported");
     }
 
-    /** Resends the player's current profile/skin to online viewers. */
+    /** Resends the player's current profile and skin to the player and online viewers. */
     default void refreshSkin() {
         setSkin(skin().orElse(null));
     }

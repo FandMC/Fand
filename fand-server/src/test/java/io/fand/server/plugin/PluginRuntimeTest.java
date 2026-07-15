@@ -67,6 +67,9 @@ final class PluginRuntimeTest {
             try {
                 manager.loadPlugins();
                 assertThat(manager.loaded()).hasSize(2);
+                assertThat(manager.loadedDescriptors())
+                        .extracting(PluginDescriptor::id)
+                        .containsExactly("base", "dependent");
                 assertThat(manager.byId("base")).isPresent();
                 assertThat(manager.byId("dependent")).isPresent();
                 assertThat(manager.isEnabled("base")).isFalse();

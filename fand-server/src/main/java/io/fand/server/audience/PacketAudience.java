@@ -137,6 +137,7 @@ public final class PacketAudience {
             case PLAYER -> SoundSource.PLAYERS;
             case AMBIENT -> SoundSource.AMBIENT;
             case VOICE -> SoundSource.VOICE;
+            case UI -> SoundSource.UI;
         };
     }
 

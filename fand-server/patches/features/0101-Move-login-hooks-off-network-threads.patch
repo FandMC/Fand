@@ -1,0 +1,200 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 16 Jul 2026 01:17:39 +0800
+Subject: [PATCH] Move login hooks off network threads
+
+
+diff --git a/net/minecraft/network/Connection.java b/net/minecraft/network/Connection.java
+index 6914f643feb45923d630ae7bd2a2a2d98a53f358..4913d8d5bd6aad14e405c1f7f036281e2e7d2d26 100644
+--- a/net/minecraft/network/Connection.java
++++ b/net/minecraft/network/Connection.java
+@@ -531,8 +531,8 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         }
+ 
+         if (this.isConnected()) {
+-            this.channel.close().awaitUninterruptibly();
+             this.disconnectionDetails = details;
++            this.channel.close();
+         }
+     }
+ 
+diff --git a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+index d3c6df683cf2968da73dba0b86c66d13744840a4..0ce5197c0d89e5de1f43e918e85a426dc1bacffc 100644
+--- a/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+@@ -156,39 +156,49 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+ 
+         GameProfile singleplayerProfile = this.server.getSingleplayerProfile();
+         if (singleplayerProfile != null && this.requestedUsername.equalsIgnoreCase(singleplayerProfile.name())) {
+-            this.startClientVerification(singleplayerProfile);
++            this.startClientVerificationAsync(singleplayerProfile);
+         } else {
+             if (this.server.usesAuthentication() && !this.connection.isMemoryConnection()) {
+-                var pluginAttempt = FandHooks.authenticateLoginPlugins(new io.fand.api.auth.LoginAuthenticationRequest(
+-                        this.requestedUsername,
+-                        this.serverId,
+-                        this.connection.getRemoteAddress(),
+-                        null,
+-                        this.requestedProfileId
+-                ));
+-                switch (pluginAttempt.status()) {
+-                    case PASS -> {
+-                    }
+-                    case DENY -> {
+-                        this.disconnect(Objects.requireNonNull(pluginAttempt.reason(), "Login denial reason missing"));
+-                        return;
+-                    }
+-                    case ALLOW -> {
+-                        GameProfile profile = Objects.requireNonNull(pluginAttempt.profile(), "Login allow result missing profile");
+-                        LOGGER.info("UUID of player {} is {}", profile.name(), profile.id());
+-                        this.serverActivityMonitor.reportLoginActivity();
+-                        this.startClientVerification(profile);
+-                        return;
+-                    }
+-                }
+-                this.state = ServerLoginPacketListenerImpl.State.KEY;
+-                this.connection.send(new ClientboundHelloPacket("", this.server.getKeyPair().getPublic().getEncoded(), this.challenge, true));
++                this.startPluginAuthentication();
+             } else {
+-                this.startClientVerification(UUIDUtil.createOfflineProfile(this.requestedUsername));
++                this.startClientVerificationAsync(UUIDUtil.createOfflineProfile(this.requestedUsername));
+             }
+         }
+     }
+ 
++    private void startPluginAuthentication() {
++        this.state = ServerLoginPacketListenerImpl.State.AUTHENTICATING;
++        this.runAuthenticator(() -> {
++            if (!this.connection.isConnected()) {
++                return;
++            }
++            var pluginAttempt = FandHooks.authenticateLoginPlugins(new io.fand.api.auth.LoginAuthenticationRequest(
++                    this.requestedUsername,
++                    this.serverId,
++                    this.connection.getRemoteAddress(),
++                    null,
++                    this.requestedProfileId
++            ));
++            if (!this.connection.isConnected()) {
++                return;
++            }
++            switch (pluginAttempt.status()) {
++                case PASS -> {
++                    this.state = ServerLoginPacketListenerImpl.State.KEY;
++                    this.connection.send(new ClientboundHelloPacket(
++                            "", this.server.getKeyPair().getPublic().getEncoded(), this.challenge, true));
++                }
++                case DENY -> this.disconnect(Objects.requireNonNull(pluginAttempt.reason(), "Login denial reason missing"));
++                case ALLOW -> {
++                    GameProfile profile = Objects.requireNonNull(pluginAttempt.profile(), "Login allow result missing profile");
++                    LOGGER.info("UUID of player {} is {}", profile.name(), profile.id());
++                    this.serverActivityMonitor.reportLoginActivity();
++                    this.startClientVerification(profile);
++                }
++            }
++        });
++    }
++
+     private void handleBungeeForwarding(final String playerName) {
+         try {
+             this.applyForwardedInfo(FandHooks.parseBungeeLegacyForwarding(this.requestedHostName, playerName));
+@@ -223,10 +233,18 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+         this.connection.fand$setRemoteAddress(forwarded.address());
+         LOGGER.info("UUID of player {} is {}", profile.name(), profile.id());
+         this.serverActivityMonitor.reportLoginActivity();
+-        this.startClientVerification(profile);
++        this.startClientVerificationAsync(profile);
++    }
++
++    private void startClientVerificationAsync(final GameProfile profile) {
++        this.state = ServerLoginPacketListenerImpl.State.AUTHENTICATING;
++        this.runAuthenticator(() -> this.startClientVerification(profile));
+     }
+ 
+     private void startClientVerification(final GameProfile profile) {
++        if (!this.connection.isConnected()) {
++            return;
++        }
+         var fandAsyncPreLogin = io.fand.server.event.ServerEvents.fireAsyncPreLogin(
+             this.server,
+             this.connection.getRemoteAddress(),
+@@ -236,6 +254,9 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+             this.disconnect(fandAsyncPreLogin.reason());
+             return;
+         }
++        if (!this.connection.isConnected()) {
++            return;
++        }
+         this.authenticatedProfile = fandAsyncPreLogin.profile();
+         this.state = ServerLoginPacketListenerImpl.State.VERIFYING;
+     }
+@@ -297,37 +318,41 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+             throw new IllegalStateException("Protocol error", e);
+         }
+ 
+-        Thread thread = new Thread("User Authenticator #" + UNIQUE_THREAD_ID.incrementAndGet()) {
+-            @Override
+-            public void run() {
+-                String name = Objects.requireNonNull(ServerLoginPacketListenerImpl.this.requestedUsername, "Player name not initialized");
+-                var request = new io.fand.api.auth.LoginAuthenticationRequest(
+-                        name,
+-                        digest,
+-                        ServerLoginPacketListenerImpl.this.connection.getRemoteAddress(),
+-                        this.getAddress(),
+-                        ServerLoginPacketListenerImpl.this.requestedProfileId
+-                );
+-                var attempt = FandHooks.authenticateLogin(request);
+-                switch (attempt.status()) {
+-                    case PASS -> ServerLoginPacketListenerImpl.this.disconnect(Component.translatable("multiplayer.disconnect.unverified_username"));
+-                    case DENY -> ServerLoginPacketListenerImpl.this.disconnect(Objects.requireNonNull(attempt.reason(), "Login denial reason missing"));
+-                    case ALLOW -> {
+-                        GameProfile profile = Objects.requireNonNull(attempt.profile(), "Login allow result missing profile");
+-                        ServerLoginPacketListenerImpl.LOGGER.info("UUID of player {} is {}", profile.name(), profile.id());
+-                        ServerLoginPacketListenerImpl.this.serverActivityMonitor.reportLoginActivity();
+-                        ServerLoginPacketListenerImpl.this.startClientVerification(profile);
+-                    }
++        this.runAuthenticator(() -> {
++            String name = Objects.requireNonNull(this.requestedUsername, "Player name not initialized");
++            var request = new io.fand.api.auth.LoginAuthenticationRequest(
++                    name,
++                    digest,
++                    this.connection.getRemoteAddress(),
++                    this.authenticationAddress(),
++                    this.requestedProfileId
++            );
++            var attempt = FandHooks.authenticateLogin(request);
++            if (!this.connection.isConnected()) {
++                return;
++            }
++            switch (attempt.status()) {
++                case PASS -> this.disconnect(Component.translatable("multiplayer.disconnect.unverified_username"));
++                case DENY -> this.disconnect(Objects.requireNonNull(attempt.reason(), "Login denial reason missing"));
++                case ALLOW -> {
++                    GameProfile profile = Objects.requireNonNull(attempt.profile(), "Login allow result missing profile");
++                    LOGGER.info("UUID of player {} is {}", profile.name(), profile.id());
++                    this.serverActivityMonitor.reportLoginActivity();
++                    this.startClientVerification(profile);
+                 }
+             }
++        });
++    }
+ 
+-            private @Nullable InetAddress getAddress() {
+-                return ServerLoginPacketListenerImpl.this.server.getPreventProxyConnections()
+-                        && ServerLoginPacketListenerImpl.this.connection.getRemoteAddress() instanceof InetSocketAddress inetSocketAddress
+-                    ? inetSocketAddress.getAddress()
+-                    : null;
+-            }
+-        };
++    private @Nullable InetAddress authenticationAddress() {
++        return this.server.getPreventProxyConnections()
++                && this.connection.getRemoteAddress() instanceof InetSocketAddress inetSocketAddress
++            ? inetSocketAddress.getAddress()
++            : null;
++    }
++
++    private void runAuthenticator(final Runnable task) {
++        Thread thread = new Thread(task, "User Authenticator #" + UNIQUE_THREAD_ID.incrementAndGet());
+         thread.setUncaughtExceptionHandler(new DefaultUncaughtExceptionHandler(LOGGER));
+         thread.start();
+     }

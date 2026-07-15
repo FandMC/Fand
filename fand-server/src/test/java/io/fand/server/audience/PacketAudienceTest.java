@@ -22,6 +22,7 @@ class PacketAudienceTest {
         assertThat(PacketAudience.resolveSource(Sound.Source.PLAYER)).isEqualTo(SoundSource.PLAYERS);
         assertThat(PacketAudience.resolveSource(Sound.Source.AMBIENT)).isEqualTo(SoundSource.AMBIENT);
         assertThat(PacketAudience.resolveSource(Sound.Source.VOICE)).isEqualTo(SoundSource.VOICE);
+        assertThat(PacketAudience.resolveSource(Sound.Source.UI)).isEqualTo(SoundSource.UI);
     }
 
     @Test

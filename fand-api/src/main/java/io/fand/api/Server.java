@@ -23,6 +23,7 @@ import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.nms.NmsService;
+import io.fand.api.network.ProxyForwardingMode;
 import io.fand.api.performance.ServerPerformance;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.placeholder.PlaceholderService;
@@ -74,6 +75,11 @@ public interface Server extends ForwardingAudience {
 
     /** Minecraft protocol version this server implements. */
     String minecraftVersion();
+
+    /** Proxy player-information forwarding mode active for this server process. */
+    default ProxyForwardingMode proxyForwardingMode() {
+        return ProxyForwardingMode.NONE;
+    }
 
     /** Plugin lifecycle and lookup. */
     PluginManager plugins();

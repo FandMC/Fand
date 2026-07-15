@@ -70,7 +70,9 @@ import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
 import net.minecraft.network.protocol.game.ClientboundSetDefaultSpawnPositionPacket;
+import net.minecraft.network.protocol.game.ClientboundSetPassengersPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -1056,6 +1058,14 @@ public final class FandPlayer implements Player {
         if (server == null) {
             return;
         }
+        var trackedViewers = new java.util.ArrayList<ServerPlayer>();
+        for (var viewer : server.getPlayerList().getPlayers()) {
+            if (viewer != player && viewer.connection != null && EntityVisibility.trackedBy(viewer, player)) {
+                EntityVisibility.hide(viewer, player);
+                trackedViewers.add(viewer);
+            }
+        }
+
         var remove = new ClientboundPlayerInfoRemovePacket(java.util.List.of(player.getUUID()));
         var add = ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(java.util.List.of(player));
         for (var viewer : server.getPlayerList().getPlayers()) {
@@ -1063,6 +1073,34 @@ public final class FandPlayer implements Player {
                 viewer.connection.send(remove);
                 viewer.connection.send(add);
             }
+        }
+
+        trackedViewers.forEach(viewer -> EntityVisibility.show(viewer, player));
+        refreshLocalPlayer(player);
+    }
+
+    private static void refreshLocalPlayer(ServerPlayer player) {
+        var connection = player.connection;
+        var server = player.level().getServer();
+        if (connection == null || server == null || player.hasDisconnected() || !player.isAlive()) {
+            return;
+        }
+        var level = player.level();
+        var playerList = server.getPlayerList();
+        connection.send(new ClientboundRespawnPacket(
+                player.createCommonSpawnInfo(level),
+                ClientboundRespawnPacket.KEEP_ALL_DATA));
+        player.onUpdateAbilities();
+        connection.teleport(player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
+        playerList.sendPlayerPermissionLevel(player);
+        playerList.sendLevelInfo(player, level);
+        playerList.sendAllPlayerInfo(player);
+        playerList.sendActivePlayerEffects(player);
+        if (player.isPassenger()) {
+            connection.send(new ClientboundSetPassengersPacket(player.getVehicle()));
+        }
+        if (!player.getPassengers().isEmpty()) {
+            connection.send(new ClientboundSetPassengersPacket(player));
         }
     }
 
