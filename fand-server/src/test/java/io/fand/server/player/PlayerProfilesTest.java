@@ -59,4 +59,25 @@ final class PlayerProfilesTest {
         assertThat(withoutSkin.properties().get("extra"))
                 .containsExactly(new Property("extra", "kept"));
     }
+
+    @Test
+    void appliesEventProfileWithoutDroppingUnrelatedProperties() {
+        var original = new GameProfile(UUID.randomUUID(), "Original", new PropertyMap(ImmutableMultimap.of(
+                "extra",
+                new Property("extra", "kept"))));
+        var replacementId = UUID.randomUUID();
+        var replacement = new PlayerProfile(
+                replacementId,
+                "Replacement",
+                new PlayerSkin("skin-value", "skin-signature"));
+
+        var applied = PlayerProfiles.applyTo(original, replacement);
+
+        assertThat(applied.id()).isEqualTo(replacementId);
+        assertThat(applied.name()).isEqualTo("Replacement");
+        assertThat(applied.properties().get("textures"))
+                .containsExactly(new Property("textures", "skin-value", "skin-signature"));
+        assertThat(applied.properties().get("extra"))
+                .containsExactly(new Property("extra", "kept"));
+    }
 }

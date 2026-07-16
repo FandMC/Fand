@@ -3,10 +3,13 @@ package io.fand.server.gui;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.fand.api.Server;
-import io.fand.api.internal.FandRuntime;
 import io.fand.api.entity.Player;
+import io.fand.api.event.inventory.ClickType;
+import io.fand.api.event.inventory.InventoryAction;
+import io.fand.api.event.inventory.InventoryClickEvent;
 import io.fand.api.event.inventory.InventoryCloseEvent;
 import io.fand.api.gui.Gui;
+import io.fand.api.internal.FandRuntime;
 import io.fand.api.inventory.Inventory;
 import io.fand.api.inventory.InventoryType;
 import io.fand.api.item.ItemStack;
@@ -170,6 +173,50 @@ final class FandGuiServiceTest {
         assertThat(second.open()).isFalse();
         assertThat(service.openView(player)).isEmpty();
         assertThat(service.view(second.id())).isEmpty();
+    }
+
+    @Test
+    void protectedGuiUsesContainerSlotAndCancelsCrossInventoryActions() {
+        bindServer();
+        var events = new EventDispatcher();
+        var service = new FandGuiService(events);
+        var player = player(UUID.randomUUID());
+
+        var view = service.open(player, gui("Menu"));
+        openResults.getFirst().complete(true);
+
+        var containerClick = click(player, view.inventory(), 36, 0, -1, ClickType.PICKUP);
+        var quickMove = click(player, view.inventory(), 9, -1, 0, ClickType.QUICK_MOVE);
+        var pickupAll = click(player, view.inventory(), 9, -1, 0, ClickType.PICKUP_ALL);
+        events.fire(containerClick);
+        events.fire(quickMove);
+        events.fire(pickupAll);
+
+        assertThat(containerClick.cancelled()).isTrue();
+        assertThat(quickMove.cancelled()).isTrue();
+        assertThat(pickupAll.cancelled()).isTrue();
+    }
+
+    private static InventoryClickEvent click(
+            Player player,
+            Inventory inventory,
+            int slot,
+            int containerSlot,
+            int playerInventorySlot,
+            ClickType clickType
+    ) {
+        return new InventoryClickEvent(
+                player,
+                inventory,
+                slot,
+                slot,
+                containerSlot,
+                playerInventorySlot,
+                clickType,
+                InventoryAction.UNKNOWN,
+                0,
+                ItemStack.EMPTY,
+                ItemStack.EMPTY);
     }
 
     private void bindServer() {

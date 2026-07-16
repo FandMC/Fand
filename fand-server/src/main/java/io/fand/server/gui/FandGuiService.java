@@ -4,6 +4,7 @@ import io.fand.api.entity.Player;
 import io.fand.api.event.EventBus;
 import io.fand.api.event.EventPriority;
 import io.fand.api.event.EventSubscription;
+import io.fand.api.event.inventory.ClickType;
 import io.fand.api.event.inventory.InventoryClickEvent;
 import io.fand.api.event.inventory.InventoryCloseEvent;
 import io.fand.api.gui.Gui;
@@ -201,23 +202,47 @@ public final class FandGuiService implements GuiService, AutoCloseable {
         if (view == null || !view.open()) {
             return;
         }
-        if (event.slot() < 0 || event.slot() >= view.gui().size()) {
+        if (!event.containerClick()) {
+            if (event.playerInventoryClick()
+                    && canMutateContainer(event.clickType())
+                    && hasProtectedSlots(view.gui())) {
+                event.setCancelled(true);
+            }
             return;
         }
-        if (view.gui().protectedSlot(event.slot()) || view.gui().handles(event.slot())) {
+        int slot = event.containerSlot();
+        if (slot >= view.gui().size()) {
+            return;
+        }
+        if (view.gui().protectedSlot(slot) || view.gui().handles(slot)) {
             event.setCancelled(true);
         }
-        if (view.gui().handles(event.slot())) {
+        if (view.gui().handles(slot)) {
             view.gui().handle(new GuiClick(
                     view,
                     event.player(),
                     event.inventory(),
-                    event.slot(),
+                    slot,
                     event.clickType(),
                     event.action(),
                     event.currentItem(),
                     event.cursorItem()));
         }
+    }
+
+    private static boolean canMutateContainer(ClickType clickType) {
+        return clickType == ClickType.QUICK_MOVE
+                || clickType == ClickType.QUICK_MOVE_ALL
+                || clickType == ClickType.PICKUP_ALL;
+    }
+
+    private static boolean hasProtectedSlots(Gui gui) {
+        for (int slot = 0; slot < gui.size(); slot++) {
+            if (gui.protectedSlot(slot)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void handleClose(InventoryCloseEvent event) {

@@ -21,7 +21,16 @@ public final class AsyncPlayerPreLoginEvent implements Event {
     private Component kickMessage;
 
     public AsyncPlayerPreLoginEvent(UUID uniqueId, String name, SocketAddress address, Result result, Component kickMessage) {
-        this.profile = new PlayerProfile(uniqueId, name);
+        this(new PlayerProfile(uniqueId, name), address, result, kickMessage);
+    }
+
+    public AsyncPlayerPreLoginEvent(
+            PlayerProfile profile,
+            SocketAddress address,
+            Result result,
+            Component kickMessage
+    ) {
+        this.profile = Objects.requireNonNull(profile, "profile");
         this.address = Objects.requireNonNull(address, "address");
         this.result = Objects.requireNonNull(result, "result");
         this.kickMessage = Objects.requireNonNull(kickMessage, "kickMessage");

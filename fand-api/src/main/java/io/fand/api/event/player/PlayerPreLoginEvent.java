@@ -18,7 +18,16 @@ public final class PlayerPreLoginEvent implements Event {
     private Component kickMessage;
 
     public PlayerPreLoginEvent(UUID uniqueId, String name, SocketAddress address, Result result, Component kickMessage) {
-        this.profile = new PlayerProfile(uniqueId, name);
+        this(new PlayerProfile(uniqueId, name), address, result, kickMessage);
+    }
+
+    public PlayerPreLoginEvent(
+            PlayerProfile profile,
+            SocketAddress address,
+            Result result,
+            Component kickMessage
+    ) {
+        this.profile = Objects.requireNonNull(profile, "profile");
         this.address = Objects.requireNonNull(address, "address");
         this.result = Objects.requireNonNull(result, "result");
         this.kickMessage = Objects.requireNonNull(kickMessage, "kickMessage");

@@ -36,25 +36,26 @@ public final class PlayerProfiles {
         return new GameProfile(profile.uniqueId(), profile.name(), textures(skin));
     }
 
-    public static GameProfile withSkin(GameProfile profile, PlayerSkin skin) {
+    public static GameProfile applyTo(GameProfile original, PlayerProfile profile) {
         var properties = ImmutableMultimap.<String, Property>builder();
-        profile.properties().forEach((name, property) -> {
+        original.properties().forEach((name, property) -> {
             if (!TEXTURES.equals(name)) {
                 properties.put(name, property);
             }
         });
-        properties.put(TEXTURES, new Property(TEXTURES, skin.value(), skin.signatureOrNull()));
-        return new GameProfile(profile.id(), profile.name(), new PropertyMap(properties.build()));
+        var skin = profile.skinOrNull();
+        if (skin != null) {
+            properties.put(TEXTURES, new Property(TEXTURES, skin.value(), skin.signatureOrNull()));
+        }
+        return new GameProfile(profile.uniqueId(), profile.name(), new PropertyMap(properties.build()));
+    }
+
+    public static GameProfile withSkin(GameProfile profile, PlayerSkin skin) {
+        return applyTo(profile, fromVanilla(profile).withSkin(skin));
     }
 
     public static GameProfile withoutSkin(GameProfile profile) {
-        var properties = ImmutableMultimap.<String, Property>builder();
-        profile.properties().forEach((name, property) -> {
-            if (!TEXTURES.equals(name)) {
-                properties.put(name, property);
-            }
-        });
-        return new GameProfile(profile.id(), profile.name(), new PropertyMap(properties.build()));
+        return applyTo(profile, fromVanilla(profile).withSkin(null));
     }
 
     private static @Nullable PlayerSkin skin(GameProfile profile) {

@@ -34,7 +34,6 @@ public final class ServerEvents {
             GameProfile profile,
             @Nullable Component vanillaReason
     ) {
-        var nameAndId = new NameAndId(profile);
         var bus = FandHooks.events();
         boolean hasPreLogin = bus.hasListeners(PlayerPreLoginEvent.class);
         boolean hasLogin = bus.hasListeners(PlayerLoginEvent.class);
@@ -51,8 +50,7 @@ public final class ServerEvents {
         }
         if (hasPreLogin) {
             var event = new PlayerPreLoginEvent(
-                    nameAndId.id(),
-                    nameAndId.name(),
+                    PlayerProfiles.fromVanilla(profile),
                     address,
                     vanillaReason == null ? PlayerPreLoginEvent.Result.ALLOWED : PlayerPreLoginEvent.Result.KICK_OTHER,
                     reason);
@@ -65,14 +63,12 @@ public final class ServerEvents {
             if (event.result() != PlayerPreLoginEvent.Result.ALLOWED) {
                 return new LoginResult(profile, AdventureBridge.toVanillaOrFallback(event.kickMessage(), fallback, server.registryAccess()));
             }
-            profile = PlayerProfiles.toGameProfile(event.profile());
-            nameAndId = new NameAndId(profile);
+            profile = PlayerProfiles.applyTo(profile, event.profile());
             vanillaReason = null;
         }
         if (hasLogin) {
             var event = new PlayerLoginEvent(
-                    nameAndId.id(),
-                    nameAndId.name(),
+                    PlayerProfiles.fromVanilla(profile),
                     address,
                     vanillaReason == null ? PlayerLoginEvent.Result.ALLOWED : PlayerLoginEvent.Result.KICK_OTHER,
                     reason);
@@ -85,7 +81,7 @@ public final class ServerEvents {
             if (event.result() != PlayerLoginEvent.Result.ALLOWED) {
                 return new LoginResult(profile, AdventureBridge.toVanillaOrFallback(event.kickMessage(), fallback, server.registryAccess()));
             }
-            profile = PlayerProfiles.toGameProfile(event.profile());
+            profile = PlayerProfiles.applyTo(profile, event.profile());
         }
         return new LoginResult(profile, null);
     }
@@ -100,10 +96,8 @@ public final class ServerEvents {
             return new AsyncLoginResult(profile, null);
         }
         var fallback = Component.empty();
-        var nameAndId = new NameAndId(profile);
         var event = new AsyncPlayerPreLoginEvent(
-                nameAndId.id(),
-                nameAndId.name(),
+                PlayerProfiles.fromVanilla(profile),
                 address,
                 AsyncPlayerPreLoginEvent.Result.ALLOWED,
                 net.kyori.adventure.text.Component.empty());
@@ -114,7 +108,7 @@ public final class ServerEvents {
             return new AsyncLoginResult(profile, null);
         }
         if (event.result() == AsyncPlayerPreLoginEvent.Result.ALLOWED) {
-            return new AsyncLoginResult(PlayerProfiles.toGameProfile(event.profile()), null);
+            return new AsyncLoginResult(PlayerProfiles.applyTo(profile, event.profile()), null);
         }
         return new AsyncLoginResult(
                 profile,
