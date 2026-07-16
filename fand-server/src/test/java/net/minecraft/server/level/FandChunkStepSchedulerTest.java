@@ -41,7 +41,7 @@ final class FandChunkStepSchedulerTest {
             });
 
             assertThat(secondStarted.await(5L, TimeUnit.SECONDS)).isTrue();
-            assertThat(second).isDone();
+            second.get(5L, TimeUnit.SECONDS);
             releaseFirst.complete(null);
         } finally {
             executor.shutdownNow();
