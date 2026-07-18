@@ -103,6 +103,15 @@ public final class PluginResourcePackService implements ResourcePackService {
         return delegate.build(scopedId(packId));
     }
 
+    @Override
+    public Optional<String> hostedUrl(ResourcePackBuild build) {
+        Objects.requireNonNull(build, "build");
+        if (!owns(build.packId())) {
+            throw new IllegalArgumentException("Resource pack is not owned by this plugin: " + build.packId());
+        }
+        return delegate.hostedUrl(build);
+    }
+
     private String scopedId(String id) {
         Objects.requireNonNull(id, "id");
         var normalized = new ResourcePack(id, "", 1).id();
@@ -113,6 +122,10 @@ public final class PluginResourcePackService implements ResourcePackService {
             return normalized;
         }
         return namespace + "." + normalized;
+    }
+
+    private boolean owns(String id) {
+        return namespace.equals(id) || id.startsWith(namespace + ".");
     }
 
     private String scopedPath(String path) {

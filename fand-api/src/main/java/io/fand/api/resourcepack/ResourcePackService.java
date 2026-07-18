@@ -39,6 +39,10 @@ public interface ResourcePackService {
 
     ResourcePackRegistration create(ResourcePack pack);
 
+    default ResourcePackModelGenerator models(String packId) {
+        return ResourcePackModelGenerator.of(this, packId);
+    }
+
     default void writeJson(String packId, String path, JsonElement json) {
         write(packId, path, (PRETTY_GSON.toJson(json) + System.lineSeparator()).getBytes(StandardCharsets.UTF_8));
     }
@@ -63,6 +67,29 @@ public interface ResourcePackService {
      */
     ResourcePackBuild build(String packId);
 
+    /**
+     * Publishes a completed build through the server's resource-pack host.
+     * Returns empty when automatic hosting is disabled or unavailable.
+     */
+    default Optional<String> hostedUrl(ResourcePackBuild build) {
+        java.util.Objects.requireNonNull(build, "build");
+        return Optional.empty();
+    }
+
+    default ResourcePackRequest request(String packId) {
+        var build = build(packId);
+        var url = hostedUrl(build).orElseThrow(() ->
+                new IllegalStateException("Automatic resource-pack hosting is not available"));
+        return build.request(url);
+    }
+
+    default ResourcePackRequest request(String packId, boolean required, @Nullable Component prompt) {
+        var build = build(packId);
+        var url = hostedUrl(build).orElseThrow(() ->
+                new IllegalStateException("Automatic resource-pack hosting is not available"));
+        return build.request(url, required, prompt);
+    }
+
     default ResourcePackRequest request(String packId, String url) {
         return build(packId).request(url);
     }
@@ -82,6 +109,29 @@ public interface ResourcePackService {
     default CompletableFuture<Void> send(Player player, String packId, String url) {
         java.util.Objects.requireNonNull(player, "player");
         return buildAsync(packId).thenAccept(build -> player.sendResourcePack(build.request(url)));
+    }
+
+    default CompletableFuture<Void> send(Player player, String packId) {
+        java.util.Objects.requireNonNull(player, "player");
+        return buildAsync(packId).thenAccept(build -> {
+            var url = hostedUrl(build).orElseThrow(() ->
+                    new IllegalStateException("Automatic resource-pack hosting is not available"));
+            player.sendResourcePack(build.request(url));
+        });
+    }
+
+    default CompletableFuture<Void> send(
+            Player player,
+            String packId,
+            boolean required,
+            @Nullable Component prompt
+    ) {
+        java.util.Objects.requireNonNull(player, "player");
+        return buildAsync(packId).thenAccept(build -> {
+            var url = hostedUrl(build).orElseThrow(() ->
+                    new IllegalStateException("Automatic resource-pack hosting is not available"));
+            player.sendResourcePack(build.request(url, required, prompt));
+        });
     }
 
     default CompletableFuture<Void> send(

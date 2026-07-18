@@ -7,14 +7,15 @@ import java.util.Objects;
 import net.kyori.adventure.key.Key;
 
 /**
- * A Minecraft block type identified by its registry key (e.g. {@code minecraft:stone}).
+ * A vanilla or logical custom block type identified by its registry key.
  *
- * <p>Types are flyweights resolved from the loaded server registry; obtain instances
- * via {@link BlockTypes#of(Key)} or the named constants on {@code BlockTypes}.
+ * <p>Registered custom types are backed by a vanilla block and persistent components.
+ * Obtain vanilla and custom types through {@link BlockTypes#of(Key)} or use the named
+ * vanilla keys generated for {@code BlockTypes}.
  */
 public interface BlockType {
 
-    /** Registry key, e.g. {@code minecraft:stone}. */
+    /** Registry or logical key, e.g. {@code minecraft:stone} or {@code plugin:machine}. */
     Key key();
 
     /** Physical attributes for this type's default block state. */

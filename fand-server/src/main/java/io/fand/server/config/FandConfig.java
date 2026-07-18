@@ -64,6 +64,7 @@ public final class FandConfig {
         validateTripwireBehavior(config.technical.tripwireBehavior);
         validateServux(config.compat.modProtocols.servux);
         validateAuthentication(config.authentication);
+        validateResourcePackHosting(config.network.resourcePacks);
     }
 
     private static void validateAuthentication(Authentication config) {
@@ -82,6 +83,26 @@ public final class FandConfig {
             if (config.profilesHost.isBlank()) {
                 throw new ConfigException("authentication.profilesHost must be set when authentication.mode is third-party");
             }
+        }
+    }
+
+    private static void validateResourcePackHosting(ResourcePackHosting config) {
+        if (config.enabled && config.bindAddress.isBlank()) {
+            throw new ConfigException("network.resourcePacks.bindAddress must not be blank when hosting is enabled");
+        }
+        if (config.publicBaseUrl.isBlank()) {
+            return;
+        }
+        try {
+            var uri = java.net.URI.create(config.publicBaseUrl);
+            if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
+                    || uri.getHost() == null
+                    || uri.getQuery() != null
+                    || uri.getFragment() != null) {
+                throw new IllegalArgumentException();
+            }
+        } catch (IllegalArgumentException invalid) {
+            throw new ConfigException("network.resourcePacks.publicBaseUrl must be an absolute HTTP(S) URL without query or fragment");
         }
     }
 
@@ -912,6 +933,28 @@ public final class FandConfig {
 
         @ConfigComment("Proxy player information forwarding settings.")
         public final Forwarding forwarding = new Forwarding();
+
+        @ConfigComment("Automatic HTTP hosting for plugin-generated resource packs.")
+        public final ResourcePackHosting resourcePacks = new ResourcePackHosting();
+    }
+
+    public static final class ResourcePackHosting {
+
+        @ConfigComment("Host managed resource-pack ZIP files so plugins can send them without an external URL.")
+        public boolean enabled = true;
+
+        @ConfigComment("Interface used by the resource-pack HTTP listener. Use 0.0.0.0 for all interfaces.")
+        public String bindAddress = "0.0.0.0";
+
+        @ConfigComment("HTTP listener port. Set to 0 to choose a free port at startup.")
+        @ConfigRange(min = 0, max = 65535)
+        public int port = 0;
+
+        @ConfigComment({
+                "Optional externally reachable base URL, for example https://packs.example.com.",
+                "Leave blank to derive a local HTTP URL from server-ip and the bound hosting port."
+        })
+        public String publicBaseUrl = "";
     }
 
     public static final class Forwarding {

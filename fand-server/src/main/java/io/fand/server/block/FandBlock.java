@@ -4,6 +4,7 @@ import io.fand.api.block.Block;
 import io.fand.api.block.BlockEntity;
 import io.fand.api.block.BlockPhysics;
 import io.fand.api.block.BlockType;
+import io.fand.api.block.custom.CustomBlockType;
 import io.fand.api.block.FluidState;
 import io.fand.api.block.FluidType;
 import io.fand.api.block.FluidTypes;
@@ -14,6 +15,7 @@ import io.fand.api.world.Vector3;
 import io.fand.api.world.World;
 import io.fand.server.component.BlockComponentStorage;
 import io.fand.server.item.FandItemStacks;
+import io.fand.server.hooks.FandHooks;
 import io.fand.server.world.FandWorld;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -77,7 +79,10 @@ public final class FandBlock implements Block {
     @Override
     public BlockType type() {
         ServerLevel level = world.handle();
-        return callOnServerThread(() -> FandBlockType.of(level.getBlockState(pos).getBlock()));
+        return callOnServerThread(() -> FandHooks.customBlocks()
+                .customBlock(this)
+                .map(BlockType.class::cast)
+                .orElseGet(() -> FandBlockType.of(level.getBlockState(pos).getBlock())));
     }
 
     @Override
@@ -175,12 +180,16 @@ public final class FandBlock implements Block {
     public boolean setType(BlockType type, DataComponentMap components) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(components, "components");
+        if (type instanceof CustomBlockType customType) {
+            return FandHooks.customBlocks().place(this, customType, components);
+        }
         if (!(type instanceof FandBlockType fandType)) {
             throw new IllegalArgumentException("Block type must be obtained from BlockTypes / Server.blockType");
         }
         ServerLevel level = world.handle();
         return callOnServerThread(() -> {
-            if (!level.setBlockAndUpdate(pos, fandType.handle().defaultBlockState())) {
+            if (!FandHooks.withoutCustomBlockCarrierPreservation(
+                    () -> level.setBlockAndUpdate(pos, fandType.handle().defaultBlockState()))) {
                 return false;
             }
             if (components.empty()) {

@@ -1,9 +1,12 @@
 package io.fand.server.plugin;
 
-import io.fand.api.customitem.CustomItemRegistration;
-import io.fand.api.customitem.CustomItemRegistry;
-import io.fand.api.customitem.CustomItemType;
+import io.fand.api.item.custom.CustomItemRegistration;
+import io.fand.api.item.custom.CustomItemRegistry;
+import io.fand.api.item.custom.CustomItemType;
 import io.fand.api.item.ItemStack;
+import io.fand.api.item.component.ItemComponentKeys;
+import io.fand.api.item.component.ItemKeySet;
+import io.fand.api.item.component.ItemTool;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.Optional;
@@ -24,10 +27,15 @@ public final class PluginCustomItemRegistry implements CustomItemRegistry {
     @Override
     public CustomItemRegistration register(CustomItemType type) {
         Objects.requireNonNull(type, "type");
+        var scopedId = scopedKey(type.id());
+        var components = type.template().itemModel().filter(type.id()::equals).isPresent()
+                ? type.defaultComponents().withKey(ItemComponentKeys.ITEM_MODEL, scopedId)
+                : type.defaultComponents();
         return tracker.track(delegate.register(new CustomItemType(
-                scopedKey(type.id()),
+                scopedId,
                 type.baseType(),
-                type.template())));
+                components,
+                type.customBlockToolRules().stream().map(this::scopedRule).toList())));
     }
 
     @Override
@@ -78,5 +86,16 @@ public final class PluginCustomItemRegistry implements CustomItemRegistry {
 
     private boolean ownedByThisPlugin(CustomItemType type) {
         return namespace.equals(type.id().namespace());
+    }
+
+    private ItemTool.Rule scopedRule(ItemTool.Rule rule) {
+        var blocks = rule.blocks();
+        ItemKeySet scopedBlocks = blocks.tag()
+                .map(tag -> ItemKeySet.tag(scopedKey(tag)))
+                .orElseGet(() -> ItemKeySet.of(blocks.values().stream().map(this::scopedKey).toList()));
+        return new ItemTool.Rule(
+                scopedBlocks,
+                rule.speed().orElse(null),
+                rule.correctForDrops().orElse(null));
     }
 }

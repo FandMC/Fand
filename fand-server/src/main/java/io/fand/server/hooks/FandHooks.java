@@ -33,6 +33,7 @@ import io.fand.server.world.WorldRegistry;
 import java.net.SocketAddress;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.List;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
@@ -106,6 +107,8 @@ public final class FandHooks {
         }
     };
     private static final ServerPerformance EMPTY_PERFORMANCE = emptyPerformance();
+    private static final io.fand.server.item.FandCustomItemRegistry NOOP_CUSTOM_ITEMS =
+            new io.fand.server.item.FandCustomItemRegistry();
     private static final io.fand.server.block.FandCustomBlockRegistry NOOP_CUSTOM_BLOCKS =
             new io.fand.server.block.FandCustomBlockRegistry(NOOP_EVENTS);
     private static final io.fand.server.console.gui.GuiThemeService FALLBACK_GUI_THEMES =
@@ -121,6 +124,7 @@ public final class FandHooks {
     private static volatile boolean explosionDensityCacheEnabled = true;
     private static volatile boolean collisionTeamCacheEnabled = true;
     private static volatile boolean explosionBlockCacheEnabled = true;
+    private static final ThreadLocal<Integer> CUSTOM_BLOCK_CARRIER_BYPASS = ThreadLocal.withInitial(() -> 0);
     private static volatile int tntDetonationBudget = 0;
     private static volatile boolean explosionDropHashMerge = true;
     private static volatile boolean explosionExposureClipCache = true;
@@ -822,6 +826,82 @@ public final class FandHooks {
     public static io.fand.server.block.FandCustomBlockRegistry customBlocks() {
         var runtime = activeRuntime();
         return runtime == null ? NOOP_CUSTOM_BLOCKS : runtime.customBlockRegistry();
+    }
+
+    public static io.fand.server.item.FandCustomItemRegistry customItems() {
+        var runtime = activeRuntime();
+        return runtime == null ? NOOP_CUSTOM_ITEMS : runtime.customItemRegistry();
+    }
+
+    public static io.fand.server.block.FandCustomBlockRegistry.@Nullable MiningProperties customBlockMining(
+            net.minecraft.world.level.BlockGetter level,
+            net.minecraft.core.BlockPos position,
+            net.minecraft.world.item.ItemStack tool
+    ) {
+        var runtime = activeRuntime();
+        if (runtime == null || !(level instanceof ServerLevel serverLevel)) {
+            return null;
+        }
+        return runtime.customBlockRegistry().mining(serverLevel, position, tool).orElse(null);
+    }
+
+    public static float customBlockHardness(
+            net.minecraft.world.level.BlockGetter level,
+            net.minecraft.core.BlockPos position,
+            float fallback
+    ) {
+        var runtime = activeRuntime();
+        if (runtime == null || !(level instanceof ServerLevel serverLevel)) {
+            return fallback;
+        }
+        return runtime.customBlockRegistry().hardness(serverLevel, position).orElse(fallback);
+    }
+
+    public static net.minecraft.world.level.block.state.BlockState preserveCustomBlockCarrierState(
+            ServerLevel level,
+            net.minecraft.core.BlockPos position,
+            net.minecraft.world.level.block.state.BlockState proposed
+    ) {
+        if (CUSTOM_BLOCK_CARRIER_BYPASS.get() > 0) {
+            return proposed;
+        }
+        var runtime = activeRuntime();
+        return runtime == null
+                ? proposed
+                : runtime.customBlockRegistry().preserveCarrierState(level, position, proposed);
+    }
+
+    public static <T> T withoutCustomBlockCarrierPreservation(java.util.function.Supplier<T> action) {
+        java.util.Objects.requireNonNull(action, "action");
+        var depth = CUSTOM_BLOCK_CARRIER_BYPASS.get();
+        CUSTOM_BLOCK_CARRIER_BYPASS.set(depth + 1);
+        try {
+            return action.get();
+        } finally {
+            if (depth == 0) {
+                CUSTOM_BLOCK_CARRIER_BYPASS.remove();
+            } else {
+                CUSTOM_BLOCK_CARRIER_BYPASS.set(depth);
+            }
+        }
+    }
+
+    public static @Nullable List<net.minecraft.world.item.ItemStack> customBlockPlayerBreakDrops(
+            ServerLevel level,
+            net.minecraft.core.BlockPos position
+    ) {
+        var runtime = activeRuntime();
+        return runtime == null ? null : runtime.customBlockRegistry().playerBreakDrops(level, position);
+    }
+
+    public static boolean suppressCustomBlockBaseBehavior(
+            net.minecraft.world.level.LevelAccessor level,
+            net.minecraft.core.BlockPos position
+    ) {
+        var runtime = activeRuntime();
+        return runtime != null
+                && level instanceof ServerLevel serverLevel
+                && runtime.customBlockRegistry().suppressBaseBehavior(serverLevel, position);
     }
 
     public static @Nullable ObjectArrayList<net.minecraft.world.item.ItemStack> generateLootReplacement(

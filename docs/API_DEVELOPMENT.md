@@ -476,16 +476,17 @@ var build = context.resourcePacks().build("main");
 context.logger().info("Built resource pack {} sha1={} size={}", build.file(), build.sha1(), build.size());
 ```
 
-`build(...)` 会在服务端 `resourcepacks/builds` 下生成 zip，并返回 SHA-1、文件路径和大小。发送给玩家时仍需要
-一个客户端可访问的下载 URL：
+`build(...)` 会在服务端 `resourcepacks/builds` 下生成 zip，并返回 SHA-1、文件路径和大小。Fand 默认懒启动
+内置 HTTP 托管，插件可以直接构建并生成原版资源包请求：
 
 ```java
-var request = context.resourcePacks().request("main", "https://cdn.example.com/example-plugin-main.zip", true, null);
+var request = context.resourcePacks().request("main", true, null);
 player.sendResourcePack(request);
 ```
 
-第一版资源包 API 不内置 HTTP 托管。推荐插件把 build 产物上传到自己的 CDN、静态文件服务，或等待后续专门的
-资源包托管 API；核心服务端不在启动路径里额外打开下载服务。
+HTTP 服务只在首次调用无 URL 的 `request(...)` 或 `send(...)` 时启动。默认从 `server-ip` 和实际监听端口
+生成地址；公网、NAT 或反向代理部署应设置 `network.resourcePacks.publicBaseUrl`。已有 CDN 的插件仍可使用
+带显式 URL 的重载。
 
 插件资源包可以写 `assets/minecraft/...` 用于语言、字体等 vanilla namespace 覆盖；除此之外，`assets/...`
 路径必须留在 `assets/<plugin-id>/...` 下。运行时会先规范化路径再检查命名空间，`../` 逃逸会被拒绝。

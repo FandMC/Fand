@@ -8,14 +8,15 @@ import java.util.Objects;
 import net.kyori.adventure.key.Key;
 
 /**
- * A Minecraft item type identified by its registry key (e.g. {@code minecraft:stone}).
+ * A vanilla or logical custom item type identified by its registry key.
  *
- * <p>Types are flyweights resolved from the loaded server registry; obtain instances
- * via {@link ItemTypes#of(Key)}.
+ * <p>Vanilla types are flyweights resolved from the loaded server registry. Registered
+ * custom types are backed by a vanilla base item and components, but retain their own
+ * key throughout the Fand API. Obtain either kind through {@link ItemTypes#of(Key)}.
  */
 public interface ItemType {
 
-    /** Registry key, e.g. {@code minecraft:diamond}. */
+    /** Registry or logical key, e.g. {@code minecraft:diamond} or {@code plugin:ruby}. */
     Key key();
 
     /** Whether this item type is a member of {@code tag}. */

@@ -1,175 +1,157 @@
 package io.fand.testplugin;
 
-import static io.fand.testplugin.DemoSupport.*;
-
-import io.fand.api.Fand;
-import io.fand.api.Server;
-import io.fand.api.player.PlayerProfile;
-import io.fand.api.advancement.CustomAdvancement;
-import io.fand.api.enchantment.CustomEnchantment;
+import io.fand.api.block.BlockKey;
+import io.fand.api.block.BlockTypes;
+import io.fand.api.block.custom.CustomBlockContext;
+import io.fand.api.block.custom.CustomBlockListener;
+import io.fand.api.block.custom.CustomBlockType;
+import io.fand.api.command.CommandContext;
+import io.fand.api.entity.Player;
 import io.fand.api.event.player.PlayerJoinEvent;
-import io.fand.api.event.world.ChunkLoadEvent;
-import io.fand.api.event.world.ChunkUnloadEvent;
-import io.fand.api.event.world.ThunderChangeEvent;
-import io.fand.api.event.world.WeatherChangeEvent;
-import io.fand.api.event.world.WorldLoadEvent;
-import io.fand.api.event.world.WorldSaveEvent;
-import io.fand.api.event.world.WorldUnloadEvent;
-import io.fand.api.lifecycle.ServerStartedEvent;
-import io.fand.api.auth.LoginAuthenticationRequest;
-import io.fand.api.auth.LoginAuthenticationResult;
+import io.fand.api.item.ItemKey;
+import io.fand.api.item.ItemTypes;
+import io.fand.api.item.component.ItemKeySet;
+import io.fand.api.item.component.ItemTool;
+import io.fand.api.item.custom.CustomItemType;
+import io.fand.api.player.ResourcePackRequest;
 import io.fand.api.plugin.Plugin;
 import io.fand.api.plugin.PluginContext;
-import io.fand.api.world.World;
-import java.time.Duration;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Pattern;
+import java.util.Optional;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
 public final class TestPlugin implements Plugin {
 
-    private static final Pattern ASCII_USERNAME = Pattern.compile("[A-Za-z0-9_]{1,16}");
+    private static final Key BLOCK_ID = Key.key("fand-test-plugin:color_block");
+    private static final Key PICKAXE_ID = Key.key("fand-test-plugin:color_pickaxe");
+    private static final String COMMAND_PERMISSION = "fand.testplugin.use";
+
+    private Optional<ResourcePackRequest> resourcePackRequest = Optional.empty();
+    private CustomItemType blockItem;
+    private CustomItemType pickaxe;
 
     @Override
     public void onLoad(PluginContext context) {
-        context.logger().info("test-plugin loaded; data directory={}", context.dataDirectory());
+        context.logger().info("Fand example plugin loaded");
     }
 
     @Override
     public void onEnable(PluginContext context) {
-        Set<UUID> demoGuiViewers = ConcurrentHashMap.newKeySet();
-        var nmsDemo = new NmsDemo(context);
-        registerPermissions(context);
-        context.loginAuthenticators().register(
-                Key.key("fand-test-plugin:offline-cn"),
-                TestPlugin::authenticateOfflineForNonAsciiName);
-        nmsDemo.registerHooks();
-        TestCommands.register(context.commands(), new HelloCommand(context));
-        TestCommands.register(context.commands(), new DemoCommand(context));
-        TestCommands.register(context.commands(), new KitCommand(context, demoGuiViewers));
-        TestCommands.register(context.commands(), new PerformanceCommand());
-        TestCommands.register(context.commands(), new WorldCommand(context));
-        TestCommands.register(context.commands(), new TeleportCommand(context));
-        TestCommands.register(context.commands(), new SpawnEntityCommand(context));
-        TestCommands.register(context.commands(), new DropItemCommand(context));
-        TestCommands.register(context.commands(), new SetBlockCommand(context));
-        TestCommands.register(context.commands(), new GiveCommand(context));
-        TestCommands.register(context.commands(), new ComponentItemCommand(context));
-        TestCommands.register(context.commands(), new HealCommand(context));
-        TestCommands.register(context.commands(), new GameModeCommand());
-        TestCommands.register(context.commands(), new FlyCommand());
-        TestCommands.register(context.commands(), new ActionBarCommand(context));
-        TestCommands.register(context.commands(), new TitleCommand(context));
-        TestCommands.register(context.commands(), new BossBarCommand(context));
-        TestCommands.register(context.commands(), new ParticleCommand());
-        TestCommands.register(context.commands(), new SoundCommand());
-        TestCommands.register(context.commands(), new KickCommand(context));
-        TestCommands.register(context.commands(), new TabCommand(context));
-        TestCommands.register(context.commands(), new RecipeCommand(context));
-        TestCommands.register(context.commands(), new ComponentsCommand());
-        TestCommands.register(context.commands(), new SelfTestCommand(context));
-        TestCommands.register(context.commands(), new NmsCommand(nmsDemo));
-        TestCommands.register(context.commands(), new GuiCommand(context, demoGuiViewers));
-        registerDemoRecipes(context);
-        registerCustomRegistries(context);
-        context.events().subscribe(ServerStartedEvent.class, event -> {
-            context.logger().info("Server started; Fand brand={} version={} minecraft={}",
-                    event.server().brand(), event.server().version(), event.server().minecraftVersion());
-            nmsDemo.runStartupSelfTest(event);
-        });
-        context.events().subscribe(WorldLoadEvent.class, event ->
-                context.logger().info("World loaded: {}", event.world().key().asString()));
-        context.events().subscribe(WorldUnloadEvent.class, event ->
-                context.logger().info("World unloading: {}", event.world().key().asString()));
-        context.events().subscribe(WorldSaveEvent.class, event -> {
-            if (context.config().booleanValue("features.log-world-events", true)) {
-                context.logger().info("World saving: {}", event.world().key().asString());
-            }
-        });
-        context.events().subscribe(WeatherChangeEvent.class, event -> {
-            if (context.config().booleanValue("features.log-world-events", true)) {
-                context.logger().info("Weather changed in {}: storm {} -> {}",
-                        event.world().key().asString(), event.fromStorm(), event.toStorm());
-            }
-        });
-        context.events().subscribe(ThunderChangeEvent.class, event -> {
-            if (context.config().booleanValue("features.log-world-events", true)) {
-                context.logger().info("Thunder changed in {}: thunder {} -> {}",
-                        event.world().key().asString(), event.fromThundering(), event.toThundering());
-            }
-        });
-        context.events().subscribe(ChunkLoadEvent.class, event -> {
-            if (context.config().booleanValue("features.log-chunk-events", false)) {
-                context.logger().info("Chunk loaded: {} [{},{}]",
-                        event.world().key().asString(), event.chunkX(), event.chunkZ());
-            }
-        });
-        context.events().subscribe(ChunkUnloadEvent.class, event -> {
-            if (context.config().booleanValue("features.log-chunk-events", false)) {
-                context.logger().info("Chunk unloaded: {} [{},{}]",
-                        event.world().key().asString(), event.chunkX(), event.chunkZ());
-            }
-        });
-        context.events().subscribe(PlayerJoinEvent.class, event -> {
-            context.logger().info("{} joined ({} online players)", event.player().name(), Fand.server().onlinePlayers());
-            var welcome = message(context.config(), "messages.welcome", "Welcome from test-plugin, {player}!");
-            if (!welcome.isBlank()) {
-                event.player().sendMessage(Component.text(welcome.replace("{player}", event.player().name()), NamedTextColor.AQUA));
-            }
-        });
-        PlayerEvents.registerAll(context, demoGuiViewers);
-        context.scheduler().runAsync(() -> context.logger().info("test-plugin config file={}", context.config().file()));
-        context.scheduler().runMainRepeating(
-                () -> context.logger().debug("test-plugin heartbeat; online={}", Fand.server().onlinePlayers()),
-                Duration.ofSeconds(30),
-                Duration.ofSeconds(60));
-        context.logger().info("test-plugin enabled");
+        var block = registerBlock(context);
+        registerItems(context, block);
+        buildResourcePack(context, block);
+        registerCommand(context);
+        registerJoinEvent(context);
+
+        context.scheduler().runMainAfterTicks(
+                () -> context.logger().info("Fand example plugin is ready"),
+                1);
     }
 
     @Override
     public void onDisable(PluginContext context) {
-        context.logger().info("test-plugin disabled");
+        resourcePackRequest = Optional.empty();
+        context.logger().info("Fand example plugin disabled");
     }
 
-    private static void registerCustomRegistries(PluginContext context) {
-        var quickening = context.enchantments().register(new CustomEnchantment(
-                Key.key("fand-test-plugin:quickening"),
-                Component.text("Quickening"),
-                3));
-        var mercy = context.enchantments().register(new CustomEnchantment(
-                MERCY_ENCHANTMENT,
-                Component.text("仁慈"),
-                1));
-        var plunder = context.enchantments().register(new CustomEnchantment(
-                PLUNDER_ENCHANTMENT,
-                Component.text("掠夺"),
-                1));
-        var firstStep = context.advancements().register(new CustomAdvancement(
-                Key.key("fand-test-plugin:first_step"),
-                Component.text("First Step"),
-                Component.text("Registered by the Fand test plugin"),
-                List.of("done")));
+    private CustomBlockType registerBlock(PluginContext context) {
+        var block = CustomBlockType.builder(BLOCK_ID, BlockTypes.of(BlockKey.NOTE_BLOCK))
+                .state("instrument", "custom_head")
+                .state("note", "0")
+                .state("powered", "false")
+                .mining(4.0F, 8.0F, BlockTypes.of(BlockKey.DIAMOND_BLOCK), true)
+                .build();
+        return context.customBlocks().register(block, new CustomBlockListener() {
+            @Override
+            public void placed(CustomBlockContext event) {
+                context.logger().info("Placed {} at {}, {}, {}",
+                        event.type().id(), event.block().x(), event.block().y(), event.block().z());
+            }
 
-        context.logger().info("Registered custom enchantments: {}={} {}={} {}={}",
-                quickening.key().asString(), quickening.active(),
-                mercy.key().asString(), mercy.active(),
-                plunder.key().asString(), plunder.active());
-        context.logger().info("Registered custom advancement {} active={}",
-                firstStep.key().asString(), firstStep.active());
+            @Override
+            public void broken(CustomBlockContext event) {
+                context.logger().info("Broke {} at {}, {}, {}",
+                        event.type().id(), event.block().x(), event.block().y(), event.block().z());
+            }
+        }).type();
     }
 
-    static LoginAuthenticationResult authenticateOfflineForNonAsciiName(LoginAuthenticationRequest request) {
-        if (ASCII_USERNAME.matcher(request.name()).matches()) {
-            return LoginAuthenticationResult.pass();
+    private void registerItems(PluginContext context, CustomBlockType block) {
+        var blockTemplate = ItemTypes.of(ItemKey.NOTE_BLOCK).one()
+                .withItemName(Component.text("Six-sided Color Block", NamedTextColor.AQUA));
+        blockItem = context.customItems().register(CustomItemType.builder(BLOCK_ID, blockTemplate.type())
+                .components(blockTemplate.components())
+                .build()).type();
+
+        var pickaxeTemplate = ItemTypes.of(ItemKey.DIAMOND_PICKAXE).one()
+                .withItemName(Component.text("Color Pickaxe", NamedTextColor.LIGHT_PURPLE))
+                .withEnchantmentGlintOverride(true);
+        pickaxe = context.customItems().register(CustomItemType.builder(PICKAXE_ID, pickaxeTemplate.type())
+                .components(pickaxeTemplate.components())
+                .customBlockToolRule(ItemTool.Rule.minesAndDrops(ItemKeySet.of(block.id()), 16.0F))
+                .build()).type();
+
+        context.customBlocks().bindItem(blockItem.id(), block.id());
+    }
+
+    private void buildResourcePack(PluginContext context, CustomBlockType block) {
+        var build = ExampleAssets.install(context.resourcePacks(), blockItem, pickaxe, block);
+        var url = context.resourcePacks().hostedUrl(build).orElseThrow(() ->
+                new IllegalStateException("Enable network.resourcePacks in fand.yml"));
+        resourcePackRequest = Optional.of(build.request(
+                url,
+                context.config().booleanValue("resource-pack.required", false),
+                Component.text("Fand example textures")));
+        context.logger().info("Resource pack built and hosted at {}", url);
+    }
+
+    private void registerCommand(PluginContext context) {
+        context.commands().register("fandexample", command -> command
+                .permission(COMMAND_PERMISSION)
+                .executes(this::sendCommandHelp)
+                .literal("give", branch -> branch.executes(this::giveItems))
+                .literal("pack", branch -> branch.executes(this::sendPack)));
+    }
+
+    private void registerJoinEvent(PluginContext context) {
+        context.events().subscribe(PlayerJoinEvent.class, event -> {
+            var welcome = context.config().string("welcome-message", "Welcome to the Fand example server.");
+            if (!welcome.isBlank()) {
+                event.player().sendMessage(Component.text(welcome, NamedTextColor.GREEN));
+            }
+            resourcePackRequest.ifPresent(event.player()::sendResourcePack);
+        });
+    }
+
+    private void sendCommandHelp(CommandContext command) {
+        command.sender().sendMessage(Component.text("/fandexample give", NamedTextColor.YELLOW));
+        command.sender().sendMessage(Component.text("/fandexample pack", NamedTextColor.YELLOW));
+    }
+
+    private void giveItems(CommandContext command) {
+        if (!(command.sender() instanceof Player player)) {
+            command.sender().sendMessage(Component.text("This command requires a player.", NamedTextColor.RED));
+            return;
         }
-        return LoginAuthenticationResult.allow(
-                new PlayerProfile(
-                        request.requestedProfileId().orElseGet(() -> UUID.nameUUIDFromBytes(request.name().getBytes(java.nio.charset.StandardCharsets.UTF_8))),
-                        request.name()));
+        var blockLeftover = player.inventory().add(blockItem.stack(8));
+        var pickaxeLeftover = player.inventory().add(pickaxe.one());
+        if (blockLeftover.empty() && pickaxeLeftover.empty()) {
+            player.sendMessage(Component.text("Custom items added to your inventory.", NamedTextColor.GREEN));
+        } else {
+            player.sendMessage(Component.text("Your inventory does not have enough space.", NamedTextColor.RED));
+        }
+    }
+
+    private void sendPack(CommandContext command) {
+        if (!(command.sender() instanceof Player player)) {
+            command.sender().sendMessage(Component.text("This command requires a player.", NamedTextColor.RED));
+            return;
+        }
+        if (resourcePackRequest.isEmpty()) {
+            player.sendMessage(Component.text("The resource pack is not available.", NamedTextColor.RED));
+            return;
+        }
+        player.sendResourcePack(resourcePackRequest.orElseThrow());
     }
 }

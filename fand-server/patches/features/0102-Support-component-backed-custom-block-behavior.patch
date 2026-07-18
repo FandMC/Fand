@@ -1,0 +1,193 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 19 Jul 2026 01:24:35 +0800
+Subject: [PATCH] Support component-backed custom block behavior
+
+- Route custom hardness, tool speed, and correct-tool checks through vanilla mining calculations while preserving enchantment and player-state modifiers.
+- Replace vanilla player-break drops with the custom block item binding when one is configured.
+- Preserve custom carrier states before block placement side effects can rewrite them.
+- Suppress carrier attack, interaction, shape, and neighbor behavior unless the custom block explicitly inherits its base behavior.
+
+diff --git a/net/minecraft/server/level/ServerPlayerGameMode.java b/net/minecraft/server/level/ServerPlayerGameMode.java
+index 023bac1bc0e5f17ccd702fb9e7d4d1ee89de924e..34d7969a3b4e3e2ca5af9a04cc64fb5a982a4d7f 100644
+--- a/net/minecraft/server/level/ServerPlayerGameMode.java
++++ b/net/minecraft/server/level/ServerPlayerGameMode.java
+@@ -194,7 +194,9 @@ public class ServerPlayerGameMode {
+                         blockState,
+                         item -> this.player.onEquippedItemBroken(item, EquipmentSlot.MAINHAND)
+                     );
+-                    blockState.attack(this.level, pos, this.player);
++                    if (!io.fand.server.hooks.FandHooks.suppressCustomBlockBaseBehavior(this.level, pos)) {
++                        blockState.attack(this.level, pos, this.player);
++                    }
+                     progress = blockState.getDestroyProgress(this.player, this.player.level(), pos);
+                 }
+ 
+@@ -261,6 +263,11 @@ public class ServerPlayerGameMode {
+ 
+     public boolean destroyBlock(final BlockPos pos) {
+         BlockState state = this.level.getBlockState(pos);
++        var fandMining = io.fand.server.hooks.FandHooks.customBlockMining(
++                this.level,
++                pos,
++                this.player.getMainHandItem());
++        var fandCustomDrops = io.fand.server.hooks.FandHooks.customBlockPlayerBreakDrops(this.level, pos);
+         if (!this.player.getMainHandItem().canDestroyBlock(state, this.level, pos, this.player)) {
+             return false;
+         }
+@@ -282,9 +289,8 @@ public class ServerPlayerGameMode {
+                 var fandWorld = io.fand.server.hooks.FandHooks.wrapWorld(this.level);
+                 if (fandWorld != null) {
+                     var fandBlock = new io.fand.server.block.FandBlock(fandWorld, pos.getX(), pos.getY(), pos.getZ());
+-                    var fandBlockType = io.fand.server.block.FandBlockType.of(block);
+                     var fandBreakEvent = io.fand.server.hooks.FandHooks.fireOrLog(
+-                            new io.fand.api.event.block.BlockBreakEvent(fandPlayer, fandBlock, fandBlockType),
++                            new io.fand.api.event.block.BlockBreakEvent(fandPlayer, fandBlock, fandBlock.type()),
+                             "BlockBreakEvent");
+                     if (fandBreakEvent.cancelled()) {
+                         this.level.sendBlockUpdated(pos, state, state, Block.UPDATE_ALL);
+@@ -310,10 +316,16 @@ public class ServerPlayerGameMode {
+ 
+         ItemStack itemStack = this.player.getMainHandItem();
+         ItemStack destroyedWith = itemStack.copy();
+-        boolean canDestroy = this.player.hasCorrectToolForDrops(adjustedState);
++        boolean canDestroy = fandMining == null
++                ? this.player.hasCorrectToolForDrops(adjustedState)
++                : fandMining.correctForDrops();
+         itemStack.mineBlock(this.level, adjustedState, pos, this.player);
+         if (changed && canDestroy) {
+-            block.playerDestroy(this.level, this.player, pos, adjustedState, blockEntity, destroyedWith);
++            if (fandCustomDrops == null) {
++                block.playerDestroy(this.level, this.player, pos, adjustedState, blockEntity, destroyedWith);
++            } else {
++                fandCustomDrops.forEach(drop -> Block.popResource(this.level, pos, drop));
++            }
+         }
+ 
+         return true;
+@@ -369,11 +381,15 @@ public class ServerPlayerGameMode {
+     ) {
+         BlockPos pos = hitResult.getBlockPos();
+         BlockState state = level.getBlockState(pos);
++        boolean suppressCustomBaseBehavior = io.fand.server.hooks.FandHooks.suppressCustomBlockBaseBehavior(level, pos);
+         if (!state.getBlock().isEnabled(level.enabledFeatures())) {
+             return InteractionResult.FAIL;
+         }
+ 
+         if (this.gameModeForPlayer == GameType.SPECTATOR) {
++            if (suppressCustomBaseBehavior) {
++                return InteractionResult.PASS;
++            }
+             MenuProvider menuProvider = state.getMenuProvider(level, pos);
+             if (menuProvider != null) {
+                 player.openMenu(menuProvider);
+@@ -383,7 +399,7 @@ public class ServerPlayerGameMode {
+             }
+         } else {
+             boolean haveSomethingInOurHands = !player.getMainHandItem().isEmpty() || !player.getOffhandItem().isEmpty();
+-            boolean suppressUsingBlock = player.isSecondaryUseActive() && haveSomethingInOurHands;
++            boolean suppressUsingBlock = suppressCustomBaseBehavior || player.isSecondaryUseActive() && haveSomethingInOurHands;
+             ItemStack usedItemStack = itemStack.copy();
+             if (!suppressUsingBlock) {
+                 InteractionResult itemUse = state.useItemOn(player.getItemInHand(hand), level, player, hand, hitResult);
+diff --git a/net/minecraft/world/entity/player/Player.java b/net/minecraft/world/entity/player/Player.java
+index 07fffd623bbcd350d6e3f8c790d916551e169aa8..8f18453139ca5eaea16867cc4b43d9c294aba4b1 100644
+--- a/net/minecraft/world/entity/player/Player.java
++++ b/net/minecraft/world/entity/player/Player.java
+@@ -585,7 +585,11 @@ public abstract class Player extends Avatar implements ContainerUser {
+     }
+ 
+     public float getDestroySpeed(final BlockState state) {
+-        float speed = this.inventory.getSelectedItem().getDestroySpeed(state);
++        return this.getDestroySpeed(state, this.inventory.getSelectedItem().getDestroySpeed(state));
++    }
++
++    public float getDestroySpeed(final BlockState state, final float itemDestroySpeed) {
++        float speed = itemDestroySpeed;
+         if (speed > 1.0F) {
+             speed += (float)this.getAttributeValue(Attributes.MINING_EFFICIENCY);
+         }
+diff --git a/net/minecraft/world/level/Level.java b/net/minecraft/world/level/Level.java
+index 809a923652657cf70f475a74b03420c8891554b8..a23bc814679fa4daa0aad4cc9d1748d3b4ae3595 100644
+--- a/net/minecraft/world/level/Level.java
++++ b/net/minecraft/world/level/Level.java
+@@ -252,7 +252,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+     }
+ 
+     @Override
+-    public boolean setBlock(final BlockPos pos, final BlockState blockState, final @Block.UpdateFlags int updateFlags, final int updateLimit) {
++    public boolean setBlock(final BlockPos pos, BlockState blockState, final @Block.UpdateFlags int updateFlags, final int updateLimit) {
+         if (!this.isInValidBounds(pos)) {
+             return false;
+         }
+@@ -262,8 +262,11 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         }
+ 
+         LevelChunk chunk = this.getChunkAt(pos);
+-        Block block = blockState.getBlock();
+         BlockState oldState = chunk.getBlockState(pos);
++        if (!this.isClientSide() && this instanceof net.minecraft.server.level.ServerLevel serverLevel) {
++            blockState = io.fand.server.hooks.FandHooks.preserveCustomBlockCarrierState(serverLevel, pos, blockState);
++        }
++        Block block = blockState.getBlock();
+         if (!this.isClientSide()
+             && this instanceof net.minecraft.server.level.ServerLevel serverLevel
+             && !io.fand.server.event.BlockEvents.fireChange(serverLevel, pos, oldState, blockState, updateFlags)) {
+diff --git a/net/minecraft/world/level/block/state/BlockBehaviour.java b/net/minecraft/world/level/block/state/BlockBehaviour.java
+index 7ae9bcd410d4f578bd8fb8809b019783631f53bf..274050206fd1bd6d0b0082fe5343e3544cd6836a 100644
+--- a/net/minecraft/world/level/block/state/BlockBehaviour.java
++++ b/net/minecraft/world/level/block/state/BlockBehaviour.java
+@@ -353,8 +353,18 @@ public abstract class BlockBehaviour implements FeatureElement {
+             return 0.0F;
+         }
+ 
+-        int modifier = player.hasCorrectToolForDrops(state) ? 30 : 100;
+-        return player.getDestroySpeed(state) / destroySpeed / modifier;
++        var fandMining = io.fand.server.hooks.FandHooks.customBlockMining(
++                level,
++                pos,
++                player.getMainHandItem());
++        boolean correctForDrops = fandMining == null
++                ? player.hasCorrectToolForDrops(state)
++                : fandMining.correctForDrops();
++        float playerDestroySpeed = fandMining == null
++                ? player.getDestroySpeed(state)
++                : player.getDestroySpeed(state, fandMining.toolSpeed());
++        int modifier = correctForDrops ? 30 : 100;
++        return playerDestroySpeed / destroySpeed / modifier;
+     }
+ 
+     protected void spawnAfterBreak(final BlockState state, final ServerLevel level, final BlockPos pos, final ItemStack tool, final boolean dropExperience) {
+@@ -649,7 +659,7 @@ public abstract class BlockBehaviour implements FeatureElement {
+         }
+ 
+         public float getDestroySpeed(final BlockGetter level, final BlockPos pos) {
+-            return this.destroySpeed;
++            return io.fand.server.hooks.FandHooks.customBlockHardness(level, pos, this.destroySpeed);
+         }
+ 
+         public float getDestroyProgress(final Player player, final BlockGetter level, final BlockPos pos) {
+diff --git a/net/minecraft/world/level/redstone/NeighborUpdater.java b/net/minecraft/world/level/redstone/NeighborUpdater.java
+index 0ef7f644b62bae686e1da78ea146341e8e87cfca..22a91f3de37bbd323041ad91cfeb378beaf791fe 100644
+--- a/net/minecraft/world/level/redstone/NeighborUpdater.java
++++ b/net/minecraft/world/level/redstone/NeighborUpdater.java
+@@ -42,6 +42,9 @@ public interface NeighborUpdater {
+         final @Block.UpdateFlags int updateFlags,
+         final int updateLimit
+     ) {
++        if (io.fand.server.hooks.FandHooks.suppressCustomBlockBaseBehavior(level, pos)) {
++            return;
++        }
+         BlockState currentState = level.getBlockState(pos);
+         if ((updateFlags & Block.UPDATE_SKIP_SHAPE_UPDATE_ON_WIRE) == 0 || !currentState.is(Blocks.REDSTONE_WIRE)) {
+             try {
+@@ -66,6 +69,9 @@ public interface NeighborUpdater {
+         final @Nullable Orientation orientation,
+         final boolean movedByPiston
+     ) {
++        if (io.fand.server.hooks.FandHooks.suppressCustomBlockBaseBehavior(level, pos)) {
++            return;
++        }
+         try {
+             state.handleNeighborChanged(level, pos, changedBlock, orientation, movedByPiston);
+         } catch (Throwable t) {

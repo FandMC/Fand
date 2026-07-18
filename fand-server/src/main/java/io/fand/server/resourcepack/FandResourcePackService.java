@@ -21,20 +21,40 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import net.minecraft.SharedConstants;
 import net.minecraft.server.packs.PackType;
 
-public final class FandResourcePackService implements ResourcePackService {
+public final class FandResourcePackService implements ResourcePackService, AutoCloseable {
 
     private final Path rootDirectory;
     private final Path buildDirectory;
     private final ConcurrentHashMap<String, ReentrantLock> buildLocks = new ConcurrentHashMap<>();
+    private final ResourcePackHttpHost httpHost;
 
     public FandResourcePackService(Path rootDirectory) {
+        this(rootDirectory, true, "127.0.0.1", 0, "", () -> "127.0.0.1");
+    }
+
+    public FandResourcePackService(
+            Path rootDirectory,
+            boolean hostingEnabled,
+            String bindAddress,
+            int hostingPort,
+            String publicBaseUrl,
+            Supplier<String> fallbackHost
+    ) {
         this.rootDirectory = Objects.requireNonNull(rootDirectory, "rootDirectory").toAbsolutePath().normalize();
         this.buildDirectory = this.rootDirectory.resolve("builds").normalize();
+        this.httpHost = new ResourcePackHttpHost(
+                buildDirectory.resolve("hosted"),
+                hostingEnabled,
+                bindAddress,
+                hostingPort,
+                publicBaseUrl,
+                fallbackHost);
     }
 
     @Override
@@ -162,6 +182,7 @@ public final class FandResourcePackService implements ResourcePackService {
     @Override
     public boolean delete(String packId) {
         var id = normalizeId(packId);
+        httpHost.remove(id);
         var deletedPack = deleteDirectory(packDirectory(id));
         var deletedBuild = deleteFileIfExists(buildDirectory.resolve(id + ".zip").normalize());
         return deletedPack || deletedBuild;
@@ -177,6 +198,32 @@ public final class FandResourcePackService implements ResourcePackService {
         } finally {
             lock.unlock();
         }
+    }
+
+    @Override
+    public Optional<String> hostedUrl(ResourcePackBuild build) {
+        Objects.requireNonNull(build, "build");
+        if (!httpHost.enabled()) {
+            return Optional.empty();
+        }
+        var id = normalizeId(build.packId());
+        var expected = buildDirectory.resolve(id + ".zip").toAbsolutePath().normalize();
+        if (!build.file().toAbsolutePath().normalize().equals(expected) || !Files.isRegularFile(expected)) {
+            throw new IllegalArgumentException("Resource pack build is not managed by this service: " + build.file());
+        }
+        try {
+            if (!sha1(expected).equals(build.sha1()) || Files.size(expected) != build.size()) {
+                throw new IllegalArgumentException("Resource pack build metadata does not match its ZIP: " + build.packId());
+            }
+        } catch (IOException failure) {
+            throw new UncheckedIOException("Failed to verify resource pack build " + build.packId(), failure);
+        }
+        return Optional.of(httpHost.publish(build));
+    }
+
+    @Override
+    public void close() {
+        httpHost.close();
     }
 
     private ResourcePackBuild buildLocked(String id) {

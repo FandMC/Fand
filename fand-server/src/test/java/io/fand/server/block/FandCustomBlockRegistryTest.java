@@ -9,14 +9,16 @@ import io.fand.api.block.component.BlockComponentKeys;
 import io.fand.api.component.DataComponentContainer;
 import io.fand.api.component.DataComponentKey;
 import io.fand.api.component.DataComponentMap;
-import io.fand.api.customblock.CustomBlockContext;
-import io.fand.api.customblock.CustomBlockListener;
-import io.fand.api.customblock.CustomBlockType;
+import io.fand.api.block.custom.CustomBlockContext;
+import io.fand.api.block.custom.CustomBlockListener;
+import io.fand.api.block.custom.CustomBlockType;
 import io.fand.api.event.Event;
 import io.fand.api.event.EventBus;
 import io.fand.api.event.EventListener;
 import io.fand.api.event.EventPriority;
 import io.fand.api.event.EventSubscription;
+import io.fand.api.item.ItemType;
+import io.fand.api.item.custom.CustomItemType;
 import io.fand.api.world.ChunkSnapshot;
 import io.fand.api.world.Difficulty;
 import io.fand.api.world.Location;
@@ -34,6 +36,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import io.fand.server.item.FandCustomItemRegistry;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.key.Key;
 import org.junit.jupiter.api.Test;
@@ -126,7 +129,88 @@ class FandCustomBlockRegistryTest {
         assertThat(registry.blockForItem(Key.key("test:machine_item"))).isEmpty();
     }
 
+    @Test
+    void sameIdBlockItemBecomesDeterministicDefaultDrop() {
+        var items = new FandCustomItemRegistry();
+        var baseItem = new TestItemType(Key.key("minecraft:paper"));
+        items.register(CustomItemType.of(Key.key("test:alternate_item"), baseItem));
+        items.register(CustomItemType.of(MACHINE_ID, baseItem));
+        var registry = new FandCustomBlockRegistry(new NoopEventBus(), items);
+        registry.register(new CustomBlockType(MACHINE_ID, STONE));
+        registry.bindItem(Key.key("test:alternate_item"), MACHINE_ID);
+        registry.bindItem(MACHINE_ID, MACHINE_ID);
+
+        assertThat(registry.defaultDrop(MACHINE_ID).map(stack -> stack.type().key())).contains(MACHINE_ID);
+    }
+
+    @Test
+    void bindingRejectsUnregisteredCustomItem() {
+        var registry = new FandCustomBlockRegistry(new NoopEventBus(), new FandCustomItemRegistry());
+        registry.register(new CustomBlockType(MACHINE_ID, STONE));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> registry.bindItem(Key.key("test:missing"), MACHINE_ID))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unknown custom block item");
+    }
+
+    @Test
+    void registrationExposesLogicalTypeWhilePlacementUsesVanillaBase() {
+        var registry = new FandCustomBlockRegistry(new NoopEventBus());
+        var registration = registry.register(new CustomBlockType(MACHINE_ID, STONE));
+        var block = new TestWorld().blockAt(1, 64, 1);
+
+        assertThat(registration.type().key()).isEqualTo(MACHINE_ID);
+        assertThat(registration.type().physics()).isEqualTo(STONE.physics());
+        assertThat(registry.place(block, registration.type())).isTrue();
+        assertThat(block.type()).isEqualTo(STONE);
+        assertThat(registry.customBlock(block)).contains(registration.type());
+    }
+
+    @Test
+    void placementAppliesConfiguredCarrierState() {
+        var registry = new FandCustomBlockRegistry(new NoopEventBus());
+        var registration = registry.register(CustomBlockType.builder(MACHINE_ID, STONE)
+                .state("variant", "custom")
+                .build());
+        var block = (TestBlock) new TestWorld().blockAt(1, 64, 1);
+
+        assertThat(registry.place(block, registration.type())).isTrue();
+        assertThat(block.stateProperty("variant")).contains("custom");
+    }
+
+    @Test
+    void placementAcceptsCarrierPropertyAlreadyAtRequestedValue() {
+        var registry = new FandCustomBlockRegistry(new NoopEventBus());
+        var registration = registry.register(CustomBlockType.builder(MACHINE_ID, STONE)
+                .state("variant", "custom")
+                .build());
+        var block = (TestBlock) new TestWorld().blockAt(1, 64, 1);
+        block.stateProperties.put("variant", "custom");
+
+        assertThat(registry.place(block, registration.type())).isTrue();
+        assertThat(block.stateProperty("variant")).contains("custom");
+    }
+
+    @Test
+    void baseBehaviorIsIsolatedUnlessExplicitlyInherited() {
+        var isolated = CustomBlockType.builder(MACHINE_ID, STONE).build();
+        var inherited = CustomBlockType.builder(Key.key("test:inherited"), STONE)
+                .inheritBaseBehavior(true)
+                .build();
+
+        assertThat(isolated.inheritBaseBehavior()).isFalse();
+        assertThat(inherited.inheritBaseBehavior()).isTrue();
+    }
+
     private record TestBlockType(Key key) implements BlockType {
+    }
+
+    private record TestItemType(Key key) implements ItemType {
+
+        @Override
+        public int maxStackSize() {
+            return 64;
+        }
     }
 
     private static final class TestWorld implements World {
@@ -287,6 +371,7 @@ class FandCustomBlockRegistryTest {
         private final int y;
         private final int z;
         private final TestComponents components = new TestComponents();
+        private final Map<String, String> stateProperties = new java.util.concurrent.ConcurrentHashMap<>();
         private BlockType type = STONE;
 
         private TestBlock(TestWorld world, int x, int y, int z) {
@@ -336,6 +421,17 @@ class FandCustomBlockRegistryTest {
         public boolean setType(BlockType type, DataComponentMap components) {
             this.type = type;
             this.components.replace(components);
+            return true;
+        }
+
+        @Override
+        public Map<String, String> stateProperties() {
+            return Map.copyOf(stateProperties);
+        }
+
+        @Override
+        public boolean setStateProperty(String name, String value) {
+            stateProperties.put(name, value);
             return true;
         }
 

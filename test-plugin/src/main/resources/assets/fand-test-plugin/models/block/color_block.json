@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "down": "fand-test-plugin:block/color_block_down",
+    "up": "fand-test-plugin:block/color_block_up",
+    "north": "fand-test-plugin:block/color_block_north",
+    "south": "fand-test-plugin:block/color_block_south",
+    "west": "fand-test-plugin:block/color_block_west",
+    "east": "fand-test-plugin:block/color_block_east",
+    "particle": "fand-test-plugin:block/color_block_north"
+  }
+}

@@ -6,9 +6,9 @@ import io.fand.api.bossbar.BossBarHandle;
 import io.fand.api.bossbar.BossBarRegistration;
 import io.fand.api.command.CommandInfo;
 import io.fand.api.command.CommandRegistration;
-import io.fand.api.customblock.CustomBlockItemBinding;
-import io.fand.api.customblock.CustomBlockRegistration;
-import io.fand.api.customitem.CustomItemRegistration;
+import io.fand.api.block.custom.CustomBlockItemBinding;
+import io.fand.api.block.custom.CustomBlockRegistration;
+import io.fand.api.item.custom.CustomItemRegistration;
 import io.fand.api.datapack.DataPackRegistration;
 import io.fand.api.enchantment.EnchantmentRegistration;
 import io.fand.api.event.EventSubscription;
@@ -2141,8 +2141,8 @@ final class PluginResourceTracker {
         }
 
         @Override
-        public net.kyori.adventure.key.Key id() {
-            return delegate.id();
+        public io.fand.api.item.custom.CustomItemType type() {
+            return delegate.type();
         }
 
         @Override
@@ -2182,8 +2182,8 @@ final class PluginResourceTracker {
         }
 
         @Override
-        public net.kyori.adventure.key.Key id() {
-            return delegate.id();
+        public io.fand.api.block.custom.CustomBlockType type() {
+            return delegate.type();
         }
 
         @Override

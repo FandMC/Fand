@@ -2,6 +2,7 @@ package io.fand.server.item;
 
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.ItemType;
+import io.fand.server.hooks.FandHooks;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -23,11 +24,12 @@ public final class FandItemStacks {
         if (stack == null || stack.empty()) {
             return net.minecraft.world.item.ItemStack.EMPTY;
         }
-        ItemType type = stack.type();
+        var encoded = FandHooks.customItems().encode(stack);
+        ItemType type = encoded.type();
         var item = ((FandItemType) requireFandType(type)).handle();
-        var vanilla = new net.minecraft.world.item.ItemStack(item, stack.amount());
-        if (!stack.components().empty()) {
-            vanilla.applyComponents(ItemComponentBridge.toVanilla(stack.components()));
+        var vanilla = new net.minecraft.world.item.ItemStack(item, encoded.amount());
+        if (!encoded.components().empty()) {
+            vanilla.applyComponents(ItemComponentBridge.toVanilla(encoded.components()));
             net.minecraft.world.item.ItemStack.validateStrict(vanilla)
                     .getOrThrow(error -> new IllegalArgumentException("Invalid item stack components: " + error));
         }
@@ -38,10 +40,11 @@ public final class FandItemStacks {
         if (stack == null || stack.isEmpty()) {
             return ItemStack.EMPTY;
         }
-        return new ItemStack(
+        var physical = new ItemStack(
                 FandItemType.of(stack.getItem()),
                 stack.getCount(),
                 ItemComponentBridge.fromVanilla(stack.getComponentsPatch()));
+        return FandHooks.customItems().decode(physical);
     }
 
     public static FandItemType resolve(net.kyori.adventure.key.Key key) {

@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "fand-test-plugin:block/color_block"
+  }
+}

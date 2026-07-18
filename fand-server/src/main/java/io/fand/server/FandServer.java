@@ -9,8 +9,8 @@ import io.fand.api.Server;
 import io.fand.api.advancement.AdvancementRegistry;
 import io.fand.api.bossbar.BossBarService;
 import io.fand.api.command.CommandRegistry;
-import io.fand.api.customblock.CustomBlockRegistry;
-import io.fand.api.customitem.CustomItemRegistry;
+import io.fand.api.block.custom.CustomBlockRegistry;
+import io.fand.api.item.custom.CustomItemRegistry;
 import io.fand.api.datapack.DataPackService;
 import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.event.EventBus;
@@ -230,7 +230,14 @@ public final class FandServer implements Server, AutoCloseable {
         this.gameRules = new FandGameRuleService();
         this.regions = new FandRegionService(Path.of("regions"));
         this.dataPacks = new FandDataPackService(Path.of("datapacks"), minecraftServer::get);
-        this.resourcePacks = new FandResourcePackService(Path.of("resourcepacks"));
+        var resourcePackHosting = initialConfig.network.resourcePacks;
+        this.resourcePacks = new FandResourcePackService(
+                Path.of("resourcepacks"),
+                resourcePackHosting.enabled,
+                resourcePackHosting.bindAddress,
+                resourcePackHosting.port,
+                resourcePackHosting.publicBaseUrl,
+                this::resourcePackFallbackHost);
         this.integrations = ExternalIntegrationStrategy.empty();
         this.services = new FandServiceRegistry(permissions);
         this.nms = new FandNmsService(minecraftServer::get);
@@ -610,6 +617,10 @@ public final class FandServer implements Server, AutoCloseable {
         return customItems;
     }
 
+    public FandCustomItemRegistry customItemRegistry() {
+        return customItems;
+    }
+
     @Override
     public CustomBlockRegistry customBlocks() {
         return customBlocks;
@@ -971,8 +982,9 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public Optional<? extends io.fand.api.block.BlockType> blockType(Key key) {
         Objects.requireNonNull(key, "key");
-        return blockRegistry().getOptional(identifier(key))
-                .map(io.fand.server.block.FandBlockType::of);
+        return customBlocks.type(key)
+                .map(io.fand.api.block.BlockType.class::cast)
+                .or(() -> blockRegistry().getOptional(identifier(key)).map(io.fand.server.block.FandBlockType::of));
     }
 
     @Override
@@ -989,8 +1001,9 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public Optional<? extends io.fand.api.item.ItemType> itemType(Key key) {
         Objects.requireNonNull(key, "key");
-        return itemRegistry().getOptional(identifier(key))
-                .map(io.fand.server.item.FandItemType::of);
+        return customItems.type(key)
+                .map(io.fand.api.item.ItemType.class::cast)
+                .or(() -> itemRegistry().getOptional(identifier(key)).map(io.fand.server.item.FandItemType::of));
     }
 
     @Override
@@ -1096,6 +1109,7 @@ public final class FandServer implements Server, AutoCloseable {
         placeholders.close();
         packets.close();
         guis.close();
+        resourcePacks.close();
         asyncChunkPackets.close();
         chunks.close();
         chunkTasks.close();
@@ -1105,6 +1119,11 @@ public final class FandServer implements Server, AutoCloseable {
         FandRuntime.unbind(this);
         phase.set(LifecyclePhase.STOPPED);
         LOGGER.info("Fand runtime stopped");
+    }
+
+    private String resourcePackFallbackHost() {
+        var server = minecraftServer.get();
+        return server == null || server.getLocalIp().isBlank() ? "127.0.0.1" : server.getLocalIp();
     }
 
     private void registerBuiltinCommands() {

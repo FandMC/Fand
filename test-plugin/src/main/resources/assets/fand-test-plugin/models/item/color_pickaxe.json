@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/handheld",
+  "textures": {
+    "layer0": "fand-test-plugin:item/color_pickaxe"
+  }
+}

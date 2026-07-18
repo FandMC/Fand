@@ -2,11 +2,11 @@ package io.fand.server.plugin;
 
 import io.fand.api.block.Block;
 import io.fand.api.component.DataComponentMap;
-import io.fand.api.customblock.CustomBlockItemBinding;
-import io.fand.api.customblock.CustomBlockListener;
-import io.fand.api.customblock.CustomBlockRegistration;
-import io.fand.api.customblock.CustomBlockRegistry;
-import io.fand.api.customblock.CustomBlockType;
+import io.fand.api.block.custom.CustomBlockItemBinding;
+import io.fand.api.block.custom.CustomBlockListener;
+import io.fand.api.block.custom.CustomBlockRegistration;
+import io.fand.api.block.custom.CustomBlockRegistry;
+import io.fand.api.block.custom.CustomBlockType;
 import io.fand.api.world.World;
 import java.util.Collection;
 import java.util.Objects;
@@ -99,8 +99,12 @@ public final class PluginCustomBlockRegistry implements CustomBlockRegistry {
         return new CustomBlockType(
                 scopedKey(type.id()),
                 type.baseType(),
+                type.baseStateProperties(),
                 type.defaultComponents(),
-                type.ticking());
+                type.ticking(),
+                type.mining(),
+                type.customTags().stream().map(this::scopedKey).collect(java.util.stream.Collectors.toSet()),
+                type.inheritBaseBehavior());
     }
 
     private Key scopedKey(Key key) {
@@ -124,8 +128,8 @@ public final class PluginCustomBlockRegistry implements CustomBlockRegistry {
         }
 
         @Override
-        public Key id() {
-            return delegateRegistration.id();
+        public CustomBlockType type() {
+            return delegateRegistration.type();
         }
 
         @Override

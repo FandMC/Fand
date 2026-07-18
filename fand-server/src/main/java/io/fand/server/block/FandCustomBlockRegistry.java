@@ -3,12 +3,12 @@ package io.fand.server.block;
 import io.fand.api.block.Block;
 import io.fand.api.block.component.BlockComponentKeys;
 import io.fand.api.component.DataComponentMap;
-import io.fand.api.customblock.CustomBlockContext;
-import io.fand.api.customblock.CustomBlockItemBinding;
-import io.fand.api.customblock.CustomBlockListener;
-import io.fand.api.customblock.CustomBlockRegistration;
-import io.fand.api.customblock.CustomBlockRegistry;
-import io.fand.api.customblock.CustomBlockType;
+import io.fand.api.block.custom.CustomBlockContext;
+import io.fand.api.block.custom.CustomBlockItemBinding;
+import io.fand.api.block.custom.CustomBlockListener;
+import io.fand.api.block.custom.CustomBlockRegistration;
+import io.fand.api.block.custom.CustomBlockRegistry;
+import io.fand.api.block.custom.CustomBlockType;
 import io.fand.api.event.EventBus;
 import io.fand.api.event.EventPriority;
 import io.fand.api.event.EventSubscription;
@@ -16,19 +16,27 @@ import io.fand.api.event.block.BlockBreakEvent;
 import io.fand.api.event.block.BlockPlaceEvent;
 import io.fand.api.event.player.PlayerInteractEvent;
 import io.fand.api.item.ItemStack;
+import io.fand.api.item.custom.CustomItemType;
 import io.fand.api.world.BlockRayTraceResult;
 import io.fand.api.world.Location;
 import io.fand.api.world.Vector3;
 import io.fand.api.world.World;
 import io.fand.server.item.FandCustomItemRegistry;
 import io.fand.server.component.BlockComponentStorage;
+import io.fand.server.item.FandItemStacks;
 import java.util.Collection;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import net.kyori.adventure.key.Key;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.Property;
+import org.jspecify.annotations.Nullable;
 
 public final class FandCustomBlockRegistry implements CustomBlockRegistry {
 
@@ -67,6 +75,7 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
     public CustomBlockRegistration register(CustomBlockType type, CustomBlockListener listener) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(listener, "listener");
+        validateCarrier(type);
         var registered = new RegisteredCustomBlock(this, type, listener);
         var previous = types.putIfAbsent(type.id(), registered);
         if (previous != null) {
@@ -114,6 +123,9 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         Objects.requireNonNull(itemId, "itemId");
         Objects.requireNonNull(blockId, "blockId");
         registered(blockId);
+        if (customItems != null && customItems.type(itemId).isEmpty()) {
+            throw new IllegalArgumentException("Unknown custom block item: " + itemId.asString());
+        }
         var binding = new RegisteredItemBinding(this, itemId, blockId);
         var previous = itemBindings.putIfAbsent(itemId, binding);
         if (previous != null) {
@@ -152,6 +164,13 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         }
         if (!block.setType(registered.type().baseType(), merged)) {
             return false;
+        }
+        for (var property : registered.type().baseStateProperties().entrySet()) {
+            if (!block.stateProperty(property.getKey()).filter(property.getValue()::equals).isPresent()
+                    && !block.setStateProperty(property.getKey(), property.getValue())) {
+                throw new IllegalStateException("Registered carrier state is no longer valid: "
+                        + property.getKey() + "=" + property.getValue());
+            }
         }
         refreshActiveTickingBlock(block);
         firePlaced(registered, block);
@@ -253,6 +272,130 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
                 fireTick(registered, block);
             }
         }
+    }
+
+    public Optional<MiningProperties> mining(ServerLevel level, BlockPos position, net.minecraft.world.item.ItemStack tool) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(position, "position");
+        Objects.requireNonNull(tool, "tool");
+        var blockType = customType(level, position).orElse(null);
+        if (blockType == null) {
+            return Optional.empty();
+        }
+        var mining = blockType.mining();
+        var miningState = FandBlockType.unwrap(mining.toolRuleBase()).defaultBlockState();
+        float toolSpeed = tool.getDestroySpeed(miningState);
+        boolean correctForDrops = tool.isCorrectToolForDrops(miningState);
+        if (customItems != null) {
+            var customItem = customItems.customItem(FandItemStacks.fromVanilla(tool)).orElse(null);
+            if (customItem != null) {
+                var rule = customItem.customBlockToolRule(blockType).orElse(null);
+                if (rule != null) {
+                    toolSpeed = rule.speed().orElse(toolSpeed);
+                    correctForDrops = rule.correctForDrops().orElse(correctForDrops);
+                }
+            }
+        }
+        if (!mining.requiresCorrectTool()) {
+            correctForDrops = true;
+        }
+        return Optional.of(new MiningProperties(mining.hardness(), toolSpeed, correctForDrops));
+    }
+
+    public Optional<Float> hardness(ServerLevel level, BlockPos position) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(position, "position");
+        return customType(level, position).map(type -> type.mining().hardness());
+    }
+
+    public Optional<ItemStack> defaultDrop(Key blockId) {
+        Objects.requireNonNull(blockId, "blockId");
+        if (customItems == null || type(blockId).isEmpty()) {
+            return Optional.empty();
+        }
+        return itemBindings.values().stream()
+                .filter(RegisteredItemBinding::active)
+                .filter(binding -> binding.blockId().equals(blockId))
+                .sorted(java.util.Comparator
+                        .comparing((RegisteredItemBinding binding) -> !binding.itemId().equals(blockId))
+                        .thenComparing(binding -> binding.itemId().asString()))
+                .map(RegisteredItemBinding::itemId)
+                .map(customItems::type)
+                .flatMap(Optional::stream)
+                .findFirst()
+                .map(CustomItemType::one);
+    }
+
+    public @Nullable List<net.minecraft.world.item.ItemStack> playerBreakDrops(
+            ServerLevel level,
+            BlockPos position
+    ) {
+        var blockType = customType(level, position).orElse(null);
+        if (blockType == null) {
+            return null;
+        }
+        return defaultDrop(blockType.id())
+                .map(FandItemStacks::toVanilla)
+                .map(java.util.List::of)
+                .orElseGet(java.util.List::of);
+    }
+
+    public BlockState preserveCarrierState(ServerLevel level, BlockPos position, BlockState proposed) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(position, "position");
+        Objects.requireNonNull(proposed, "proposed");
+        var type = customType(level, position).orElse(null);
+        if (type == null || !(type.baseType() instanceof FandBlockType baseType) || proposed.getBlock() != baseType.handle()) {
+            return proposed;
+        }
+        return applyCarrierState(type, proposed);
+    }
+
+    public boolean suppressBaseBehavior(ServerLevel level, BlockPos position) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(position, "position");
+        return customType(level, position)
+                .map(type -> !type.inheritBaseBehavior())
+                .orElse(false);
+    }
+
+    private Optional<CustomBlockType> customType(ServerLevel level, BlockPos position) {
+        return BlockComponentStorage.snapshot(level, position)
+                .value(BlockComponentKeys.CUSTOM_ID)
+                .flatMap(this::type);
+    }
+
+    private static void validateCarrier(CustomBlockType type) {
+        if (!(type.baseType() instanceof FandBlockType baseType)) {
+            return;
+        }
+        applyCarrierState(type, baseType.handle().defaultBlockState());
+    }
+
+    static BlockState applyCarrierState(CustomBlockType type, BlockState state) {
+        for (var entry : type.baseStateProperties().entrySet()) {
+            state = stateWithProperty(state, entry.getKey(), entry.getValue())
+                    .orElseThrow(() -> new IllegalArgumentException("Unknown carrier state " + entry.getKey()
+                            + "=" + entry.getValue() + " for " + type.baseType().key().asString()));
+        }
+        return state;
+    }
+
+    private static Optional<BlockState> stateWithProperty(BlockState state, String name, String value) {
+        for (var property : state.getProperties()) {
+            if (property.getName().equals(name)) {
+                return stateWithProperty(state, property, value);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static <T extends Comparable<T>> Optional<BlockState> stateWithProperty(
+            BlockState state,
+            Property<T> property,
+            String value
+    ) {
+        return property.getValue(value).map(parsed -> state.setValue(property, parsed));
     }
 
     private Collection<Block> blocksWith(World world, io.fand.api.component.DataComponentKey<?> key, int chunkX, int chunkZ) {
@@ -467,6 +610,9 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         }
     }
 
+    public record MiningProperties(float hardness, float toolSpeed, boolean correctForDrops) {
+    }
+
     private static final class RegisteredCustomBlock implements CustomBlockRegistration {
 
         private final FandCustomBlockRegistry owner;
@@ -481,11 +627,7 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         }
 
         @Override
-        public Key id() {
-            return type.id();
-        }
-
-        private CustomBlockType type() {
+        public CustomBlockType type() {
             return type;
         }
 

@@ -62,6 +62,7 @@ import io.fand.api.item.component.ItemUseEffects;
 import io.fand.api.item.component.ItemWeapon;
 import io.fand.api.item.component.ItemWritableBookContent;
 import io.fand.api.item.component.ItemWrittenBookContent;
+import io.fand.api.item.custom.CustomItemType;
 import io.fand.api.item.component.PaintingVariantKey;
 import io.fand.api.item.component.PigSoundVariantKey;
 import io.fand.api.item.component.PigVariantKey;
@@ -125,6 +126,19 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
         return type == null;
     }
 
+    /** Effective component patch after applying custom-item defaults. */
+    public ItemComponents components() {
+        if (type instanceof CustomItemType customType) {
+            return customType.defaultComponents().apply(components);
+        }
+        return components;
+    }
+
+    /** Per-stack overrides before custom-item defaults are applied. */
+    public ItemComponents componentPatch() {
+        return components;
+    }
+
     /** Effective maximum stack size, including a {@code max_stack_size} component override. */
     public int maxStackSize() {
         return empty() ? 0 : maxStackSize(type, components);
@@ -138,11 +152,11 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     public Optional<JsonElement> component(Key key) {
-        return components.value(key);
+        return components().value(key);
     }
 
     public boolean containsComponent(Key key) {
-        return components.contains(key);
+        return components().contains(key);
     }
 
     public ItemStack withComponent(Key key, JsonElement value) {
@@ -1913,7 +1927,10 @@ public record ItemStack(@Nullable ItemType type, int amount, ItemComponents comp
     }
 
     private static int maxStackSize(ItemType type, ItemComponents components) {
-        return components.value(ItemComponentKeys.MAX_STACK_SIZE)
+        var effective = type instanceof CustomItemType customType
+                ? customType.defaultComponents().apply(components)
+                : components;
+        return effective.value(ItemComponentKeys.MAX_STACK_SIZE)
                 .filter(JsonElement::isJsonPrimitive)
                 .map(JsonElement::getAsInt)
                 .orElseGet(type::maxStackSize);
