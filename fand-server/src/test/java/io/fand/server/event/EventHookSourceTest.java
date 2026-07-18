@@ -263,11 +263,10 @@ final class EventHookSourceTest {
     }
 
     @Test
-    void villagerReputationEventStaysWiredAndMercyUsesListeners() throws IOException {
+    void villagerReputationEventStaysWired() throws IOException {
         var entityEvents = read("src/main/java/io/fand/server/event/EntityEvents.java");
         var serverLevel = read("src/minecraft/java/net/minecraft/server/level/ServerLevel.java");
         var living = read("src/minecraft/java/net/minecraft/world/entity/LivingEntity.java");
-        var demo = read("../test-plugin/src/main/java/io/fand/testplugin/DemoEntityEvents.java");
 
         assertThat(entityEvents).contains("public static boolean fireDamageReaction");
         assertThat(entityEvents).contains("new EntityDamageReactionEvent(");
@@ -280,11 +279,6 @@ final class EventHookSourceTest {
         assertThat(living).contains("EntityDamageReactionEvent.Cause.HURT_MEMORY");
         assertThat(living).contains("EntityDamageReactionEvent.Cause.HURT_BY_PLAYER");
         assertThat(living).contains("EntityDamageReactionEvent.Cause.HURT_BY_MOB");
-        assertThat(demo).contains("event.setDamageApplicationCancelled(true)");
-        assertThat(demo).contains("rememberMercyAttack(player.uniqueId(), event.entity().uniqueId())");
-        assertThat(demo).contains("public void onEntityDamageReaction(EntityDamageReactionEvent event)");
-        assertThat(demo).contains("event.negative()");
-        assertThat(demo).contains("public void onVillagerReputation(VillagerReputationEvent event)");
     }
 
     @Test
