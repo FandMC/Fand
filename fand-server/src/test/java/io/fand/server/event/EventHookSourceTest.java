@@ -103,10 +103,11 @@ final class EventHookSourceTest {
         var playerEvents = read("src/main/java/io/fand/server/event/PlayerEvents.java");
         var packetListener = read("src/minecraft/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java");
 
-        assertThat(packetListener).contains("PlayerEvents.fireRightClickBlock(this.player, level, pos, hand, itemStack)");
+        assertThat(packetListener).contains("PlayerEvents.fireRightClickBlock(this.player, level, pos, direction, hand, itemStack)");
         assertThat(packetListener).contains("PlayerEvents.fireRightClickAir(this.player, hand, itemStack)");
         assertThat(playerEvents).contains("PlayerMainHandRightClickBlockEvent.class");
-        assertThat(playerEvents).contains("new PlayerOffHandRightClickBlockEvent(player, block, item)");
+        assertThat(playerEvents).contains("new PlayerOffHandRightClickBlockEvent(player, block, item, face)");
+        assertThat(playerEvents).contains("!event.cancelled() && !boundCustomBlockItem");
         assertThat(playerEvents).contains("new PlayerMainHandRightClickAirEvent(player, item)");
         assertThat(playerEvents).contains("new PlayerOffHandRightClickAirEvent(player, item)");
         assertThat(playerEvents).contains("bus.hasListeners(teleportEventType(cause))");

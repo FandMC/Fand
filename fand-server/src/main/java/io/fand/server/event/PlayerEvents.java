@@ -1,5 +1,6 @@
 package io.fand.server.event;
 
+import io.fand.api.event.block.BlockFace;
 import io.fand.api.event.player.PlayerDropItemEvent;
 import io.fand.api.event.player.PlayerAdvancementDoneEvent;
 import io.fand.api.event.player.PlayerArmorStandManipulateEvent;
@@ -77,6 +78,7 @@ import java.util.UUID;
 import net.kyori.adventure.key.Key;
 import net.minecraft.network.chat.Component;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
@@ -554,6 +556,7 @@ public final class PlayerEvents {
             ServerPlayer player,
             ServerLevel level,
             BlockPos pos,
+            Direction direction,
             InteractionHand hand,
             net.minecraft.world.item.ItemStack itemStack
     ) {
@@ -567,14 +570,15 @@ public final class PlayerEvents {
             return true;
         }
         var block = new FandBlock(world, pos.getX(), pos.getY(), pos.getZ());
-        var event = rightClickBlockEvent(fandPlayer, block, hand, FandItemStacks.fromVanilla(itemStack));
+        var event = rightClickBlockEvent(fandPlayer, block, face(direction), hand, FandItemStacks.fromVanilla(itemStack));
+        boolean boundCustomBlockItem = FandHooks.customBlocks().isBoundItem(event.item());
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {
             LOGGER.warn("{} listener failed", event.getClass().getSimpleName(), failure);
-            return true;
+            return !boundCustomBlockItem;
         }
-        return !event.cancelled();
+        return !event.cancelled() && !boundCustomBlockItem;
     }
 
     public static boolean fireRightClickAir(
@@ -1414,12 +1418,13 @@ public final class PlayerEvents {
     private static PlayerRightClickBlockEvent rightClickBlockEvent(
             FandPlayer player,
             FandBlock block,
+            BlockFace face,
             InteractionHand hand,
             io.fand.api.item.ItemStack item
     ) {
         return hand == InteractionHand.OFF_HAND
-                ? new PlayerOffHandRightClickBlockEvent(player, block, item)
-                : new PlayerMainHandRightClickBlockEvent(player, block, item);
+                ? new PlayerOffHandRightClickBlockEvent(player, block, item, face)
+                : new PlayerMainHandRightClickBlockEvent(player, block, item, face);
     }
 
     private static Class<? extends PlayerInteractEvent> rightClickAirType(InteractionHand hand) {
@@ -1564,6 +1569,17 @@ public final class PlayerEvents {
     }
 
     public record EggThrowResult(boolean hatching, int hatchCount) {
+    }
+
+    private static BlockFace face(Direction direction) {
+        return switch (direction) {
+            case DOWN -> BlockFace.DOWN;
+            case UP -> BlockFace.UP;
+            case NORTH -> BlockFace.NORTH;
+            case SOUTH -> BlockFace.SOUTH;
+            case WEST -> BlockFace.WEST;
+            case EAST -> BlockFace.EAST;
+        };
     }
 
     public record DeathResult(

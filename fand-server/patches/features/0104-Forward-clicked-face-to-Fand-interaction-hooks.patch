@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 19 Jul 2026 13:56:12 +0800
+Subject: [PATCH] Forward clicked face to Fand interaction hooks
+
+Pass the authoritative block hit direction from ServerboundUseItemOnPacket into PlayerEvents before vanilla item handling. This lets component-backed custom block placement select the exact client-targeted face instead of repeating a view ray trace that can become stale when players turn quickly.
+
+diff --git a/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index eb1a2e54906aa4b452b620665a6512f21d51462f..4cfd9d70ba37c3989c558605f398bed60bd24e2d 100644
+--- a/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -1448,7 +1448,7 @@ public class ServerGamePacketListenerImpl
+                             if (this.server.isUnderSpawnProtection(level, pos, this.player)) {
+                                 this.player.sendSpawnProtectionMessage(pos);
+                             } else if (this.awaitingPositionFromClient == null && level.mayInteract(this.player, pos)) {
+-                                if (!io.fand.server.event.PlayerEvents.fireRightClickBlock(this.player, level, pos, hand, itemStack)) {
++                                if (!io.fand.server.event.PlayerEvents.fireRightClickBlock(this.player, level, pos, direction, hand, itemStack)) {
+                                     this.send(new ClientboundBlockUpdatePacket(level, pos));
+                                     this.send(new ClientboundBlockUpdatePacket(level, pos.relative(direction)));
+                                     return;

@@ -12,16 +12,16 @@ import io.fand.api.block.custom.CustomBlockType;
 import io.fand.api.event.EventBus;
 import io.fand.api.event.EventPriority;
 import io.fand.api.event.EventSubscription;
+import io.fand.api.event.block.BlockFace;
 import io.fand.api.event.block.BlockPlaceEvent;
 import io.fand.api.event.player.PlayerInteractEvent;
+import io.fand.api.event.player.PlayerRightClickBlockEvent;
 import io.fand.api.item.ItemStack;
 import io.fand.api.item.custom.CustomItemType;
-import io.fand.api.world.BlockRayTraceResult;
-import io.fand.api.world.Location;
-import io.fand.api.world.Vector3;
 import io.fand.api.world.World;
-import io.fand.server.item.FandCustomItemRegistry;
 import io.fand.server.component.BlockComponentStorage;
+import io.fand.server.entity.FandPlayer;
+import io.fand.server.item.FandCustomItemRegistry;
 import io.fand.server.item.FandItemStacks;
 import java.util.Collection;
 import java.util.List;
@@ -34,9 +34,12 @@ import java.util.function.DoubleSupplier;
 import net.kyori.adventure.key.Key;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.CollisionGetter;
 import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.world.phys.shapes.CollisionContext;
 import org.jspecify.annotations.Nullable;
 
 public final class FandCustomBlockRegistry implements CustomBlockRegistry {
@@ -103,6 +106,11 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         return Optional.ofNullable(itemBindings.get(itemId))
                 .filter(RegisteredItemBinding::active)
                 .flatMap(binding -> type(binding.blockId()));
+    }
+
+    public boolean isBoundItem(ItemStack item) {
+        Objects.requireNonNull(item, "item");
+        return activeBinding(item) != null;
     }
 
     public Optional<Key> customId(Block block) {
@@ -557,70 +565,70 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         }
     }
 
-    private boolean handleInteract(PlayerInteractEvent event) {
+    private void handleInteract(PlayerInteractEvent event) {
         if (event.cancelled() || event.action() != PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK || customItems == null) {
-            return true;
+            return;
         }
-        var itemId = customItems.customId(event.item()).orElse(null);
-        if (itemId == null) {
-            return true;
-        }
-        var binding = itemBindings.get(itemId);
-        if (binding == null || !binding.active()) {
-            return true;
+        var binding = activeBinding(event.item());
+        if (binding == null) {
+            return;
         }
         var blockType = type(binding.blockId()).orElse(null);
         if (blockType == null) {
-            return true;
+            return;
         }
-        var target = event.block()
-                .flatMap(block -> placementBlock(event.player(), block))
+        event.setCancelled(true);
+        if (!(event instanceof PlayerRightClickBlockEvent blockEvent)) {
+            return;
+        }
+        var target = blockEvent.clickedFace()
+                .map(face -> placementBlock(blockEvent.clickedBlock(), face))
                 .orElse(null);
-        if (target == null || !target.air()) {
-            return true;
+        if (target == null || !target.replaceable() || !canPlace(event.player(), target, blockType)) {
+            return;
         }
         if (!place(target, blockType.id())) {
-            return true;
+            return;
         }
         consumePlacedItem(event.player(), event.hand(), event.item());
-        event.setCancelled(true);
-        return false;
     }
 
-    private Optional<Block> placementBlock(io.fand.api.entity.Player player, Block clicked) {
-        var location = player.location().offset(0.0, 1.62, 0.0);
-        var direction = lookDirection(location);
-        return clicked.world()
-                .rayTraceBlock(location, direction, 6.0)
-                .filter(hit -> sameBlock(hit.block(), clicked))
-                .map(hit -> adjacent(clicked, hit));
+    private static Block placementBlock(Block clicked, BlockFace face) {
+        return clicked.replaceable() ? clicked : clicked.relative(face);
     }
 
-    private static boolean sameBlock(Block left, Block right) {
-        return left.x() == right.x()
-                && left.y() == right.y()
-                && left.z() == right.z()
-                && left.world().key().equals(right.world().key());
+    static boolean canPlace(io.fand.api.entity.Player player, Block target, CustomBlockType type) {
+        if (!(player instanceof FandPlayer fandPlayer)
+                || !(target instanceof FandBlock fandBlock)
+                || !(type.baseType() instanceof FandBlockType baseType)) {
+            return true;
+        }
+        var level = fandBlock.worldHandle();
+        var position = fandBlock.position();
+        var state = applyCarrierState(type, baseType.handle().defaultBlockState());
+        return state.canSurvive(level, position)
+                && hasPlacementClearance(level, state, position, fandPlayer.handle());
     }
 
-    private static Block adjacent(Block clicked, BlockRayTraceResult hit) {
-        return switch (hit.face()) {
-            case DOWN -> clicked.world().blockAt(clicked.x(), clicked.y() - 1, clicked.z());
-            case UP -> clicked.world().blockAt(clicked.x(), clicked.y() + 1, clicked.z());
-            case NORTH -> clicked.world().blockAt(clicked.x(), clicked.y(), clicked.z() - 1);
-            case SOUTH -> clicked.world().blockAt(clicked.x(), clicked.y(), clicked.z() + 1);
-            case WEST -> clicked.world().blockAt(clicked.x() - 1, clicked.y(), clicked.z());
-            case EAST -> clicked.world().blockAt(clicked.x() + 1, clicked.y(), clicked.z());
-        };
+    static boolean hasPlacementClearance(
+            CollisionGetter level,
+            BlockState state,
+            BlockPos position,
+            @Nullable Player player
+    ) {
+        return level.isUnobstructed(state, position, CollisionContext.placementContext(player));
     }
 
-    private static Vector3 lookDirection(Location location) {
-        double yaw = Math.toRadians(location.yaw());
-        double pitch = Math.toRadians(location.pitch());
-        double x = -Math.sin(yaw) * Math.cos(pitch);
-        double y = -Math.sin(pitch);
-        double z = Math.cos(yaw) * Math.cos(pitch);
-        return new Vector3(x, y, z);
+    private @Nullable RegisteredItemBinding activeBinding(ItemStack item) {
+        if (customItems == null) {
+            return null;
+        }
+        var itemId = customItems.customId(item).orElse(null);
+        if (itemId == null) {
+            return null;
+        }
+        var binding = itemBindings.get(itemId);
+        return binding != null && binding.active() && type(binding.blockId()).isPresent() ? binding : null;
     }
 
     private static void consumePlacedItem(

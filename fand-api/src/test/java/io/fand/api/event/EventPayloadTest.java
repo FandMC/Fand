@@ -134,6 +134,7 @@ import io.fand.api.event.player.PlayerLeashEntityEvent;
 import io.fand.api.event.player.PlayerLevelChangeEvent;
 import io.fand.api.event.player.PlayerLocaleChangeEvent;
 import io.fand.api.event.player.PlayerLoginEvent;
+import io.fand.api.event.player.PlayerMainHandRightClickBlockEvent;
 import io.fand.api.event.player.PlayerMoveEvent;
 import io.fand.api.event.player.PlayerPickupItemEvent;
 import io.fand.api.event.player.PlayerPortalEvent;
@@ -216,6 +217,21 @@ final class EventPayloadTest {
                 null);
 
         assertThat(event.item()).isEqualTo(ItemStack.EMPTY);
+    }
+
+    @Test
+    void playerRightClickBlockEventCarriesExactClickedFace() {
+        var block = proxy(Block.class);
+        var item = stack("minecraft:note_block", 1);
+        var event = new PlayerMainHandRightClickBlockEvent(
+                proxy(Player.class),
+                block,
+                item,
+                BlockFace.WEST);
+
+        assertThat(event.clickedBlock()).isSameAs(block);
+        assertThat(event.clickedFace()).contains(BlockFace.WEST);
+        assertThat(new PlayerMainHandRightClickBlockEvent(proxy(Player.class), block, item).clickedFace()).isEmpty();
     }
 
     @Test

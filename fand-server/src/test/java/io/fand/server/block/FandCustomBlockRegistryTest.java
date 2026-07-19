@@ -12,11 +12,15 @@ import io.fand.api.component.DataComponentMap;
 import io.fand.api.block.custom.CustomBlockContext;
 import io.fand.api.block.custom.CustomBlockListener;
 import io.fand.api.block.custom.CustomBlockType;
+import io.fand.api.entity.GameMode;
+import io.fand.api.entity.Player;
 import io.fand.api.event.Event;
 import io.fand.api.event.EventBus;
 import io.fand.api.event.EventListener;
 import io.fand.api.event.EventPriority;
 import io.fand.api.event.EventSubscription;
+import io.fand.api.event.block.BlockFace;
+import io.fand.api.event.player.PlayerMainHandRightClickBlockEvent;
 import io.fand.api.item.ItemType;
 import io.fand.api.item.custom.CustomItemType;
 import io.fand.api.world.ChunkSnapshot;
@@ -36,15 +40,36 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import io.fand.server.event.EventDispatcher;
 import io.fand.server.item.FandCustomItemRegistry;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.key.Key;
+import net.minecraft.SharedConstants;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.Bootstrap;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.CollisionGetter;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.shapes.VoxelShape;
+import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 class FandCustomBlockRegistryTest {
 
     private static final Key MACHINE_ID = Key.key("test:machine");
     private static final BlockType STONE = new TestBlockType(Key.key("minecraft:stone"));
+
+    @BeforeAll
+    static void bootstrapMinecraft() {
+        SharedConstants.tryDetectVersion();
+        Bootstrap.bootStrap();
+    }
 
     @Test
     void placesAndTicksCustomBlocks() {
@@ -208,6 +233,87 @@ class FandCustomBlockRegistryTest {
 
         assertThat(isolated.inheritBaseBehavior()).isFalse();
         assertThat(inherited.inheritBaseBehavior()).isTrue();
+    }
+
+    @Test
+    void boundItemUsesPacketFaceInsteadOfPlayerLookDirection() {
+        var events = new EventDispatcher();
+        var items = new FandCustomItemRegistry();
+        var item = items.register(CustomItemType.of(
+                Key.key("test:machine_item"),
+                new TestItemType(Key.key("minecraft:note_block")))).type();
+        var registry = new FandCustomBlockRegistry(events, items);
+        registry.register(new CustomBlockType(MACHINE_ID, STONE));
+        registry.bindItem(item.id(), MACHINE_ID);
+        assertThat(registry.isBoundItem(item.one())).isTrue();
+        var world = new TestWorld();
+        var clicked = (TestBlock) world.blockAt(1, 64, 1);
+        var east = (TestBlock) clicked.relative(BlockFace.EAST);
+        east.replaceable = true;
+        var event = new PlayerMainHandRightClickBlockEvent(
+                creativePlayer(),
+                clicked,
+                item.one(),
+                BlockFace.EAST);
+
+        events.fire(event);
+
+        assertThat(event.cancelled()).isTrue();
+        assertThat(registry.customBlock(east).map(CustomBlockType::id)).contains(MACHINE_ID);
+    }
+
+    @Test
+    void boundItemNeverFallsBackToVanillaBaseWhenPlacementIsBlocked() {
+        var events = new EventDispatcher();
+        var items = new FandCustomItemRegistry();
+        var item = items.register(CustomItemType.of(
+                Key.key("test:machine_item"),
+                new TestItemType(Key.key("minecraft:note_block")))).type();
+        var registry = new FandCustomBlockRegistry(events, items);
+        registry.register(new CustomBlockType(MACHINE_ID, STONE));
+        registry.bindItem(item.id(), MACHINE_ID);
+        var world = new TestWorld();
+        var clicked = (TestBlock) world.blockAt(1, 64, 1);
+        var east = clicked.relative(BlockFace.EAST);
+        var event = new PlayerMainHandRightClickBlockEvent(
+                creativePlayer(),
+                clicked,
+                item.one(),
+                BlockFace.EAST);
+
+        events.fire(event);
+
+        assertThat(event.cancelled()).isTrue();
+        assertThat(registry.customBlock(east)).isEmpty();
+    }
+
+    @Test
+    void playerPlacementUsesVanillaEntityCollisionCheck() {
+        var position = new BlockPos(1, 64, 1);
+        var type = CustomBlockType.builder(MACHINE_ID, FandBlockType.of(Blocks.NOTE_BLOCK))
+                .state("instrument", "custom_head")
+                .build();
+        var state = FandCustomBlockRegistry.applyCarrierState(type, Blocks.NOTE_BLOCK.defaultBlockState());
+        var level = new TestCollisionGetter(state, false);
+
+        assertThat(FandCustomBlockRegistry.hasPlacementClearance(level, state, position, null)).isFalse();
+        assertThat(level.checkedShape).isNotNull().matches(shape -> !shape.isEmpty());
+
+        level.unobstructed = true;
+        assertThat(FandCustomBlockRegistry.hasPlacementClearance(level, state, position, null)).isTrue();
+    }
+
+    private static Player creativePlayer() {
+        return (Player) java.lang.reflect.Proxy.newProxyInstance(
+                Player.class.getClassLoader(),
+                new Class<?>[]{Player.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "gameMode" -> GameMode.CREATIVE;
+                    case "toString" -> "creative player";
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> args != null && args.length == 1 && proxy == args[0];
+                    default -> throw new UnsupportedOperationException(method.toString());
+                });
     }
 
     private record TestBlockType(Key key) implements BlockType {
@@ -381,6 +487,7 @@ class FandCustomBlockRegistryTest {
         private final TestComponents components = new TestComponents();
         private final Map<String, String> stateProperties = new java.util.concurrent.ConcurrentHashMap<>();
         private BlockType type = STONE;
+        private boolean replaceable;
 
         private TestBlock(TestWorld world, int x, int y, int z) {
             this.world = world;
@@ -412,6 +519,11 @@ class FandCustomBlockRegistryTest {
         @Override
         public BlockType type() {
             return type;
+        }
+
+        @Override
+        public boolean replaceable() {
+            return replaceable;
         }
 
         @Override
@@ -475,6 +587,64 @@ class FandCustomBlockRegistryTest {
 
         private void replace(DataComponentMap map) {
             this.map = map;
+        }
+    }
+
+    private static final class TestCollisionGetter implements CollisionGetter {
+
+        private final BlockState state;
+        private boolean unobstructed;
+        private @Nullable VoxelShape checkedShape;
+
+        private TestCollisionGetter(BlockState state, boolean unobstructed) {
+            this.state = state;
+            this.unobstructed = unobstructed;
+        }
+
+        @Override
+        public boolean isUnobstructed(@Nullable Entity source, VoxelShape shape) {
+            checkedShape = shape;
+            return unobstructed;
+        }
+
+        @Override
+        public net.minecraft.world.level.border.WorldBorder getWorldBorder() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public @Nullable BlockGetter getChunkForCollisions(int chunkX, int chunkZ) {
+            return null;
+        }
+
+        @Override
+        public List<VoxelShape> getEntityCollisions(@Nullable Entity source, AABB testArea) {
+            return List.of();
+        }
+
+        @Override
+        public net.minecraft.world.level.block.entity.@Nullable BlockEntity getBlockEntity(BlockPos pos) {
+            return null;
+        }
+
+        @Override
+        public BlockState getBlockState(BlockPos pos) {
+            return state;
+        }
+
+        @Override
+        public FluidState getFluidState(BlockPos pos) {
+            return Fluids.EMPTY.defaultFluidState();
+        }
+
+        @Override
+        public int getHeight() {
+            return 384;
+        }
+
+        @Override
+        public int getMinY() {
+            return -64;
         }
     }
 
