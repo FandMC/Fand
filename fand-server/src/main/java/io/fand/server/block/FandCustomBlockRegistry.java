@@ -12,7 +12,6 @@ import io.fand.api.block.custom.CustomBlockType;
 import io.fand.api.event.EventBus;
 import io.fand.api.event.EventPriority;
 import io.fand.api.event.EventSubscription;
-import io.fand.api.event.block.BlockBreakEvent;
 import io.fand.api.event.block.BlockPlaceEvent;
 import io.fand.api.event.player.PlayerInteractEvent;
 import io.fand.api.item.ItemStack;
@@ -31,9 +30,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.DoubleSupplier;
 import net.kyori.adventure.key.Key;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
 import org.jspecify.annotations.Nullable;
@@ -308,6 +309,12 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         return customType(level, position).map(type -> type.mining().hardness());
     }
 
+    public Optional<Float> blastResistance(ServerLevel level, BlockPos position) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(position, "position");
+        return customType(level, position).map(type -> type.mining().blastResistance());
+    }
+
     public Optional<ItemStack> defaultDrop(Key blockId) {
         Objects.requireNonNull(blockId, "blockId");
         if (customItems == null || type(blockId).isEmpty()) {
@@ -326,7 +333,7 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
                 .map(CustomItemType::one);
     }
 
-    public @Nullable List<net.minecraft.world.item.ItemStack> playerBreakDrops(
+    public @Nullable List<net.minecraft.world.item.ItemStack> drops(
             ServerLevel level,
             BlockPos position
     ) {
@@ -338,6 +345,40 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
                 .map(FandItemStacks::toVanilla)
                 .map(java.util.List::of)
                 .orElseGet(java.util.List::of);
+    }
+
+    public @Nullable List<net.minecraft.world.item.ItemStack> explosionDrops(
+            ServerLevel level,
+            BlockPos position,
+            Explosion explosion
+    ) {
+        Objects.requireNonNull(level, "level");
+        Objects.requireNonNull(position, "position");
+        Objects.requireNonNull(explosion, "explosion");
+        var blockType = customType(level, position).orElse(null);
+        if (blockType == null) {
+            return null;
+        }
+        var drop = defaultDrop(blockType.id()).map(FandItemStacks::toVanilla).orElse(null);
+        if (drop == null) {
+            return List.of();
+        }
+        if (explosion.getBlockInteraction() == Explosion.BlockInteraction.DESTROY_WITH_DECAY) {
+            drop.setCount(explosionDecayAmount(drop.getCount(), explosion.radius(), level.getRandom()::nextFloat));
+        }
+        return drop.isEmpty() ? List.of() : List.of(drop);
+    }
+
+    static int explosionDecayAmount(int amount, float radius, DoubleSupplier randomFloat) {
+        Objects.requireNonNull(randomFloat, "randomFloat");
+        float probability = 1.0F / radius;
+        int result = 0;
+        for (int i = 0; i < amount; i++) {
+            if (randomFloat.getAsDouble() <= probability) {
+                result++;
+            }
+        }
+        return result;
     }
 
     public BlockState preserveCarrierState(ServerLevel level, BlockPos position, BlockState proposed) {
@@ -360,6 +401,9 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
     }
 
     private Optional<CustomBlockType> customType(ServerLevel level, BlockPos position) {
+        if (types.isEmpty()) {
+            return Optional.empty();
+        }
         return BlockComponentStorage.snapshot(level, position)
                 .value(BlockComponentKeys.CUSTOM_ID)
                 .flatMap(this::type);
@@ -508,11 +552,6 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
             }
             var created = new LifecycleSubscriptions(
                     events.subscribe(BlockPlaceEvent.class, EventPriority.OBSERVER, event -> handlePlaced(event.block())),
-                    events.subscribe(BlockBreakEvent.class, EventPriority.OBSERVER, event -> {
-                        if (!event.cancelled()) {
-                            handleBroken(event.block());
-                        }
-                    }),
                     events.subscribe(PlayerInteractEvent.class, EventPriority.HIGHEST, this::handleInteract));
             lifecycleSubscriptions.set(created);
         }
@@ -600,12 +639,11 @@ public final class FandCustomBlockRegistry implements CustomBlockRegistry {
         }
     }
 
-    private record LifecycleSubscriptions(EventSubscription place, EventSubscription breakBlock, EventSubscription interact) implements AutoCloseable {
+    private record LifecycleSubscriptions(EventSubscription place, EventSubscription interact) implements AutoCloseable {
 
         @Override
         public void close() {
             place.unregister();
-            breakBlock.unregister();
             interact.unregister();
         }
     }

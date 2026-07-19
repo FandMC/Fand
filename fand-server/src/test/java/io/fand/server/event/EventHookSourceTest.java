@@ -337,6 +337,27 @@ final class EventHookSourceTest {
     }
 
     @Test
+    void customBlockExplosionDropsRemovalAndResistanceStayWired() throws IOException {
+        var registry = read("src/main/java/io/fand/server/block/FandCustomBlockRegistry.java");
+        var hooks = read("src/main/java/io/fand/server/hooks/FandHooks.java");
+        var level = read("src/minecraft/java/net/minecraft/world/level/Level.java");
+        var blockBehaviour = read("src/minecraft/java/net/minecraft/world/level/block/state/BlockBehaviour.java");
+        var explosionCalculator = read("src/minecraft/java/net/minecraft/world/level/ExplosionDamageCalculator.java");
+
+        assertThat(registry).contains("public @Nullable List<net.minecraft.world.item.ItemStack> explosionDrops(");
+        assertThat(registry).contains("explosionDecayAmount(drop.getCount(), explosion.radius(), level.getRandom()::nextFloat)");
+        assertThat(registry).doesNotContain("events.subscribe(BlockBreakEvent.class");
+        assertThat(hooks).contains("public static void customBlockRemoved(ServerLevel level");
+        assertThat(level).containsSubsequence(
+                "FandHooks.customBlockRemoved(serverLevel, pos)",
+                "BlockComponentStorage.clearIfBlockChanged(serverLevel, pos, oldState, newState)");
+        assertThat(level).contains("FandHooks.customBlockDrops(serverLevel, pos)");
+        assertThat(blockBehaviour).contains("FandHooks.customBlockExplosionDrops(level, pos, explosion)");
+        assertThat(blockBehaviour).contains("if (fandDrops != null)");
+        assertThat(explosionCalculator).contains("FandHooks.customBlockBlastResistance(");
+    }
+
+    @Test
     void tntPathCancellationIsCoveredByBlockItemPlacementRollbackWindow() throws IOException {
         var source = read("src/minecraft/java/net/minecraft/world/item/BlockItem.java");
 

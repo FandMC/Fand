@@ -144,6 +144,14 @@ class FandCustomBlockRegistryTest {
     }
 
     @Test
+    void explosionDecayMatchesVanillaPerItemProbability() {
+        var randomValues = new java.util.ArrayDeque<>(List.of(0.10, 0.25, 0.251, 0.80));
+
+        assertThat(FandCustomBlockRegistry.explosionDecayAmount(4, 4.0F, randomValues::removeFirst))
+                .isEqualTo(2);
+    }
+
+    @Test
     void bindingRejectsUnregisteredCustomItem() {
         var registry = new FandCustomBlockRegistry(new NoopEventBus(), new FandCustomItemRegistry());
         registry.register(new CustomBlockType(MACHINE_ID, STONE));

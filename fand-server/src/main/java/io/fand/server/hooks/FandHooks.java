@@ -857,6 +857,18 @@ public final class FandHooks {
         return runtime.customBlockRegistry().hardness(serverLevel, position).orElse(fallback);
     }
 
+    public static float customBlockBlastResistance(
+            net.minecraft.world.level.BlockGetter level,
+            net.minecraft.core.BlockPos position,
+            float fallback
+    ) {
+        var runtime = activeRuntime();
+        if (runtime == null || !(level instanceof ServerLevel serverLevel)) {
+            return fallback;
+        }
+        return runtime.customBlockRegistry().blastResistance(serverLevel, position).orElse(fallback);
+    }
+
     public static net.minecraft.world.level.block.state.BlockState preserveCustomBlockCarrierState(
             ServerLevel level,
             net.minecraft.core.BlockPos position,
@@ -886,12 +898,37 @@ public final class FandHooks {
         }
     }
 
-    public static @Nullable List<net.minecraft.world.item.ItemStack> customBlockPlayerBreakDrops(
+    public static @Nullable List<net.minecraft.world.item.ItemStack> customBlockDrops(
             ServerLevel level,
             net.minecraft.core.BlockPos position
     ) {
         var runtime = activeRuntime();
-        return runtime == null ? null : runtime.customBlockRegistry().playerBreakDrops(level, position);
+        return runtime == null ? null : runtime.customBlockRegistry().drops(level, position);
+    }
+
+    public static @Nullable List<net.minecraft.world.item.ItemStack> customBlockExplosionDrops(
+            ServerLevel level,
+            net.minecraft.core.BlockPos position,
+            net.minecraft.world.level.Explosion explosion
+    ) {
+        var runtime = activeRuntime();
+        return runtime == null ? null : runtime.customBlockRegistry().explosionDrops(level, position, explosion);
+    }
+
+    public static void customBlockRemoved(ServerLevel level, net.minecraft.core.BlockPos position) {
+        var runtime = activeRuntime();
+        if (runtime == null || io.fand.server.component.BlockComponentStorage.empty(level, position)) {
+            return;
+        }
+        var world = wrapWorld(level);
+        if (world == null) {
+            return;
+        }
+        runtime.customBlockRegistry().handleBroken(new io.fand.server.block.FandBlock(
+                world,
+                position.getX(),
+                position.getY(),
+                position.getZ()));
     }
 
     public static boolean suppressCustomBlockBaseBehavior(

@@ -1,0 +1,98 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sun, 19 Jul 2026 11:46:37 +0800
+Subject: [PATCH] Preserve custom block drops through destruction paths
+
+- Route generic block destruction and player breaking through the custom drop binding instead of the vanilla carrier loot table.
+- Replace explosion drops for custom blocks while retaining vanilla DESTROY_WITH_DECAY per-item probability.
+- Apply configured custom blast resistance during explosion ray calculations.
+- Trigger the custom block broken callback after a successful block replacement and before persistent components are cleared.
+
+diff --git a/net/minecraft/server/level/ServerPlayerGameMode.java b/net/minecraft/server/level/ServerPlayerGameMode.java
+index 34d7969a3b4e3e2ca5af9a04cc64fb5a982a4d7f..d9ae176af2f21f78092f13b5a50d44995e356378 100644
+--- a/net/minecraft/server/level/ServerPlayerGameMode.java
++++ b/net/minecraft/server/level/ServerPlayerGameMode.java
+@@ -267,7 +267,7 @@ public class ServerPlayerGameMode {
+                 this.level,
+                 pos,
+                 this.player.getMainHandItem());
+-        var fandCustomDrops = io.fand.server.hooks.FandHooks.customBlockPlayerBreakDrops(this.level, pos);
++        var fandCustomDrops = io.fand.server.hooks.FandHooks.customBlockDrops(this.level, pos);
+         if (!this.player.getMainHandItem().canDestroyBlock(state, this.level, pos, this.player)) {
+             return false;
+         }
+diff --git a/net/minecraft/world/level/ExplosionDamageCalculator.java b/net/minecraft/world/level/ExplosionDamageCalculator.java
+index 1e32751062101f1ecb2f5da1095682f477ba5033..b035969612083885d1bd4334330ff768f494d1c4 100644
+--- a/net/minecraft/world/level/ExplosionDamageCalculator.java
++++ b/net/minecraft/world/level/ExplosionDamageCalculator.java
+@@ -19,9 +19,14 @@ public class ExplosionDamageCalculator {
+     public float getBlockExplosionResistanceValue(
+         final Explosion explosion, final BlockGetter level, final BlockPos pos, final BlockState block, final FluidState fluid
+     ) {
++        float blockResistance = io.fand.server.hooks.FandHooks.customBlockBlastResistance(
++            level,
++            pos,
++            block.getBlock().getExplosionResistance()
++        );
+         return block.isAir() && fluid.isEmpty()
+             ? Float.NaN
+-            : Math.max(block.getBlock().getExplosionResistance(), fluid.getExplosionResistance());
++            : Math.max(blockResistance, fluid.getExplosionResistance());
+     }
+ 
+     public boolean shouldBlockExplode(final Explosion explosion, final BlockGetter level, final BlockPos pos, final BlockState state, final float power) {
+diff --git a/net/minecraft/world/level/Level.java b/net/minecraft/world/level/Level.java
+index a23bc814679fa4daa0aad4cc9d1748d3b4ae3595..fc20a907c88bdf3e5af83ad32d62ecc0de44c070 100644
+--- a/net/minecraft/world/level/Level.java
++++ b/net/minecraft/world/level/Level.java
+@@ -281,6 +281,9 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         BlockState newState = this.getBlockState(pos);
+         if (newState == blockState) {
+             if (!this.isClientSide() && this instanceof net.minecraft.server.level.ServerLevel serverLevel) {
++                if (oldState.getBlock() != newState.getBlock()) {
++                    io.fand.server.hooks.FandHooks.customBlockRemoved(serverLevel, pos);
++                }
+                 io.fand.server.component.BlockComponentStorage.clearIfBlockChanged(serverLevel, pos, oldState, newState);
+             }
+ 
+@@ -330,14 +333,22 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+             return false;
+         }
+ 
++        var fandCustomDrops = this instanceof net.minecraft.server.level.ServerLevel serverLevel
++            ? io.fand.server.hooks.FandHooks.customBlockDrops(serverLevel, pos)
++            : null;
++
+         FluidState fluidState = this.getFluidState(pos);
+         if (!(blockState.getBlock() instanceof BaseFireBlock)) {
+             this.levelEvent(LevelEvent.PARTICLES_DESTROY_BLOCK, pos, Block.getId(blockState));
+         }
+ 
+         if (dropResources) {
+-            BlockEntity blockEntity = blockState.hasBlockEntity() ? this.getBlockEntity(pos) : null;
+-            Block.dropResources(blockState, this, pos, blockEntity, breaker, ItemStack.EMPTY);
++            if (fandCustomDrops == null) {
++                BlockEntity blockEntity = blockState.hasBlockEntity() ? this.getBlockEntity(pos) : null;
++                Block.dropResources(blockState, this, pos, blockEntity, breaker, ItemStack.EMPTY);
++            } else {
++                fandCustomDrops.forEach(drop -> Block.popResource(this, pos, drop));
++            }
+         }
+ 
+         boolean destroyed = this.setBlock(pos, fluidState.createLegacyBlock(), Block.UPDATE_ALL, updateLimit);
+diff --git a/net/minecraft/world/level/block/state/BlockBehaviour.java b/net/minecraft/world/level/block/state/BlockBehaviour.java
+index 274050206fd1bd6d0b0082fe5343e3544cd6836a..3f58199184573efeb608f2a9bfdb216ca47b36a8 100644
+--- a/net/minecraft/world/level/block/state/BlockBehaviour.java
++++ b/net/minecraft/world/level/block/state/BlockBehaviour.java
+@@ -179,7 +179,10 @@ public abstract class BlockBehaviour implements FeatureElement {
+         if (!state.isAir() && explosion.getBlockInteraction() != Explosion.BlockInteraction.TRIGGER_BLOCK) {
+             Block block = state.getBlock();
+             boolean doDropExperienceHack = explosion.getIndirectSourceEntity() instanceof Player;
+-            if (block.dropFromExplosion(explosion)) {
++            var fandDrops = io.fand.server.hooks.FandHooks.customBlockExplosionDrops(level, pos, explosion);
++            if (fandDrops != null) {
++                fandDrops.forEach(stack -> onHit.accept(stack, pos));
++            } else if (block.dropFromExplosion(explosion)) {
+                 BlockEntity blockEntity = state.hasBlockEntity() ? level.getBlockEntity(pos) : null;
+                 LootParams.Builder params = new LootParams.Builder(level)
+                     .withParameter(LootContextParams.ORIGIN, Vec3.atCenterOf(pos))
