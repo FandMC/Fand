@@ -99,6 +99,16 @@ public interface World extends ForwardingAudience {
         return 0;
     }
 
+    /** Inclusive minimum block Y accepted by this dimension. */
+    default int minBuildHeight() {
+        return 0;
+    }
+
+    /** Exclusive maximum block Y accepted by this dimension. */
+    default int maxBuildHeight() {
+        return 256;
+    }
+
     /** Global default spawn location. */
     default Location spawnLocation() {
         return at(0.0, 0.0, 0.0);

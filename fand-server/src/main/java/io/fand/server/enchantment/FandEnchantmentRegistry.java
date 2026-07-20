@@ -10,8 +10,10 @@ import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.enchantment.EnchantmentRegistration;
 import io.fand.api.enchantment.EnchantmentSlotGroup;
 import io.fand.api.enchantment.EnchantmentView;
+import io.fand.api.item.ItemStack;
 import io.fand.api.registry.RegistryReference;
 import io.fand.server.command.AdventureBridge;
+import io.fand.server.item.FandItemStacks;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -87,6 +89,44 @@ public final class FandEnchantmentRegistry implements EnchantmentRegistry {
                                             .map(RegistryReference::key)
                                             .toList()));
                 }));
+    }
+
+    @Override
+    public boolean supports(Key enchantment, ItemStack item) {
+        Objects.requireNonNull(enchantment, "enchantment");
+        Objects.requireNonNull(item, "item");
+        if (item.empty()) {
+            return false;
+        }
+        var current = server.get();
+        if (current == null) {
+            return false;
+        }
+        return callOnServerThread(current, () -> current.registryAccess()
+                .lookupOrThrow(Registries.ENCHANTMENT)
+                .get(ResourceKey.create(Registries.ENCHANTMENT, identifier(enchantment)))
+                .map(holder -> holder.value().isSupportedItem(FandItemStacks.toVanilla(item)))
+                .orElse(false));
+    }
+
+    @Override
+    public boolean compatible(Key first, Key second) {
+        Objects.requireNonNull(first, "first");
+        Objects.requireNonNull(second, "second");
+        if (first.equals(second)) {
+            return true;
+        }
+        var current = server.get();
+        if (current == null) {
+            return false;
+        }
+        return callOnServerThread(current, () -> {
+            var registry = current.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
+            var firstHolder = registry.get(ResourceKey.create(Registries.ENCHANTMENT, identifier(first)));
+            var secondHolder = registry.get(ResourceKey.create(Registries.ENCHANTMENT, identifier(second)));
+            return firstHolder.isPresent() && secondHolder.isPresent()
+                    && Enchantment.areCompatible(firstHolder.get(), secondHolder.get());
+        });
     }
 
     @Override

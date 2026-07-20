@@ -188,6 +188,17 @@ public interface Block {
         return false;
     }
 
+    /**
+     * Applies vanilla bone-meal behavior to this block without consuming an
+     * item from a player inventory.
+     *
+     * @return whether this block accepted the bone-meal action
+     */
+    default boolean applyBoneMeal(BlockFace face) {
+        java.util.Objects.requireNonNull(face, "face");
+        return false;
+    }
+
     /** Live block entity at this position, when the current block has one. */
     default Optional<? extends BlockEntity> blockEntity() {
         return Optional.empty();

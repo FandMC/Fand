@@ -700,6 +700,16 @@ public final class FandWorld implements World {
     }
 
     @Override
+    public int minBuildHeight() {
+        return handle.getMinY();
+    }
+
+    @Override
+    public int maxBuildHeight() {
+        return handle.getMaxY() + 1;
+    }
+
+    @Override
     public ChunkBatchOperation loadChunks(Iterable<io.fand.api.world.ChunkPos> chunks, ChunkBatchOptions options) {
         Objects.requireNonNull(chunks, "chunks");
         Objects.requireNonNull(options, "options");

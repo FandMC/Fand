@@ -4,6 +4,7 @@ import io.fand.api.enchantment.CustomEnchantment;
 import io.fand.api.enchantment.EnchantmentRegistry;
 import io.fand.api.enchantment.EnchantmentRegistration;
 import io.fand.api.enchantment.EnchantmentView;
+import io.fand.api.item.ItemStack;
 import java.util.Objects;
 import java.util.Optional;
 import net.kyori.adventure.key.Key;
@@ -26,6 +27,16 @@ public final class PluginEnchantmentRegistry implements EnchantmentRegistry {
     }
 
     @Override
+    public boolean supports(Key enchantment, ItemStack item) {
+        return delegate.supports(queryKey(enchantment), item);
+    }
+
+    @Override
+    public boolean compatible(Key first, Key second) {
+        return delegate.compatible(queryKey(first), queryKey(second));
+    }
+
+    @Override
     public EnchantmentRegistration register(CustomEnchantment enchantment) {
         Objects.requireNonNull(enchantment, "enchantment");
         return tracker.track(delegate.register(new CustomEnchantment(
@@ -42,6 +53,11 @@ public final class PluginEnchantmentRegistry implements EnchantmentRegistry {
             return key;
         }
         return Key.key(namespace, key.value());
+    }
+
+    private Key queryKey(Key key) {
+        Objects.requireNonNull(key, "key");
+        return "minecraft".equals(key.namespace()) ? key : scopedKey(key);
     }
 
     private boolean ownedByThisPlugin(EnchantmentView view) {

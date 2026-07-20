@@ -4,6 +4,7 @@ import io.fand.api.recipe.Recipe;
 import io.fand.api.recipe.RecipeRegistration;
 import io.fand.api.recipe.RecipeRegistry;
 import io.fand.api.recipe.RecipeType;
+import io.fand.api.item.ItemStack;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -78,6 +79,17 @@ public final class FandRecipeRegistry implements RecipeRegistry {
         return all().stream()
                 .filter(recipe -> recipe.type() == type)
                 .toList();
+    }
+
+    @Override
+    public Optional<ItemStack> brew(ItemStack potion, ItemStack ingredient) {
+        Objects.requireNonNull(potion, "potion");
+        Objects.requireNonNull(ingredient, "ingredient");
+        var vanilla = bridge.get();
+        if (vanilla == null || !isLive()) {
+            return Optional.empty();
+        }
+        return runOnServerThread(() -> vanilla.brew(potion, ingredient));
     }
 
     @Override

@@ -10,6 +10,7 @@ import io.fand.api.recipe.ShapelessRecipe;
 import io.fand.api.recipe.SmithingTransformRecipe;
 import io.fand.api.recipe.SmithingTrimRecipe;
 import io.fand.api.recipe.StonecuttingRecipe;
+import io.fand.api.item.ItemStack;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.Optional;
@@ -48,6 +49,11 @@ public final class PluginRecipeRegistry implements RecipeRegistry {
         return delegate.byType(type).stream()
                 .filter(this::ownedByThisPlugin)
                 .toList();
+    }
+
+    @Override
+    public Optional<ItemStack> brew(ItemStack potion, ItemStack ingredient) {
+        return delegate.brew(potion, ingredient);
     }
 
     @Override

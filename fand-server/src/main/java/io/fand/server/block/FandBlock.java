@@ -8,6 +8,7 @@ import io.fand.api.block.custom.CustomBlockType;
 import io.fand.api.block.FluidState;
 import io.fand.api.block.FluidType;
 import io.fand.api.block.FluidTypes;
+import io.fand.api.event.block.BlockFace;
 import io.fand.api.component.DataComponentContainer;
 import io.fand.api.component.DataComponentMap;
 import io.fand.api.item.ItemStack;
@@ -26,6 +27,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import net.kyori.adventure.key.Key;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
@@ -35,6 +37,9 @@ import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.world.item.BoneMealItem;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.LevelEvent;
 import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.material.Fluids;
 
@@ -166,9 +171,35 @@ public final class FandBlock implements Block {
     }
 
     @Override
+    public boolean applyBoneMeal(BlockFace face) {
+        Objects.requireNonNull(face, "face");
+        ServerLevel level = world.handle();
+        return callOnServerThread(() -> {
+            var boneMeal = new net.minecraft.world.item.ItemStack(Items.BONE_MEAL);
+            boolean applied = BoneMealItem.growCrop(boneMeal, level, pos)
+                    || BoneMealItem.growWaterPlant(boneMeal, level, pos, direction(face));
+            if (applied) {
+                level.levelEvent(LevelEvent.PARTICLES_AND_SOUND_PLANT_GROWTH, pos, 15);
+            }
+            return applied;
+        });
+    }
+
+    @Override
     public Optional<? extends BlockEntity> blockEntity() {
         ServerLevel level = world.handle();
         return callOnServerThread(() -> Optional.ofNullable(level.getBlockEntity(pos)).map(this::wrapBlockEntity));
+    }
+
+    private Direction direction(BlockFace face) {
+        return switch (face) {
+            case DOWN -> Direction.DOWN;
+            case UP -> Direction.UP;
+            case NORTH -> Direction.NORTH;
+            case SOUTH -> Direction.SOUTH;
+            case WEST -> Direction.WEST;
+            case EAST -> Direction.EAST;
+        };
     }
 
     @Override

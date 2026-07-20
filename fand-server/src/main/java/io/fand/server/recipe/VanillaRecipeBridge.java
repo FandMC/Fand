@@ -1,6 +1,8 @@
 package io.fand.server.recipe;
 
 import io.fand.api.recipe.Recipe;
+import io.fand.api.item.ItemStack;
+import io.fand.server.item.FandItemStacks;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Optional;
@@ -54,6 +56,20 @@ final class VanillaRecipeBridge implements RecipeBridge {
         return server.getRecipeManager()
                 .byKey(FandRecipes.recipeKey(key))
                 .map(FandRecipes::fromVanilla);
+    }
+
+    @Override
+    public Optional<ItemStack> brew(ItemStack potion, ItemStack ingredient) {
+        if (potion.empty() || ingredient.empty()) {
+            return Optional.empty();
+        }
+        var source = FandItemStacks.toVanilla(potion.withAmount(1));
+        var reagent = FandItemStacks.toVanilla(ingredient.withAmount(1));
+        var brewing = server.potionBrewing();
+        if (!brewing.hasMix(source, reagent)) {
+            return Optional.empty();
+        }
+        return Optional.of(FandItemStacks.fromVanilla(brewing.mix(reagent, source)));
     }
 
     @Override

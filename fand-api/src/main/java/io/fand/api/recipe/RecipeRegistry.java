@@ -1,5 +1,6 @@
 package io.fand.api.recipe;
 
+import io.fand.api.item.ItemStack;
 import java.util.Collection;
 import java.util.Optional;
 import net.kyori.adventure.key.Key;
@@ -17,6 +18,11 @@ public interface RecipeRegistry {
 
     /** Snapshot of all recipes of {@code type}. */
     Collection<? extends Recipe> byType(RecipeType type);
+
+    /** Applies the active vanilla brewing table to one potion and one ingredient. */
+    default Optional<ItemStack> brew(ItemStack potion, ItemStack ingredient) {
+        return Optional.empty();
+    }
 
     /**
      * Registers or replaces a recipe.
