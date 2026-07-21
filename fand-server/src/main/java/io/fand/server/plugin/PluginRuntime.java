@@ -878,6 +878,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
                 enabled = true;
                 if (options.logSummary()) {
                     LOGGER.info("Plugin enable summary: loaded={}, enabled={}, skipped={}", loadedPlugins.size(), enabledThisRun.size(), skipped);
+                    logStartupTimings();
                 }
             } catch (Throwable failure) {
                 while (!enabledThisRun.isEmpty()) {
@@ -1184,6 +1185,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
     }
 
     private LoadedPlugin loadArtifact(PluginArtifact artifact) {
+        var startedAtNanos = System.nanoTime();
         var id = artifact.descriptor.id();
         if (loadedPlugins.containsKey(id)) {
             throw new PluginLoadException("Plugin '" + id + "' is already loaded");
@@ -1246,6 +1248,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             if (entry != null) {
                 entry.loadedAtMillis = System.currentTimeMillis();
             }
+            loadedPlugin.loadDurationNanos = elapsedNanos(startedAtNanos);
             return loadedPlugin;
         } catch (Throwable failure) {
             closeQuietly(context, id);
@@ -1258,6 +1261,7 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         if (loadedPlugin.enabled) {
             return;
         }
+        var startedAtNanos = System.nanoTime();
         loadedPlugin.plugin.onEnable(loadedPlugin.context);
         loadedPlugin.enabled = true;
         var now = System.currentTimeMillis();
@@ -1265,6 +1269,42 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         entry.enabledAtMillis = now;
         disabledPlugins.remove(loadedPlugin.descriptor.id());
         firePluginEnableEvent(loadedPlugin.descriptor);
+        loadedPlugin.enableDurationNanos = elapsedNanos(startedAtNanos);
+    }
+
+    private void logStartupTimings() {
+        var timings = loadOrder.stream()
+                .map(loadedPlugins::get)
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparingLong(LoadedPlugin::startupDurationNanos)
+                        .reversed()
+                        .thenComparing(plugin -> plugin.descriptor.id()))
+                .toList();
+        var loadDurationNanos = timings.stream().mapToLong(plugin -> plugin.loadDurationNanos).sum();
+        var enableDurationNanos = timings.stream().mapToLong(plugin -> plugin.enableDurationNanos).sum();
+        var details = timings.stream()
+                .map(plugin -> plugin.descriptor.id() + "=" + formatDuration(plugin.startupDurationNanos())
+                        + " (load=" + formatDuration(plugin.loadDurationNanos)
+                        + ", enable=" + formatDuration(plugin.enableDurationNanos) + ")")
+                .collect(java.util.stream.Collectors.joining(", "));
+        LOGGER.info(
+                "Plugin startup timings: total={} (load={}, enable={}); plugins=[{}]",
+                formatDuration(loadDurationNanos + enableDurationNanos),
+                formatDuration(loadDurationNanos),
+                formatDuration(enableDurationNanos),
+                details
+        );
+    }
+
+    private static long elapsedNanos(long startedAtNanos) {
+        return System.nanoTime() - startedAtNanos;
+    }
+
+    private static String formatDuration(long durationNanos) {
+        if (durationNanos >= 1_000_000_000L) {
+            return String.format(Locale.ROOT, "%.3fs", durationNanos / 1_000_000_000.0D);
+        }
+        return String.format(Locale.ROOT, "%.3fms", durationNanos / 1_000_000.0D);
     }
 
     private void unloadLoadedPlugin(LoadedPlugin loadedPlugin, boolean keepDisabled, String phase) {
@@ -2008,6 +2048,8 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
         private final RuntimePluginContext context;
         private final PluginClassLoader classLoader;
         private final PluginResourceTracker resources;
+        private volatile long loadDurationNanos;
+        private volatile long enableDurationNanos;
         private volatile boolean enabled;
 
         private LoadedPlugin(
@@ -2024,6 +2066,10 @@ public final class PluginRuntime implements PluginManager, AutoCloseable {
             this.context = context;
             this.classLoader = classLoader;
             this.resources = resources;
+        }
+
+        private long startupDurationNanos() {
+            return loadDurationNanos + enableDurationNanos;
         }
     }
 
