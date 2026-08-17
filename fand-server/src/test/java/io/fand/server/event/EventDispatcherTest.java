@@ -8,6 +8,7 @@ import io.fand.api.event.EventDispatchException;
 import io.fand.api.event.EventPriority;
 import io.fand.api.event.Listener;
 import io.fand.api.event.Subscribe;
+import io.fand.api.event.SubscriptionOptions;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -112,10 +113,100 @@ final class EventDispatcherTest {
         assertThat(calls).containsExactly("after-first");
     }
 
+    @Test
+    void skipsAlreadyCancelledEventsWhenRequested() {
+        List<String> calls = new ArrayList<>();
+        bus.subscribe(CancelEvent.class, event -> {
+            calls.add("cancel");
+            event.setCancelled(true);
+        });
+        bus.subscribe(
+                CancelEvent.class,
+                new SubscriptionOptions(EventPriority.NORMAL, true),
+                event -> calls.add("ignored")
+        );
+        bus.subscribe(CancelEvent.class, EventPriority.HIGH, event -> calls.add("observed"));
+
+        bus.fire(new CancelEvent());
+
+        assertThat(calls).containsExactly("cancel", "observed");
+    }
+
+    @Test
+    void restoresAndReportsObserverMutationsBeforeInvokingTheNextObserver() {
+        List<Boolean> observedCancellation = new ArrayList<>();
+        var event = new CancelEvent();
+        bus.subscribe(CancelEvent.class, EventPriority.OBSERVER, current -> current.setCancelled(true));
+        bus.subscribe(CancelEvent.class, EventPriority.OBSERVER, current -> observedCancellation.add(current.cancelled()));
+
+        assertThatThrownBy(() -> bus.fire(event))
+                .isInstanceOfSatisfying(EventDispatchException.class, failure -> {
+                    assertThat(failure.failures()).hasSize(1);
+                    assertThat(failure.failures().getFirst())
+                            .isInstanceOf(IllegalStateException.class)
+                            .hasMessageContaining("OBSERVER listener mutated")
+                            .hasMessageContaining("cancelled");
+                });
+        assertThat(event.cancelled()).isFalse();
+        assertThat(observedCancellation).containsExactly(false);
+    }
+
+    @Test
+    void restoresMutableCollectionContentsChangedByObserver() {
+        var event = new MutableCollectionEvent();
+        bus.subscribe(MutableCollectionEvent.class, EventPriority.OBSERVER, current -> current.values().add("changed"));
+
+        assertThatThrownBy(() -> bus.fire(event)).isInstanceOf(EventDispatchException.class);
+        assertThat(event.values()).containsExactly("initial");
+    }
+
+    @Test
+    void restoresAnImmutableCollectionReferenceReplacedByObserver() {
+        var event = new ReplaceableCollectionEvent();
+        bus.subscribe(ReplaceableCollectionEvent.class, EventPriority.OBSERVER, current -> current.setValues(List.of("changed")));
+
+        assertThatThrownBy(() -> bus.fire(event)).isInstanceOf(EventDispatchException.class);
+        assertThat(event.values()).containsExactly("initial");
+    }
+
     private interface BaseEvent extends Event {
     }
 
     private record ChildEvent() implements BaseEvent {
+    }
+
+    private static final class CancelEvent implements Event, io.fand.api.event.Cancellable {
+        private boolean cancelled;
+
+        @Override
+        public boolean cancelled() {
+            return cancelled;
+        }
+
+        @Override
+        public void setCancelled(boolean cancelled) {
+            this.cancelled = cancelled;
+        }
+    }
+
+    private static final class MutableCollectionEvent implements Event {
+        private final List<String> values = new ArrayList<>(List.of("initial"));
+
+        List<String> values() {
+            return values;
+        }
+    }
+
+    private static final class ReplaceableCollectionEvent implements Event {
+        private List<String> values = List.of("initial");
+
+        List<String> values() {
+            return values;
+        }
+
+        void setValues(List<String> values) {
+            this.values = List.copyOf(values);
+        }
     }
 
     @Test
@@ -147,6 +238,28 @@ final class EventDispatcherTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void registerListenerUsesAnnotationOptionsAndSkipsOverriddenHandlers() {
+        List<String> calls = new ArrayList<>();
+        bus.registerListener(new ChildHandler(calls));
+
+        var event = new CancelEvent();
+        event.setCancelled(true);
+        bus.fire(event);
+
+        assertThat(calls).containsExactly("child", "second");
+    }
+
+    @Test
+    void privateSameSignatureHandlersInParentAndChildAreBothRegistered() {
+        List<String> calls = new ArrayList<>();
+        bus.registerListener(new PrivateChildHandler(calls));
+
+        bus.fire(new ChildEvent());
+
+        assertThat(calls).containsExactly("child-private", "parent-private");
+    }
+
     private static final class MultiHandler implements Listener {
         private final List<String> calls;
 
@@ -172,6 +285,75 @@ final class EventDispatcherTest {
         @Subscribe
         public void notAnEvent(String wrong) {
         }
+    }
+
+    private static class ParentHandler implements Listener {
+        protected final List<String> calls;
+
+        ParentHandler(List<String> calls) {
+            this.calls = calls;
+        }
+
+        @Subscribe
+        public void overridden(CancelEvent event) {
+            calls.add("parent");
+        }
+
+        @Subscribe
+        public void second(CancelEvent event) {
+            calls.add("second");
+        }
+
+        @Subscribe(ignoreCancelled = true)
+        public void skipped(CancelEvent event) {
+            calls.add("skipped");
+        }
+    }
+
+    private static final class ChildHandler extends ParentHandler {
+        ChildHandler(List<String> calls) {
+            super(calls);
+        }
+
+        @Override
+        @Subscribe
+        public void overridden(CancelEvent event) {
+            calls.add("child");
+        }
+    }
+
+    private static class PrivateParentHandler implements Listener {
+        protected final List<String> calls;
+
+        PrivateParentHandler(List<String> calls) {
+            this.calls = calls;
+        }
+
+        @Subscribe
+        private void sameName(ChildEvent event) {
+            calls.add("parent-private");
+        }
+    }
+
+    private static final class PrivateChildHandler extends PrivateParentHandler {
+        PrivateChildHandler(List<String> calls) {
+            super(calls);
+        }
+
+        @Subscribe
+        private void sameName(ChildEvent event) {
+            calls.add("child-private");
+        }
+    }
+
+    @Test
+    void propagatesErrorsWithoutWrappingThemAsListenerFailures() {
+        var error = new AssertionError("fatal");
+        bus.subscribe(ChildEvent.class, event -> {
+            throw error;
+        });
+
+        assertThatThrownBy(() -> bus.fire(new ChildEvent())).isSameAs(error);
     }
 
     @Test

@@ -28,6 +28,9 @@ import io.fand.api.event.entity.EntityRegainHealthEvent;
 import io.fand.api.event.entity.EntityRemoveEvent;
 import io.fand.api.event.entity.EntityResurrectEvent;
 import io.fand.api.event.entity.EntityShootBowEvent;
+import io.fand.api.event.entity.EntityUseItemEvent;
+import io.fand.api.event.entity.EntityKineticWeaponHitEvent;
+import io.fand.api.item.component.ItemEquipmentSlot;
 import io.fand.api.event.entity.EntitySpawnEvent;
 import io.fand.api.event.entity.EntityTameEvent;
 import io.fand.api.event.entity.EntityTargetEvent;
@@ -108,6 +111,106 @@ public final class EntityEvents {
     private static final ThreadLocal<BlockPos> NEXT_BLOCK_DAMAGE_SOURCE = new ThreadLocal<>();
 
     private EntityEvents() {
+    }
+
+    public static boolean fireUseItem(
+            net.minecraft.world.entity.LivingEntity entity,
+            ItemStack item,
+            InteractionHand hand,
+            EntityUseItemEvent.Phase phase,
+            int usedTicks,
+            int remainingTicks
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(EntityUseItemEvent.class)) {
+            return true;
+        }
+        var wrapped = FandHooks.wrapEntity(entity);
+        if (!(wrapped instanceof io.fand.api.entity.LivingEntity livingEntity)) {
+            return true;
+        }
+        var event = new EntityUseItemEvent(
+                livingEntity,
+                FandItemStacks.fromVanilla(item),
+                hand == InteractionHand.OFF_HAND ? EntityUseItemEvent.Hand.OFF_HAND : EntityUseItemEvent.Hand.MAIN_HAND,
+                phase,
+                usedTicks,
+                remainingTicks);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityUseItemEvent listener failed", failure);
+            return true;
+        }
+        return phase == EntityUseItemEvent.Phase.STOP || !event.cancelled();
+    }
+
+    public static @Nullable KineticHitResult fireKineticWeaponHit(
+            net.minecraft.world.entity.LivingEntity attacker,
+            net.minecraft.world.entity.Entity target,
+            ItemStack weapon,
+            net.minecraft.world.entity.EquipmentSlot weaponSlot,
+            int usedTicks,
+            Vec3 attackerVelocity,
+            Vec3 targetVelocity,
+            double attackerSpeedProjection,
+            double targetSpeedProjection,
+            double relativeSpeed,
+            float damage,
+            boolean dealsDamage,
+            boolean dealsKnockback,
+            boolean dismounts
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(EntityKineticWeaponHitEvent.class)) {
+            return new KineticHitResult(damage, dealsDamage, dealsKnockback, dismounts);
+        }
+        var wrappedAttacker = FandHooks.wrapEntity(attacker);
+        var wrappedTarget = FandHooks.wrapEntity(target);
+        if (!(wrappedAttacker instanceof io.fand.api.entity.LivingEntity livingAttacker) || wrappedTarget == null) {
+            return new KineticHitResult(damage, dealsDamage, dealsKnockback, dismounts);
+        }
+        var event = new EntityKineticWeaponHitEvent(
+                livingAttacker,
+                wrappedTarget,
+                FandItemStacks.fromVanilla(weapon),
+                equipmentSlot(weaponSlot),
+                usedTicks,
+                new Vector3(attackerVelocity.x, attackerVelocity.y, attackerVelocity.z),
+                new Vector3(targetVelocity.x, targetVelocity.y, targetVelocity.z),
+                attackerSpeedProjection,
+                targetSpeedProjection,
+                relativeSpeed,
+                damage,
+                dealsDamage,
+                dealsKnockback,
+                dismounts);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityKineticWeaponHitEvent listener failed", failure);
+            return new KineticHitResult(damage, dealsDamage, dealsKnockback, dismounts);
+        }
+        if (event.cancelled() || !event.dealsDamage() && !event.dealsKnockback() && !event.dismounts()) {
+            return null;
+        }
+        return new KineticHitResult(event.damage(), event.dealsDamage(), event.dealsKnockback(), event.dismounts());
+    }
+
+    private static ItemEquipmentSlot equipmentSlot(net.minecraft.world.entity.EquipmentSlot slot) {
+        return switch (slot) {
+            case MAINHAND -> ItemEquipmentSlot.MAINHAND;
+            case OFFHAND -> ItemEquipmentSlot.OFFHAND;
+            case FEET -> ItemEquipmentSlot.FEET;
+            case LEGS -> ItemEquipmentSlot.LEGS;
+            case CHEST -> ItemEquipmentSlot.CHEST;
+            case HEAD -> ItemEquipmentSlot.HEAD;
+            case BODY -> ItemEquipmentSlot.BODY;
+            case SADDLE -> ItemEquipmentSlot.SADDLE;
+        };
+    }
+
+    public record KineticHitResult(float damage, boolean dealsDamage, boolean dealsKnockback, boolean dismounts) {
     }
 
     public static void withHealCause(EntityRegainHealthEvent.Cause cause, Runnable task) {

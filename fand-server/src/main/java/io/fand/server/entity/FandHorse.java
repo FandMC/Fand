@@ -6,7 +6,7 @@ import io.fand.server.world.WorldRegistry;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
-public final class FandHorse extends FandAnimal implements Horse {
+public class FandHorse extends FandAnimal implements Horse {
 
     public FandHorse(net.minecraft.world.entity.animal.equine.AbstractHorse handle, WorldRegistry worldRegistry) {
         super(handle, worldRegistry);

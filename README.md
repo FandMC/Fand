@@ -65,6 +65,11 @@ The patched Minecraft code lives in `fand-server/src/minecraft/java` after setup
 See `PROJECT_PROPOSAL.md` for the full roadmap and `CODING_STANDARDS.md` for
 development guidelines.
 
+## Documentation
+
+- [Fand API development guide (Simplified Chinese)](docs/API_DEVELOPMENT.md)
+- [Custom items and blocks guide (Simplified Chinese)](docs/CUSTOM_ITEMS_AND_BLOCKS.md)
+
 ## Acknowledgements
 
 Fand uses code, implementation ideas, and engineering approaches from the

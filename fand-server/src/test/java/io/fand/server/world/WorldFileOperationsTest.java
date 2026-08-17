@@ -50,4 +50,34 @@ final class WorldFileOperationsTest {
                 .isInstanceOf(java.io.IOException.class)
                 .hasMessageContaining("cannot contain source directory");
     }
+
+    @Test
+    void atomicCopyDoesNotReplaceExistingTarget() throws Exception {
+        var source = tempDir.resolve("source");
+        Files.createDirectories(source);
+        Files.writeString(source.resolve("level.dat"), "new");
+
+        var target = tempDir.resolve("target");
+        Files.createDirectories(target);
+        Files.writeString(target.resolve("level.dat"), "old");
+
+        assertThatThrownBy(() -> WorldFileOperations.copyWorldDirectoryAtomically(source, target))
+                .isInstanceOf(java.io.IOException.class)
+                .hasMessageContaining("already exists");
+        assertThat(Files.readString(target.resolve("level.dat"))).isEqualTo("old");
+    }
+
+    @Test
+    void atomicCopyPublishesCompleteDirectory() throws Exception {
+        var source = tempDir.resolve("source");
+        Files.createDirectories(source.resolve("region"));
+        Files.writeString(source.resolve("level.dat"), "level");
+        Files.writeString(source.resolve("region").resolve("r.0.0.mca"), "chunk");
+
+        var target = tempDir.resolve("target");
+        WorldFileOperations.copyWorldDirectoryAtomically(source, target);
+
+        assertThat(Files.readString(target.resolve("level.dat"))).isEqualTo("level");
+        assertThat(Files.readString(target.resolve("region").resolve("r.0.0.mca"))).isEqualTo("chunk");
+    }
 }

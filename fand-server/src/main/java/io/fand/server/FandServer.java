@@ -113,9 +113,12 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.UUIDUtil;
@@ -197,6 +200,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final AtomicReference<FandConfig> config;
     private final AtomicReference<LifecyclePhase> phase = new AtomicReference<>(LifecyclePhase.BOOTSTRAP);
     private final AtomicReference<MinecraftServer> minecraftServer = new AtomicReference<>();
+    private final Set<ResourceKey<Level>> worldCreationReservations = ConcurrentHashMap.newKeySet();
 
     public FandServer() {
         this(Path.of("fand.yml"), FandConfig.load(Path.of("fand.yml")), Main.class.getClassLoader());
@@ -878,12 +882,14 @@ public final class FandServer implements Server, AutoCloseable {
         if (server.isStopped()) {
             return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is stopping"));
         }
-        return server.submit(() -> {
-            var level = server.fand$createDynamicLevel(dimensionKey(key), levelStem(server, key, options));
+        var dimension = dimensionKey(key);
+        return reserveWorldCreation(dimension, () -> server.submit(() -> {
+            ensureTargetWorldAvailable(server, dimension);
+            var level = server.fand$createDynamicLevel(dimension, levelStem(server, key, options));
             World world = registry.wrap(level);
             events.fire(new WorldLoadEvent(world));
             return world;
-        });
+        }));
     }
 
     @Override
@@ -901,18 +907,14 @@ public final class FandServer implements Server, AutoCloseable {
         Objects.requireNonNull(snapshot, "snapshot");
         Objects.requireNonNull(options, "options");
         var server = minecraftServer.get();
-        var registry = worlds.get();
-        if (server == null || registry == null) {
+        if (server == null || worlds.get() == null) {
             return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is not attached"));
         }
         if (server.isStopped()) {
             return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is stopping"));
         }
-        var dimension = dimensionKey(key);
-        return server.submit(() -> {
-            ensureTargetWorldAvailable(server, dimension);
-            return levelStem(server, key, options);
-        }).thenCompose(stem -> createWorld(key, snapshot, stem));
+        return server.submit(() -> levelStem(server, key, options))
+                .thenCompose(stem -> createWorld(key, snapshot, stem));
     }
 
     @Override
@@ -1168,7 +1170,7 @@ public final class FandServer implements Server, AutoCloseable {
             return CompletableFuture.failedFuture(new IllegalStateException("Minecraft server is stopping"));
         }
         var dimension = dimensionKey(key);
-        return server.submit(() -> {
+        return reserveWorldCreation(dimension, () -> server.submit(() -> {
             ensureTargetWorldAvailable(server, dimension);
             return dimensionPath(server, dimension);
         }).thenCompose(targetPath -> CompletableFuture.runAsync(() -> copySnapshot(snapshot, targetPath)))
@@ -1177,12 +1179,33 @@ public final class FandServer implements Server, AutoCloseable {
                     World world = registry.wrap(level);
                     events.fire(new WorldLoadEvent(world));
                     return world;
-                }));
+                })));
     }
 
     private static void ensureTargetWorldAvailable(MinecraftServer server, ResourceKey<Level> dimension) {
         if (server.getLevel(dimension) != null) {
             throw new IllegalArgumentException("World is already loaded: " + dimension.identifier());
+        }
+        var path = dimensionPath(server, dimension);
+        if (java.nio.file.Files.exists(path)) {
+            throw new IllegalArgumentException("World storage already exists: " + dimension.identifier());
+        }
+    }
+
+    private <T> CompletableFuture<T> reserveWorldCreation(
+            ResourceKey<Level> dimension,
+            Supplier<CompletableFuture<T>> operation
+    ) {
+        if (!worldCreationReservations.add(dimension)) {
+            return CompletableFuture.failedFuture(new IllegalStateException(
+                    "World creation is already in progress: " + dimension.identifier()));
+        }
+        try {
+            return Objects.requireNonNull(operation.get(), "world creation operation")
+                    .whenComplete((ignored, failure) -> worldCreationReservations.remove(dimension));
+        } catch (Throwable failure) {
+            worldCreationReservations.remove(dimension);
+            return CompletableFuture.failedFuture(failure);
         }
     }
 
@@ -1209,7 +1232,7 @@ public final class FandServer implements Server, AutoCloseable {
 
     private static void copySnapshot(WorldSnapshot snapshot, Path targetPath) {
         try {
-            WorldFileOperations.copyWorldDirectory(snapshot.path(), targetPath);
+            WorldFileOperations.copyWorldDirectoryAtomically(snapshot.path(), targetPath);
         } catch (IOException failure) {
             throw new java.io.UncheckedIOException("Failed to copy world snapshot to " + targetPath, failure);
         }

@@ -7,12 +7,13 @@ import io.fand.api.event.Event;
 import java.util.Objects;
 
 /**
- * Fired on the server thread before a block state change is committed.
+ * Fired on the server thread before a block is replaced by a different block type.
  *
  * <p>This is a low-level event and may accompany higher-level events such as
  * {@link BlockPlaceEvent} and {@link BlockBreakEvent}. It also covers world
  * mutations from ticking blocks, fluids, explosions, redstone, commands, and
- * plugin calls.
+ * plugin calls. State-property-only changes are exposed through
+ * {@link BlockStateChangeEvent}.
  */
 public final class BlockChangeEvent implements Event, Cancellable {
 

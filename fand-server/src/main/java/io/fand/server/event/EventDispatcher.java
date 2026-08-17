@@ -6,6 +6,7 @@ import io.fand.api.event.EventDispatchException;
 import io.fand.api.event.EventListener;
 import io.fand.api.event.EventPriority;
 import io.fand.api.event.EventSubscription;
+import io.fand.api.event.SubscriptionOptions;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -45,12 +46,21 @@ public final class EventDispatcher implements EventBus {
             EventPriority priority,
             EventListener<E> listener
     ) {
+        return subscribe(type, SubscriptionOptions.priority(priority), listener);
+    }
+
+    @Override
+    public <E extends Event> EventSubscription subscribe(
+            Class<E> type,
+            SubscriptionOptions options,
+            EventListener<E> listener
+    ) {
         Objects.requireNonNull(type, "type");
-        Objects.requireNonNull(priority, "priority");
+        Objects.requireNonNull(options, "options");
         Objects.requireNonNull(listener, "listener");
 
         var bucket = bucket(type);
-        var registration = new Registration<>(this, bucket, priority, listener, sequence.getAndIncrement());
+        var registration = new Registration<>(this, bucket, options, listener, sequence.getAndIncrement());
         synchronized (counterLock) {
             bucket.add(registration);
             adjustApplicableCounters(type, +1);
@@ -349,6 +359,7 @@ public final class EventDispatcher implements EventBus {
         private final EventDispatcher owner;
         private final ListenerBucket bucket;
         private final EventPriority priority;
+        private final boolean ignoreCancelled;
         private final EventListener<E> listener;
         private final long sequence;
         private final AtomicBoolean active = new AtomicBoolean(true);
@@ -356,13 +367,14 @@ public final class EventDispatcher implements EventBus {
         private Registration(
                 EventDispatcher owner,
                 ListenerBucket bucket,
-                EventPriority priority,
+                SubscriptionOptions options,
                 EventListener<E> listener,
                 long sequence
         ) {
             this.owner = owner;
             this.bucket = bucket;
-            this.priority = priority;
+            this.priority = options.priority();
+            this.ignoreCancelled = options.ignoreCancelled();
             this.listener = listener;
             this.sequence = sequence;
         }
@@ -384,12 +396,39 @@ public final class EventDispatcher implements EventBus {
             if (!active()) {
                 return null;
             }
+            if (ignoreCancelled
+                    && event instanceof io.fand.api.event.Cancellable cancellable
+                    && cancellable.cancelled()) {
+                return null;
+            }
+            var observerState = priority == EventPriority.OBSERVER
+                    ? ObserverEventState.capture(event)
+                    : null;
+            Exception listenerFailure = null;
+            Error fatalFailure = null;
             try {
                 listener.on((E) event);
-                return null;
-            } catch (Throwable failure) {
-                return failure;
+            } catch (Exception failure) {
+                listenerFailure = failure;
+            } catch (Error failure) {
+                fatalFailure = failure;
             }
+            IllegalStateException mutationFailure = observerState == null
+                    ? null
+                    : observerState.restoreAndCreateFailure();
+            if (fatalFailure != null) {
+                if (mutationFailure != null) {
+                    fatalFailure.addSuppressed(mutationFailure);
+                }
+                throw fatalFailure;
+            }
+            if (listenerFailure != null) {
+                if (mutationFailure != null) {
+                    listenerFailure.addSuppressed(mutationFailure);
+                }
+                return listenerFailure;
+            }
+            return mutationFailure;
         }
     }
 }

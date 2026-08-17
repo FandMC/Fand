@@ -1,6 +1,7 @@
 package io.fand.server.world;
 
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,6 +19,41 @@ public final class WorldFileOperations {
     public static void copyWorldDirectory(Path source, Path target) throws IOException {
         var normalizedSource = source.toAbsolutePath().normalize();
         var normalizedTarget = target.toAbsolutePath().normalize();
+        validateCopyPaths(normalizedSource, normalizedTarget);
+        deleteRecursively(normalizedTarget);
+        Files.createDirectories(normalizedTarget);
+        copyWorldContents(normalizedSource, normalizedTarget);
+    }
+
+    /** Copies a world into a new directory and publishes it without replacing an existing target. */
+    public static void copyWorldDirectoryAtomically(Path source, Path target) throws IOException {
+        var normalizedSource = source.toAbsolutePath().normalize();
+        var normalizedTarget = target.toAbsolutePath().normalize();
+        validateCopyPaths(normalizedSource, normalizedTarget);
+        if (Files.exists(normalizedTarget)) {
+            throw new IOException("Target world directory already exists: " + normalizedTarget);
+        }
+        var parent = normalizedTarget.getParent();
+        Files.createDirectories(parent);
+        var staging = Files.createTempDirectory(parent, normalizedTarget.getFileName() + "-staging-");
+        try {
+            copyWorldContents(normalizedSource, staging);
+            try {
+                Files.move(staging, normalizedTarget, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException unsupported) {
+                Files.move(staging, normalizedTarget);
+            }
+        } catch (IOException failure) {
+            try {
+                deleteRecursively(staging);
+            } catch (IOException cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+            throw failure;
+        }
+    }
+
+    private static void validateCopyPaths(Path normalizedSource, Path normalizedTarget) throws IOException {
         if (!Files.isDirectory(normalizedSource)) {
             throw new IOException("World directory does not exist: " + normalizedSource);
         }
@@ -30,8 +66,9 @@ public final class WorldFileOperations {
         if (normalizedSource.startsWith(normalizedTarget)) {
             throw new IOException("Target world directory cannot contain source directory: " + normalizedTarget);
         }
-        deleteRecursively(normalizedTarget);
-        Files.createDirectories(normalizedTarget);
+    }
+
+    private static void copyWorldContents(Path normalizedSource, Path normalizedTarget) throws IOException {
         Files.walkFileTree(normalizedSource, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {

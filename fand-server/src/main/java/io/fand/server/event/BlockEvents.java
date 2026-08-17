@@ -3,6 +3,8 @@ package io.fand.server.event;
 import io.fand.api.event.block.BlockBurnEvent;
 import io.fand.api.event.block.BlockCanBuildEvent;
 import io.fand.api.event.block.BlockChangeEvent;
+import io.fand.api.event.block.BlockStateChangeEvent;
+import io.fand.api.block.BlockStateSnapshot;
 import io.fand.api.event.block.BlockDispenseEvent;
 import io.fand.api.event.block.BlockExplodeEvent;
 import io.fand.api.event.block.BlockFadeEvent;
@@ -26,6 +28,7 @@ import io.fand.api.event.block.LeavesDecayEvent;
 import io.fand.api.event.block.PortalCreateEvent;
 import io.fand.api.event.block.SignChangeEvent;
 import io.fand.api.event.block.SpongeAbsorbEvent;
+import io.fand.api.event.inventory.ShelfItemSwapEvent;
 import io.fand.api.event.player.PlayerInteractEvent;
 import io.fand.api.event.world.StructureGrowEvent;
 import io.fand.api.component.DataComponentMap;
@@ -174,35 +177,110 @@ public final class BlockEvents {
             BlockState newState,
             int updateFlags
     ) {
-        if (oldState.getBlock() == newState.getBlock()) {
+        if (oldState == newState) {
             return true;
         }
-        IgniteContext igniteContext = IGNITE_CONTEXT.get();
-        BlockIgniteEvent.Cause igniteCause = igniteContext == null ? BlockIgniteEvent.Cause.UNKNOWN : igniteContext.cause();
-        BlockPos igniteSource = igniteContext == null ? null : igniteContext.sourcePos();
-        if (!fireIgnite(level, pos, newState, igniteCause, igniteSource)) {
-            return false;
-        }
         var bus = FandHooks.events();
-        if (!bus.hasListeners(BlockChangeEvent.class)) {
+        boolean typeChanged = oldState.getBlock() != newState.getBlock();
+        if (typeChanged) {
+            IgniteContext igniteContext = IGNITE_CONTEXT.get();
+            BlockIgniteEvent.Cause igniteCause = igniteContext == null ? BlockIgniteEvent.Cause.UNKNOWN : igniteContext.cause();
+            BlockPos igniteSource = igniteContext == null ? null : igniteContext.sourcePos();
+            if (!fireIgnite(level, pos, newState, igniteCause, igniteSource)) {
+                return false;
+            }
+        }
+        boolean hasTypeListeners = typeChanged && bus.hasListeners(BlockChangeEvent.class);
+        boolean hasStateListeners = bus.hasListeners(BlockStateChangeEvent.class);
+        if (!hasTypeListeners && !hasStateListeners) {
             return true;
         }
         var world = FandHooks.wrapWorld(level);
         if (world == null) {
             return true;
         }
-        var event = new BlockChangeEvent(
-                new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()),
-                FandBlockType.of(oldState.getBlock()),
-                FandBlockType.of(newState.getBlock()),
-                updateFlags);
+        var block = new FandBlock(world, pos.getX(), pos.getY(), pos.getZ());
+        if (hasTypeListeners) {
+                var event = new BlockChangeEvent(
+                        block,
+                        FandBlockType.of(oldState.getBlock()),
+                        FandBlockType.of(newState.getBlock()),
+                        updateFlags);
+                try {
+                    bus.fire(event);
+                } catch (RuntimeException failure) {
+                    LOGGER.warn("BlockChangeEvent listener failed", failure);
+                }
+                if (event.cancelled()) {
+                    return false;
+                }
+        }
+        if (!hasStateListeners) {
+            return true;
+        }
+        var event = new BlockStateChangeEvent(block, snapshot(oldState), snapshot(newState), updateFlags);
         try {
             bus.fire(event);
         } catch (RuntimeException failure) {
-            LOGGER.warn("BlockChangeEvent listener failed", failure);
+            LOGGER.warn("BlockStateChangeEvent listener failed", failure);
             return true;
         }
         return !event.cancelled();
+    }
+
+    public static boolean fireShelfSwap(
+            ServerPlayer player,
+            ServerLevel level,
+            BlockPos primaryShelf,
+            boolean powered,
+            List<ShelfSwap> swaps
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(ShelfItemSwapEvent.class)) {
+            return true;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        var world = FandHooks.wrapWorld(level);
+        if (fandPlayer == null || world == null) {
+            return true;
+        }
+        var exchanges = swaps.stream()
+                .map(swap -> new ShelfItemSwapEvent.Exchange(
+                        block(world, swap.shelfPos()),
+                        swap.shelfSlot(),
+                        swap.playerSlot(),
+                        FandItemStacks.fromVanilla(swap.shelfItem()),
+                        FandItemStacks.fromVanilla(swap.playerItem())))
+                .toList();
+        var event = new ShelfItemSwapEvent(fandPlayer, block(world, primaryShelf), powered, exchanges);
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("ShelfItemSwapEvent listener failed", failure);
+            return true;
+        }
+        return !event.cancelled();
+    }
+
+    public record ShelfSwap(
+            BlockPos shelfPos,
+            int shelfSlot,
+            int playerSlot,
+            net.minecraft.world.item.ItemStack shelfItem,
+            net.minecraft.world.item.ItemStack playerItem
+    ) {
+    }
+
+    private static BlockStateSnapshot snapshot(BlockState state) {
+        var properties = new LinkedHashMap<String, String>();
+        for (var property : state.getProperties()) {
+            properties.put(property.getName(), propertyName(state, property));
+        }
+        return new BlockStateSnapshot(FandBlockType.of(state.getBlock()), properties);
+    }
+
+    private static <T extends Comparable<T>> String propertyName(BlockState state, net.minecraft.world.level.block.state.properties.Property<T> property) {
+        return property.getName(state.getValue(property));
     }
 
     public static boolean fireBurn(ServerLevel level, BlockPos sourcePos, BlockPos pos, BlockState state) {

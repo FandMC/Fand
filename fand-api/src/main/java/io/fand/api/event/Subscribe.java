@@ -18,4 +18,7 @@ import java.lang.annotation.Target;
 public @interface Subscribe {
 
     EventPriority priority() default EventPriority.NORMAL;
+
+    /** Skips this listener when a cancellable event is already cancelled. */
+    boolean ignoreCancelled() default false;
 }

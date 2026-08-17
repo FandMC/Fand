@@ -53,6 +53,11 @@ Paperweight 任务会在 `:fand-server` 子项目中自动可用。经过补丁�
 
 完整路线图详见 `PROJECT_PROPOSAL.md`，开发指南详见 `CODING_STANDARDS.md`。
 
+## 开发文档
+
+- [Fand API 开发文档](docs/API_DEVELOPMENT.md)
+- [自定义物品与自定义方块](docs/CUSTOM_ITEMS_AND_BLOCKS.md)
+
 ## 致谢
 
 Fand 使用并参考了 Paper、Gale、Leaf、Leaves、Moonrise、C2ME、Lithium、ScalableLux 等项目的代码、实现思路和工程实践。这些项目为 Fand 的补丁工作流、vanilla 集成、性能优化以及服务端运行时设计提供了重要参考。

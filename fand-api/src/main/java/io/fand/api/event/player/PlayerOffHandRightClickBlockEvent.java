@@ -4,6 +4,7 @@ import io.fand.api.block.Block;
 import io.fand.api.entity.Player;
 import io.fand.api.event.block.BlockFace;
 import io.fand.api.item.ItemStack;
+import io.fand.api.world.Vector3;
 
 /**
  * Fired on the server thread before a player right-clicks a block with their off hand.
@@ -16,5 +17,15 @@ public final class PlayerOffHandRightClickBlockEvent extends PlayerRightClickBlo
 
     public PlayerOffHandRightClickBlockEvent(Player player, Block block, ItemStack item, BlockFace clickedFace) {
         super(player, Hand.OFF_HAND, block, item, clickedFace);
+    }
+
+    public PlayerOffHandRightClickBlockEvent(
+            Player player,
+            Block block,
+            ItemStack item,
+            BlockFace clickedFace,
+            Vector3 hitPosition
+    ) {
+        super(player, Hand.OFF_HAND, block, item, clickedFace, hitPosition);
     }
 }

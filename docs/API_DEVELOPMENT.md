@@ -157,6 +157,10 @@ public final class ExamplePlugin implements Plugin {
 - `context.services()`：跨插件 Java provider 注册表。
 - `context.customItems()` / `context.customBlocks()`：插件命名空间下的自定义物品和方块。
 
+自定义物品和方块包含 base/carrier 选择、现代 item component、持久 block component、工具规则、
+绑定放置与掉落，以及资源包模型生成。完整语义和多个可运行示例见
+[`CUSTOM_ITEMS_AND_BLOCKS.md`](CUSTOM_ITEMS_AND_BLOCKS.md)。
+
 `Fand.server()` 返回当前运行中的 `Server`。它适合读取全局状态、查找在线玩家、访问世界、
 广播 Adventure 消息、创建或卸载动态世界、读取性能快照等。插件拥有的注册仍应优先走
 `PluginContext`。
@@ -454,6 +458,21 @@ context.services().register(
 ```
 
 多个 provider 按 `ServicePriority` 高到低查询，同优先级后注册者优先；当前 provider 注销后自动 fallback。
+
+## 自定义物品和方块
+
+`context.customItems()` 注册由 vanilla base 和默认组件组成的逻辑物品类型；
+`context.customBlocks()` 注册由 vanilla carrier、carrier state、持久组件和挖掘规则组成的逻辑方块类型。
+两者都允许调用方选择任意 vanilla base，但原版客户端不会获得新的注册表条目：物品在网络上传输为
+base 加组件，方块在世界中仍使用 carrier。独立模型和纹理由资源包提供。
+
+方块物品通过 `CustomBlockRegistration.bindItem(...)` 或 `CustomBlockRegistry.bindItem(...)` 绑定。
+绑定负责玩家右键放置、放置碰撞检查、物品消耗和默认掉落；直接调用 `place(...)` 则是程序化世界操作。
+工具的 vanilla 方块规则写入 `ItemTool` 组件，逻辑自定义方块规则通过
+`CustomItemType.Builder.customBlockToolRule(...)` 声明。
+
+完整注册、工具、tick、持久组件、六面模型、carrier blockstate 和资源包发送示例见
+[`Fand 自定义物品与自定义方块`](CUSTOM_ITEMS_AND_BLOCKS.md)。
 
 ## 资源包和本地化
 

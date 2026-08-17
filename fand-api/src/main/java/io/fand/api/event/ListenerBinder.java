@@ -5,6 +5,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -42,8 +43,17 @@ final class ListenerBinder {
 
     private static List<Handler> handlersOn(Class<?> type) {
         var handlers = new ArrayList<Handler>();
+        var subclassMethods = new ArrayList<Method>();
         for (Class<?> current = type; current != null && current != Object.class; current = current.getSuperclass()) {
-            for (var method : current.getDeclaredMethods()) {
+            var methods = current.getDeclaredMethods();
+            java.util.Arrays.sort(methods, Comparator.comparing(ListenerBinder::stableMethodKey));
+            for (var method : methods) {
+                if (method.isBridge() || method.isSynthetic()) {
+                    continue;
+                }
+                if (subclassMethods.stream().anyMatch(subclassMethod -> overrides(subclassMethod, method))) {
+                    continue;
+                }
                 var annotation = method.getAnnotation(Subscribe.class);
                 if (annotation == null) {
                     continue;
@@ -70,15 +80,59 @@ final class ListenerBinder {
                 }
                 @SuppressWarnings("unchecked")
                 var eventType = (Class<? extends Event>) paramType;
-                handlers.add(new Handler(eventType, annotation.priority(), handle, method));
+                handlers.add(new Handler(
+                        eventType,
+                        new SubscriptionOptions(annotation.priority(), annotation.ignoreCancelled()),
+                        handle,
+                        method
+                ));
+            }
+            for (var method : methods) {
+                if (!method.isBridge() && !method.isSynthetic()) {
+                    subclassMethods.add(method);
+                }
             }
         }
+        handlers.sort(Comparator
+                .comparing((Handler handler) -> handler.eventType().getName())
+                .thenComparing(handler -> stableMethodKey(handler.method())));
         return handlers;
+    }
+
+    private static String stableMethodKey(Method method) {
+        var key = new StringBuilder(method.getName()).append('(');
+        for (var parameterType : method.getParameterTypes()) {
+            key.append(parameterType.getName()).append(';');
+        }
+        return key.append(')').toString();
+    }
+
+    private static boolean overrides(Method subclassMethod, Method superclassMethod) {
+        if (!subclassMethod.getName().equals(superclassMethod.getName())
+                || !java.util.Arrays.equals(subclassMethod.getParameterTypes(), superclassMethod.getParameterTypes())) {
+            return false;
+        }
+        int subclassModifiers = subclassMethod.getModifiers();
+        int superclassModifiers = superclassMethod.getModifiers();
+        if (Modifier.isPrivate(subclassModifiers)
+                || Modifier.isPrivate(superclassModifiers)
+                || Modifier.isStatic(subclassModifiers)
+                || Modifier.isStatic(superclassModifiers)) {
+            return false;
+        }
+        if (!superclassMethod.getDeclaringClass().isAssignableFrom(subclassMethod.getDeclaringClass())) {
+            return false;
+        }
+        boolean packagePrivate = !Modifier.isPublic(superclassModifiers)
+                && !Modifier.isProtected(superclassModifiers);
+        return !packagePrivate
+                || superclassMethod.getDeclaringClass().getPackageName()
+                .equals(subclassMethod.getDeclaringClass().getPackageName());
     }
 
     private record Handler(
             Class<? extends Event> eventType,
-            EventPriority priority,
+            SubscriptionOptions options,
             MethodHandle handle,
             Method method
     ) {
@@ -98,7 +152,7 @@ final class ListenerBinder {
                 }
             };
             @SuppressWarnings({"unchecked", "rawtypes"})
-            EventSubscription subscription = bus.subscribe((Class) eventType, priority, (EventListener) adapter);
+            EventSubscription subscription = bus.subscribe((Class) eventType, options, (EventListener) adapter);
             return subscription;
         }
     }

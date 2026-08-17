@@ -5,6 +5,7 @@ import io.fand.api.event.EventBus;
 import io.fand.api.event.EventListener;
 import io.fand.api.event.EventPriority;
 import io.fand.api.event.EventSubscription;
+import io.fand.api.event.SubscriptionOptions;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -27,12 +28,22 @@ public final class PluginEventBus implements EventBus {
 
     @Override
     public <E extends Event> EventSubscription subscribe(Class<E> type, EventPriority priority, EventListener<E> listener) {
+        return subscribe(type, SubscriptionOptions.priority(priority), listener);
+    }
+
+    @Override
+    public <E extends Event> EventSubscription subscribe(
+            Class<E> type,
+            SubscriptionOptions options,
+            EventListener<E> listener
+    ) {
         Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(options, "options");
         Objects.requireNonNull(listener, "listener");
-        return tracker.track(delegate.subscribe(type, priority, event -> {
+        return tracker.track(delegate.subscribe(type, options, event -> {
             try {
                 listener.on(event);
-            } catch (Throwable failure) {
+            } catch (Exception failure) {
                 LOGGER.warn("Plugin {} listener failed for {}", pluginId, type.getName(), failure);
             }
         }));

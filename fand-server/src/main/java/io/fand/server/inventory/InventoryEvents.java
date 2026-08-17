@@ -1,7 +1,11 @@
 package io.fand.server.inventory;
 
 import io.fand.api.event.inventory.BrewEvent;
+import io.fand.api.event.entity.EntityMoveItemEvent;
+import io.fand.api.entity.LivingEntity;
+import io.fand.api.item.component.ItemEquipmentSlot;
 import io.fand.api.event.inventory.BrewingStandFuelEvent;
+import io.fand.api.event.inventory.CrafterCraftEvent;
 import io.fand.api.event.inventory.BlockCookEvent;
 import io.fand.api.event.inventory.ClickType;
 import io.fand.api.event.inventory.DragType;
@@ -60,6 +64,8 @@ import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.Hopper;
+import net.minecraft.world.level.block.entity.CrafterBlockEntity;
+import net.minecraft.world.item.crafting.CraftingInput;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -206,6 +212,97 @@ public final class InventoryEvents {
     }
 
     public record MoveItemResult(boolean allowed, net.minecraft.world.item.ItemStack itemStack) {
+    }
+
+    public static MoveItemResult fireEntityMoveItem(
+            net.minecraft.world.entity.PathfinderMob entity,
+            Container container,
+            int containerSlot,
+            EntityMoveItemEvent.Action action,
+            net.minecraft.world.item.ItemStack itemStack
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(EntityMoveItemEvent.class)) {
+            return new MoveItemResult(true, itemStack);
+        }
+        var wrapped = FandHooks.wrapEntity(entity);
+        if (!(wrapped instanceof LivingEntity livingEntity)) {
+            return new MoveItemResult(true, itemStack);
+        }
+        var event = new EntityMoveItemEvent(
+                livingEntity,
+                new FandContainerInventory(container, InventoryType.UNKNOWN),
+                containerSlot,
+                ItemEquipmentSlot.MAINHAND,
+                action,
+                FandItemStacks.fromVanilla(itemStack));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityMoveItemEvent listener failed", failure);
+            return new MoveItemResult(true, itemStack);
+        }
+        if (event.cancelled() || event.item().empty()) {
+            return new MoveItemResult(false, itemStack);
+        }
+        try {
+            return new MoveItemResult(true, FandItemStacks.toVanilla(event.item()));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("EntityMoveItemEvent supplied an invalid item stack", failure);
+            return new MoveItemResult(true, itemStack);
+        }
+    }
+
+    public static @Nullable CrafterCraftResult fireCrafterCraft(
+            ServerLevel level,
+            net.minecraft.core.BlockPos pos,
+            CrafterBlockEntity crafter,
+            RecipeHolder<? extends net.minecraft.world.item.crafting.Recipe<?>> recipe,
+            CraftingInput input,
+            net.minecraft.world.item.ItemStack result,
+            List<net.minecraft.world.item.ItemStack> remainingItems
+    ) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(CrafterCraftEvent.class)) {
+            return new CrafterCraftResult(result, remainingItems);
+        }
+        var world = FandHooks.wrapWorld(level);
+        if (world == null) {
+            return new CrafterCraftResult(result, remainingItems);
+        }
+        var event = new CrafterCraftEvent(
+                new FandBlock(world, pos.getX(), pos.getY(), pos.getZ()),
+                new FandContainerInventory(crafter, InventoryType.CRAFTER),
+                FandRecipes.fromVanilla(recipe),
+                input.items().stream().map(FandItemStacks::fromVanilla).toList(),
+                FandItemStacks.fromVanilla(result),
+                remainingItems.stream().map(FandItemStacks::fromVanilla).toList());
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("CrafterCraftEvent listener failed", failure);
+            return new CrafterCraftResult(result, remainingItems);
+        }
+        if (event.cancelled() || event.result().empty()) {
+            return null;
+        }
+        try {
+            return new CrafterCraftResult(
+                    FandItemStacks.toVanilla(event.result()),
+                    event.remainingItems().stream().map(FandItemStacks::toVanilla).toList());
+        } catch (RuntimeException failure) {
+            LOGGER.warn("CrafterCraftEvent supplied invalid output", failure);
+            return new CrafterCraftResult(result, remainingItems);
+        }
+    }
+
+    public record CrafterCraftResult(
+            net.minecraft.world.item.ItemStack result,
+            List<net.minecraft.world.item.ItemStack> remainingItems
+    ) {
+        public CrafterCraftResult {
+            remainingItems = List.copyOf(remainingItems);
+        }
     }
 
     public static MoveItemResult fireHopperMoveItem(

@@ -134,6 +134,30 @@ public final class EntityRegistry {
         if (handle instanceof net.minecraft.world.entity.projectile.Projectile projectile) {
             return new FandProjectile(projectile, worldRegistry);
         }
+        if (handle instanceof net.minecraft.world.entity.decoration.Mannequin mannequin) {
+            return new FandMannequin(mannequin, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.animal.golem.CopperGolem copperGolem) {
+            return new FandCopperGolem(copperGolem, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.animal.camel.CamelHusk camelHusk) {
+            return new FandCamelHusk(camelHusk, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.animal.nautilus.ZombieNautilus zombieNautilus) {
+            return new FandZombieNautilus(zombieNautilus, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.animal.nautilus.AbstractNautilus nautilus) {
+            return new FandNautilus(nautilus, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.animal.happyghast.HappyGhast happyGhast) {
+            return new FandHappyGhast(happyGhast, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.monster.cubemob.SulfurCube sulfurCube) {
+            return new FandSulfurCube(sulfurCube, worldRegistry);
+        }
+        if (handle instanceof net.minecraft.world.entity.monster.skeleton.Parched parched) {
+            return new FandParched(parched, worldRegistry);
+        }
         if (handle instanceof net.minecraft.world.entity.animal.feline.Cat cat) {
             return new FandCat(cat, worldRegistry);
         }

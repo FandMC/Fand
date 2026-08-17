@@ -11,6 +11,9 @@ import io.fand.api.event.player.PlayerBucketFillEvent;
 import io.fand.api.event.player.PlayerChangedMainHandEvent;
 import io.fand.api.event.player.PlayerChangedWorldEvent;
 import io.fand.api.event.player.PlayerClientBrandEvent;
+import io.fand.api.event.player.PlayerClientLoadedEvent;
+import io.fand.api.event.player.PlayerInputEvent;
+import io.fand.api.entity.PlayerInput;
 import io.fand.api.event.player.PlayerCommandTeleportEvent;
 import io.fand.api.event.player.PlayerDeathEvent;
 import io.fand.api.event.player.PlayerEditBookEvent;
@@ -59,6 +62,7 @@ import io.fand.api.event.player.PlayerUnleashEntityEvent;
 import io.fand.api.event.player.PlayerUnknownTeleportEvent;
 import io.fand.api.event.player.PlayerVelocityEvent;
 import io.fand.api.world.Location;
+import io.fand.api.world.Vector3;
 import io.fand.api.world.World;
 import io.fand.server.block.FandBlock;
 import io.fand.server.command.AdventureBridge;
@@ -86,6 +90,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.entity.player.Input;
 import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.entity.Relative;
 import net.minecraft.world.entity.decoration.ArmorStand;
@@ -558,7 +563,8 @@ public final class PlayerEvents {
             BlockPos pos,
             Direction direction,
             InteractionHand hand,
-            net.minecraft.world.item.ItemStack itemStack
+            net.minecraft.world.item.ItemStack itemStack,
+            Vec3 hitPosition
     ) {
         var bus = FandHooks.events();
         if (!bus.hasListeners(rightClickBlockType(hand))) {
@@ -570,7 +576,13 @@ public final class PlayerEvents {
             return true;
         }
         var block = new FandBlock(world, pos.getX(), pos.getY(), pos.getZ());
-        var event = rightClickBlockEvent(fandPlayer, block, face(direction), hand, FandItemStacks.fromVanilla(itemStack));
+        var event = rightClickBlockEvent(
+                fandPlayer,
+                block,
+                face(direction),
+                hand,
+                FandItemStacks.fromVanilla(itemStack),
+                new Vector3(hitPosition.x, hitPosition.y, hitPosition.z));
         boolean boundCustomBlockItem = FandHooks.customBlocks().isBoundItem(event.item());
         try {
             bus.fire(event);
@@ -1409,6 +1421,41 @@ public final class PlayerEvents {
         return CommandEvents.inCommandContext() ? PlayerTeleportEvent.Cause.COMMAND : PlayerTeleportEvent.Cause.UNKNOWN;
     }
 
+    public static Input fireInput(ServerPlayer player, Input previousInput, Input proposedInput) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerInputEvent.class)) {
+            return proposedInput;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return proposedInput;
+        }
+        var event = new PlayerInputEvent(fandPlayer, input(previousInput), input(proposedInput));
+        try {
+            bus.fire(event);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerInputEvent listener failed", failure);
+            return proposedInput;
+        }
+        return event.cancelled() ? previousInput : input(event.input());
+    }
+
+    public static void fireClientLoaded(ServerPlayer player, boolean initialJoin) {
+        var bus = FandHooks.events();
+        if (!bus.hasListeners(PlayerClientLoadedEvent.class)) {
+            return;
+        }
+        FandPlayer fandPlayer = FandHooks.findPlayer(player.getUUID());
+        if (fandPlayer == null) {
+            return;
+        }
+        try {
+            bus.fire(new PlayerClientLoadedEvent(fandPlayer, initialJoin));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("PlayerClientLoadedEvent listener failed", failure);
+        }
+    }
+
     private static Class<? extends PlayerInteractEvent> rightClickBlockType(InteractionHand hand) {
         return hand == InteractionHand.OFF_HAND
                 ? PlayerOffHandRightClickBlockEvent.class
@@ -1420,11 +1467,12 @@ public final class PlayerEvents {
             FandBlock block,
             BlockFace face,
             InteractionHand hand,
-            io.fand.api.item.ItemStack item
+            io.fand.api.item.ItemStack item,
+            Vector3 hitPosition
     ) {
         return hand == InteractionHand.OFF_HAND
-                ? new PlayerOffHandRightClickBlockEvent(player, block, item, face)
-                : new PlayerMainHandRightClickBlockEvent(player, block, item, face);
+                ? new PlayerOffHandRightClickBlockEvent(player, block, item, face, hitPosition)
+                : new PlayerMainHandRightClickBlockEvent(player, block, item, face, hitPosition);
     }
 
     private static Class<? extends PlayerInteractEvent> rightClickAirType(InteractionHand hand) {
@@ -1569,6 +1617,28 @@ public final class PlayerEvents {
     }
 
     public record EggThrowResult(boolean hatching, int hatchCount) {
+    }
+
+    private static PlayerInput input(Input input) {
+        return new PlayerInput(
+                input.forward(),
+                input.backward(),
+                input.left(),
+                input.right(),
+                input.jump(),
+                input.shift(),
+                input.sprint());
+    }
+
+    private static Input input(PlayerInput input) {
+        return new Input(
+                input.forward(),
+                input.backward(),
+                input.left(),
+                input.right(),
+                input.jump(),
+                input.sneak(),
+                input.sprint());
     }
 
     private static BlockFace face(Direction direction) {

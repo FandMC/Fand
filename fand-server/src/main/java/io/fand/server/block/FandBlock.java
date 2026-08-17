@@ -358,6 +358,28 @@ public final class FandBlock implements Block {
     }
 
     private BlockEntity wrapBlockEntity(net.minecraft.world.level.block.entity.BlockEntity entity) {
+        if (entity instanceof net.minecraft.world.level.block.entity.ShelfBlockEntity shelf) {
+            return new FandShelfBlockEntity(this, shelf);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.CrafterBlockEntity crafter) {
+            return new FandCrafterBlockEntity(this, crafter);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.TrialSpawnerBlockEntity trialSpawner) {
+            return new FandTrialSpawnerBlockEntity(this, trialSpawner);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.vault.VaultBlockEntity vault) {
+            return new FandVaultBlockEntity(this, vault);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.CreakingHeartBlockEntity heart) {
+            return new FandCreakingHeartBlockEntity(this, heart);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.CopperGolemStatueBlockEntity statue) {
+            return new FandCopperGolemStatueBlockEntity(this, statue);
+        }
+        if (entity instanceof net.minecraft.world.level.block.entity.ChestBlockEntity chest
+                && world.handle().getBlockState(pos).getBlock() instanceof net.minecraft.world.level.block.CopperChestBlock) {
+            return new FandCopperChestBlockEntity(this, chest);
+        }
         if (entity instanceof SpawnerBlockEntity spawner) {
             return new FandSpawnerBlockEntity(this, spawner);
         }

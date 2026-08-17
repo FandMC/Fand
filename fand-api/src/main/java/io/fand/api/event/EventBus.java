@@ -11,10 +11,34 @@ public interface EventBus {
 
     /** Registers a listener at {@link EventPriority#NORMAL}. */
     default <E extends Event> EventSubscription subscribe(Class<E> type, EventListener<E> listener) {
-        return subscribe(type, EventPriority.NORMAL, listener);
+        return subscribe(type, SubscriptionOptions.DEFAULT, listener);
     }
 
     <E extends Event> EventSubscription subscribe(Class<E> type, EventPriority priority, EventListener<E> listener);
+
+    /**
+     * Registers a listener with explicit dispatch options.
+     *
+     * <p>The default implementation preserves compatibility with event bus
+     * implementations compiled against older API versions. Implementations may
+     * override this method to apply the options directly in their dispatcher.
+     */
+    default <E extends Event> EventSubscription subscribe(
+            Class<E> type,
+            SubscriptionOptions options,
+            EventListener<E> listener
+    ) {
+        java.util.Objects.requireNonNull(options, "options");
+        java.util.Objects.requireNonNull(listener, "listener");
+        return subscribe(type, options.priority(), event -> {
+            if (options.ignoreCancelled()
+                    && event instanceof Cancellable cancellable
+                    && cancellable.cancelled()) {
+                return;
+            }
+            listener.on(event);
+        });
+    }
 
     /**
      * Registers every {@link Subscribe @Subscribe}-annotated method on
