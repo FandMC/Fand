@@ -133,9 +133,7 @@ final class ApiSurfaceSourceTest {
                 "new ConnectedFluidReplaceRunner(",
                 "public CompletableFuture<BlockScanResult> clearConnectedFluids(",
                 "clearFluidAt(pos, options.batchOptions())",
-                "BlockComponentStorage.empty(handle, pos)",
-                "private PlayerRegistry fallbackPlayerRegistry()",
-                "new FandScoreboardService(handle.getServer())");
+                "BlockComponentStorage.empty(handle, pos)");
         assertThat(block).contains(
                 "level.getFluidIfLoaded(pos)",
                 "public boolean water()",
@@ -354,7 +352,7 @@ final class ApiSurfaceSourceTest {
         assertThat(server).contains(
                 "this.lootTables = new FandLootTableService(minecraftServer::get)",
                 "lootTables,",
-                "public LootTableService lootTables()");
+                "public FandLootTableService lootTables()");
     }
 
     @Test
@@ -803,7 +801,7 @@ final class ApiSurfaceSourceTest {
                 "this.services = new FandServiceRegistry(permissions)",
                 "this.plugins.serviceRegistry(services)",
                 "public ServiceRegistry services()",
-                "services.close()");
+                "shutdownFailures.run(\"service registry\", services::close)");
     }
 
     @Test

@@ -2,17 +2,10 @@ package io.fand.server.hooks;
 
 import io.fand.api.event.Event;
 import io.fand.api.event.EventBus;
-import io.fand.api.event.EventListener;
-import io.fand.api.event.EventPriority;
-import io.fand.api.event.EventSubscription;
 import io.fand.api.entity.Entity;
 import io.fand.api.entity.LivingEntity;
 import io.fand.api.entity.Player;
-import io.fand.api.lifecycle.LifecyclePhase;
-import io.fand.api.performance.MetricStatistics;
 import io.fand.api.performance.ServerPerformance;
-import io.fand.api.performance.TickWindow;
-import io.fand.api.performance.TickWindowSnapshot;
 import io.fand.api.player.PlayerProfile;
 import io.fand.server.chunk.ChunkSendScheduler;
 import io.fand.server.chunk.ChunkTrackingSnapshot;
@@ -23,7 +16,6 @@ import io.fand.server.entity.EntityRegistry;
 import io.fand.server.entity.FandEntity;
 import io.fand.server.entity.FandPlayer;
 import io.fand.server.entity.PlayerRegistry;
-import io.fand.server.event.EventDispatcher;
 import io.fand.server.network.ForwardedPlayerInfo;
 import io.fand.server.network.ProxyForwarding;
 import io.fand.server.network.ProxyForwardingMode;
@@ -31,8 +23,6 @@ import io.fand.server.network.VelocityForwardingQueryAnswerPayload;
 import io.fand.server.world.FandWorld;
 import io.fand.server.world.WorldRegistry;
 import java.net.SocketAddress;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 import java.util.List;
 import java.util.Optional;
 import java.util.Queue;
@@ -68,51 +58,14 @@ import org.slf4j.LoggerFactory;
  * any future refactor (e.g. dependency injection) only needs to touch this
  * class rather than every patched vanilla file.
  *
- * <p>All accessors return {@code Optional} or {@code null}-tolerant results so
- * patch sites can safely run before {@link FandServer#attach attach} (which
- * wires the world/entity registries).
+ * <p>Hooks that can legitimately run before {@link FandServer#attach attach}
+ * return {@code Optional} or null-tolerant results. Lifecycle-critical service
+ * accessors fail fast when the runtime is not bound so shutdown ordering bugs
+ * cannot silently discard work.
  */
 public final class FandHooks {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FandHooks.class);
-    private static final EventSubscription NOOP_SUBSCRIPTION = new EventSubscription() {
-        @Override
-        public boolean active() {
-            return false;
-        }
-
-        @Override
-        public void unregister() {
-        }
-    };
-    private static final EventBus NOOP_EVENTS = new EventBus() {
-        @Override
-        public <E extends Event> EventSubscription subscribe(Class<E> type, EventPriority priority, EventListener<E> listener) {
-            return NOOP_SUBSCRIPTION;
-        }
-
-        @Override
-        public <E extends Event> E fire(E event) {
-            return event;
-        }
-
-        @Override
-        public boolean hasListeners(Class<? extends Event> type) {
-            return false;
-        }
-
-        @Override
-        public <E extends Event> CompletableFuture<E> fireAsync(E event, Executor executor) {
-            return CompletableFuture.completedFuture(event);
-        }
-    };
-    private static final ServerPerformance EMPTY_PERFORMANCE = emptyPerformance();
-    private static final io.fand.server.item.FandCustomItemRegistry NOOP_CUSTOM_ITEMS =
-            new io.fand.server.item.FandCustomItemRegistry();
-    private static final io.fand.server.block.FandCustomBlockRegistry NOOP_CUSTOM_BLOCKS =
-            new io.fand.server.block.FandCustomBlockRegistry(NOOP_EVENTS);
-    private static final io.fand.server.console.gui.GuiThemeService FALLBACK_GUI_THEMES =
-            new io.fand.server.console.gui.GuiThemeService(io.fand.server.console.gui.GuiTheme.SYSTEM);
     // Pushed by FandServer on config load/reload. Static volatiles (rather than
     // a runtime lookup) because these gate per-collision-pair and per-explosion
     // vanilla code where even an extra pointer chase is measurable. Defaults
@@ -271,7 +224,7 @@ public final class FandHooks {
         chunkMovementPreloadMinHorizontalDistanceBlocks = chunks.movementPreloadMinHorizontalDistanceBlocks;
         chunkMovementChunkSendBurstChunksPerTick = chunks.movementChunkSendBurstChunksPerTick;
         chunkMovementChunkSendBurstBatches = chunks.movementChunkSendBurstBatches;
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         if (runtime != null) {
             runtime.asyncChunkPackets().reconfigure(chunks.asyncChunkPacketPreparation);
         }
@@ -290,12 +243,12 @@ public final class FandHooks {
     }
 
     public static java.util.concurrent.Executor chunkBackgroundExecutor() {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         return runtime == null ? net.minecraft.util.Util.backgroundExecutor() : runtime.chunkBackgroundExecutor();
     }
 
     public static java.util.concurrent.Executor chunkWorldgenExecutor() {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         return runtime == null ? net.minecraft.util.Util.backgroundExecutor() : runtime.chunkWorldgenExecutor();
     }
 
@@ -471,7 +424,7 @@ public final class FandHooks {
     }
 
     public static @Nullable AsyncChunkPacketSender asyncChunkPacketSender() {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         if (runtime == null || !asyncChunkPacketPreparation) {
             return null;
         }
@@ -488,7 +441,7 @@ public final class FandHooks {
     }
 
     public static boolean canBypassOutboundPacketHooks() {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         if (runtime == null) {
             return true;
         }
@@ -697,38 +650,29 @@ public final class FandHooks {
     }
 
     public static EventBus events() {
-        var runtime = activeRuntime();
-        return runtime == null ? NOOP_EVENTS : runtime.events();
+        return Main.runtime().events();
     }
 
     public static long eventStructureVersion() {
-        var runtime = activeRuntime();
-        if (runtime == null || !(runtime.events() instanceof EventDispatcher dispatcher)) {
-            return -1L;
-        }
-        return dispatcher.structureVersion();
+        return Main.runtime().events().structureVersion();
     }
 
     public static ServerPerformance performance() {
-        var runtime = activeRuntime();
-        return runtime == null ? EMPTY_PERFORMANCE : runtime.performance();
+        return Main.runtime().performance();
     }
 
     public static void recordTickPerformance(long tickStartNanos, long tickDurationNanos, long taskExecutionNanos) {
-        var runtime = activeRuntime();
-        if (runtime != null) {
-            runtime.recordTick(tickStartNanos, tickDurationNanos, taskExecutionNanos);
-        }
+        Main.runtime().recordTick(tickStartNanos, tickDurationNanos, taskExecutionNanos);
     }
 
     public static boolean submitChunkTrackingDiff(ServerLevel level, ChunkTrackingSnapshot snapshot) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         return runtime != null
                 && runtime.chunkSendScheduler().submitTrackingDiff(level.dimension(), snapshot);
     }
 
     public static int applyChunkTrackingDiffs(ServerLevel level, ChunkSendScheduler.TrackingDiffApplier applier) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         return runtime == null ? 0 : runtime.chunkSendScheduler().applyCompleted(level.dimension(), applier);
     }
 
@@ -809,28 +753,25 @@ public final class FandHooks {
     }
 
     public static ProxyForwardingMode proxyForwardingMode() {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         return runtime == null ? ProxyForwardingMode.NONE : runtime.proxyForwarding().mode();
     }
 
     public static boolean consoleGuiEnabled() {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         return runtime != null && runtime.consoleGuiEnabled();
     }
 
     public static io.fand.server.console.gui.GuiThemeService guiThemes() {
-        var runtime = activeRuntime();
-        return runtime == null ? FALLBACK_GUI_THEMES : runtime.guiThemes();
+        return Main.runtime().guiThemes();
     }
 
     public static io.fand.server.block.FandCustomBlockRegistry customBlocks() {
-        var runtime = activeRuntime();
-        return runtime == null ? NOOP_CUSTOM_BLOCKS : runtime.customBlockRegistry();
+        return Main.runtime().customBlockRegistry();
     }
 
     public static io.fand.server.item.FandCustomItemRegistry customItems() {
-        var runtime = activeRuntime();
-        return runtime == null ? NOOP_CUSTOM_ITEMS : runtime.customItemRegistry();
+        return Main.runtime().customItemRegistry();
     }
 
     public static io.fand.server.block.FandCustomBlockRegistry.@Nullable MiningProperties customBlockMining(
@@ -838,7 +779,7 @@ public final class FandHooks {
             net.minecraft.core.BlockPos position,
             net.minecraft.world.item.ItemStack tool
     ) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         if (runtime == null || !(level instanceof ServerLevel serverLevel)) {
             return null;
         }
@@ -850,7 +791,7 @@ public final class FandHooks {
             net.minecraft.core.BlockPos position,
             float fallback
     ) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         if (runtime == null || !(level instanceof ServerLevel serverLevel)) {
             return fallback;
         }
@@ -862,7 +803,7 @@ public final class FandHooks {
             net.minecraft.core.BlockPos position,
             float fallback
     ) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         if (runtime == null || !(level instanceof ServerLevel serverLevel)) {
             return fallback;
         }
@@ -877,7 +818,7 @@ public final class FandHooks {
         if (CUSTOM_BLOCK_CARRIER_BYPASS.get() > 0) {
             return proposed;
         }
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         return runtime == null
                 ? proposed
                 : runtime.customBlockRegistry().preserveCarrierState(level, position, proposed);
@@ -902,7 +843,7 @@ public final class FandHooks {
             ServerLevel level,
             net.minecraft.core.BlockPos position
     ) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         return runtime == null ? null : runtime.customBlockRegistry().drops(level, position);
     }
 
@@ -911,12 +852,12 @@ public final class FandHooks {
             net.minecraft.core.BlockPos position,
             net.minecraft.world.level.Explosion explosion
     ) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         return runtime == null ? null : runtime.customBlockRegistry().explosionDrops(level, position, explosion);
     }
 
     public static void customBlockRemoved(ServerLevel level, net.minecraft.core.BlockPos position) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         if (runtime == null || io.fand.server.component.BlockComponentStorage.empty(level, position)) {
             return;
         }
@@ -935,7 +876,7 @@ public final class FandHooks {
             net.minecraft.world.level.LevelAccessor level,
             net.minecraft.core.BlockPos position
     ) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         return runtime != null
                 && level instanceof ServerLevel serverLevel
                 && runtime.customBlockRegistry().suppressBaseBehavior(serverLevel, position);
@@ -948,12 +889,12 @@ public final class FandHooks {
         if (key == null) {
             return null;
         }
-        var runtime = activeRuntime();
-        if (runtime == null || !(runtime.lootTables() instanceof io.fand.server.loot.FandLootTableService lootTables)) {
+        var runtime = Main.runtimeOrNull();
+        if (runtime == null) {
             return null;
         }
         try {
-            return lootTables.generateVanilla(key, params);
+            return runtime.lootTables().generateVanilla(key, params);
         } catch (RuntimeException failure) {
             LOGGER.warn("Fand loot replacement failed for {}", key.identifier(), failure);
             return null;
@@ -971,7 +912,7 @@ public final class FandHooks {
     public static io.fand.server.auth.FandLoginAuthenticationService.LoginAttempt authenticateLogin(
             io.fand.api.auth.LoginAuthenticationRequest request
     ) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         return runtime == null
                 ? io.fand.server.auth.FandLoginAuthenticationService.LoginAttempt.pass()
                 : runtime.loginAuthenticators().authenticate(request);
@@ -980,7 +921,7 @@ public final class FandHooks {
     public static io.fand.server.auth.FandLoginAuthenticationService.LoginAttempt authenticateLoginPlugins(
             io.fand.api.auth.LoginAuthenticationRequest request
     ) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         return runtime == null
                 ? io.fand.server.auth.FandLoginAuthenticationService.LoginAttempt.pass()
                 : runtime.loginAuthenticators().authenticatePlugins(request);
@@ -991,11 +932,11 @@ public final class FandHooks {
             Object instance,
             Object... arguments
     ) {
-        var runtime = activeRuntime();
-        if (runtime == null || !(runtime.nms() instanceof io.fand.server.nms.FandNmsService nms)) {
+        var runtime = Main.runtimeOrNull();
+        if (runtime == null) {
             return io.fand.api.nms.NmsHookResult.pass();
         }
-        return nms.dispatch(hook, instance, arguments);
+        return runtime.nms().dispatch(hook, instance, arguments);
     }
 
     public static @Nullable Packet<?> interceptInboundPacket(
@@ -1003,7 +944,7 @@ public final class FandHooks {
             Packet<?> packet,
             @Nullable SocketAddress remoteAddress
     ) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         if (runtime == null) {
             return packet;
         }
@@ -1028,7 +969,7 @@ public final class FandHooks {
             Packet<?> packet,
             @Nullable SocketAddress remoteAddress
     ) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         if (runtime == null) {
             return packet;
         }
@@ -1050,7 +991,7 @@ public final class FandHooks {
     }
 
     public static void addPluginChannelConfigurationTask(Queue<ConfigurationTask> tasks) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         if (runtime == null) {
             return;
         }
@@ -1066,7 +1007,7 @@ public final class FandHooks {
             Identifier id,
             byte[] payload
     ) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         if (runtime == null) {
             return false;
         }
@@ -1079,7 +1020,7 @@ public final class FandHooks {
     }
 
     public static void syncDataPackContents(net.minecraft.server.level.ServerPlayer player, boolean joined) {
-        var runtime = activeRuntime();
+        var runtime = Main.runtimeOrNull();
         if (runtime == null) {
             return;
         }
@@ -1088,38 +1029,6 @@ public final class FandHooks {
         } catch (RuntimeException failure) {
             LOGGER.warn("Fand data pack content sync failed for {}", player.getGameProfile().name(), failure);
         }
-    }
-
-    private static @Nullable FandServer activeRuntime() {
-        var runtime = Main.runtimeOrNull();
-        if (runtime == null) {
-            return null;
-        }
-        var phase = runtime.phase();
-        return phase == LifecyclePhase.STOPPING || phase == LifecyclePhase.STOPPED ? null : runtime;
-    }
-
-    private static ServerPerformance emptyPerformance() {
-        return new ServerPerformance(
-                emptyWindow(TickWindow.ONE_SECOND),
-                emptyWindow(TickWindow.FIVE_SECONDS),
-                emptyWindow(TickWindow.TEN_SECONDS),
-                emptyWindow(TickWindow.FIFTEEN_SECONDS),
-                emptyWindow(TickWindow.ONE_MINUTE),
-                emptyWindow(TickWindow.FIVE_MINUTES),
-                emptyWindow(TickWindow.FIFTEEN_MINUTES),
-                0L,
-                0L);
-    }
-
-    private static TickWindowSnapshot emptyWindow(TickWindow window) {
-        return new TickWindowSnapshot(
-                window,
-                new MetricStatistics(20.0, 20.0, 20.0, 20.0),
-                new MetricStatistics(50.0, 50.0, 50.0, 50.0),
-                new MetricStatistics(0.0, 0.0, 0.0, 0.0),
-                0.0,
-                0);
     }
 
     private static Optional<? extends Player> player(@Nullable PacketListener listener) {

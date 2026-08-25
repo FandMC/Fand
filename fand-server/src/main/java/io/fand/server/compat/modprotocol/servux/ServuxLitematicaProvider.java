@@ -6,8 +6,8 @@ import io.fand.api.structure.StructurePlacement;
 import io.fand.api.structure.StructureProjection;
 import io.fand.api.structure.StructureRotation;
 import io.fand.api.world.Location;
+import io.fand.server.Main;
 import io.fand.server.structure.FandStructureService;
-import io.fand.server.world.FandWorld;
 import java.io.ByteArrayOutputStream;
 import java.util.HashMap;
 import java.util.Locale;
@@ -319,14 +319,17 @@ final class ServuxLitematicaProvider {
     }
 
     private static Location origin(ServerPlayer player, CompoundTag tag) {
+        var world = Main.runtime().worldRegistry()
+                .orElseThrow(() -> new IllegalStateException("World registry is not attached"))
+                .wrap(player.level());
         int[] origin = intArray(tag, "Origin");
         if (origin == null) {
             origin = intArray(tag, "origin");
         }
         if (origin == null) {
-            return new Location(new FandWorld(player.level()), player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
+            return new Location(world, player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
         }
-        return new Location(new FandWorld(player.level()), origin[0], origin[1], origin[2], player.getYRot(), player.getXRot());
+        return new Location(world, origin[0], origin[1], origin[2], player.getYRot(), player.getXRot());
     }
 
     private static int[] intArray(CompoundTag tag, String key) {

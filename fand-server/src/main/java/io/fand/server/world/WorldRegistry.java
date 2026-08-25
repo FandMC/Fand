@@ -8,6 +8,7 @@ import io.fand.server.scheduler.TaskScheduler;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.key.Key;
@@ -28,20 +29,16 @@ public final class WorldRegistry {
     private final ConcurrentHashMap<ServerLevel, FandWorld> byLevel = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Key, FandWorld> byKey = new ConcurrentHashMap<>();
 
-    public WorldRegistry(MinecraftServer server, PlayerRegistry players, TaskScheduler scheduler) {
-        this(server, players, scheduler, null);
-    }
-
     public WorldRegistry(
             MinecraftServer server,
             PlayerRegistry players,
             TaskScheduler scheduler,
-            @org.jspecify.annotations.Nullable FandGameRuleService gameRules
+            FandGameRuleService gameRules
     ) {
-        this.server = server;
-        this.players = players;
-        this.scheduler = scheduler;
-        this.gameRules = gameRules;
+        this.server = Objects.requireNonNull(server, "server");
+        this.players = Objects.requireNonNull(players, "players");
+        this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
+        this.gameRules = Objects.requireNonNull(gameRules, "gameRules");
         this.entities = new EntityRegistry(this, players);
     }
 
@@ -82,6 +79,7 @@ public final class WorldRegistry {
     }
 
     public FandWorld wrap(ServerLevel level) {
+        Objects.requireNonNull(level, "level");
         var existing = byLevel.get(level);
         if (existing != null) {
             return existing;

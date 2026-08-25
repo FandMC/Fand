@@ -53,7 +53,6 @@ import io.fand.server.entity.PlayerRegistry;
 import io.fand.server.gamerule.FandGameRuleService;
 import io.fand.server.item.FandItemStacks;
 import io.fand.server.scheduler.TaskScheduler;
-import io.fand.server.scoreboard.FandScoreboardService;
 import io.fand.server.util.ServerThreading;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -109,45 +108,24 @@ public final class FandWorld implements World {
 
     private final ServerLevel handle;
     private final Key key;
-    private final @Nullable PlayerRegistry players;
-    private final @Nullable WorldRegistry worldRegistry;
-    private final @Nullable TaskScheduler scheduler;
-    private final @Nullable FandGameRuleService gameRules;
+    private final PlayerRegistry players;
+    private final WorldRegistry worldRegistry;
+    private final TaskScheduler scheduler;
+    private final FandGameRuleService gameRules;
     private final WorldBorder worldBorder;
 
-    public FandWorld(ServerLevel handle) {
-        this(handle, null, null, null);
-    }
-
-    public FandWorld(ServerLevel handle, @Nullable PlayerRegistry players) {
-        this(handle, players, null, null);
-    }
-
-    public FandWorld(ServerLevel handle, @Nullable PlayerRegistry players, @Nullable WorldRegistry worldRegistry) {
-        this(handle, players, worldRegistry, null);
-    }
-
-    public FandWorld(
+    FandWorld(
             ServerLevel handle,
-            @Nullable PlayerRegistry players,
-            @Nullable WorldRegistry worldRegistry,
-            @Nullable TaskScheduler scheduler
+            PlayerRegistry players,
+            WorldRegistry worldRegistry,
+            TaskScheduler scheduler,
+            FandGameRuleService gameRules
     ) {
-        this(handle, players, worldRegistry, scheduler, null);
-    }
-
-    public FandWorld(
-            ServerLevel handle,
-            @Nullable PlayerRegistry players,
-            @Nullable WorldRegistry worldRegistry,
-            @Nullable TaskScheduler scheduler,
-            @Nullable FandGameRuleService gameRules
-    ) {
-        this.handle = handle;
-        this.players = players;
-        this.worldRegistry = worldRegistry;
-        this.scheduler = scheduler;
-        this.gameRules = gameRules;
+        this.handle = Objects.requireNonNull(handle, "handle");
+        this.players = Objects.requireNonNull(players, "players");
+        this.worldRegistry = Objects.requireNonNull(worldRegistry, "worldRegistry");
+        this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
+        this.gameRules = Objects.requireNonNull(gameRules, "gameRules");
         this.worldBorder = new FandWorldBorder(handle);
         var identifier = handle.dimension().identifier();
         this.key = Key.key(identifier.getNamespace(), identifier.getPath());
@@ -290,7 +268,7 @@ public final class FandWorld implements World {
     public Optional<String> gameRule(String name) {
         Objects.requireNonNull(name, "name");
         return customGameRuleKey(name)
-                .flatMap(rule -> gameRules == null ? Optional.empty() : gameRules.value(key, rule))
+                .flatMap(rule -> gameRules.value(key, rule))
                 .or(() -> callOnServerThread(() -> gameRuleByName(name).map(rule -> handle.getGameRules().getAsString(rule))));
     }
 
@@ -299,7 +277,7 @@ public final class FandWorld implements World {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(value, "value");
         var customRule = customGameRuleKey(name);
-        if (customRule.isPresent() && gameRules != null) {
+        if (customRule.isPresent()) {
             return CompletableFuture.completedFuture(gameRules.setValue(key, customRule.get(), value));
         }
         return runOnServerThreadFuture(() -> gameRuleByName(name)
@@ -322,7 +300,7 @@ public final class FandWorld implements World {
 
     @Override
     public Collection<? extends Player> players() {
-        return callOnServerThread(() -> players == null ? List.of() : players.snapshot(handle));
+        return callOnServerThread(() -> players.snapshot(handle));
     }
 
     @Override
@@ -919,11 +897,7 @@ public final class FandWorld implements World {
         var future = new CompletableFuture<BlockScanResult>();
         var runner = new BlockScanRunner(clamped, transform, options, future);
         try {
-            if (scheduler != null) {
-                scheduler.runMain(runner);
-            } else {
-                runOnServerThread(runner);
-            }
+            scheduler.runMain(runner);
         } catch (RejectedExecutionException failure) {
             future.completeExceptionally(failure);
         }
@@ -948,11 +922,7 @@ public final class FandWorld implements World {
         var future = new CompletableFuture<BlockScanResult>();
         var runner = new FluidScanRunner(clamped, matcher, replacement, options, future);
         try {
-            if (scheduler != null) {
-                scheduler.runMain(runner);
-            } else {
-                runOnServerThread(runner);
-            }
+            scheduler.runMain(runner);
         } catch (RejectedExecutionException failure) {
             future.completeExceptionally(failure);
         }
@@ -975,11 +945,7 @@ public final class FandWorld implements World {
         var future = new CompletableFuture<BlockScanResult>();
         var runner = new FluidScanRunner(clamped, matcher, null, options, future);
         try {
-            if (scheduler != null) {
-                scheduler.runMain(runner);
-            } else {
-                runOnServerThread(runner);
-            }
+            scheduler.runMain(runner);
         } catch (RejectedExecutionException failure) {
             future.completeExceptionally(failure);
         }
@@ -1015,11 +981,7 @@ public final class FandWorld implements World {
                 options,
                 future);
         try {
-            if (scheduler != null) {
-                scheduler.runMain(runner);
-            } else {
-                runOnServerThread(runner);
-            }
+            scheduler.runMain(runner);
         } catch (RejectedExecutionException failure) {
             future.completeExceptionally(failure);
         }
@@ -1055,11 +1017,7 @@ public final class FandWorld implements World {
                 options,
                 future);
         try {
-            if (scheduler != null) {
-                scheduler.runMain(runner);
-            } else {
-                runOnServerThread(runner);
-            }
+            scheduler.runMain(runner);
         } catch (RejectedExecutionException failure) {
             future.completeExceptionally(failure);
         }
@@ -1093,11 +1051,7 @@ public final class FandWorld implements World {
                 options,
                 future);
         try {
-            if (scheduler != null) {
-                scheduler.runMain(runner);
-            } else {
-                runOnServerThread(runner);
-            }
+            scheduler.runMain(runner);
         } catch (RejectedExecutionException failure) {
             future.completeExceptionally(failure);
         }
@@ -1139,13 +1093,7 @@ public final class FandWorld implements World {
         }
         var runner = new ChunkBatchRunner(requested, orderedChunks.iterator(), options, mode);
         try {
-            if (options.maxChunksPerTick() == Integer.MAX_VALUE && scheduler == null) {
-                runOnServerThread(runner);
-            } else if (scheduler != null) {
-                scheduler.runMain(runner);
-            } else {
-                runOnServerThread(runner);
-            }
+            scheduler.runMain(runner);
         } catch (RejectedExecutionException failure) {
             runner.future.completeExceptionally(failure);
         }
@@ -1173,9 +1121,6 @@ public final class FandWorld implements World {
     ) {
         Objects.requireNonNull(changes, "changes");
         Objects.requireNonNull(options, "options");
-        if (scheduler == null) {
-            return runOnServerThreadFuture(() -> applyBlockBatchInline(requested, changes, options));
-        }
         var future = new CompletableFuture<BlockBatchResult>();
         try {
             scheduler.runMain(new BlockBatchRunner(requested, changes, options, future));
@@ -1198,6 +1143,7 @@ public final class FandWorld implements World {
     ) {
         var block = FandBlockType.unwrap(type);
         var requested = (int) volume(minX, minY, minZ, maxX, maxY, maxZ);
+        var future = new CompletableFuture<BlockBatchResult>();
         var runner = new FillBlockRunner(
                 requested,
                 minX,
@@ -1209,12 +1155,8 @@ public final class FandWorld implements World {
                 block.defaultBlockState(),
                 block,
                 components,
-                options);
-        if (scheduler == null) {
-            return runOnServerThreadFuture(runner::applyInline);
-        }
-        var future = new CompletableFuture<BlockBatchResult>();
-        runner.future = future;
+                options,
+                future);
         try {
             scheduler.runMain(runner);
         } catch (RejectedExecutionException failure) {
@@ -1428,31 +1370,14 @@ public final class FandWorld implements World {
     }
 
     private Entity wrapEntity(net.minecraft.world.entity.Entity entity) {
-        if (worldRegistry != null) {
-            return worldRegistry.entityRegistry().wrap(entity);
-        }
-        var fallbackRegistry = new WorldRegistry(
-                handle.getServer(),
-                players != null ? players : fallbackPlayerRegistry(),
-                scheduler
-        );
-        return fallbackRegistry.entityRegistry().wrap(entity);
+        return worldRegistry.entityRegistry().wrap(entity);
     }
 
     private FandWorld wrapWorld(ServerLevel level) {
         if (level == handle) {
             return this;
         }
-        if (worldRegistry != null) {
-            return worldRegistry.wrap(level);
-        }
-        return new FandWorld(level, players, null, scheduler);
-    }
-
-    private PlayerRegistry fallbackPlayerRegistry() {
-        return new PlayerRegistry(
-                new io.fand.server.permission.PermissionManager(),
-                new FandScoreboardService(handle.getServer()));
+        return worldRegistry.wrap(level);
     }
 
     private Collection<? extends Entity> streamEntities(Iterable<net.minecraft.world.entity.Entity> entities) {
@@ -2042,15 +1967,11 @@ public final class FandWorld implements World {
         }
 
         private void scheduleNextSlice() {
-            if (scheduler != null) {
-                try {
-                    scheduler.runMainAfterTicks(this, 0L);
-                } catch (RejectedExecutionException failure) {
-                    future.completeExceptionally(failure);
-                }
-                return;
+            try {
+                scheduler.runMainAfterTicks(this, 0L);
+            } catch (RejectedExecutionException failure) {
+                future.completeExceptionally(failure);
             }
-            runOnServerThread(this);
         }
     }
 
@@ -2207,15 +2128,11 @@ public final class FandWorld implements World {
         }
 
         private void scheduleNextSlice() {
-            if (scheduler != null) {
-                try {
-                    scheduler.runMainAfterTicks(this, 0L);
-                } catch (RejectedExecutionException failure) {
-                    future.completeExceptionally(failure);
-                }
-                return;
+            try {
+                scheduler.runMainAfterTicks(this, 0L);
+            } catch (RejectedExecutionException failure) {
+                future.completeExceptionally(failure);
             }
-            runOnServerThread(this);
         }
     }
 
@@ -2446,15 +2363,11 @@ public final class FandWorld implements World {
         }
 
         private void scheduleNextSlice() {
-            if (scheduler != null) {
-                try {
-                    scheduler.runMainAfterTicks(this, 0L);
-                } catch (RejectedExecutionException failure) {
-                    future.completeExceptionally(failure);
-                }
-                return;
+            try {
+                scheduler.runMainAfterTicks(this, 0L);
+            } catch (RejectedExecutionException failure) {
+                future.completeExceptionally(failure);
             }
-            runOnServerThread(this);
         }
     }
 
@@ -2617,15 +2530,11 @@ public final class FandWorld implements World {
         }
 
         private void scheduleNextSlice() {
-            if (scheduler != null) {
-                try {
-                    scheduler.runMainAfterTicks(this, 0L);
-                } catch (RejectedExecutionException failure) {
-                    future.completeExceptionally(failure);
-                }
-                return;
+            try {
+                scheduler.runMainAfterTicks(this, 0L);
+            } catch (RejectedExecutionException failure) {
+                future.completeExceptionally(failure);
             }
-            runOnServerThread(this);
         }
     }
 
@@ -2796,15 +2705,11 @@ public final class FandWorld implements World {
         }
 
         private void scheduleNextSlice() {
-            if (scheduler != null) {
-                try {
-                    scheduler.runMainAfterTicks(this, 0L);
-                } catch (RejectedExecutionException failure) {
-                    future.completeExceptionally(failure);
-                }
-                return;
+            try {
+                scheduler.runMainAfterTicks(this, 0L);
+            } catch (RejectedExecutionException failure) {
+                future.completeExceptionally(failure);
             }
-            runOnServerThread(this);
         }
     }
 
@@ -2937,11 +2842,7 @@ public final class FandWorld implements World {
 
         private void scheduleNextSlice() {
             try {
-                if (scheduler != null) {
-                    scheduler.runMainAfterTicks(this, 0L);
-                } else {
-                    runOnServerThread(this);
-                }
+                scheduler.runMainAfterTicks(this, 0L);
             } catch (RejectedExecutionException failure) {
                 future.completeExceptionally(failure);
             }
@@ -3004,7 +2905,7 @@ public final class FandWorld implements World {
         private final net.minecraft.world.level.block.Block block;
         private final DataComponentMap components;
         private final BlockBatchOptions options;
-        private @Nullable CompletableFuture<BlockBatchResult> future;
+        private final CompletableFuture<BlockBatchResult> future;
         private final BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
         private int x;
         private int y;
@@ -3025,7 +2926,8 @@ public final class FandWorld implements World {
                 BlockState state,
                 net.minecraft.world.level.block.Block block,
                 DataComponentMap components,
-                BlockBatchOptions options
+                BlockBatchOptions options,
+                CompletableFuture<BlockBatchResult> future
         ) {
             this.requested = requested;
             this.minX = minX;
@@ -3038,6 +2940,7 @@ public final class FandWorld implements World {
             this.block = block;
             this.components = components;
             this.options = options;
+            this.future = future;
             this.x = minX;
             this.y = minY;
             this.z = minZ;
@@ -3045,28 +2948,20 @@ public final class FandWorld implements World {
 
         @Override
         public void run() {
-            var activeFuture = future;
-            if (activeFuture == null || activeFuture.isDone()) {
+            if (future.isDone()) {
                 return;
             }
             try {
                 applySlice();
             } catch (Throwable failure) {
-                activeFuture.completeExceptionally(failure);
+                future.completeExceptionally(failure);
                 return;
             }
             if (!hasNext) {
-                activeFuture.complete(result());
+                future.complete(result());
                 return;
             }
             scheduleNextSlice();
-        }
-
-        private BlockBatchResult applyInline() {
-            while (hasNext) {
-                applyOne();
-            }
-            return result();
         }
 
         private void applySlice() {
@@ -3095,17 +2990,11 @@ public final class FandWorld implements World {
         }
 
         private void scheduleNextSlice() {
-            if (scheduler != null) {
-                try {
-                    scheduler.runMainAfterTicks(this, 0L);
-                } catch (RejectedExecutionException failure) {
-                    if (future != null) {
-                        future.completeExceptionally(failure);
-                    }
-                }
-                return;
+            try {
+                scheduler.runMainAfterTicks(this, 0L);
+            } catch (RejectedExecutionException failure) {
+                future.completeExceptionally(failure);
             }
-            runOnServerThread(this);
         }
 
         private void advance() {

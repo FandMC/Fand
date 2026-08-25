@@ -293,7 +293,11 @@ public final class FandGuiService implements GuiService, AutoCloseable {
             return;
         }
         for (var listener : listeners) {
-            listener.run();
+            try {
+                listener.run();
+            } catch (RuntimeException failure) {
+                LOGGER.warn("GUI close listener failed for view {}", view.id(), failure);
+            }
         }
     }
 

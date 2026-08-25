@@ -21,11 +21,21 @@ public final class ServerThreading {
         return new IllegalStateException("Minecraft server is stopping");
     }
 
+    public static IllegalStateException serverNotAttached() {
+        return new IllegalStateException("Minecraft server is not attached");
+    }
+
     public static boolean run(@Nullable MinecraftServer server, Runnable task) {
         Objects.requireNonNull(task, "task");
-        if (server == null || server.isSameThread()) {
+        if (server == null) {
+            return false;
+        }
+        if (server.isSameThread()) {
             task.run();
             return true;
+        }
+        if (!server.isRunning()) {
+            return false;
         }
         try {
             server.executeIfPossible(task);
@@ -45,12 +55,18 @@ public final class ServerThreading {
 
     public static <T> CompletableFuture<T> callFuture(@Nullable MinecraftServer server, Supplier<T> task) {
         Objects.requireNonNull(task, "task");
-        if (server == null || server.isSameThread()) {
+        if (server == null) {
+            return CompletableFuture.failedFuture(serverNotAttached());
+        }
+        if (server.isSameThread()) {
             try {
                 return CompletableFuture.completedFuture(task.get());
             } catch (Throwable failure) {
                 return CompletableFuture.failedFuture(failure);
             }
+        }
+        if (!server.isRunning()) {
+            return CompletableFuture.failedFuture(serverStopping());
         }
         var future = new CompletableFuture<T>();
         try {
@@ -69,8 +85,14 @@ public final class ServerThreading {
 
     public static <T> T callBlocking(@Nullable MinecraftServer server, Supplier<T> task) {
         Objects.requireNonNull(task, "task");
-        if (server == null || server.isSameThread()) {
+        if (server == null) {
+            throw serverNotAttached();
+        }
+        if (server.isSameThread()) {
             return task.get();
+        }
+        if (!server.isRunning()) {
+            throw serverStopping();
         }
         var future = new CompletableFuture<T>();
         try {

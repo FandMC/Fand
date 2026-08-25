@@ -11,9 +11,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.jspecify.annotations.Nullable;
@@ -28,43 +28,38 @@ import org.jspecify.annotations.Nullable;
 public final class PlayerRegistry {
 
     private final PermissionService permissions;
-    private final @Nullable FandScoreboardService scoreboards;
-    private final @Nullable FandTabListService tabLists;
+    private final FandScoreboardService scoreboards;
+    private final FandTabListService tabLists;
     private final ConcurrentHashMap<UUID, FandPlayer> byId = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, FandPlayer> byName = new ConcurrentHashMap<>();
     private volatile Map<ServerLevel, List<FandPlayer>> snapshotsByLevel = Map.of();
     private volatile List<FandPlayer> snapshot = List.of();
-    private volatile @Nullable Function<ServerLevel, FandWorld> worldResolver;
     private volatile @Nullable WorldRegistry worldRegistry;
-
-    public PlayerRegistry(PermissionService permissions) {
-        this(permissions, null, null);
-    }
-
-    public PlayerRegistry(PermissionService permissions, @Nullable FandScoreboardService scoreboards) {
-        this(permissions, scoreboards, null);
-    }
 
     public PlayerRegistry(
             PermissionService permissions,
-            @Nullable FandScoreboardService scoreboards,
-            @Nullable FandTabListService tabLists
+            FandScoreboardService scoreboards,
+            FandTabListService tabLists
     ) {
-        this.permissions = permissions;
-        this.scoreboards = scoreboards;
-        this.tabLists = tabLists;
+        this.permissions = Objects.requireNonNull(permissions, "permissions");
+        this.scoreboards = Objects.requireNonNull(scoreboards, "scoreboards");
+        this.tabLists = Objects.requireNonNull(tabLists, "tabLists");
     }
 
-    public void bindWorldResolver(Function<ServerLevel, FandWorld> resolver) {
-        this.worldResolver = resolver;
-    }
-
-    public void bindWorldRegistry(WorldRegistry worldRegistry) {
+    public synchronized void bindWorldRegistry(WorldRegistry worldRegistry) {
+        Objects.requireNonNull(worldRegistry, "worldRegistry");
+        if (this.worldRegistry != null) {
+            throw new IllegalStateException("World registry is already bound");
+        }
         this.worldRegistry = worldRegistry;
     }
 
-    @Nullable WorldRegistry worldRegistry() {
-        return worldRegistry;
+    WorldRegistry worldRegistry() {
+        var current = worldRegistry;
+        if (current == null) {
+            throw new IllegalStateException("World registry is not bound");
+        }
+        return current;
     }
 
     public synchronized FandPlayer attach(ServerPlayer handle) {
@@ -101,9 +96,7 @@ public final class PlayerRegistry {
         if (removed != null) {
             byName.values().removeIf(player -> player == removed);
             removed.clearTransientState();
-            if (tabLists != null) {
-                tabLists.clearPlayer(uniqueId);
-            }
+            tabLists.clearPlayer(uniqueId);
             rebuildSnapshots();
         }
         return Optional.ofNullable(removed);
@@ -156,8 +149,7 @@ public final class PlayerRegistry {
     }
 
     FandWorld wrapLevel(ServerLevel level) {
-        var resolver = this.worldResolver;
-        return resolver != null ? resolver.apply(level) : new FandWorld(level);
+        return worldRegistry().wrap(level);
     }
 
     private void rebuildSnapshots() {

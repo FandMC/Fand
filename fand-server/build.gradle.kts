@@ -60,6 +60,11 @@ dependencies {
     testImplementation("org.mockito:mockito-core:5.12.0")
 }
 
+tasks.withType<Test>().configureEach {
+    // Mockito 5.12's bundled Byte Buddy predates this project's Java 25 target.
+    systemProperty("net.bytebuddy.experimental", "true")
+}
+
 val log4jPlugins = sourceSets.create("log4jPlugins")
 configurations.named(log4jPlugins.compileClasspathConfigurationName) {
     extendsFrom(configurations.compileClasspath.get())

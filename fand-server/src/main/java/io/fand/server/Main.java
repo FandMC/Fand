@@ -51,7 +51,6 @@ public final class Main {
 
         var server = new FandServer();
         bind(server);
-        Runtime.getRuntime().addShutdownHook(new Thread(server::close, "Fand-Shutdown"));
         try {
             server.start();
             net.minecraft.server.Main.main(launchOptions.minecraftArgs());

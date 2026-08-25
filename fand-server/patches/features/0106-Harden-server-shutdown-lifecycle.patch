@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Tue, 25 Aug 2026 14:34:41 +0800
+Subject: [PATCH] Harden server shutdown lifecycle
+
+
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+index 5653a74da6daa0b60650b57a984dc19b1ba3417b..5967f31c333fea105055d359e3340a88a4d9d056 100644
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -830,11 +830,24 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         } finally {
+             try {
+                 this.stopped = true;
++                try {
++                    io.fand.server.Main.runtime().beginMinecraftShutdown();
++                } catch (Throwable fandFailure) {
++                    LOGGER.error("Fand beginMinecraftShutdown() failed", fandFailure);
++                }
+                 this.stopServer();
+             } catch (Throwable t) {
+                 LOGGER.error("Exception stopping the server", t);
+             } finally {
+-                this.onServerExit();
++                try {
++                    this.onServerExit();
++                } finally {
++                    try {
++                        io.fand.server.Main.runtime().finishMinecraftShutdown();
++                    } catch (Throwable fandFailure) {
++                        LOGGER.error("Fand finishMinecraftShutdown() failed", fandFailure);
++                    }
++                }
+             }
+         }
+     }
+@@ -1646,7 +1659,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+ 
+     @Override
+     public void executeIfPossible(final Runnable command) {
+-        if (this.isStopped()) {
++        if (!this.isRunning() || this.isStopped()) {
+             throw new RejectedExecutionException("Server already shutting down");
+         }
+ 

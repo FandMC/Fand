@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.fand.api.item.component.ItemRarity;
 import io.fand.api.world.particle.ParticleColor;
 import io.fand.api.world.particle.Particles;
+import io.fand.server.TestRuntime;
 import io.fand.server.block.FandBlockType;
 import io.fand.server.item.FandItemStacks;
 import io.fand.server.item.FandItemType;
@@ -23,9 +24,12 @@ import net.minecraft.server.Bootstrap;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
 final class ParticleEffectsTest {
+
+    private static TestRuntime runtime;
 
     @BeforeAll
     static void bootstrapVanilla() {
@@ -35,6 +39,12 @@ final class ParticleEffectsTest {
         net.minecraft.core.registries.BuiltInRegistries.DATA_COMPONENT_INITIALIZERS.build(registries)
                 .forEach(pending -> pending.apply());
         FandItemStacks.useRegistries(registries);
+        runtime = TestRuntime.bind();
+    }
+
+    @AfterAll
+    static void closeRuntime() {
+        runtime.close();
     }
 
     @Test

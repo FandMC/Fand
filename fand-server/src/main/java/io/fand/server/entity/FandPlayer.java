@@ -94,36 +94,23 @@ public final class FandPlayer implements Player {
     private final PermissionService permissions;
     private final PlayerRegistry registry;
     private final BossBarTracker bossBars;
-    private final @Nullable FandPlayerScoreboard scoreboard;
-    private final @Nullable FandTabListService tabLists;
+    private final FandPlayerScoreboard scoreboard;
+    private final FandTabListService tabLists;
     private final Set<UUID> hiddenEntityTargets = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
-    public FandPlayer(ServerPlayer handle, PermissionService permissions, PlayerRegistry registry) {
-        this(handle, permissions, registry, null, null);
-    }
-
-    public FandPlayer(
+    FandPlayer(
             ServerPlayer handle,
             PermissionService permissions,
             PlayerRegistry registry,
-            @Nullable FandScoreboardService scoreboards
+            FandScoreboardService scoreboards,
+            FandTabListService tabLists
     ) {
-        this(handle, permissions, registry, scoreboards, null);
-    }
-
-    public FandPlayer(
-            ServerPlayer handle,
-            PermissionService permissions,
-            PlayerRegistry registry,
-            @Nullable FandScoreboardService scoreboards,
-            @Nullable FandTabListService tabLists
-    ) {
-        this.bound = new Bound(handle, new FandPlayerInventory(handle.getInventory()));
-        this.permissions = permissions;
-        this.registry = registry;
+        this.bound = new Bound(Objects.requireNonNull(handle, "handle"), new FandPlayerInventory(handle.getInventory()));
+        this.permissions = Objects.requireNonNull(permissions, "permissions");
+        this.registry = Objects.requireNonNull(registry, "registry");
         this.bossBars = new BossBarTracker(handle);
-        this.scoreboard = scoreboards == null ? null : scoreboards.registerPlayerScoreboard(this);
-        this.tabLists = tabLists;
+        this.scoreboard = Objects.requireNonNull(scoreboards, "scoreboards").registerPlayerScoreboard(this);
+        this.tabLists = Objects.requireNonNull(tabLists, "tabLists");
     }
 
     public ServerPlayer handle() {
@@ -133,17 +120,13 @@ public final class FandPlayer implements Player {
     void refreshHandle(ServerPlayer newHandle) {
         this.bound = new Bound(newHandle, new FandPlayerInventory(newHandle.getInventory()));
         bossBars.rebind(newHandle);
-        if (scoreboard != null) {
-            scoreboard.resendDisplayedObjectives();
-        }
+        scoreboard.resendDisplayedObjectives();
     }
 
     public void clearTransientState() {
         bossBars.clear();
-        if (scoreboard != null) {
-            scoreboard.clearTransientState();
-            scoreboard.unregister();
-        }
+        scoreboard.clearTransientState();
+        scoreboard.unregister();
     }
 
     private record Bound(ServerPlayer handle, FandPlayerInventory inventory) {
@@ -387,9 +370,6 @@ public final class FandPlayer implements Player {
 
     @Override
     public PlayerScoreboard scoreboard() {
-        if (scoreboard == null) {
-            throw new UnsupportedOperationException("Per-player scoreboards are not supported");
-        }
         return scoreboard;
     }
 
@@ -401,17 +381,11 @@ public final class FandPlayer implements Player {
 
     @Override
     public void setDisplayedPing(int ping) {
-        if (tabLists == null) {
-            throw new UnsupportedOperationException("Displayed ping changes are not supported");
-        }
         tabLists.setDisplayedPing(uniqueId(), ping);
     }
 
     @Override
     public void resetDisplayedPing() {
-        if (tabLists == null) {
-            throw new UnsupportedOperationException("Displayed ping changes are not supported");
-        }
         tabLists.resetDisplayedPing(uniqueId());
     }
 
@@ -639,21 +613,13 @@ public final class FandPlayer implements Player {
         if (vehicle == null) {
             return Optional.empty();
         }
-        var worldRegistry = registry.worldRegistry();
-        if (worldRegistry == null) {
-            return Optional.empty();
-        }
-        return Optional.of(worldRegistry.entityRegistry().wrap(vehicle));
+        return Optional.of(registry.worldRegistry().entityRegistry().wrap(vehicle));
     }
 
     @Override
     public java.util.List<? extends io.fand.api.entity.Entity> passengers() {
-        var worldRegistry = registry.worldRegistry();
-        if (worldRegistry == null) {
-            return java.util.List.of();
-        }
         return bound.handle.getPassengers().stream()
-                .map(worldRegistry.entityRegistry()::wrap)
+                .map(registry.worldRegistry().entityRegistry()::wrap)
                 .toList();
     }
 
@@ -1674,7 +1640,7 @@ public final class FandPlayer implements Player {
     @Override
     public boolean visibleInPlayerList(Player viewer) {
         Objects.requireNonNull(viewer, "viewer");
-        if (!(viewer instanceof FandPlayer fandViewer) || tabLists == null) {
+        if (!(viewer instanceof FandPlayer fandViewer)) {
             return true;
         }
         return tabLists.visibleInRealPlayerList(fandViewer.uniqueId(), uniqueId());
@@ -1683,7 +1649,7 @@ public final class FandPlayer implements Player {
     @Override
     public void setVisibleInPlayerList(Player viewer, boolean visible) {
         Objects.requireNonNull(viewer, "viewer");
-        if (!(viewer instanceof FandPlayer fandViewer) || tabLists == null) {
+        if (!(viewer instanceof FandPlayer fandViewer)) {
             return;
         }
         tabLists.setRealEntryVisible(fandViewer.uniqueId(), uniqueId(), visible);

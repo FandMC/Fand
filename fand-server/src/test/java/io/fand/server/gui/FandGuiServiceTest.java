@@ -1,6 +1,7 @@
 package io.fand.server.gui;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import io.fand.api.Server;
 import io.fand.api.entity.Player;
@@ -195,6 +196,25 @@ final class FandGuiServiceTest {
         assertThat(containerClick.cancelled()).isTrue();
         assertThat(quickMove.cancelled()).isTrue();
         assertThat(pickupAll.cancelled()).isTrue();
+    }
+
+    @Test
+    void closeListenerFailureDoesNotBlockCleanupOrLaterListeners() {
+        bindServer();
+        var service = new FandGuiService(new EventDispatcher());
+        var player = player(UUID.randomUUID());
+        var view = service.open(player, gui("Menu"));
+        var completedListeners = new AtomicInteger();
+        openResults.getFirst().complete(true);
+        service.addCloseListener(view, () -> {
+            throw new IllegalStateException("listener failed");
+        });
+        service.addCloseListener(view, completedListeners::incrementAndGet);
+
+        assertThatNoException().isThrownBy(service::close);
+        assertThat(completedListeners).hasValue(1);
+        assertThat(service.openView(player)).isEmpty();
+        assertThat(service.view(view.id())).isEmpty();
     }
 
     private static InventoryClickEvent click(

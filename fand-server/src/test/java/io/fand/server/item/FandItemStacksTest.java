@@ -7,6 +7,7 @@ import io.fand.api.item.component.CustomModelData;
 import io.fand.api.item.component.EnchantmentKey;
 import io.fand.api.item.component.ItemComponentKeys;
 import io.fand.api.item.component.ItemRarity;
+import io.fand.server.TestRuntime;
 import java.util.List;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.data.registries.VanillaRegistries;
@@ -15,9 +16,12 @@ import net.minecraft.SharedConstants;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.item.Items;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
 class FandItemStacksTest {
+
+    private static TestRuntime runtime;
 
     @BeforeAll
     static void bootstrapVanilla() {
@@ -27,6 +31,12 @@ class FandItemStacksTest {
         BuiltInRegistries.DATA_COMPONENT_INITIALIZERS.build(registries)
                 .forEach(pending -> pending.apply());
         FandItemStacks.useRegistries(registries);
+        runtime = TestRuntime.bind();
+    }
+
+    @AfterAll
+    static void closeRuntime() {
+        runtime.close();
     }
 
     @Test

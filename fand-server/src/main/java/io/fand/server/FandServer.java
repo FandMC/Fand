@@ -13,7 +13,6 @@ import io.fand.api.block.custom.CustomBlockRegistry;
 import io.fand.api.item.custom.CustomItemRegistry;
 import io.fand.api.datapack.DataPackService;
 import io.fand.api.enchantment.EnchantmentRegistry;
-import io.fand.api.event.EventBus;
 import io.fand.api.event.EventPriority;
 import io.fand.api.event.EventSubscription;
 import io.fand.api.event.player.PlayerJoinEvent;
@@ -24,14 +23,12 @@ import io.fand.api.gamerule.GameRuleService;
 import io.fand.api.gui.GuiService;
 import io.fand.api.hologram.HologramService;
 import io.fand.api.integration.ExternalIntegrationStrategy;
-import io.fand.api.loot.LootTableService;
 import io.fand.api.map.MapService;
 import io.fand.api.messaging.PluginMessaging;
 import io.fand.api.lifecycle.LifecyclePhase;
 import io.fand.api.lifecycle.ServerStartedEvent;
 import io.fand.api.lifecycle.ServerStartingEvent;
 import io.fand.api.lifecycle.ServerStoppingEvent;
-import io.fand.api.nms.NmsService;
 import io.fand.api.permission.PermissionService;
 import io.fand.api.packet.PacketRegistry;
 import io.fand.api.placeholder.PlaceholderService;
@@ -201,6 +198,14 @@ public final class FandServer implements Server, AutoCloseable {
     private final AtomicReference<LifecyclePhase> phase = new AtomicReference<>(LifecyclePhase.BOOTSTRAP);
     private final AtomicReference<MinecraftServer> minecraftServer = new AtomicReference<>();
     private final Set<ResourceKey<Level>> worldCreationReservations = ConcurrentHashMap.newKeySet();
+    private final Object shutdownLock = new Object();
+    private final ShutdownFailures shutdownFailures = new ShutdownFailures(LOGGER);
+    private boolean shutdownRequested;
+    private @Nullable String shutdownReason;
+    private boolean shutdownBeginning;
+    private boolean shutdownBegun;
+    private boolean shutdownFinishing;
+    private boolean shutdownFinished;
 
     public FandServer() {
         this(Path.of("fand.yml"), FandConfig.load(Path.of("fand.yml")), Main.class.getClassLoader());
@@ -343,11 +348,21 @@ public final class FandServer implements Server, AutoCloseable {
             throw new IllegalStateException("enable() requires LOADED phase, was: " + phase.get());
         }
         try {
+            synchronized (shutdownLock) {
+                if (shutdownRequested) {
+                    throw new IllegalStateException("Fand shutdown was requested during startup");
+                }
+            }
             events.fire(new ServerStartingEvent(this));
             plugins.enablePlugins();
             fireWorldLoadEvents();
             recipes.applyLoadedRecipes();
-            phase.set(LifecyclePhase.RUNNING);
+            synchronized (shutdownLock) {
+                if (shutdownRequested || !phase.compareAndSet(LifecyclePhase.STARTING, LifecyclePhase.RUNNING)) {
+                    throw new IllegalStateException(
+                            "Fand shutdown interrupted startup, current phase: " + phase.get());
+                }
+            }
             events.fire(new ServerStartedEvent(this));
         } catch (Throwable failure) {
             LOGGER.error("Fand enable() failed; shutting down the vanilla server", failure);
@@ -439,7 +454,6 @@ public final class FandServer implements Server, AutoCloseable {
         worlds.set(registry);
         entities.set(registry.entityRegistry());
         players.bindWorldRegistry(registry);
-        players.bindWorldResolver(registry::wrap);
         io.fand.server.item.FandItemStacks.useRegistries(server.registryAccess());
         recipes.bind(server);
         advancements.applyLoadedAdvancements();
@@ -543,7 +557,7 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
-    public EventBus events() {
+    public EventDispatcher events() {
         return events;
     }
 
@@ -612,7 +626,7 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
-    public NmsService nms() {
+    public FandNmsService nms() {
         return nms;
     }
 
@@ -635,7 +649,7 @@ public final class FandServer implements Server, AutoCloseable {
     }
 
     @Override
-    public LootTableService lootTables() {
+    public FandLootTableService lootTables() {
         return lootTables;
     }
 
@@ -1045,6 +1059,7 @@ public final class FandServer implements Server, AutoCloseable {
     @Override
     public void shutdown(@Nullable String reason) {
         LOGGER.info("Shutdown requested: {}", reason == null ? "<no reason>" : reason);
+        rememberShutdownReason(reason);
         var server = minecraftServer.get();
         if (server == null) {
             close();
@@ -1078,49 +1093,117 @@ public final class FandServer implements Server, AutoCloseable {
 
     @Override
     public void close() {
-        LifecyclePhase current;
-        while (true) {
-            current = phase.get();
-            if (current == LifecyclePhase.STOPPING || current == LifecyclePhase.STOPPED) {
+        var server = minecraftServer.get();
+        if (server != null) {
+            if (server.isSameThread()) {
+                if (server.isRunning()) {
+                    server.halt(false);
+                }
                 return;
             }
-            if (phase.compareAndSet(current, LifecyclePhase.STOPPING)) {
-                break;
+            if (server.isRunning()) {
+                server.halt(false);
             }
+            if (server.getRunningThread().isAlive()) {
+                awaitMinecraftServerStop();
+                if (server.getRunningThread().isAlive()) {
+                    return;
+                }
+            }
+        }
+        beginMinecraftShutdown();
+        finishMinecraftShutdown();
+    }
+
+    /** Runs on the Minecraft server thread before vanilla starts releasing players and worlds. */
+    public void beginMinecraftShutdown() {
+        String reason;
+        synchronized (shutdownLock) {
+            if (shutdownBeginning || shutdownBegun || shutdownFinishing || shutdownFinished) {
+                return;
+            }
+            if (phase.get() == LifecyclePhase.STOPPED) {
+                shutdownFinished = true;
+                return;
+            }
+            shutdownBeginning = true;
+            if (!shutdownRequested) {
+                shutdownRequested = true;
+                shutdownReason = null;
+            }
+            reason = shutdownReason;
         }
 
-        if (current == LifecyclePhase.RUNNING || current == LifecyclePhase.STARTING) {
-            try {
-                events.fire(new ServerStoppingEvent(this, null));
-            } catch (RuntimeException failure) {
-                LOGGER.warn("ServerStoppingEvent listener failed", failure);
+        try {
+            var current = phase.get();
+            phase.set(LifecyclePhase.STOPPING);
+            if (current == LifecyclePhase.RUNNING || current == LifecyclePhase.STARTING) {
+                try {
+                    events.fire(new ServerStoppingEvent(this, reason));
+                } catch (Throwable failure) {
+                    LOGGER.warn("ServerStoppingEvent listener failed", failure);
+                }
+                shutdownFailures.run("world unload events", this::fireWorldUnloadEvents);
             }
-            fireWorldUnloadEvents();
+            shutdownFailures.run("plugin runtime", plugins::close);
+            shutdownFailures.run("simulated players", simulatedPlayers::close);
+        } finally {
+            synchronized (shutdownLock) {
+                shutdownBeginning = false;
+                shutdownBegun = true;
+            }
         }
-        plugins.disablePlugins();
-        plugins.close();
-        services.close();
-        pluginChannelAdvertisement.close();
-        simulatedPlayerCleanup.close();
-        modProtocols.close();
-        pluginMessaging.close();
-        bossBars.close();
-        holograms.close();
-        tabLists.close();
-        simulatedPlayers.close();
-        placeholders.close();
-        packets.close();
-        guis.close();
-        resourcePacks.close();
-        asyncChunkPackets.close();
-        chunks.close();
-        chunkTasks.close();
-        scheduler.close();
-        guiThemes.close();
-        performance.close();
-        FandRuntime.unbind(this);
-        phase.set(LifecyclePhase.STOPPED);
-        LOGGER.info("Fand runtime stopped");
+    }
+
+    /** Runs after vanilla has closed its worlds and process-level server resources. */
+    public void finishMinecraftShutdown() {
+        beginMinecraftShutdown();
+        synchronized (shutdownLock) {
+            if (!shutdownBegun || shutdownBeginning || shutdownFinishing || shutdownFinished) {
+                return;
+            }
+            shutdownFinishing = true;
+        }
+
+        try {
+            shutdownFailures.run("service registry", services::close);
+            shutdownFailures.run("plugin channel advertisement", pluginChannelAdvertisement::close);
+            shutdownFailures.run("simulated player cleanup", simulatedPlayerCleanup::close);
+            shutdownFailures.run("mod protocols", modProtocols::close);
+            shutdownFailures.run("plugin messaging", pluginMessaging::close);
+            shutdownFailures.run("boss bars", bossBars::close);
+            shutdownFailures.run("holograms", holograms::close);
+            shutdownFailures.run("tab lists", tabLists::close);
+            shutdownFailures.run("placeholders", placeholders::close);
+            shutdownFailures.run("packet registry", packets::close);
+            shutdownFailures.run("GUI service", guis::close);
+            shutdownFailures.run("resource packs", resourcePacks::close);
+            shutdownFailures.run("async chunk packets", asyncChunkPackets::close);
+            shutdownFailures.run("chunk scheduler", chunks::close);
+            shutdownFailures.run("chunk task executors", chunkTasks::close);
+            shutdownFailures.run("task scheduler", scheduler::close);
+            shutdownFailures.run("GUI themes", guiThemes::close);
+            shutdownFailures.run("performance tracker", performance::close);
+        } finally {
+            shutdownFailures.run("API runtime unbind", () -> FandRuntime.unbind(this));
+            shutdownFailures.run("server runtime unbind", () -> Main.unbind(this));
+            phase.set(LifecyclePhase.STOPPED);
+            synchronized (shutdownLock) {
+                shutdownFinishing = false;
+                shutdownFinished = true;
+            }
+            LOGGER.info("Fand runtime stopped");
+        }
+        shutdownFailures.throwIfPresent();
+    }
+
+    private void rememberShutdownReason(@Nullable String reason) {
+        synchronized (shutdownLock) {
+            if (!shutdownRequested) {
+                shutdownRequested = true;
+                shutdownReason = reason;
+            }
+        }
     }
 
     private String resourcePackFallbackHost() {
@@ -1364,7 +1447,7 @@ public final class FandServer implements Server, AutoCloseable {
         for (var world : worlds()) {
             try {
                 events.fire(new WorldUnloadEvent(world));
-            } catch (RuntimeException failure) {
+            } catch (Throwable failure) {
                 LOGGER.warn("WorldUnloadEvent listener failed for {}", world.key().asString(), failure);
             }
         }
