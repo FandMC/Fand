@@ -5,7 +5,8 @@ import io.fand.api.event.Event;
 import java.util.Objects;
 
 /**
- * Fired on the server thread before redstone wire applies a new power level.
+ * Fired on the wire's simulation owner before it applies a new power level.
+ * Independent regions may invoke listeners concurrently.
  */
 public final class BlockRedstoneEvent implements Event {
 

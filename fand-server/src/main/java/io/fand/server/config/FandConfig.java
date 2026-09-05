@@ -32,6 +32,9 @@ public final class FandConfig {
     @ConfigComment("Chunk loading and player chunk-send scheduling settings.")
     public final Chunks chunks = new Chunks();
 
+    @ConfigComment("Region simulation settings. Changes require a server restart.")
+    public final RegionSimulation regionSimulation = new RegionSimulation();
+
     @ConfigComment("Server watchdog settings.")
     public final Watchdog watchdog = new Watchdog();
 
@@ -315,6 +318,18 @@ public final class FandConfig {
         @ConfigComment("Advertised maximum stack size for stackable shulkers when enabled.")
         @ConfigRange(min = 1, max = 99)
         public int stackableShulkerSize = 64;
+    }
+
+    public static final class RegionSimulation {
+        @ConfigComment({
+                "Workers for independent regions in the native block-entity phase.",
+                "0 selects 2-8 workers automatically; 1 keeps the serial path.",
+                "Audited furnace and hopper ticks may run concurrently. Other native",
+                "tickers retain control-thread execution. Region callbacks must use",
+                "owned block access or asynchronous scheduling for global operations."
+        })
+        @ConfigRange(min = 0, max = 64)
+        public int workers = 0;
     }
 
     public static final class Chunks {

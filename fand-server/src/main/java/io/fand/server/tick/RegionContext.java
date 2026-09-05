@@ -80,7 +80,7 @@ public final class RegionContext implements AutoCloseable {
     public void runTick(Consumer<RegionContext> simulation) {
         Objects.requireNonNull(simulation, "simulation");
         requireCurrent();
-        if (tasksDrained) {
+        if (tasksDrained || ticking) {
             throw new IllegalStateException("Region execution has already started");
         }
         ticking = true;
@@ -89,6 +89,24 @@ public final class RegionContext implements AutoCloseable {
             runTasks();
             simulation.accept(this);
             tickCompleted = true;
+        } catch (RuntimeException | Error thrown) {
+            failure = thrown;
+            throw thrown;
+        } finally {
+            ticking = false;
+        }
+    }
+
+    /** Runs a joined sub-phase without consuming a mailbox or advancing the full simulation clock. */
+    public void runPhase(Consumer<RegionContext> simulation) {
+        Objects.requireNonNull(simulation, "simulation");
+        requireCurrent();
+        if (tasksDrained || ticking) {
+            throw new IllegalStateException("Region execution has already started");
+        }
+        ticking = true;
+        try {
+            simulation.accept(this);
         } catch (RuntimeException | Error thrown) {
             failure = thrown;
             throw thrown;

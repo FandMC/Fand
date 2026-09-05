@@ -1,0 +1,974 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 5 Sep 2026 23:51:58 +0800
+Subject: [PATCH] Run owned block entity phases on region workers
+
+
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index daca9a996732d634a154883414a8c5cb7ab75c8e..e5027dd6e3d627e722e90d6b6513263bf1b2e45a 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -640,6 +640,10 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         return this.fandChunkOwnership.regionIdAt(cell);
+     }
+ 
++    public io.fand.server.tick.@Nullable TickRegion fand$regionAt(final io.fand.server.tick.OwnershipCell cell) {
++        return this.fandChunkOwnership.regionAt(cell);
++    }
++
+     private CompletableFuture<ChunkAccess> scheduleChunkLoad(final GenerationChunkHolder holder) {
+         ChunkPos pos = holder.getPos();
+         var lifetime = holder.fand$ownership();
+diff --git a/net/minecraft/server/level/RegionBlockEntityTicker.java b/net/minecraft/server/level/RegionBlockEntityTicker.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c7936a296fcc4bb3f938320b8dab1d35e9ea834d
+--- /dev/null
++++ b/net/minecraft/server/level/RegionBlockEntityTicker.java
+@@ -0,0 +1,174 @@
++package net.minecraft.server.level;
++
++import io.fand.server.tick.RegionTickExecutor;
++import io.fand.server.tick.TickRegion;
++import java.util.ArrayList;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.CompletionException;
++import java.util.concurrent.atomic.AtomicInteger;
++import java.util.function.Consumer;
++import net.minecraft.world.level.block.entity.TickingBlockEntity;
++
++/** Executes independent native block-entity groups, joining before world publication resumes. */
++public final class RegionBlockEntityTicker {
++    private final ServerLevel level;
++    private final java.util.function.Supplier<io.fand.server.tick.RegionSimulationWorkers> workers;
++    private Snapshot snapshot = new Snapshot(0, 0, 0, 0, List.of());
++    private long completedPhases;
++    private long completedTickers;
++    private int peakConcurrency;
++
++    public RegionBlockEntityTicker(ServerLevel level) {
++        this(level, () -> io.fand.server.Main.runtime().regionSimulationWorkers());
++    }
++
++    RegionBlockEntityTicker(ServerLevel level, java.util.function.Supplier<io.fand.server.tick.RegionSimulationWorkers> workers) {
++        this.level = level;
++        this.workers = workers;
++    }
++
++    public Snapshot snapshot() {
++        if (!this.level.getServer().isSameThread()) {
++            throw new IllegalStateException("Region phase diagnostics belong to the control thread");
++        }
++        return this.snapshot;
++    }
++
++    public void tick(List<TickingBlockEntity> tickers, Consumer<TickingBlockEntity> tick) {
++        var workers = this.workers.get();
++        if (workers.parallelism() == 1) {
++            tickers.forEach(tick);
++            return;
++        }
++        Map<TickRegion, List<TickingBlockEntity>> groups = this.group(tickers);
++        List<TickingBlockEntity> candidates = new ArrayList<>();
++        for (var entry : groups.entrySet()) {
++            if (entry.getKey() != null && entry.getValue().stream().allMatch(TickingBlockEntity::fand$canTickInRegion)) {
++                candidates.addAll(entry.getValue());
++            } else {
++                entry.getValue().forEach(tick);
++            }
++        }
++        // Control callbacks can load chunks and merge or split layouts. Resolve again afterwards.
++        groups = this.group(candidates);
++        if (groups.size() < 2 || groups.containsKey(null)
++            || candidates.stream().anyMatch(ticker -> !ticker.fand$canTickInRegion())) {
++            candidates.forEach(tick);
++            return;
++        }
++        Map<TickRegion, Job> jobs = new LinkedHashMap<>();
++        groups.forEach((region, members) -> jobs.put(region, new Job(region.id(), members, this.level.getRandom().nextLong())));
++        var blockComponents = this.level.getDataStorage().get(io.fand.server.component.PersistentComponentData.blockType());
++        AtomicInteger running = new AtomicInteger();
++        AtomicInteger peak = new AtomicInteger();
++        RegionTickExecutor dispatcher = RegionTickExecutor.forPhases(workers.executor(), context -> {
++            Job job = jobs.get(context.region());
++            try (RegionTickScope scope = new RegionTickScope(this.level, context, job.publications, job.seed, blockComponents)) {
++                job.thread = Thread.currentThread().getName();
++                job.start = System.nanoTime();
++                peak.accumulateAndGet(running.incrementAndGet(), Math::max);
++                try {
++                    for (TickingBlockEntity ticker : job.tickers) {
++                        if (!ticker.isRemoved()) {
++                            scope.requirePosition(this.level, ticker.getPos());
++                        }
++                        tick.accept(ticker);
++                        job.ticked++;
++                    }
++                } finally {
++                    job.end = System.nanoTime();
++                    running.decrementAndGet();
++                }
++            }
++        });
++        List<CompletableFuture<RegionTickExecutor.Result>> results = new ArrayList<>();
++        Throwable failure = null;
++        try {
++            for (TickRegion region : jobs.keySet()) {
++                results.add(dispatcher.tick(region));
++            }
++        } catch (RuntimeException | Error thrown) {
++            failure = thrown;
++        }
++        try {
++            // Do not pump the server event loop here: it publishes and unloads live world data.
++            CompletableFuture.allOf(results.toArray(CompletableFuture[]::new)).join();
++            if (results.stream().anyMatch(result -> result.join() != RegionTickExecutor.Result.EXECUTED)) {
++                throw new IllegalStateException("Region layout changed during a native simulation phase");
++            }
++        } catch (CompletionException thrown) {
++            if (failure == null) {
++                failure = thrown.getCause();
++            } else if (failure != thrown.getCause()) {
++                failure.addSuppressed(thrown.getCause());
++            }
++        } catch (RuntimeException | Error thrown) {
++            if (failure == null) {
++                failure = thrown;
++            } else if (failure != thrown) {
++                failure.addSuppressed(thrown);
++            }
++        } finally {
++            dispatcher.shutdown().join();
++            for (Job job : jobs.values()) {
++                for (Runnable publication : job.publications) {
++                    try {
++                        publication.run();
++                    } catch (RuntimeException | Error thrown) {
++                        if (failure == null) {
++                            failure = thrown;
++                        } else if (failure != thrown) {
++                            failure.addSuppressed(thrown);
++                        }
++                    }
++                }
++            }
++        }
++        if (failure instanceof Error error) {
++            throw error;
++        }
++        if (failure != null) {
++            throw new CompletionException("Native region block-entity phase failed", failure);
++        }
++        this.completedPhases++;
++        this.completedTickers += jobs.values().stream().mapToInt(job -> job.ticked).sum();
++        this.peakConcurrency = Math.max(this.peakConcurrency, peak.get());
++        this.snapshot = new Snapshot(this.completedPhases, this.completedTickers, this.peakConcurrency, jobs.size(),
++            jobs.values().stream().limit(32).map(job -> new Execution(job.regionId, job.thread, job.ticked, job.start, job.end)).toList());
++    }
++
++    private Map<TickRegion, List<TickingBlockEntity>> group(List<TickingBlockEntity> tickers) {
++        Map<TickRegion, List<TickingBlockEntity>> groups = new LinkedHashMap<>();
++        for (TickingBlockEntity ticker : tickers) {
++            var pos = ticker.getPos();
++            var chunkMap = this.level.getChunkSource().chunkMap;
++            var region = chunkMap.fand$regionAt(chunkMap.fand$cellAtChunk(pos.getX() >> 4, pos.getZ() >> 4));
++            groups.computeIfAbsent(region, ignored -> new ArrayList<>()).add(ticker);
++        }
++        return groups;
++    }
++
++    public record Snapshot(long completedPhases, long completedTickers, int peakConcurrentRegions,
++                           int lastRegionCount, List<Execution> lastExecutions) {}
++    public record Execution(long regionId, String thread, int tickers, long startNanos, long endNanos) {}
++
++    private static final class Job {
++        private final long regionId;
++        private final List<TickingBlockEntity> tickers;
++        private final long seed;
++        private final List<Runnable> publications = new ArrayList<>();
++        private String thread = "";
++        private long start;
++        private long end;
++        private int ticked;
++
++        private Job(long regionId, List<TickingBlockEntity> tickers, long seed) {
++            this.regionId = regionId;
++            this.tickers = tickers;
++            this.seed = seed;
++        }
++    }
++}
+diff --git a/net/minecraft/server/level/RegionTickScope.java b/net/minecraft/server/level/RegionTickScope.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..61f66e51860759b9cced61c31403970c73d671ab
+--- /dev/null
++++ b/net/minecraft/server/level/RegionTickScope.java
+@@ -0,0 +1,125 @@
++package net.minecraft.server.level;
++
++import io.fand.server.tick.OwnershipCell;
++import io.fand.server.tick.RegionContext;
++import io.fand.server.component.PersistentComponentData;
++import java.util.List;
++import net.minecraft.core.BlockPos;
++import net.minecraft.util.RandomSource;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.level.redstone.CollectingNeighborUpdater;
++import net.minecraft.world.phys.AABB;
++import org.jspecify.annotations.Nullable;
++
++/** Native permission for one joined world phase, in addition to the topology lease. */
++public final class RegionTickScope implements AutoCloseable {
++    private static final ThreadLocal<RegionTickScope> CURRENT = new ThreadLocal<>();
++    private final ServerLevel level;
++    private final RegionContext context;
++    private final List<Runnable> publications;
++    private final RandomSource random;
++    private final CollectingNeighborUpdater neighborUpdater;
++    private final @Nullable PersistentComponentData blockComponents;
++    private final java.util.Map<Long, io.fand.api.component.DataComponentMap> changedComponents = new java.util.HashMap<>();
++    private int randomPosition;
++
++    RegionTickScope(ServerLevel level, RegionContext context, List<Runnable> publications, long seed,
++                    @Nullable PersistentComponentData blockComponents) {
++        if (CURRENT.get() != null || RegionContext.current().orElse(null) != context) {
++            throw new IllegalStateException("Native region scope requires its current topology lease");
++        }
++        this.level = level;
++        this.context = context;
++        this.publications = publications;
++        this.random = RandomSource.create(seed);
++        this.randomPosition = (int)seed;
++        this.neighborUpdater = level.fand$newRegionNeighborUpdater();
++        this.blockComponents = blockComponents;
++        CURRENT.set(this);
++    }
++
++    public static @Nullable RegionTickScope current() {
++        return CURRENT.get();
++    }
++
++    public static boolean defer(Level level, Runnable publication) {
++        RegionTickScope scope = CURRENT.get();
++        if (scope == null) {
++            return false;
++        }
++        scope.requireLevel(level);
++        scope.publications.add(publication);
++        return true;
++    }
++
++    public void requireLevel(Level level) {
++        if (this.level != level || CURRENT.get() != this || RegionContext.current().orElse(null) != this.context) {
++            throw new IllegalStateException("World is outside the current native region phase");
++        }
++    }
++
++    public void requireChunk(Level level, int x, int z) {
++        this.requireLevel(level);
++        this.context.requireOwned(this.level.getChunkSource().chunkMap.fand$cellAtChunk(x, z));
++    }
++
++    public void requirePosition(Level level, BlockPos pos) {
++        this.requireChunk(level, pos.getX() >> 4, pos.getZ() >> 4);
++    }
++
++    public void requireArea(Level level, AABB box) {
++        this.requireLevel(level);
++        OwnershipCell min = this.level.getChunkSource().chunkMap.fand$cellAtChunk(
++            net.minecraft.util.Mth.floor(box.minX) >> 4, net.minecraft.util.Mth.floor(box.minZ) >> 4);
++        OwnershipCell max = this.level.getChunkSource().chunkMap.fand$cellAtChunk(
++            net.minecraft.util.Mth.floor(box.maxX) >> 4, net.minecraft.util.Mth.floor(box.maxZ) >> 4);
++        for (int x = min.x(); x <= max.x(); x++) {
++            for (int z = min.z(); z <= max.z(); z++) {
++                this.context.requireOwned(new OwnershipCell(x, z));
++            }
++        }
++    }
++
++    public RandomSource random(Level level) {
++        this.requireLevel(level);
++        return this.random;
++    }
++
++    public io.fand.api.component.DataComponentMap blockComponents(Level level, BlockPos pos) {
++        this.requirePosition(level, pos);
++        var changed = this.changedComponents.get(pos.asLong());
++        return changed != null ? changed : this.blockComponents == null ? io.fand.api.component.DataComponentMap.EMPTY
++            : this.blockComponents.get(Long.toString(pos.asLong()));
++    }
++
++    public void blockComponents(Level level, BlockPos pos, io.fand.api.component.DataComponentMap components) {
++        this.requirePosition(level, pos);
++        this.changedComponents.put(pos.asLong(), components);
++        BlockPos immutable = pos.immutable();
++        this.publications.add(() -> io.fand.server.component.BlockComponentStorage.put(this.level, immutable, components));
++    }
++
++    public int nextRandomPosition(Level level) {
++        this.requireLevel(level);
++        this.randomPosition = this.randomPosition * 3 + 1013904223;
++        return this.randomPosition >> 2;
++    }
++
++    public CollectingNeighborUpdater neighborUpdater(Level level) {
++        this.requireLevel(level);
++        return this.neighborUpdater;
++    }
++
++    public void requireTickAccess(Object ticks, BlockPos pos) {
++        if (ticks != this.level.getBlockTicks() && ticks != this.level.getFluidTicks()) {
++            throw new IllegalStateException("Scheduled tick access belongs to another world");
++        }
++        this.requirePosition(this.level, pos);
++    }
++
++    @Override
++    public void close() {
++        this.requireLevel(this.level);
++        CURRENT.remove();
++    }
++}
+diff --git a/net/minecraft/server/level/ServerChunkCache.java b/net/minecraft/server/level/ServerChunkCache.java
+index 24927387b527c4938c8a8f1f60b1f88a24c7c94a..b1a882b638bd4aa483ba32139509be87e8c4cbb9 100644
+--- a/net/minecraft/server/level/ServerChunkCache.java
++++ b/net/minecraft/server/level/ServerChunkCache.java
+@@ -145,6 +145,16 @@ public class ServerChunkCache extends ChunkSource {
+ 
+     @Override
+     public @Nullable ChunkAccess getChunk(final int x, final int z, final ChunkStatus targetStatus, final boolean loadOrGenerate) {
++        RegionTickScope region = RegionTickScope.current();
++        if (region != null) {
++            region.requireChunk(this.level, x, z);
++            ChunkHolder holder = this.getVisibleChunkIfPresent(ChunkPos.pack(x, z));
++            ChunkAccess chunk = holder == null ? null : holder.getChunkIfPresent(ChunkStatus.FULL);
++            if (chunk == null && loadOrGenerate) {
++                throw new IllegalStateException("Region simulation cannot synchronously load chunk [" + x + ", " + z + "]");
++            }
++            return chunk;
++        }
+         if (Thread.currentThread() != this.mainThread) {
+             return CompletableFuture.<ChunkAccess>supplyAsync(() -> this.getChunk(x, z, targetStatus, loadOrGenerate), this.mainThreadProcessor).join();
+         }
+@@ -177,6 +187,10 @@ public class ServerChunkCache extends ChunkSource {
+ 
+     @Override
+     public @Nullable LevelChunk getChunkNow(final int x, final int z) {
++        RegionTickScope region = RegionTickScope.current();
++        if (region != null) {
++            return (LevelChunk)this.getChunk(x, z, ChunkStatus.FULL, false);
++        }
+         if (Thread.currentThread() != this.mainThread) {
+             return null;
+         }
+@@ -249,6 +263,11 @@ public class ServerChunkCache extends ChunkSource {
+     }
+ 
+     public CompletableFuture<ChunkResult<ChunkAccess>> getChunkFuture(final int x, final int z, final ChunkStatus targetStatus, final boolean loadOrGenerate) {
++        if (RegionTickScope.current() != null) {
++            ChunkAccess chunk = this.getChunk(x, z, targetStatus, loadOrGenerate);
++            return chunk == null ? GenerationChunkHolder.UNLOADED_CHUNK_FUTURE
++                : CompletableFuture.completedFuture(ChunkResult.of(chunk));
++        }
+         boolean isMainThread = Thread.currentThread() == this.mainThread;
+         CompletableFuture<ChunkResult<ChunkAccess>> serverFuture;
+         if (isMainThread) {
+@@ -303,6 +322,9 @@ public class ServerChunkCache extends ChunkSource {
+ 
+     @Override
+     public @Nullable LightChunk getChunkForLighting(final int x, final int z) {
++        if (RegionTickScope.current() != null) {
++            return (LightChunk)this.getChunk(x, z, ChunkStatus.FULL, false);
++        }
+         long key = ChunkPos.pack(x, z);
+         ChunkHolder chunkHolder = this.getVisibleChunkIfPresent(key);
+         return chunkHolder == null ? null : chunkHolder.getChunkIfPresentUnchecked(ChunkStatus.INITIALIZE_LIGHT.getParent());
+@@ -513,6 +535,10 @@ public class ServerChunkCache extends ChunkSource {
+     }
+ 
+     public void blockChanged(final BlockPos pos) {
++        BlockPos stablePos = pos.immutable();
++        if (RegionTickScope.defer(this.level, () -> this.blockChanged(stablePos))) {
++            return;
++        }
+         int xc = SectionPos.blockToSectionCoord(pos.getX());
+         int zc = SectionPos.blockToSectionCoord(pos.getZ());
+         ChunkHolder chunk = this.getVisibleChunkIfPresent(ChunkPos.pack(xc, zc));
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index 71e3d98e4adc3b9988480a84ceec0188e1309a35..c7e086fcf86424da85babca5404788c04b1afd6a 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -198,6 +198,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     private final MinecraftServer server;
+     private final ServerLevelData serverLevelData;
+     private final EntityTickList entityTickList = new EntityTickList(entity -> this.fand$simulationCellAt(entity.blockPosition()));
++    private final RegionBlockEntityTicker fandRegionBlockEntities = new RegionBlockEntityTicker(this);
+     private final ServerWaypointManager waypointManager;
+     private EnvironmentAttributeSystem environmentAttributes;
+     private final PersistentEntitySectionManager<Entity> entityManager;
+@@ -950,6 +951,19 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     public record FandCellSimulation(int entities, int blockEntities, int pendingBlockEntities, int blockTicks, int fluidTicks,
+                                      int blockEvents, java.util.OptionalLong regionId) {}
+ 
++    public RegionBlockEntityTicker.Snapshot fand$regionExecutionSnapshot() {
++        return this.fandRegionBlockEntities.snapshot();
++    }
++
++    @Override
++    public void tickBlockEntities() {
++        if (!this.tickRateManager().runsNormally()) {
++            super.tickBlockEntities();
++        } else {
++            this.blockEntityTickers.tick(true, this::shouldTickBlocksAt, this.fandRegionBlockEntities::tick);
++        }
++    }
++
+     public void tickNonPassenger(final Entity entity) {
+         entity.setOldPosAndRot();
+         ProfilerFiller profiler = Profiler.get();
+@@ -1267,6 +1281,10 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+ 
+     @Override
+     public void sendBlockUpdated(final BlockPos pos, final BlockState old, final BlockState current, final @Block.UpdateFlags int updateFlags) {
++        BlockPos stablePos = pos.immutable();
++        if (RegionTickScope.defer(this, () -> this.sendBlockUpdated(stablePos, old, current, updateFlags))) {
++            return;
++        }
+         if (this.isUpdatingNavigations) {
+             String message = "recursive call to sendBlockUpdated";
+             Util.logAndPauseIfInIde("recursive call to sendBlockUpdated", new IllegalStateException("recursive call to sendBlockUpdated"));
+@@ -1305,14 +1323,14 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+ 
+     @Override
+     public void updateNeighborsAt(final BlockPos pos, final Block sourceBlock, final @Nullable Orientation orientation) {
+-        this.neighborUpdater.updateNeighborsAtExceptFromFacing(pos, sourceBlock, null, orientation);
++        this.fand$neighborUpdater().updateNeighborsAtExceptFromFacing(pos, sourceBlock, null, orientation);
+     }
+ 
+     @Override
+     public void updateNeighborsAtExceptFromFacing(
+         final BlockPos pos, final Block blockObject, final Direction skipDirection, final @Nullable Orientation orientation
+     ) {
+-        this.neighborUpdater.updateNeighborsAtExceptFromFacing(pos, blockObject, skipDirection, orientation);
++        this.fand$neighborUpdater().updateNeighborsAtExceptFromFacing(pos, blockObject, skipDirection, orientation);
+     }
+ 
+     @Override
+@@ -1320,7 +1338,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+         if (!io.fand.server.event.BlockEvents.firePhysics(this, pos, changedBlock)) {
+             return;
+         }
+-        this.neighborUpdater.neighborChanged(pos, changedBlock, orientation);
++        this.fand$neighborUpdater().neighborChanged(pos, changedBlock, orientation);
+     }
+ 
+     @Override
+@@ -1330,7 +1348,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+         if (!io.fand.server.event.BlockEvents.firePhysics(this, pos, changedBlock)) {
+             return;
+         }
+-        this.neighborUpdater.neighborChanged(state, pos, changedBlock, orientation, movedByPiston);
++        this.fand$neighborUpdater().neighborChanged(state, pos, changedBlock, orientation, movedByPiston);
+     }
+ 
+     @Override
+diff --git a/net/minecraft/world/entity/Entity.java b/net/minecraft/world/entity/Entity.java
+index 5d03df80c8c9501c5ab311996af249423a565f5e..e24e821ce025311b46c47e2cf982b916137d8169 100644
+--- a/net/minecraft/world/entity/Entity.java
++++ b/net/minecraft/world/entity/Entity.java
+@@ -4296,6 +4296,10 @@ public abstract class Entity
+ 
+     @Override
+     public final void setRemoved(final Entity.RemovalReason reason) {
++        var region = net.minecraft.server.level.RegionTickScope.current();
++        if (region != null) {
++            region.requirePosition(this.level(), this.blockPosition());
++        }
+         if (this.removalReason == null) {
+             this.removalReason = reason;
+         }
+diff --git a/net/minecraft/world/level/BlockEventQueue.java b/net/minecraft/world/level/BlockEventQueue.java
+index 15435b37383ae7de77327dc9ba05d176c31d970c..a344aed233071e310783fe4be532efa8033644ad 100644
+--- a/net/minecraft/world/level/BlockEventQueue.java
++++ b/net/minecraft/world/level/BlockEventQueue.java
+@@ -25,7 +25,7 @@ public final class BlockEventQueue {
+         this.cellAt = cellAt;
+     }
+ 
+-    public void add(BlockEventData event) {
++    public synchronized void add(BlockEventData event) {
+         OwnershipCell pos = this.cellAt.apply(event.pos());
+         var cell = this.cells.get(pos);
+         if (cell != null && cell.containsKey(event)) {
+diff --git a/net/minecraft/world/level/Level.java b/net/minecraft/world/level/Level.java
+index 146ff939a216d53295b2833be1bd81b71a1ee765..76f2911e42d636550a1def2585db89aabb35e2b9 100644
+--- a/net/minecraft/world/level/Level.java
++++ b/net/minecraft/world/level/Level.java
+@@ -126,6 +126,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+     };
+     protected final BlockEntityTickList blockEntityTickers = new BlockEntityTickList(this::fand$simulationCellAt);
+     protected final CollectingNeighborUpdater neighborUpdater;
++    private final int fandMaxChainedNeighborUpdates;
+     private final Thread thread;
+     private final boolean isDebug;
+     private int skyDarken;
+@@ -167,6 +168,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         this.biomeManager = new BiomeManager(this, biomeZoomSeed);
+         this.isDebug = isDebug;
+         this.neighborUpdater = new CollectingNeighborUpdater(this, maxChainedNeighborUpdates);
++        this.fandMaxChainedNeighborUpdates = maxChainedNeighborUpdates;
+         this.registryAccess = registryAccess;
+         this.palettedContainerFactory = PalettedContainerFactory.create(registryAccess);
+         this.damageSources = new DamageSources(registryAccess);
+@@ -394,7 +396,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         final @Block.UpdateFlags int updateFlags,
+         final int updateLimit
+     ) {
+-        this.neighborUpdater.shapeUpdate(direction, neighborState, pos, neighborPos, updateFlags, updateLimit);
++        this.fand$neighborUpdater().shapeUpdate(direction, neighborState, pos, neighborPos, updateFlags, updateLimit);
+     }
+ 
+     @Override
+@@ -770,7 +772,11 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         if (!this.isInValidBounds(pos)) {
+             return null;
+         } else {
+-            return !this.isClientSide() && Thread.currentThread() != this.thread
++            var region = net.minecraft.server.level.RegionTickScope.current();
++            if (region != null) {
++                region.requirePosition(this, pos);
++            }
++            return !this.isClientSide() && Thread.currentThread() != this.thread && region == null
+                 ? null
+                 : this.getChunkAt(pos).getBlockEntity(pos, LevelChunk.EntityCreationType.IMMEDIATE);
+         }
+@@ -843,6 +849,10 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+ 
+     @Override
+     public List<Entity> getEntities(final @Nullable Entity except, final AABB bb, final Predicate<? super Entity> selector) {
++        var region = net.minecraft.server.level.RegionTickScope.current();
++        if (region != null) {
++            region.requireArea(this, bb.inflate(2.0));
++        }
+         Profiler.get().incrementCounter("getEntities");
+         List<Entity> output = Lists.newArrayList();
+         this.getEntities().get(bb, entity -> {
+@@ -876,6 +886,10 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+     public <T extends Entity> void getEntities(
+         final EntityTypeTest<Entity, T> type, final AABB bb, final Predicate<? super T> selector, final List<? super T> output, final int maxResults
+     ) {
++        var region = net.minecraft.server.level.RegionTickScope.current();
++        if (region != null) {
++            region.requireArea(this, bb.inflate(2.0));
++        }
+         Profiler.get().incrementCounter("getEntities");
+         boolean includeDragonParts = canTypeMatchDragonPart(type);
+         this.getEntities().get(type, bb, e -> {
+@@ -1402,7 +1416,17 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+ 
+     @Override
+     public RandomSource getRandom() {
+-        return this.random;
++        var region = net.minecraft.server.level.RegionTickScope.current();
++        return region == null ? this.random : region.random(this);
++    }
++
++    public CollectingNeighborUpdater fand$newRegionNeighborUpdater() {
++        return new CollectingNeighborUpdater(this, this.fandMaxChainedNeighborUpdates);
++    }
++
++    protected CollectingNeighborUpdater fand$neighborUpdater() {
++        var region = net.minecraft.server.level.RegionTickScope.current();
++        return region == null ? this.neighborUpdater : region.neighborUpdater(this);
+     }
+ 
+     @Override
+@@ -1428,6 +1452,10 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+     }
+ 
+     private int nextBlockRandomValue() {
++        var region = net.minecraft.server.level.RegionTickScope.current();
++        if (region != null) {
++            return region.nextRandomPosition(this);
++        }
+         this.randValue = this.randValue * 3 + 1013904223;
+         return this.randValue >> 2;
+     }
+@@ -1448,7 +1476,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+     protected abstract LevelEntityGetter<Entity> getEntities();
+ 
+     @Override
+-    public long nextSubTickCount() {
++    public synchronized long nextSubTickCount() {
+         return this.subTickCount++;
+     }
+ 
+diff --git a/net/minecraft/world/level/block/RedStoneWireBlock.java b/net/minecraft/world/level/block/RedStoneWireBlock.java
+index 9feb94ae69d4c17f3cd6fdb0570edaf28cf957ee..9c381770152873de0d88caaa8a1514d4e500e049 100644
+--- a/net/minecraft/world/level/block/RedStoneWireBlock.java
++++ b/net/minecraft/world/level/block/RedStoneWireBlock.java
+@@ -65,7 +65,7 @@ public class RedStoneWireBlock extends Block {
+     private final Function<BlockState, VoxelShape> shapes;
+     private final BlockState crossState;
+     private final RedstoneWireEvaluator evaluator = new DefaultRedstoneWireEvaluator(this);
+-    private boolean shouldSignal = true;
++    private final ThreadLocal<Boolean> suppressSignal = new ThreadLocal<>();
+ 
+     @Override
+     public MapCodec<RedStoneWireBlock> codec() {
+@@ -288,10 +288,21 @@ public class RedStoneWireBlock extends Block {
+     }
+ 
+     public int getBlockSignal(final Level level, final BlockPos pos) {
+-        this.shouldSignal = false;
+-        int blockSignal = level.getBestNeighborSignal(pos);
+-        this.shouldSignal = true;
+-        return blockSignal;
++        Boolean previous = this.suppressSignal.get();
++        this.suppressSignal.set(Boolean.TRUE);
++        try {
++            return level.getBestNeighborSignal(pos);
++        } finally {
++            if (previous == null) {
++                this.suppressSignal.remove();
++            } else {
++                this.suppressSignal.set(previous);
++            }
++        }
++    }
++
++    private boolean shouldSignal() {
++        return this.suppressSignal.get() == null;
+     }
+ 
+     private void checkCornerChangeAt(final Level level, final BlockPos pos) {
+@@ -366,12 +377,12 @@ public class RedStoneWireBlock extends Block {
+ 
+     @Override
+     protected int getDirectSignal(final BlockState state, final BlockGetter level, final BlockPos pos, final Direction direction) {
+-        return !this.shouldSignal ? Redstone.SIGNAL_MIN : state.getSignal(level, pos, direction);
++        return !this.shouldSignal() ? Redstone.SIGNAL_MIN : state.getSignal(level, pos, direction);
+     }
+ 
+     @Override
+     protected int getSignal(final BlockState state, final BlockGetter level, final BlockPos pos, final Direction direction) {
+-        if (this.shouldSignal && direction != Direction.DOWN) {
++        if (this.shouldSignal() && direction != Direction.DOWN) {
+             int power = this.ownSignal(state, level, pos);
+             if (power == 0) {
+                 return Redstone.SIGNAL_MIN;
+@@ -408,7 +419,7 @@ public class RedStoneWireBlock extends Block {
+ 
+     @Override
+     protected boolean isSignalSource(final BlockState state) {
+-        return this.shouldSignal;
++        return this.shouldSignal();
+     }
+ 
+     public static int getColorForPower(final int power) {
+diff --git a/net/minecraft/world/level/block/entity/BlockEntityTickList.java b/net/minecraft/world/level/block/entity/BlockEntityTickList.java
+index c5f6859399e1e2319f55f06cb7adf0095bbb633d..b736c104ff0eab703facce8877b2e1310a34270e 100644
+--- a/net/minecraft/world/level/block/entity/BlockEntityTickList.java
++++ b/net/minecraft/world/level/block/entity/BlockEntityTickList.java
+@@ -3,6 +3,10 @@ package net.minecraft.world.level.block.entity;
+ import io.fand.server.tick.OwnershipCell;
+ import java.util.Iterator;
+ import java.util.Map;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.function.BiConsumer;
++import java.util.function.Consumer;
+ import java.util.function.Function;
+ import java.util.function.Predicate;
+ import net.minecraft.core.BlockPos;
+@@ -19,7 +23,7 @@ public final class BlockEntityTickList implements Iterable<TickingBlockEntity> {
+         this.pending = CellTickList.byIdentity(ticker -> cellOf.apply(ticker.getPos()));
+     }
+ 
+-    public void add(TickingBlockEntity ticker) {
++    public synchronized void add(TickingBlockEntity ticker) {
+         if (this.ticking) {
+             this.pending.add(ticker);
+         } else {
+@@ -27,48 +31,65 @@ public final class BlockEntityTickList implements Iterable<TickingBlockEntity> {
+         }
+     }
+ 
+-    public void remove(TickingBlockEntity ticker) {
++    public synchronized void remove(TickingBlockEntity ticker) {
+         this.active.remove(ticker);
+         this.pending.remove(ticker);
+     }
+ 
+     public void tick(boolean runsNormally, Predicate<BlockPos> shouldTick) {
+-        if (this.ticking) {
+-            throw new IllegalStateException("Block entity ticking cannot be reentered");
+-        }
+-        this.ticking = true;
+-        try {
++        this.tick(runsNormally, shouldTick, (tickers, tick) -> tickers.forEach(tick));
++    }
++
++    public void tick(boolean runsNormally, Predicate<BlockPos> shouldTick,
++                     BiConsumer<List<TickingBlockEntity>, Consumer<TickingBlockEntity>> dispatch) {
++        List<TickingBlockEntity> tickers;
++        synchronized (this) {
++            if (this.ticking) {
++                throw new IllegalStateException("Block entity ticking cannot be reentered");
++            }
++            this.ticking = true;
+             this.pending.forEach(this.active::add);
+             this.pending.clear();
+-            this.active.forEach(ticker -> {
+-                if (!this.active.contains(ticker)) {
+-                    return;
++            tickers = new ArrayList<>(this.active.size());
++            this.active.forEach(tickers::add);
++        }
++        try {
++            dispatch.accept(tickers, ticker -> {
++                synchronized (this) {
++                    if (!this.active.contains(ticker)) {
++                        return;
++                    }
++                    if (ticker.isRemoved()) {
++                        this.active.remove(ticker);
++                        return;
++                    }
+                 }
+-                if (ticker.isRemoved()) {
+-                    this.active.remove(ticker);
+-                } else if (runsNormally && shouldTick.test(ticker.getPos())) {
++                // Only membership uses the lock. Native callbacks run under their region lease.
++                if (runsNormally && shouldTick.test(ticker.getPos())) {
+                     ticker.tick();
+                 }
+             });
+         } finally {
+-            this.ticking = false;
++            synchronized (this) {
++                this.ticking = false;
++            }
+         }
+     }
+ 
+-    public int size() {
++    public synchronized int size() {
+         return this.active.size();
+     }
+ 
+-    public Map<OwnershipCell, Integer> cellSizes() {
++    public synchronized Map<OwnershipCell, Integer> cellSizes() {
+         return this.active.cellSizes();
+     }
+ 
+-    public Map<OwnershipCell, Integer> pendingCellSizes() {
++    public synchronized Map<OwnershipCell, Integer> pendingCellSizes() {
+         return this.pending.cellSizes();
+     }
+ 
+     @Override
+-    public Iterator<TickingBlockEntity> iterator() {
++    public synchronized Iterator<TickingBlockEntity> iterator() {
+         return this.active.iterator();
+     }
+ }
+diff --git a/net/minecraft/world/level/block/entity/HopperBlockEntity.java b/net/minecraft/world/level/block/entity/HopperBlockEntity.java
+index 639496d861e5fef83f0557557b312c7766962181..f40c39475759eac7650ee283a9ec108d150d00e9 100644
+--- a/net/minecraft/world/level/block/entity/HopperBlockEntity.java
++++ b/net/minecraft/world/level/block/entity/HopperBlockEntity.java
+@@ -31,7 +31,8 @@ import org.jspecify.annotations.Nullable;
+ public class HopperBlockEntity extends RandomizableContainerBlockEntity implements Hopper {
+     public static final int MOVE_ITEM_SPEED = 8;
+     public static final int HOPPER_CONTAINER_SIZE = 5;
+-    private static final int[][] CACHED_SLOTS = new int[54][];
++    private static final int[][] CACHED_SLOTS = java.util.stream.IntStream.range(0, 54)
++        .mapToObj(HopperBlockEntity::createFlatSlots).toArray(int[][]::new);
+     private static final int NO_COOLDOWN_TIME = -1;
+     private static final Component DEFAULT_NAME = Component.translatable("container.hopper");
+     private NonNullList<ItemStack> items = NonNullList.withSize(5, ItemStack.EMPTY);
+@@ -103,6 +104,48 @@ public class HopperBlockEntity extends RandomizableContainerBlockEntity implemen
+         }
+     }
+ 
++    /** Loot generation still owns world-wide saved random sequences and runs in the control phase. */
++    public boolean fand$canTickInRegion() {
++        return this.lootTable == null && this.fand$containerReady(this.worldPosition.above())
++            && this.fand$containerReady(this.worldPosition.relative(this.facing));
++    }
++
++    private boolean fand$containerReady(BlockPos pos) {
++        var chunk = this.level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
++        if (chunk == null) {
++            return false;
++        }
++        BlockState state = chunk.getBlockState(pos);
++        BlockEntity blockEntity = chunk.getBlockEntity(pos, net.minecraft.world.level.chunk.LevelChunk.EntityCreationType.CHECK);
++        if (blockEntity instanceof RandomizableContainerBlockEntity container && container.getLootTable() != null) {
++            return false;
++        }
++        if (state.getBlock() instanceof ChestBlock
++            && state.getValue(ChestBlock.TYPE) != net.minecraft.world.level.block.state.properties.ChestType.SINGLE) {
++            BlockPos partner = pos.relative(ChestBlock.getConnectedDirection(state));
++            var partnerChunk = this.level.getChunkSource().getChunkNow(partner.getX() >> 4, partner.getZ() >> 4);
++            if (partnerChunk == null) {
++                return false;
++            }
++            var partnerEntity = partnerChunk.getBlockEntity(partner, net.minecraft.world.level.chunk.LevelChunk.EntityCreationType.CHECK);
++            if (partnerEntity instanceof RandomizableContainerBlockEntity container && container.getLootTable() != null) {
++                return false;
++            }
++        }
++        if (blockEntity instanceof Container || state.getBlock() instanceof WorldlyContainerHolder) {
++            return true;
++        }
++        for (Entity entity : this.level.getEntities((Entity)null,
++            new AABB(pos.getX(), pos.getY(), pos.getZ(), pos.getX() + 1, pos.getY() + 1, pos.getZ() + 1),
++            EntitySelector.CONTAINER_ENTITY_SELECTOR)) {
++            if (entity instanceof net.minecraft.world.entity.vehicle.ContainerEntity container
++                && container.getContainerLootTable() != null) {
++                return false;
++            }
++        }
++        return true;
++    }
++
+     private static boolean tryMoveItems(
+         final Level level, final BlockPos pos, final BlockState state, final HopperBlockEntity entity, final BooleanSupplier action
+     ) {
+@@ -177,14 +220,7 @@ public class HopperBlockEntity extends RandomizableContainerBlockEntity implemen
+         } else {
+             int containerSize = container.getContainerSize();
+             if (containerSize < CACHED_SLOTS.length) {
+-                int[] cachedSlots = CACHED_SLOTS[containerSize];
+-                if (cachedSlots != null) {
+-                    return cachedSlots;
+-                }
+-
+-                int[] slots = createFlatSlots(containerSize);
+-                CACHED_SLOTS[containerSize] = slots;
+-                return slots;
++                return CACHED_SLOTS[containerSize];
+             } else {
+                 return createFlatSlots(containerSize);
+             }
+diff --git a/net/minecraft/world/level/block/entity/TickingBlockEntity.java b/net/minecraft/world/level/block/entity/TickingBlockEntity.java
+index 28e3b73507b988f7234cbf29c4024c88180d0aef..f9e6904fa8e10aa3d5887fa36b3b224ff0a62a25 100644
+--- a/net/minecraft/world/level/block/entity/TickingBlockEntity.java
++++ b/net/minecraft/world/level/block/entity/TickingBlockEntity.java
+@@ -10,4 +10,9 @@ public interface TickingBlockEntity {
+     BlockPos getPos();
+ 
+     String getType();
++
++    /** Native tickers opt in only after their shared-state paths have been assigned an owner. */
++    default boolean fand$canTickInRegion() {
++        return false;
++    }
+ }
+diff --git a/net/minecraft/world/level/chunk/LevelChunk.java b/net/minecraft/world/level/chunk/LevelChunk.java
+index 82d1a820d30965740350cbfb5e250074b3129aac..fd02237d48dbcbf5fe93d155a9bbf6043283e3f9 100644
+--- a/net/minecraft/world/level/chunk/LevelChunk.java
++++ b/net/minecraft/world/level/chunk/LevelChunk.java
+@@ -193,7 +193,9 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+         boolean wasUnsaved = this.isUnsaved();
+         super.markUnsaved();
+         if (!wasUnsaved) {
+-            this.unsavedListener.setUnsaved(this.chunkPos);
++            if (!net.minecraft.server.level.RegionTickScope.defer(this.level, () -> this.unsavedListener.setUnsaved(this.chunkPos))) {
++                this.unsavedListener.setUnsaved(this.chunkPos);
++            }
+         }
+     }
+ 
+@@ -824,6 +826,21 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+             return this.blockEntity.typeHolder().getRegisteredName();
+         }
+ 
++        @Override
++        public boolean fand$canTickInRegion() {
++            Class<?> type = this.blockEntity.getClass();
++            Class<?> block = this.blockEntity.getBlockState().getBlock().getClass();
++            return type == net.minecraft.world.level.block.entity.FurnaceBlockEntity.class
++                    && block == net.minecraft.world.level.block.FurnaceBlock.class
++                || type == net.minecraft.world.level.block.entity.BlastFurnaceBlockEntity.class
++                    && block == net.minecraft.world.level.block.BlastFurnaceBlock.class
++                || type == net.minecraft.world.level.block.entity.SmokerBlockEntity.class
++                    && block == net.minecraft.world.level.block.SmokerBlock.class
++                || type == net.minecraft.world.level.block.entity.HopperBlockEntity.class
++                    && block == net.minecraft.world.level.block.HopperBlock.class
++                    && ((net.minecraft.world.level.block.entity.HopperBlockEntity)this.blockEntity).fand$canTickInRegion();
++        }
++
+         @Override
+         public String toString() {
+             return "Level ticker for " + this.getType() + "@" + this.getPos();
+@@ -872,6 +889,11 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+             return this.ticker.getType();
+         }
+ 
++        @Override
++        public boolean fand$canTickInRegion() {
++            return this.ticker.fand$canTickInRegion();
++        }
++
+         @Override
+         public String toString() {
+             return this.ticker + " <wrapped>";
+diff --git a/net/minecraft/world/level/entity/PersistentEntitySectionManager.java b/net/minecraft/world/level/entity/PersistentEntitySectionManager.java
+index 02dd6a56fba85d684a5ceda664fb3113b4722453..87a9cae97bf8d83a861fafd38a6e6cd8c17200f9 100644
+--- a/net/minecraft/world/level/entity/PersistentEntitySectionManager.java
++++ b/net/minecraft/world/level/entity/PersistentEntitySectionManager.java
+@@ -434,6 +434,12 @@ public class PersistentEntitySectionManager<T extends EntityAccess> implements A
+ 
+         @Override
+         public void onRemove(final Entity.RemovalReason reason) {
++            // Item pickup marks the owned entity removed immediately; structural indices
++            // remain stable for other region queries until the phase has joined.
++            if (this.entity instanceof Entity nativeEntity
++                && net.minecraft.server.level.RegionTickScope.defer(nativeEntity.level(), () -> this.onRemove(reason))) {
++                return;
++            }
+             if (!this.currentSection.remove(this.entity)) {
+                 PersistentEntitySectionManager.LOGGER
+                     .warn("Entity {} wasn't found in section {} (destroying due to {})", this.entity, SectionPos.of(this.currentSectionKey), reason);
+diff --git a/net/minecraft/world/ticks/CellTickContainerIndex.java b/net/minecraft/world/ticks/CellTickContainerIndex.java
+index 3848c0e7466020778472245d0329ad0711237fa0..8f6a92c9a266d40cfdc6a33bfbfdd73cf585ce4b 100644
+--- a/net/minecraft/world/ticks/CellTickContainerIndex.java
++++ b/net/minecraft/world/ticks/CellTickContainerIndex.java
+@@ -61,7 +61,7 @@ final class CellTickContainerIndex<T> {
+         return registration;
+     }
+ 
+-    void refresh(Registration<T> registration) {
++    synchronized void refresh(Registration<T> registration) {
+         if (!this.isCurrent(registration)) {
+             return;
+         }
+diff --git a/net/minecraft/world/ticks/LevelTicks.java b/net/minecraft/world/ticks/LevelTicks.java
+index 6814e79bc300a6d49f38799ed1506bada92a74b1..551e20b19c18325d695e48bc2d22c3091fbf626a 100644
+--- a/net/minecraft/world/ticks/LevelTicks.java
++++ b/net/minecraft/world/ticks/LevelTicks.java
+@@ -72,6 +72,10 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+ 
+     @Override
+     public void schedule(final ScheduledTick<T> tick) {
++        var region = net.minecraft.server.level.RegionTickScope.current();
++        if (region != null) {
++            region.requireTickAccess(this, tick.pos());
++        }
+         Registration<T> registration = this.containers.get(ChunkPos.pack(tick.pos()));
+         if (registration == null) {
+             Util.logAndPauseIfInIde("Trying to schedule tick in not loaded position " + tick.pos());
+@@ -146,6 +150,10 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+ 
+     @Override
+     public boolean hasScheduledTick(final BlockPos pos, final T type) {
++        var region = net.minecraft.server.level.RegionTickScope.current();
++        if (region != null) {
++            region.requireTickAccess(this, pos);
++        }
+         Registration<T> registration = this.containers.get(ChunkPos.pack(pos));
+         return registration != null && registration.container.hasScheduledTick(pos, type);
+     }

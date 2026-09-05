@@ -85,6 +85,9 @@ public final class ServerThreading {
 
     public static <T> T callBlocking(@Nullable MinecraftServer server, Supplier<T> task) {
         Objects.requireNonNull(task, "task");
+        if (net.minecraft.server.level.RegionTickScope.current() != null) {
+            throw new IllegalStateException("A region callback cannot block on the server control thread; use asynchronous scheduling");
+        }
         if (server == null) {
             throw serverNotAttached();
         }

@@ -7,7 +7,8 @@ import io.fand.api.event.Event;
 import java.util.Objects;
 
 /**
- * Fired on the server thread before any block state change is committed.
+ * Fired on the block's simulation owner before a block state change is committed.
+ * Independent regions may invoke listeners concurrently.
  *
  * <p>Unlike {@link BlockChangeEvent}, this event also covers changes where the
  * block type remains the same and only one or more state properties change.

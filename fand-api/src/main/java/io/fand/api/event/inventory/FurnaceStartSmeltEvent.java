@@ -11,7 +11,8 @@ import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Fired on the server thread before a furnace starts cooking an input item.
+ * Fired on the furnace's simulation owner before it starts cooking an input item.
+ * Independent regions may invoke listeners concurrently.
  */
 public final class FurnaceStartSmeltEvent implements Event, Cancellable {
 

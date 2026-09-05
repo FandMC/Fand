@@ -9,7 +9,7 @@ import io.fand.api.world.Location;
 import java.util.Objects;
 
 /**
- * Fired on the server thread before a hopper block or hopper minecart picks up
+ * Fired on the simulation owner before a hopper block or hopper minecart picks up
  * an item entity.
  */
 public final class HopperPickupItemEvent implements Event, Cancellable {

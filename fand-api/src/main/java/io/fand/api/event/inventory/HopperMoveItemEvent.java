@@ -8,7 +8,7 @@ import io.fand.api.world.Location;
 import java.util.Objects;
 
 /**
- * Fired on the server thread before a hopper block or hopper minecart moves an
+ * Fired on the simulation owner before a hopper block or hopper minecart moves an
  * item between inventories.
  */
 public final class HopperMoveItemEvent implements Event, Cancellable {

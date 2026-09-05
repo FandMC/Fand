@@ -333,6 +333,12 @@ public final class FandBlock implements Block {
     }
 
     void runOnServerThread(Runnable task) {
+        var region = net.minecraft.server.level.RegionTickScope.current();
+        if (region != null) {
+            region.requirePosition(world.handle(), pos);
+            task.run();
+            return;
+        }
         var server = world.handle().getServer();
         if (server == null || server.isSameThread()) {
             task.run();
@@ -342,6 +348,11 @@ public final class FandBlock implements Block {
     }
 
     <T> T callOnServerThread(Supplier<T> task) {
+        var region = net.minecraft.server.level.RegionTickScope.current();
+        if (region != null) {
+            region.requirePosition(world.handle(), pos);
+            return task.get();
+        }
         var server = world.handle().getServer();
         if (server == null || server.isSameThread()) {
             return task.get();

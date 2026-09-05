@@ -20,6 +20,30 @@ class RegionTickExecutorTest {
     private static final OwnershipCell BRIDGE = new OwnershipCell(2, 0);
 
     @Test
+    void nativeSubPhasesDoNotConsumeMailboxesOrAdvanceFullTickClocks() {
+        try (var topology = new TickRegionTopology(4, 1)) {
+            topology.tryActivate(LEFT);
+            var region = topology.ownerOf(LEFT).orElseThrow();
+            var mailbox = topology.submit(LEFT, () -> 42);
+            var phases = new AtomicInteger();
+            var executor = RegionTickExecutor.forPhases(Runnable::run, context -> {
+                context.requireOwned(LEFT);
+                phases.incrementAndGet();
+                assertThatThrownBy(() -> context.runTick(ignored -> {})).isInstanceOf(IllegalStateException.class);
+            });
+            assertThat(executor.tick(region)).isCompletedWithValue(RegionTickExecutor.Result.EXECUTED);
+            assertThat(executor.tick(region)).isCompletedWithValue(RegionTickExecutor.Result.EXECUTED);
+            assertThat(phases).hasValue(2);
+            assertThat(region.completedTicks()).isZero();
+            assertThat(mailbox).isNotDone();
+            var fullTicks = new RegionTickExecutor(Runnable::run, context -> {});
+            assertThat(fullTicks.tick(region)).isCompletedWithValue(RegionTickExecutor.Result.EXECUTED);
+            assertThat(mailbox).isCompletedWithValue(42);
+            assertThat(region.completedTicks()).isEqualTo(1);
+        }
+    }
+
+    @Test
     void independentRegionTicksAndHolderPublicationDoNotWaitForASlowRegion() throws Exception {
         var ownership = new ChunkOwnership<AtomicInteger>(1, 1);
         var left = ownership.register(0, 0, new AtomicInteger());

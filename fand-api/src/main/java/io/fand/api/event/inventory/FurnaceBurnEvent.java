@@ -8,7 +8,8 @@ import io.fand.api.item.ItemStack;
 import java.util.Objects;
 
 /**
- * Fired on the server thread before a furnace consumes fuel.
+ * Fired on the furnace's simulation owner before it consumes fuel. Independent
+ * regions may invoke listeners concurrently; do not block on global scheduler tasks.
  */
 public final class FurnaceBurnEvent implements Event, Cancellable {
 

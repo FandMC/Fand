@@ -7,7 +7,8 @@ import io.fand.api.event.Event;
 import java.util.Objects;
 
 /**
- * Fired on the server thread before a block receives a neighbor physics update.
+ * Fired on the block's simulation owner before it receives a neighbor physics update.
+ * Independent regions may invoke listeners concurrently.
  */
 public final class BlockPhysicsEvent implements Event, Cancellable {
 

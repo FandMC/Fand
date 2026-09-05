@@ -154,6 +154,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final TaskScheduler scheduler;
     private final ChunkSendScheduler chunks;
     private final ChunkTaskExecutors chunkTasks;
+    private final io.fand.server.tick.RegionSimulationWorkers regionSimulationWorkers;
     private final AsyncChunkPacketSender asyncChunkPackets;
     private final FandRecipeRegistry recipes;
     private final FandScoreboardService scoreboard;
@@ -233,6 +234,7 @@ public final class FandServer implements Server, AutoCloseable {
                 initialConfig.scheduler.asyncThreads, initialConfig.scheduler.regionThreads, minecraftServer::get);
         this.chunks = new ChunkSendScheduler(initialConfig.chunks);
         this.chunkTasks = new ChunkTaskExecutors(initialConfig.chunks);
+        this.regionSimulationWorkers = new io.fand.server.tick.RegionSimulationWorkers(initialConfig.regionSimulation.workers);
         this.asyncChunkPackets = new AsyncChunkPacketSender(initialConfig.chunks.asyncChunkPacketPreparation);
         this.recipes = new FandRecipeRegistry();
         this.scoreboard = new FandScoreboardService(minecraftServer::get);
@@ -522,6 +524,10 @@ public final class FandServer implements Server, AutoCloseable {
 
     public java.util.concurrent.Executor chunkWorldgenExecutor() {
         return this.chunkTasks.worldgenExecutor();
+    }
+
+    public io.fand.server.tick.RegionSimulationWorkers regionSimulationWorkers() {
+        return this.regionSimulationWorkers;
     }
 
     public void recordTick(long tickStartNanos, long tickDurationNanos) {
@@ -1190,6 +1196,7 @@ public final class FandServer implements Server, AutoCloseable {
             shutdownFailures.run("async chunk packets", asyncChunkPackets::close);
             shutdownFailures.run("chunk scheduler", chunks::close);
             shutdownFailures.run("chunk task executors", chunkTasks::close);
+            shutdownFailures.run("region simulation workers", regionSimulationWorkers::close);
             shutdownFailures.run("task scheduler", scheduler::close);
             shutdownFailures.run("GUI themes", guiThemes::close);
             shutdownFailures.run("performance tracker", performance::close);

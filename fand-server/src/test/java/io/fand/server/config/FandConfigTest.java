@@ -28,6 +28,7 @@ final class FandConfigTest {
         assertThat(config.players.logCommands).isTrue();
         assertThat(config.scheduler.asyncThreads).isZero();
         assertThat(config.scheduler.regionThreads).isZero();
+        assertThat(config.regionSimulation.workers).isZero();
         assertThat(config.chunks.backgroundThreads).isZero();
         assertThat(config.chunks.worldgenThreads).isZero();
         assertThat(config.chunks.workerThreads).isZero();

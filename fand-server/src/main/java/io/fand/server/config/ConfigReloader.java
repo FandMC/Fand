@@ -288,6 +288,7 @@ public final class ConfigReloader {
         }
         markRestart(changes, RESTART_CHUNK_FIELDS, previous.chunks, reloaded.chunks);
         markRestart(changes, RESTART_WATCHDOG_FIELDS, previous.watchdog, reloaded.watchdog);
+        changes.restart("regionSimulation.workers", previous.regionSimulation.workers, reloaded.regionSimulation.workers);
         apply("chunks config", () -> io.fand.server.hooks.FandHooks.applyChunkConfig(reloaded.chunks));
         markRestart(
                 changes,

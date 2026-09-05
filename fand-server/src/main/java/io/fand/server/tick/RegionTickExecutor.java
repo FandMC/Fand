@@ -23,13 +23,23 @@ public final class RegionTickExecutor {
     private final Object lock = new Object();
     private final Executor executor;
     private final Consumer<RegionContext> simulation;
+    private final boolean completesTick;
     private final Map<TickRegion, Dispatch> pending = new IdentityHashMap<>();
     private final CompletableFuture<Void> terminated = new CompletableFuture<>();
     private boolean stopping;
 
     public RegionTickExecutor(Executor executor, Consumer<RegionContext> simulation) {
+        this(executor, simulation, true);
+    }
+
+    private RegionTickExecutor(Executor executor, Consumer<RegionContext> simulation, boolean completesTick) {
         this.executor = Objects.requireNonNull(executor, "executor");
         this.simulation = Objects.requireNonNull(simulation, "simulation");
+        this.completesTick = completesTick;
+    }
+
+    public static RegionTickExecutor forPhases(Executor executor, Consumer<RegionContext> simulation) {
+        return new RegionTickExecutor(executor, simulation, false);
     }
 
     /** Cancelling the returned observation never interrupts a live simulation. */
@@ -90,7 +100,11 @@ public final class RegionTickExecutor {
             var lease = dispatch.region.topology.tryEnter(dispatch.region);
             if (lease.isPresent()) {
                 try (var context = lease.orElseThrow()) {
-                    context.runTick(simulation);
+                    if (completesTick) {
+                        context.runTick(simulation);
+                    } else {
+                        context.runPhase(simulation);
+                    }
                 }
                 result = Result.EXECUTED;
             }

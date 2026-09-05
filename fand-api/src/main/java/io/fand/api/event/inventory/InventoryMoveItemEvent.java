@@ -7,7 +7,7 @@ import io.fand.api.item.ItemStack;
 import java.util.Objects;
 
 /**
- * Fired on the server thread before vanilla automation moves an item stack
+ * Fired on the simulation owner before vanilla automation moves an item stack
  * from one inventory into another.
  */
 public final class InventoryMoveItemEvent implements Event, Cancellable {

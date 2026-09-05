@@ -9,7 +9,8 @@ import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Fired on the server thread before a furnace commits a smelting result.
+ * Fired on the furnace's simulation owner before it commits a smelting result.
+ * Independent regions may invoke listeners concurrently.
  */
 public final class FurnaceSmeltEvent extends BlockCookEvent {
 

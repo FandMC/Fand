@@ -15,15 +15,14 @@ public final class BlockComponentStorage {
     }
 
     public static DataComponentContainer container(ServerLevel level, BlockPos pos) {
-        var server = level.getServer();
-        return new SavedDataComponentContainer(
-                server,
-                () -> level.getDataStorage().get(PersistentComponentData.blockType()),
-                () -> level.getDataStorage().computeIfAbsent(PersistentComponentData.blockType()),
-                Long.toString(pos.asLong()));
+        return new BlockDataComponentContainer(level, pos);
     }
 
     public static DataComponentMap snapshot(ServerLevel level, BlockPos pos) {
+        var region = net.minecraft.server.level.RegionTickScope.current();
+        if (region != null) {
+            return region.blockComponents(level, pos);
+        }
         var server = level.getServer();
         if (server == null || !server.isSameThread()) {
             return DataComponentMap.EMPTY;
@@ -33,6 +32,10 @@ public final class BlockComponentStorage {
     }
 
     public static boolean empty(ServerLevel level, BlockPos pos) {
+        var region = net.minecraft.server.level.RegionTickScope.current();
+        if (region != null) {
+            return region.blockComponents(level, pos).empty();
+        }
         var server = level.getServer();
         if (server == null || !server.isSameThread()) {
             return true;
@@ -80,6 +83,11 @@ public final class BlockComponentStorage {
     }
 
     public static void clear(ServerLevel level, BlockPos pos) {
+        var region = net.minecraft.server.level.RegionTickScope.current();
+        if (region != null) {
+            region.blockComponents(level, pos, DataComponentMap.EMPTY);
+            return;
+        }
         var server = level.getServer();
         if (server == null) {
             return;
@@ -99,6 +107,11 @@ public final class BlockComponentStorage {
 
     public static void put(ServerLevel level, BlockPos pos, DataComponentMap components) {
         Objects.requireNonNull(components, "components");
+        var region = net.minecraft.server.level.RegionTickScope.current();
+        if (region != null) {
+            region.blockComponents(level, pos, components);
+            return;
+        }
         var server = level.getServer();
         if (server == null) {
             return;

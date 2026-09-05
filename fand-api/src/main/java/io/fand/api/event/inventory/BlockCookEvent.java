@@ -8,7 +8,8 @@ import io.fand.api.item.ItemStack;
 import java.util.Objects;
 
 /**
- * Fired on the server thread before a furnace-like block commits a cooked result.
+ * Fired on the block's simulation owner before it commits a cooked result.
+ * Independent regions may invoke listeners concurrently.
  */
 public class BlockCookEvent implements Event, Cancellable {
 

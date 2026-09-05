@@ -17,7 +17,8 @@ import org.jspecify.annotations.Nullable;
  * its event loop, including managed blocking during synchronous chunk requests.
  * It deliberately does not enter a RegionContext: vanilla publication may still
  * synchronously access other cells and the world has not been partitioned yet.
- * The topology is private so worker ticks cannot race this transitional adapter.
+ * Native worker phases resolve layouts on control and join before this event loop
+ * resumes; they cannot publish holders or pump chunk tasks while simulating.
  */
 public final class SerialChunkOwnership<H> implements AutoCloseable {
     private final Thread controlThread = Thread.currentThread();
@@ -70,6 +71,12 @@ public final class SerialChunkOwnership<H> implements AutoCloseable {
         requireControlThread();
         var region = ownership.topology().ownerOf(cell).orElse(null);
         return region == null ? OptionalLong.empty() : OptionalLong.of(region.id());
+    }
+
+    /** Resolve a phase's layout on the control thread before dispatching any workers. */
+    public @Nullable TickRegion regionAt(OwnershipCell cell) {
+        requireControlThread();
+        return ownership.topology().ownerOf(cell).orElse(null);
     }
 
     @Override

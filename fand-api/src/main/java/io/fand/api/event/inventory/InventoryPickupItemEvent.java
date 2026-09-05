@@ -10,7 +10,7 @@ import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Fired on the server thread before an inventory automation block picks up an
+ * Fired on the simulation owner before an inventory automation block picks up an
  * item entity from the world.
  */
 public final class InventoryPickupItemEvent implements Event, Cancellable {
