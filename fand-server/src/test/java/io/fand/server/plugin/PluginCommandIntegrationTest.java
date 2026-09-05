@@ -6,6 +6,7 @@ import io.fand.api.command.CommandArgumentType;
 import io.fand.api.command.Arguments;
 import io.fand.server.command.CommandManager;
 import io.fand.server.command.CommandTreeBridge;
+import io.fand.server.command.CommandTreeSynchronizer;
 import io.fand.server.event.EventDispatcher;
 import io.fand.server.permission.PermissionManager;
 import io.fand.server.permission.PermissionSet;
@@ -144,6 +145,73 @@ final class PluginCommandIntegrationTest {
                     }
                 }
                 """;
+    }
+
+    @Test
+    void refreshesClientTreesAcrossDynamicPluginLifecycle() throws Exception {
+        var pluginsDir = Files.createDirectories(tempDir.resolve("plugins"));
+        var jarPath = pluginsDir.resolve("demo.jar");
+        var descriptor = PluginRuntimeTestSupport.descriptorJson("demo", "testplugins.demo.DemoPlugin", List.of());
+        PluginRuntimeTestSupport.createPluginJar(tempDir, jarPath, descriptor,
+                Map.of("testplugins/demo/DemoPlugin.java", pluginSource()), List.of());
+        var permissions = new PermissionManager();
+        var commands = new CommandManager(permissions);
+        var synchronizer = new CommandTreeSynchronizer(commands);
+        var allowed = new Sender(true);
+        var sentTrees = new ArrayList<com.mojang.brigadier.tree.RootCommandNode<net.minecraft.commands.CommandSourceStack>>();
+        Runnable refresh = () -> {
+            var root = new com.mojang.brigadier.tree.RootCommandNode<net.minecraft.commands.CommandSourceStack>();
+            CommandTreeBridge.appendToRoot(commands, allowed, root);
+            sentTrees.add(root);
+        };
+        try (var scheduler = new TaskScheduler();
+             var runtime = new PluginRuntime(pluginsDir, pluginsDir, getClass().getClassLoader(), commands,
+                     new EventDispatcher(), permissions, scheduler)) {
+            runtime.loadPlugins();
+            runtime.enablePlugins();
+            synchronizer.tick(refresh);
+            assertThat(sentTrees).hasSize(1);
+            assertThat(sentTrees.getLast().getChild("hello").getChild("world").getChild("name")).isNotNull();
+
+            var updatedSource = pluginSource().replace("@Command(\"hello\")", "@Command(\"updated\")")
+                    .replace("{\"alpha\", \"beta\"}", "{\"gamma\", \"delta\"}");
+            PluginRuntimeTestSupport.createPluginJar(tempDir, jarPath, descriptor,
+                    Map.of("testplugins/demo/DemoPlugin.java", updatedSource), List.of());
+            assertThat(runtime.reloadPlugin("demo", false).success()).isTrue();
+            synchronizer.tick(refresh);
+            synchronizer.tick(refresh);
+            assertThat(sentTrees).hasSize(2);
+            assertThat(sentTrees.getLast().getChild("hello")).isNull();
+            assertThat(sentTrees.getLast().getChild("demo:hello")).isNull();
+            assertThat(sentTrees.getLast().getChild("updated").getChild("world").getChild("name")).isNotNull();
+            assertThat(commands.suggestions(allowed, List.of("updated", "world", ""))).containsExactly("gamma", "delta");
+
+            assertThat(runtime.disablePlugin("demo", false).success()).isTrue();
+            synchronizer.tick(refresh);
+            assertThat(sentTrees).hasSize(3);
+            assertThat(sentTrees.getLast().getChildren()).isEmpty();
+
+            assertThat(runtime.enablePlugin("demo").success()).isTrue();
+            synchronizer.tick(refresh);
+            assertThat(sentTrees).hasSize(4);
+            assertThat(sentTrees.getLast().getChild("demo:updated")).isNotNull();
+
+            assertThat(runtime.reloadAllPlugins().success()).isTrue();
+            synchronizer.tick(refresh);
+            assertThat(sentTrees).hasSize(5);
+            assertThat(sentTrees.getLast().getChild("updated").getChild("world").getChild("name")).isNotNull();
+
+            assertThat(runtime.unloadPlugin("demo", false).success()).isTrue();
+            synchronizer.tick(refresh);
+            assertThat(sentTrees).hasSize(6);
+            assertThat(sentTrees.getLast().getChildren()).isEmpty();
+            assertThat(commands.suggestions(allowed, List.of(""))).isEmpty();
+
+            assertThat(runtime.loadPlugin("demo").success()).isTrue();
+            synchronizer.tick(refresh);
+            assertThat(sentTrees).hasSize(7);
+            assertThat(sentTrees.getLast().getChild("updated")).isNotNull();
+        }
     }
 
     private static final class Sender implements io.fand.api.command.CommandSender, io.fand.api.permission.PermissionSubject {

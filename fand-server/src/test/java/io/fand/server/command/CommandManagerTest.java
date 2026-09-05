@@ -31,16 +31,60 @@ final class CommandManagerTest {
     }
 
     @Test
-    void treatsConflictingLocalRootsAsNamespacedOnly() {
+    void keepsFirstLocalOwnerAndPromotesNextOwnerOnUnregister() {
         var manager = new CommandManager(new PermissionManager());
-        manager.register("reload", command -> command.namespace("fand").executes(context -> {}));
+        var first = manager.register("reload", command -> command.namespace("fand").executes(context -> {}));
         manager.register("reload", command -> command.namespace("tools").executes(context -> {}));
 
         var sender = new TestSender();
-        assertThat(manager.lookup("reload")).isEmpty();
-        assertThat(manager.resolve(sender, List.of("reload"))).isEmpty();
+        assertThat(manager.lookup("reload").orElseThrow().namespace()).isEqualTo("fand");
+        assertThat(manager.resolve(sender, List.of("reload")).orElseThrow().command().info().namespace()).isEqualTo("fand");
+        assertThat(manager.claims(List.of("reload"))).isTrue();
+        assertThat(manager.suggestions(sender, List.of("r"))).containsExactly("reload");
         assertThat(manager.resolve(sender, List.of("fand:reload"))).isPresent();
         assertThat(manager.resolve(sender, List.of("tools:reload"))).isPresent();
+
+        first.unregister();
+
+        assertThat(manager.lookup("reload").orElseThrow().namespace()).isEqualTo("tools");
+        assertThat(manager.resolve(sender, List.of("reload")).orElseThrow().command().info().namespace()).isEqualTo("tools");
+        assertThat(manager.suggestions(sender, List.of(""))).containsExactly("reload", "tools:reload");
+    }
+
+    @Test
+    void sharesConflictPolicyBetweenAliasesSubcommandsAndSuggestions() {
+        var manager = new CommandManager();
+        var first = manager.register("tool", command -> command.namespace("first").aliases("shared")
+                .literal("old", old -> old.executes(context -> {}))
+                .literal("reload", reload -> reload.executes(context -> {})));
+        manager.register("shared", command -> command.namespace("second")
+                .literal("next", next -> next.executes(context -> {})));
+        var sender = new TestSender();
+
+        assertThat(manager.suggestions(sender, List.of("shared", ""))).containsExactly("old", "reload");
+        assertThat(manager.resolve(sender, List.of("shared", "next"))).isEmpty();
+        assertThat(manager.resolve(sender, List.of("second:shared", "next"))).isPresent();
+
+        first.unregister();
+        first.unregister();
+
+        assertThat(manager.lookup("shared").orElseThrow().namespace()).isEqualTo("second");
+        assertThat(manager.suggestions(sender, List.of("shared", ""))).containsExactly("next");
+        assertThat(manager.claims(List.of("tool"))).isFalse();
+    }
+
+    @Test
+    void deniedLocalOwnerDoesNotFallThroughToAnotherPlugin() {
+        var manager = new CommandManager();
+        manager.register("shared", command -> command.namespace("first").permission("first.admin")
+                .executes(context -> {}));
+        manager.register("shared", command -> command.namespace("second").executes(context -> {}));
+        var sender = new TestSender();
+
+        assertThat(manager.claims(List.of("shared"))).isTrue();
+        assertThat(manager.resolve(sender, List.of("shared"))).isEmpty();
+        assertThat(manager.resolve(sender, List.of("second:shared"))).isPresent();
+        assertThat(manager.suggestions(sender, List.of(""))).containsExactly("second:shared");
     }
 
     @Test

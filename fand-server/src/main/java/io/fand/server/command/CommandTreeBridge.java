@@ -12,11 +12,8 @@ import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.tree.CommandNode;
 import com.mojang.brigadier.tree.RootCommandNode;
 import io.fand.api.command.CommandArgument;
-import io.fand.api.command.CommandArgumentType;
 import io.fand.api.command.CommandInfo;
-import io.fand.api.command.CommandRegistry;
 import io.fand.api.command.CommandSender;
-import java.util.LinkedHashMap;
 import java.util.List;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.arguments.EntityArgument;
@@ -29,69 +26,82 @@ public final class CommandTreeBridge {
     private CommandTreeBridge() {
     }
 
-    public static void appendToRoot(CommandRegistry registry, CommandSender sender, RootCommandNode<CommandSourceStack> root) {
-        var nodes = new LinkedHashMap<String, CommandNode<CommandSourceStack>>();
-        for (var entry : registry.visibleCommands(sender)) {
-            for (var rootLabel : rootKeys(entry)) {
-                appendEntry(registry, root, nodes, entry, rootLabel);
+    public static void appendToRoot(CommandManager registry, CommandSender sender, RootCommandNode<CommandSourceStack> root) {
+        var nodes = new RootCommandNode<CommandSourceStack>();
+        for (var entry : registry.visibleEntries(sender)) {
+            for (var rootLabel : CommandManager.rootKeys(entry.info())) {
+                appendEntry(registry, nodes, entry, rootLabel);
             }
         }
+        // This is the outgoing client tree, never the server dispatcher. Claimed
+        // roots must not retain vanilla branches that Fand execution shadows.
+        root.getChildren().removeIf(child -> registry.claims(List.of(child.getName())));
+        nodes.getChildren().forEach(root::addChild);
     }
 
     private static void appendEntry(
-            CommandRegistry registry,
-            RootCommandNode<CommandSourceStack> root,
-            LinkedHashMap<String, CommandNode<CommandSourceStack>> nodes,
-            CommandInfo entry,
+            CommandManager registry,
+            RootCommandNode<CommandSourceStack> nodes,
+            CommandManager.CommandEntry entry,
             String rootLabel
     ) {
-        var namespacedRoot = entry.namespace() + ":" + rootLabel;
-        appendPath(
-                nodes.computeIfAbsent(namespacedRoot, label -> attach(root, literal(label))),
-                entry.path(),
-                entry.arguments()
-        );
-
-        if (localRootVisible(registry, entry, rootLabel)) {
-            appendPath(
-                    nodes.computeIfAbsent(rootLabel, label -> attach(root, literal(label))),
-                    entry.path(),
-                    entry.arguments()
-            );
+        appendRoot(nodes, entry.info().namespace() + ":" + rootLabel, entry.route());
+        if (localRootVisible(registry, entry.info(), rootLabel)) {
+            appendRoot(nodes, rootLabel, entry.route());
         }
     }
 
-    private static boolean localRootVisible(CommandRegistry registry, CommandInfo entry, String rootLabel) {
+    private static boolean localRootVisible(CommandManager registry, CommandInfo entry, String rootLabel) {
         return registry.lookup(rootLabel)
                 .filter(found -> found.namespace().equals(entry.namespace()))
-                .filter(found -> rootKeys(found).contains(rootLabel))
                 .isPresent();
     }
 
-    private static void appendPath(CommandNode<CommandSourceStack> root, List<String> path, List<CommandArgument> arguments) {
-        var current = root;
-        for (var segment : path) {
-            current = attach(current, literal(segment));
+    private static void appendRoot(
+            RootCommandNode<CommandSourceStack> nodes,
+            String label,
+            List<CommandManager.PathToken> route
+    ) {
+        var builder = literal(label);
+        if (optionalTail(route, 0)) {
+            builder.executes(context -> 1);
         }
-        attachArguments(current, arguments);
+        var branch = builder.build();
+        appendPath(branch, route, 0);
+        nodes.addChild(branch);
     }
 
-    private static void attachArguments(CommandNode<CommandSourceStack> node, List<CommandArgument> arguments) {
-        var current = node;
-        for (int index = 0; index < arguments.size(); index++) {
-            var argument = arguments.get(index);
-            var existing = current.getChild(argument.name());
-            if (existing != null) {
-                current = existing;
-                continue;
-            }
-            var child = argument(argument.name(), argumentType(argument, index == arguments.size() - 1))
-                    .suggests(SuggestionProviders.cast(SuggestionProviders.ASK_SERVER))
-                    .executes(context -> 1)
-                    .build();
-            current.addChild(child);
-            current = child;
+    private static void appendPath(
+            CommandNode<CommandSourceStack> parent,
+            List<CommandManager.PathToken> route,
+            int index
+    ) {
+        if (index == route.size()) {
+            return;
         }
+        var token = route.get(index);
+        var builder = token.literal()
+                ? literal(token.name())
+                : argument(token.name(), argumentType(token.metadata(), index == route.size() - 1))
+                        .suggests(SuggestionProviders.cast(SuggestionProviders.ASK_SERVER));
+        if (optionalTail(route, index + 1)) {
+            builder.executes(context -> 1);
+        }
+        var child = builder.build();
+        appendPath(child, route, index + 1);
+        parent.addChild(child);
+        if (token.optionalArgument()) {
+            appendPath(parent, route, index + 1);
+        }
+    }
+
+    private static boolean optionalTail(List<CommandManager.PathToken> route, int start) {
+        for (int index = start; index < route.size(); index++) {
+            if (!route.get(index).optionalArgument()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static ArgumentType<?> argumentType(CommandArgument argument, boolean last) {
@@ -112,23 +122,6 @@ public final class CommandTreeBridge {
             case GREEDY_STRING -> StringArgumentType.greedyString();
             case STRING -> last ? StringArgumentType.greedyString() : StringArgumentType.word();
         };
-    }
-
-    private static CommandNode<CommandSourceStack> attach(CommandNode<CommandSourceStack> parent, LiteralArgumentBuilder<CommandSourceStack> builder) {
-        var existing = parent.getChild(builder.getLiteral());
-        if (existing != null) {
-            return existing;
-        }
-        var built = builder.executes(context -> 1).build();
-        parent.addChild(built);
-        return built;
-    }
-
-    private static List<String> rootKeys(CommandInfo info) {
-        var roots = new java.util.ArrayList<String>(1 + info.aliases().size());
-        roots.add(info.label());
-        roots.addAll(info.aliases());
-        return roots;
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> literal(String name) {

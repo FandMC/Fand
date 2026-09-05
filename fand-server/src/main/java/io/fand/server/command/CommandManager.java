@@ -46,6 +46,22 @@ public final class CommandManager implements CommandRegistry {
         this.permissions = permissions;
     }
 
+    long revision() {
+        return snapshot.revision;
+    }
+
+    List<CommandEntry> visibleEntries(CommandSender sender) {
+        var entries = new LinkedHashSet<CommandEntry>();
+        for (var path : snapshot.namespacedPaths.values()) {
+            for (var entry : path) {
+                if (entry.allowed(sender)) {
+                    entries.add(entry);
+                }
+            }
+        }
+        return List.copyOf(entries);
+    }
+
     @Override
     public CommandRegistration register(Object command) {
         return AnnotatedCommands.register(this, command);
@@ -64,14 +80,9 @@ public final class CommandManager implements CommandRegistry {
     @Override
     public List<CommandInfo> visibleCommands(CommandSender sender) {
         Objects.requireNonNull(sender, "sender");
-        var current = snapshot;
         var seen = new LinkedHashSet<CommandInfo>();
-        for (var entries : current.namespacedPaths.values()) {
-            for (var entry : entries) {
-                if (entry.allowed(sender)) {
-                    seen.add(entry.info());
-                }
-            }
+        for (var entry : visibleEntries(sender)) {
+            seen.add(entry.info());
         }
         return List.copyOf(seen);
     }
@@ -87,7 +98,7 @@ public final class CommandManager implements CommandRegistry {
         if (first.contains(":")) {
             return claimsNamespacedRoot(current, first);
         }
-        return current.uniqueLocalRoots.containsKey(first);
+        return current.localRootOwners.containsKey(first);
     }
 
     @Override
@@ -98,7 +109,7 @@ public final class CommandManager implements CommandRegistry {
         if (normalized.contains(":")) {
             return firstActive(rootEntries(current, normalized)).map(CommandEntry::info);
         }
-        var owner = current.uniqueLocalRoots.get(normalized);
+        var owner = current.localRootOwners.get(normalized);
         return owner == null ? Optional.empty() : firstActive(rootEntries(current, owner)).map(CommandEntry::info);
     }
 
@@ -130,7 +141,7 @@ public final class CommandManager implements CommandRegistry {
         }
         var entries = root.contains(":")
                 ? rootEntries(current, root)
-                : current.uniqueLocalRoots.containsKey(root) ? rootEntries(current, current.uniqueLocalRoots.get(root)) : List.<CommandEntry>of();
+                : current.localRootOwners.containsKey(root) ? rootEntries(current, current.localRootOwners.get(root)) : List.<CommandEntry>of();
         if (entries.isEmpty()) {
             return List.of();
         }
@@ -147,7 +158,6 @@ public final class CommandManager implements CommandRegistry {
 
             var namespacedPaths = copyPaths(current.namespacedPaths);
             var localRoots = copyLocalRoots(current.localRoots);
-            var uniqueLocalRoots = new LinkedHashMap<>(current.uniqueLocalRoots);
             for (var pending : pendingEntries) {
                 var info = pending.info();
                 PermissionDescriptor autoPermission = null;
@@ -168,12 +178,12 @@ public final class CommandManager implements CommandRegistry {
                     namespacedPaths.computeIfAbsent(key, ignored -> new ArrayList<>()).add(entry);
                 }
                 for (var root : rootKeys(info)) {
-                    trackLocalRoot(root, rootOwner(info.namespace(), root), localRoots, uniqueLocalRoots);
+                    trackLocalRoot(root, rootOwner(info.namespace(), root), localRoots);
                 }
             }
-            snapshot = Snapshot.of(namespacedPaths, localRoots, uniqueLocalRoots);
+            snapshot = Snapshot.of(namespacedPaths, localRoots, current.revision + 1);
         }
-        return entries.size() == 1 ? new Registration(this, entries.getFirst()) : new CombinedRegistration(this, entries);
+        return new Registration(this, entries);
     }
 
     private static void validateAvailable(Snapshot current, CommandInfo info) {
@@ -208,7 +218,7 @@ public final class CommandManager implements CommandRegistry {
             String root,
             List<String> tail
     ) {
-        var owner = current.uniqueLocalRoots.get(root);
+        var owner = current.localRootOwners.get(root);
         if (owner == null) {
             return Optional.empty();
         }
@@ -233,7 +243,7 @@ public final class CommandManager implements CommandRegistry {
 
     private List<String> rootSuggestions(Snapshot current, CommandSender sender, String prefix) {
         var suggestions = new LinkedHashSet<String>();
-        for (var entry : current.uniqueLocalRoots.entrySet()) {
+        for (var entry : current.localRootOwners.entrySet()) {
             if (entry.getKey().startsWith(prefix) && ownerAllowed(current, sender, entry.getValue())) {
                 suggestions.add(entry.getKey());
             }
@@ -278,30 +288,26 @@ public final class CommandManager implements CommandRegistry {
         entry.addSuggestions(sender, localRoot(usedRoot), subTokens, suggestions);
     }
 
-    private void unregister(CommandEntry entry) {
+    private void unregisterAll(List<CommandEntry> entries) {
         synchronized (lock) {
-            if (!entry.active) {
+            var activeEntries = entries.stream().filter(CommandEntry::active).toList();
+            if (activeEntries.isEmpty()) {
                 return;
             }
             var current = snapshot;
             var namespacedPaths = copyPaths(current.namespacedPaths);
             var localRoots = copyLocalRoots(current.localRoots);
-            var uniqueLocalRoots = new LinkedHashMap<>(current.uniqueLocalRoots);
-            entry.active = false;
-            for (var key : pathKeys(entry.info)) {
-                removePathEntry(namespacedPaths, key, entry);
+            for (var entry : activeEntries) {
+                entry.active = false;
+                for (var key : pathKeys(entry.info)) {
+                    removePathEntry(namespacedPaths, key, entry);
+                }
+                for (var root : rootKeys(entry.info)) {
+                    untrackLocalRoot(root, rootOwner(entry.info.namespace(), root), localRoots);
+                }
+                entry.relinquishAutoPermission();
             }
-            for (var root : rootKeys(entry.info)) {
-                untrackLocalRoot(root, rootOwner(entry.info.namespace(), root), localRoots, uniqueLocalRoots);
-            }
-            snapshot = Snapshot.of(namespacedPaths, localRoots, uniqueLocalRoots);
-        }
-        entry.relinquishAutoPermission();
-    }
-
-    private void unregisterAll(List<CommandEntry> entries) {
-        for (var entry : entries) {
-            unregister(entry);
+            snapshot = Snapshot.of(namespacedPaths, localRoots, current.revision + 1);
         }
     }
 
@@ -319,23 +325,16 @@ public final class CommandManager implements CommandRegistry {
     private static void trackLocalRoot(
             String root,
             String owner,
-            LinkedHashMap<String, LinkedHashMap<String, Integer>> localRoots,
-            LinkedHashMap<String, String> uniqueLocalRoots
+            LinkedHashMap<String, LinkedHashMap<String, Integer>> localRoots
     ) {
         var owners = localRoots.computeIfAbsent(root, ignored -> new LinkedHashMap<>());
         owners.put(owner, owners.getOrDefault(owner, 0) + 1);
-        if (owners.size() == 1) {
-            uniqueLocalRoots.put(root, owner);
-        } else {
-            uniqueLocalRoots.remove(root);
-        }
     }
 
     private static void untrackLocalRoot(
             String root,
             String owner,
-            LinkedHashMap<String, LinkedHashMap<String, Integer>> localRoots,
-            LinkedHashMap<String, String> uniqueLocalRoots
+            LinkedHashMap<String, LinkedHashMap<String, Integer>> localRoots
     ) {
         var owners = localRoots.get(root);
         if (owners == null) {
@@ -352,11 +351,6 @@ public final class CommandManager implements CommandRegistry {
         }
         if (owners.isEmpty()) {
             localRoots.remove(root);
-            uniqueLocalRoots.remove(root);
-        } else if (owners.size() == 1) {
-            uniqueLocalRoots.put(root, owners.keySet().iterator().next());
-        } else {
-            uniqueLocalRoots.remove(root);
         }
     }
 
@@ -557,26 +551,30 @@ public final class CommandManager implements CommandRegistry {
     private record Snapshot(
             Map<String, List<CommandEntry>> namespacedPaths,
             Map<String, Map<String, Integer>> localRoots,
-            Map<String, String> uniqueLocalRoots
+            Map<String, String> localRootOwners,
+            long revision
     ) {
 
         private static Snapshot empty() {
-            return of(new LinkedHashMap<>(), new LinkedHashMap<>(), new LinkedHashMap<>());
+            return of(new LinkedHashMap<>(), new LinkedHashMap<>(), 0);
         }
 
         private static Snapshot of(
                 LinkedHashMap<String, List<CommandEntry>> namespacedPaths,
                 LinkedHashMap<String, LinkedHashMap<String, Integer>> localRoots,
-                LinkedHashMap<String, String> uniqueLocalRoots
+                long revision
         ) {
             var paths = new LinkedHashMap<String, List<CommandEntry>>();
             namespacedPaths.forEach((key, entries) -> paths.put(key, List.copyOf(entries)));
             var roots = new LinkedHashMap<String, Map<String, Integer>>();
             localRoots.forEach((key, owners) -> roots.put(key, Collections.unmodifiableMap(new LinkedHashMap<>(owners))));
+            var selectedOwners = new LinkedHashMap<String, String>();
+            localRoots.forEach((key, owners) -> selectedOwners.put(key, owners.firstEntry().getKey()));
             return new Snapshot(
                     Collections.unmodifiableMap(paths),
                     Collections.unmodifiableMap(roots),
-                    Collections.unmodifiableMap(new LinkedHashMap<>(uniqueLocalRoots))
+                    Collections.unmodifiableMap(selectedOwners),
+                    revision
             );
         }
     }
@@ -674,7 +672,7 @@ public final class CommandManager implements CommandRegistry {
         }
     }
 
-    private static final class PathToken {
+    static final class PathToken {
 
         private final @Nullable String literal;
         private final @Nullable RuntimeArgument argument;
@@ -714,6 +712,10 @@ public final class CommandManager implements CommandRegistry {
             return argument;
         }
 
+        CommandArgument metadata() {
+            return argument().argument().metadata(name());
+        }
+
         boolean matchesArgument(String raw) {
             if (argument == null) {
                 return false;
@@ -741,30 +743,9 @@ public final class CommandManager implements CommandRegistry {
     private static final class Registration implements CommandRegistration {
 
         private final CommandManager owner;
-        private final CommandEntry entry;
-
-        private Registration(CommandManager owner, CommandEntry entry) {
-            this.owner = owner;
-            this.entry = entry;
-        }
-
-        @Override
-        public boolean active() {
-            return entry.active;
-        }
-
-        @Override
-        public void unregister() {
-            owner.unregister(entry);
-        }
-    }
-
-    private static final class CombinedRegistration implements CommandRegistration {
-
-        private final CommandManager owner;
         private final List<CommandEntry> entries;
 
-        private CombinedRegistration(CommandManager owner, List<CommandEntry> entries) {
+        private Registration(CommandManager owner, List<CommandEntry> entries) {
             this.owner = owner;
             this.entries = List.copyOf(entries);
         }
@@ -817,6 +798,10 @@ public final class CommandManager implements CommandRegistry {
 
         public CommandInfo info() {
             return info;
+        }
+
+        List<PathToken> route() {
+            return route;
         }
 
         public void execute(CommandSender sender, String label, List<String> args) throws Exception {

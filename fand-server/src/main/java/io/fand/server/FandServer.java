@@ -63,6 +63,7 @@ import io.fand.server.chunk.ChunkSendScheduler;
 import io.fand.server.chunk.ChunkTrackingMetrics;
 import io.fand.server.chunk.ChunkTaskExecutors;
 import io.fand.server.command.CommandManager;
+import io.fand.server.command.CommandTreeSynchronizer;
 import io.fand.server.compat.modprotocol.ModProtocolCompatibility;
 import io.fand.server.config.ConfigReloadResult;
 import io.fand.server.config.ConfigReloader;
@@ -149,6 +150,7 @@ public final class FandServer implements Server, AutoCloseable {
     private final EventDispatcher events;
     private final PermissionManager permissions;
     private final CommandManager commands;
+    private final CommandTreeSynchronizer commandTrees;
     private final TaskScheduler scheduler;
     private final ChunkSendScheduler chunks;
     private final ChunkTaskExecutors chunkTasks;
@@ -225,8 +227,10 @@ public final class FandServer implements Server, AutoCloseable {
         this.events = new EventDispatcher();
         this.permissions = new PermissionManager(events);
         this.commands = new CommandManager(permissions);
+        this.commandTrees = new CommandTreeSynchronizer(commands);
         registerBuiltinCommands();
-        this.scheduler = new TaskScheduler(initialConfig.scheduler.asyncThreads, initialConfig.scheduler.regionThreads);
+        this.scheduler = new TaskScheduler(
+                initialConfig.scheduler.asyncThreads, initialConfig.scheduler.regionThreads, minecraftServer::get);
         this.chunks = new ChunkSendScheduler(initialConfig.chunks);
         this.chunkTasks = new ChunkTaskExecutors(initialConfig.chunks);
         this.asyncChunkPackets = new AsyncChunkPacketSender(initialConfig.chunks.asyncChunkPacketPreparation);
@@ -489,6 +493,11 @@ public final class FandServer implements Server, AutoCloseable {
         var server = minecraftServer.get();
         if (server != null) {
             modProtocols.tick(server);
+            commandTrees.tick(() -> {
+                for (var player : server.getPlayerList().getPlayers()) {
+                    server.getCommands().sendCommands(player);
+                }
+            });
         }
         for (var world : worlds()) {
             customBlocks.tick(world);

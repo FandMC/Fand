@@ -3,6 +3,7 @@ package io.fand.server.command;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mojang.brigadier.tree.ArgumentCommandNode;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.tree.RootCommandNode;
 import io.fand.api.command.Arguments;
 import io.fand.api.command.CommandSender;
@@ -64,17 +65,41 @@ final class CommandTreeBridgeTest {
     }
 
     @Test
-    void omitsAmbiguousLocalRootsButKeepsNamespacedRoots() {
+    void advertisesOnlySelectedLocalOwnerAndKeepsNamespacedRoots() {
         var manager = new CommandManager(new io.fand.server.permission.PermissionManager());
-        manager.register("reload", command -> command.namespace("fand").executes(context -> {}));
-        manager.register("reload", command -> command.namespace("tools").executes(context -> {}));
+        manager.register("reload", command -> command.namespace("fand")
+                .literal("first", first -> first.executes(context -> {})));
+        manager.register("reload", command -> command.namespace("tools")
+                .literal("second", second -> second.executes(context -> {})));
 
         var root = new RootCommandNode<CommandSourceStack>();
         CommandTreeBridge.appendToRoot(manager, new TestSender(), root);
 
-        assertThat(root.getChild("reload")).isNull();
+        assertThat(root.getChild("reload").getChild("first")).isNotNull();
+        assertThat(root.getChild("reload").getChild("second")).isNull();
         assertThat(root.getChild("fand:reload")).isNotNull();
         assertThat(root.getChild("tools:reload")).isNotNull();
+    }
+
+    @Test
+    void preservesLiteralOrderAfterArgumentsAndOptionalExecutability() {
+        var manager = new CommandManager();
+        manager.register("demo", command -> command.namespace("test")
+                .argument("value", Arguments.word(), value -> value
+                        .literal("confirm", confirm -> confirm
+                                .argument("force", Arguments.bool().asOptional(false), force -> force.executes(context -> {})))));
+        var root = new RootCommandNode<CommandSourceStack>();
+
+        CommandTreeBridge.appendToRoot(manager, new TestSender(), root);
+
+        var demo = root.getChild("demo");
+        var value = demo.getChild("value");
+        var confirm = value.getChild("confirm");
+        assertThat(demo.getChild("confirm")).isNull();
+        assertThat(demo.getCommand()).isNull();
+        assertThat(value.getCommand()).isNull();
+        assertThat(confirm.getCommand()).isNotNull();
+        assertThat(confirm.getChild("force").getCommand()).isNotNull();
     }
 
     @Test
@@ -96,7 +121,57 @@ final class CommandTreeBridgeTest {
         assertThat(((ArgumentCommandNode<?, ?>) amount).getType().getClass().getName()).contains("IntegerArgumentType");
     }
 
-    private static final class TestSender implements CommandSender {
+    @Test
+    void replacesShadowedVanillaBranchesAndRestoresThemAfterUnregister() {
+        var manager = new CommandManager();
+        var registration = manager.register("give", command -> command.namespace("demo")
+                .literal("custom", child -> child.executes(context -> {})));
+        var root = vanillaRoot();
+
+        CommandTreeBridge.appendToRoot(manager, new TestSender(), root);
+
+        assertThat(root.getChild("give").getChild("vanilla")).isNull();
+        assertThat(root.getChild("give").getChild("custom")).isNotNull();
+        assertThat(root.getChild("help")).isNotNull();
+
+        registration.unregister();
+        var refreshed = vanillaRoot();
+        CommandTreeBridge.appendToRoot(manager, new TestSender(), refreshed);
+
+        assertThat(refreshed.getChild("give").getChild("vanilla")).isNotNull();
+        assertThat(refreshed.getChild("give").getChild("custom")).isNull();
+        assertThat(refreshed.getChild("demo:give")).isNull();
+    }
+
+    @Test
+    void hidesShadowedVanillaRootWhenPluginPermissionIsDenied() {
+        var manager = new CommandManager();
+        manager.register("give", command -> command.namespace("demo").permission("demo.admin")
+                .executes(context -> {}));
+        var root = vanillaRoot();
+        var denied = new TestSender() {
+            @Override
+            public boolean can(String permission) {
+                return false;
+            }
+        };
+
+        CommandTreeBridge.appendToRoot(manager, denied, root);
+
+        assertThat(root.getChild("give")).isNull();
+        assertThat(root.getChild("demo:give")).isNull();
+        assertThat(root.getChild("help")).isNotNull();
+    }
+
+    private static RootCommandNode<CommandSourceStack> vanillaRoot() {
+        var root = new RootCommandNode<CommandSourceStack>();
+        root.addChild(LiteralArgumentBuilder.<CommandSourceStack>literal("give")
+                .then(LiteralArgumentBuilder.<CommandSourceStack>literal("vanilla").executes(context -> 1)).build());
+        root.addChild(LiteralArgumentBuilder.<CommandSourceStack>literal("help").executes(context -> 1).build());
+        return root;
+    }
+
+    private static class TestSender implements CommandSender {
         @Override
         public String name() {
             return "test";
