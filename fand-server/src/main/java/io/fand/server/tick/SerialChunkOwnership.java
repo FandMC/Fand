@@ -1,6 +1,7 @@
 package io.fand.server.tick;
 
 import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -58,6 +59,17 @@ public final class SerialChunkOwnership<H> implements AutoCloseable {
         requireControlThread();
         return new Snapshot(ownership.installedChunks(), ownership.topology().activeCells().size(),
                 ownership.topology().regions().size(), closed);
+    }
+
+    public OwnershipCell cellAtChunk(int chunkX, int chunkZ) {
+        return ownership.topology().cellAtChunk(chunkX, chunkZ);
+    }
+
+    /** Diagnostic ownership only; this does not grant a region execution lease. */
+    public OptionalLong regionIdAt(OwnershipCell cell) {
+        requireControlThread();
+        var region = ownership.topology().ownerOf(cell).orElse(null);
+        return region == null ? OptionalLong.empty() : OptionalLong.of(region.id());
     }
 
     @Override

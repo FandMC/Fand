@@ -58,6 +58,27 @@ class SerialChunkOwnershipTest {
     }
 
     @Test
+    void simulationCellsResolveCurrentOwnersAcrossMergeSplitAndRetirement() {
+        try (var ownership = new SerialChunkOwnership<String>(Runnable::run, 4, 1)) {
+            assertThat(ownership.cellAtChunk(-1, -5)).isEqualTo(new OwnershipCell(-1, -2));
+            var leftCell = ownership.cellAtChunk(0, 0);
+            var rightCell = ownership.cellAtChunk(16, 0);
+            assertThat(ownership.regionIdAt(leftCell)).isEmpty();
+            var left = ownership.attach(0, 0, "left");
+            ownership.attach(16, 0, "right");
+            assertThat(ownership.regionIdAt(leftCell)).isPresent().isNotEqualTo(ownership.regionIdAt(rightCell));
+
+            var bridge = ownership.attach(8, 0, "bridge");
+            assertThat(ownership.regionIdAt(leftCell)).isEqualTo(ownership.regionIdAt(rightCell));
+            ownership.detach(bridge);
+            assertThat(ownership.regionIdAt(leftCell)).isPresent().isNotEqualTo(ownership.regionIdAt(rightCell));
+            ownership.detach(left);
+            assertThat(ownership.regionIdAt(leftCell)).isEmpty();
+            assertThat(ownership.regionIdAt(rightCell)).isPresent();
+        }
+    }
+
+    @Test
     void replacementCancelsOldQueuedPublicationWithoutTouchingTheNewLifetime() {
         var loop = new QueuedExecutor();
         try (var ownership = new SerialChunkOwnership<String>(loop, 4, 1)) {
@@ -153,6 +174,7 @@ class SerialChunkOwnershipTest {
                 assertThatThrownBy(() -> ownership.attach(1, 1, "bad")).isInstanceOf(IllegalStateException.class);
                 assertThatThrownBy(() -> ownership.detach(lifetime)).isInstanceOf(IllegalStateException.class);
                 assertThatThrownBy(ownership::close).isInstanceOf(IllegalStateException.class);
+                assertThatThrownBy(() -> ownership.regionIdAt(new OwnershipCell(0, 0))).isInstanceOf(IllegalStateException.class);
             }).get(5, TimeUnit.SECONDS);
             assertThat(lifetime.active()).isTrue();
         }

@@ -1,0 +1,524 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 5 Sep 2026 22:48:31 +0800
+Subject: [PATCH] Partition entity and block entity tick membership into cells
+
+
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index 5ac7f5a78dec18acd967a45a5805e2d7a224e19b..daca9a996732d634a154883414a8c5cb7ab75c8e 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -632,6 +632,14 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         return this.fandChunkOwnership.snapshot();
+     }
+ 
++    public io.fand.server.tick.OwnershipCell fand$cellAtChunk(final int chunkX, final int chunkZ) {
++        return this.fandChunkOwnership.cellAtChunk(chunkX, chunkZ);
++    }
++
++    public java.util.OptionalLong fand$regionIdAt(final io.fand.server.tick.OwnershipCell cell) {
++        return this.fandChunkOwnership.regionIdAt(cell);
++    }
++
+     private CompletableFuture<ChunkAccess> scheduleChunkLoad(final GenerationChunkHolder holder) {
+         ChunkPos pos = holder.getPos();
+         var lifetime = holder.fand$ownership();
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index 65891b392c4edc7c85d02891eea8a18ec6850bd2..f9c7651f0b1871db11abf6e5c54a06bf0c7c8bbc 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -21,6 +21,7 @@ import java.util.ArrayList;
+ import java.util.Collection;
+ import java.util.Comparator;
+ import java.util.List;
++import java.util.Map;
+ import java.util.Locale;
+ import java.util.Objects;
+ import java.util.Optional;
+@@ -197,7 +198,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     private final ServerChunkCache chunkSource;
+     private final MinecraftServer server;
+     private final ServerLevelData serverLevelData;
+-    private final EntityTickList entityTickList = new EntityTickList();
++    private final EntityTickList entityTickList = new EntityTickList(entity -> this.fand$simulationCellAt(entity.blockPosition()));
+     private final ServerWaypointManager waypointManager;
+     private EnvironmentAttributeSystem environmentAttributes;
+     private final PersistentEntitySectionManager<Entity> entityManager;
+@@ -911,6 +912,31 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+         }
+     }
+ 
++    @Override
++    protected io.fand.server.tick.OwnershipCell fand$simulationCellAt(final BlockPos pos) {
++        return this.chunkSource.chunkMap.fand$cellAtChunk(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()));
++    }
++
++    public Map<io.fand.server.tick.OwnershipCell, FandCellSimulation> fand$simulationCells() {
++        if (!this.server.isSameThread()) {
++            throw new IllegalStateException("Simulation snapshots belong to the world control thread");
++        }
++        Map<io.fand.server.tick.OwnershipCell, Integer> entities = this.entityTickList.cellSizes();
++        Map<io.fand.server.tick.OwnershipCell, Integer> blockEntities = this.blockEntityTickers.cellSizes();
++        Map<io.fand.server.tick.OwnershipCell, Integer> pendingBlockEntities = this.blockEntityTickers.pendingCellSizes();
++        java.util.Set<io.fand.server.tick.OwnershipCell> cells = new java.util.TreeSet<>(entities.keySet());
++        cells.addAll(blockEntities.keySet());
++        cells.addAll(pendingBlockEntities.keySet());
++        Map<io.fand.server.tick.OwnershipCell, FandCellSimulation> result = new java.util.TreeMap<>();
++        for (var cell : cells) {
++            result.put(cell, new FandCellSimulation(entities.getOrDefault(cell, 0), blockEntities.getOrDefault(cell, 0),
++                pendingBlockEntities.getOrDefault(cell, 0), this.chunkSource.chunkMap.fand$regionIdAt(cell)));
++        }
++        return java.util.Collections.unmodifiableMap(result);
++    }
++
++    public record FandCellSimulation(int entities, int blockEntities, int pendingBlockEntities, java.util.OptionalLong regionId) {}
++
+     public void tickNonPassenger(final Entity entity) {
+         entity.setOldPosAndRot();
+         ProfilerFiller profiler = Profiler.get();
+@@ -2122,6 +2148,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+ 
+         @Override
+         public void onSectionChange(final Entity entity) {
++            ServerLevel.this.entityTickList.move(entity);
+             entity.updateDynamicGameEventListener(DynamicGameEventListener::move);
+         }
+     }
+diff --git a/net/minecraft/world/level/CellTickList.java b/net/minecraft/world/level/CellTickList.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..d708f71231a48f3d10c62e936f138f5e4ee9a481
+--- /dev/null
++++ b/net/minecraft/world/level/CellTickList.java
+@@ -0,0 +1,171 @@
++package net.minecraft.world.level;
++
++import io.fand.server.tick.OwnershipCell;
++import java.util.ArrayList;
++import java.util.Comparator;
++import java.util.HashMap;
++import java.util.IdentityHashMap;
++import java.util.Iterator;
++import java.util.List;
++import java.util.Map;
++import java.util.NavigableMap;
++import java.util.Objects;
++import java.util.PriorityQueue;
++import java.util.TreeMap;
++import java.util.function.Consumer;
++import java.util.function.Function;
++import org.jspecify.annotations.Nullable;
++
++/**
++ * Stores simulation members in cells while preserving registration order for
++ * the serial world tick. Moving a member keeps its order. The serial traversal
++ * is an immutable cached view, rebuilt only when membership or identity changes.
++ * This collection belongs to the world thread, not to concurrent region ticks.
++ */
++public final class CellTickList<K, T> implements Iterable<T> {
++    public static final OwnershipCell SINGLE_CELL = new OwnershipCell(0, 0);
++    private final Function<T, K> keyOf;
++    private final Function<T, OwnershipCell> cellOf;
++    private final Map<K, Entry<T>> index;
++    private final Map<OwnershipCell, NavigableMap<Long, Entry<T>>> cells = new HashMap<>();
++    private @Nullable List<T> orderedSnapshot;
++    private long nextOrder;
++
++    public CellTickList(Function<T, K> keyOf, Function<T, OwnershipCell> cellOf) {
++        this(keyOf, cellOf, new HashMap<>());
++    }
++
++    private CellTickList(Function<T, K> keyOf, Function<T, OwnershipCell> cellOf, Map<K, Entry<T>> index) {
++        this.keyOf = Objects.requireNonNull(keyOf);
++        this.cellOf = Objects.requireNonNull(cellOf);
++        this.index = index;
++    }
++
++    public static <T> CellTickList<T, T> byIdentity(Function<T, OwnershipCell> cellOf) {
++        return new CellTickList<>(Function.identity(), cellOf, new IdentityHashMap<>());
++    }
++
++    public void add(T value) {
++        K key = this.keyOf.apply(value);
++        OwnershipCell cell = this.cellOf.apply(value);
++        Entry<T> previous = this.index.get(key);
++        if (previous != null && previous.value == value && previous.cell.equals(cell)) {
++            return;
++        }
++        long order;
++        if (previous == null) {
++            order = this.nextOrder;
++            this.nextOrder = Math.incrementExact(this.nextOrder);
++        } else {
++            order = previous.order;
++            this.removeFromCell(previous);
++        }
++        Entry<T> entry = new Entry<>(value, cell, order);
++        this.cells.computeIfAbsent(cell, ignored -> new TreeMap<>()).put(order, entry);
++        this.index.put(key, entry);
++        if (previous == null || previous.value != value) {
++            this.orderedSnapshot = null;
++        }
++    }
++
++    public void move(T value) {
++        Entry<T> entry = this.index.get(this.keyOf.apply(value));
++        if (entry != null && entry.value == value) {
++            this.add(value);
++        }
++    }
++
++    public void remove(T value) {
++        K key = this.keyOf.apply(value);
++        Entry<T> entry = this.index.get(key);
++        if (entry != null && entry.value == value) {
++            this.removeFromCell(entry);
++            this.index.remove(key);
++            this.orderedSnapshot = null;
++        }
++    }
++
++    private void removeFromCell(Entry<T> entry) {
++        NavigableMap<Long, Entry<T>> cell = this.cells.get(entry.cell);
++        cell.remove(entry.order);
++        if (cell.isEmpty()) {
++            this.cells.remove(entry.cell);
++        }
++    }
++
++    public boolean contains(T value) {
++        Entry<T> entry = this.index.get(this.keyOf.apply(value));
++        return entry != null && entry.value == value;
++    }
++
++    public int size() {
++        return this.index.size();
++    }
++
++    public void clear() {
++        this.index.clear();
++        this.cells.clear();
++        this.orderedSnapshot = null;
++    }
++
++    public Map<OwnershipCell, Integer> cellSizes() {
++        Map<OwnershipCell, Integer> counts = new TreeMap<>();
++        this.cells.forEach((cell, members) -> counts.put(cell, members.size()));
++        return java.util.Collections.unmodifiableMap(counts);
++    }
++
++    @Override
++    public void forEach(Consumer<? super T> output) {
++        this.snapshot().forEach(output);
++    }
++
++    private List<T> snapshot() {
++        if (this.orderedSnapshot != null) {
++            return this.orderedSnapshot;
++        }
++        List<T> snapshot = new ArrayList<>(this.size());
++        if (this.cells.size() == 1) {
++            this.cells.values().iterator().next().values().forEach(entry -> snapshot.add(entry.value));
++        } else {
++            PriorityQueue<Cursor<T>> cursors = new PriorityQueue<>(Comparator.comparingLong(cursor -> cursor.next.order));
++            for (var cell : this.cells.values()) {
++                cursors.add(new Cursor<>(cell.values().iterator()));
++            }
++            Cursor<T> cursor;
++            while ((cursor = cursors.poll()) != null) {
++                snapshot.add(cursor.next.value);
++                if (cursor.advance()) {
++                    cursors.add(cursor);
++                }
++            }
++        }
++        this.orderedSnapshot = java.util.Collections.unmodifiableList(snapshot);
++        return this.orderedSnapshot;
++    }
++
++    /** Diagnostic iteration is also a stable snapshot, including during a tick. */
++    @Override
++    public Iterator<T> iterator() {
++        return this.snapshot().iterator();
++    }
++
++    private record Entry<T>(T value, OwnershipCell cell, long order) {}
++
++    private static final class Cursor<T> {
++        private final Iterator<Entry<T>> entries;
++        private Entry<T> next;
++
++        private Cursor(Iterator<Entry<T>> entries) {
++            this.entries = entries;
++            this.next = entries.next();
++        }
++
++        private boolean advance() {
++            if (!this.entries.hasNext()) {
++                return false;
++            }
++            this.next = this.entries.next();
++            return true;
++        }
++    }
++}
+diff --git a/net/minecraft/world/level/Level.java b/net/minecraft/world/level/Level.java
+index fc20a907c88bdf3e5af83ad32d62ecc0de44c070..146ff939a216d53295b2833be1bd81b71a1ee765 100644
+--- a/net/minecraft/world/level/Level.java
++++ b/net/minecraft/world/level/Level.java
+@@ -5,7 +5,6 @@ import com.mojang.serialization.Codec;
+ import java.io.IOException;
+ import java.util.ArrayList;
+ import java.util.Collection;
+-import java.util.Iterator;
+ import java.util.List;
+ import java.util.Locale;
+ import java.util.Optional;
+@@ -65,6 +64,7 @@ import net.minecraft.world.level.block.Block;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.LevelEvent;
+ import net.minecraft.world.level.block.entity.BlockEntity;
++import net.minecraft.world.level.block.entity.BlockEntityTickList;
+ import net.minecraft.world.level.block.entity.FuelValues;
+ import net.minecraft.world.level.block.entity.TickingBlockEntity;
+ import net.minecraft.world.level.block.state.BlockState;
+@@ -124,10 +124,8 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+             }
+         }
+     };
+-    protected final List<TickingBlockEntity> blockEntityTickers = Lists.newArrayList();
++    protected final BlockEntityTickList blockEntityTickers = new BlockEntityTickList(this::fand$simulationCellAt);
+     protected final CollectingNeighborUpdater neighborUpdater;
+-    private final List<TickingBlockEntity> pendingBlockEntityTickers = Lists.newArrayList();
+-    private boolean tickingBlockEntities;
+     private final Thread thread;
+     private final boolean isDebug;
+     private int skyDarken;
+@@ -611,29 +609,19 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+     }
+ 
+     public void addBlockEntityTicker(final TickingBlockEntity ticker) {
+-        (this.tickingBlockEntities ? this.pendingBlockEntityTickers : this.blockEntityTickers).add(ticker);
++        this.blockEntityTickers.add(ticker);
+     }
+ 
+-    public void tickBlockEntities() {
+-        this.tickingBlockEntities = true;
+-        if (!this.pendingBlockEntityTickers.isEmpty()) {
+-            this.blockEntityTickers.addAll(this.pendingBlockEntityTickers);
+-            this.pendingBlockEntityTickers.clear();
+-        }
+-
+-        Iterator<TickingBlockEntity> iterator = this.blockEntityTickers.iterator();
+-        boolean tickBlockEntities = this.tickRateManager().runsNormally();
++    public void removeBlockEntityTicker(final TickingBlockEntity ticker) {
++        this.blockEntityTickers.remove(ticker);
++    }
+ 
+-        while (iterator.hasNext()) {
+-            TickingBlockEntity ticker = iterator.next();
+-            if (ticker.isRemoved()) {
+-                iterator.remove();
+-            } else if (tickBlockEntities && this.shouldTickBlocksAt(ticker.getPos())) {
+-                ticker.tick();
+-            }
+-        }
++    protected io.fand.server.tick.OwnershipCell fand$simulationCellAt(final BlockPos pos) {
++        return CellTickList.SINGLE_CELL;
++    }
+ 
+-        this.tickingBlockEntities = false;
++    public void tickBlockEntities() {
++        this.blockEntityTickers.tick(this.tickRateManager().runsNormally(), this::shouldTickBlocksAt);
+     }
+ 
+     public <T extends Entity> void guardEntityTick(final Consumer<T> tick, final T entity) {
+diff --git a/net/minecraft/world/level/block/entity/BlockEntityTickList.java b/net/minecraft/world/level/block/entity/BlockEntityTickList.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c5f6859399e1e2319f55f06cb7adf0095bbb633d
+--- /dev/null
++++ b/net/minecraft/world/level/block/entity/BlockEntityTickList.java
+@@ -0,0 +1,74 @@
++package net.minecraft.world.level.block.entity;
++
++import io.fand.server.tick.OwnershipCell;
++import java.util.Iterator;
++import java.util.Map;
++import java.util.function.Function;
++import java.util.function.Predicate;
++import net.minecraft.core.BlockPos;
++import net.minecraft.world.level.CellTickList;
++
++/** Cell-owned live tickers and additions deferred until the next block-entity pass. */
++public final class BlockEntityTickList implements Iterable<TickingBlockEntity> {
++    private final CellTickList<TickingBlockEntity, TickingBlockEntity> active;
++    private final CellTickList<TickingBlockEntity, TickingBlockEntity> pending;
++    private boolean ticking;
++
++    public BlockEntityTickList(Function<BlockPos, OwnershipCell> cellOf) {
++        this.active = CellTickList.byIdentity(ticker -> cellOf.apply(ticker.getPos()));
++        this.pending = CellTickList.byIdentity(ticker -> cellOf.apply(ticker.getPos()));
++    }
++
++    public void add(TickingBlockEntity ticker) {
++        if (this.ticking) {
++            this.pending.add(ticker);
++        } else {
++            this.active.add(ticker);
++        }
++    }
++
++    public void remove(TickingBlockEntity ticker) {
++        this.active.remove(ticker);
++        this.pending.remove(ticker);
++    }
++
++    public void tick(boolean runsNormally, Predicate<BlockPos> shouldTick) {
++        if (this.ticking) {
++            throw new IllegalStateException("Block entity ticking cannot be reentered");
++        }
++        this.ticking = true;
++        try {
++            this.pending.forEach(this.active::add);
++            this.pending.clear();
++            this.active.forEach(ticker -> {
++                if (!this.active.contains(ticker)) {
++                    return;
++                }
++                if (ticker.isRemoved()) {
++                    this.active.remove(ticker);
++                } else if (runsNormally && shouldTick.test(ticker.getPos())) {
++                    ticker.tick();
++                }
++            });
++        } finally {
++            this.ticking = false;
++        }
++    }
++
++    public int size() {
++        return this.active.size();
++    }
++
++    public Map<OwnershipCell, Integer> cellSizes() {
++        return this.active.cellSizes();
++    }
++
++    public Map<OwnershipCell, Integer> pendingCellSizes() {
++        return this.pending.cellSizes();
++    }
++
++    @Override
++    public Iterator<TickingBlockEntity> iterator() {
++        return this.active.iterator();
++    }
++}
+diff --git a/net/minecraft/world/level/chunk/LevelChunk.java b/net/minecraft/world/level/chunk/LevelChunk.java
+index f581317d6fbb6fd239ff221b35440b3a3c4adb89..f5116706f91e984e814fdbda85db0784a8eabb02 100644
+--- a/net/minecraft/world/level/chunk/LevelChunk.java
++++ b/net/minecraft/world/level/chunk/LevelChunk.java
+@@ -538,6 +538,7 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+         LevelChunk.RebindableTickingBlockEntityWrapper ticker = this.tickersInLevel.remove(pos);
+         if (ticker != null) {
+             ticker.rebind(NULL_TICKER);
++            this.level.removeBlockEntityTicker(ticker);
+         }
+     }
+ 
+@@ -711,7 +712,10 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+     public void clearAllBlockEntities() {
+         this.blockEntities.values().forEach(BlockEntity::setRemoved);
+         this.blockEntities.clear();
+-        this.tickersInLevel.values().forEach(ticker -> ticker.rebind(NULL_TICKER));
++        this.tickersInLevel.values().forEach(ticker -> {
++            ticker.rebind(NULL_TICKER);
++            this.level.removeBlockEntityTicker(ticker);
++        });
+         this.tickersInLevel.clear();
+     }
+ 
+diff --git a/net/minecraft/world/level/entity/EntityTickList.java b/net/minecraft/world/level/entity/EntityTickList.java
+index 1fe402ed7e273063e32ed4d164c4098ee764703a..36de804bbd9491ff3abc123fc1fdc4395b394016 100644
+--- a/net/minecraft/world/level/entity/EntityTickList.java
++++ b/net/minecraft/world/level/entity/EntityTickList.java
+@@ -1,59 +1,44 @@
+ package net.minecraft.world.level.entity;
+ 
+-import it.unimi.dsi.fastutil.ints.Int2ObjectLinkedOpenHashMap;
+-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+-import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
+-import it.unimi.dsi.fastutil.ints.Int2ObjectMap.Entry;
++import io.fand.server.tick.OwnershipCell;
++import java.util.Map;
+ import java.util.function.Consumer;
++import java.util.function.Function;
+ import net.minecraft.world.entity.Entity;
+-import org.jspecify.annotations.Nullable;
++import net.minecraft.world.level.CellTickList;
+ 
+ public class EntityTickList {
+-    private Int2ObjectMap<Entity> active = new Int2ObjectLinkedOpenHashMap<>();
+-    private Int2ObjectMap<Entity> passive = new Int2ObjectLinkedOpenHashMap<>();
+-    private @Nullable Int2ObjectMap<Entity> iterated;
++    private final CellTickList<Integer, Entity> entities;
+ 
+-    private void ensureActiveIsNotIterated() {
+-        if (this.iterated == this.active) {
+-            this.passive.clear();
+-
+-            for (Entry<Entity> entry : Int2ObjectMaps.fastIterable(this.active)) {
+-                this.passive.put(entry.getIntKey(), entry.getValue());
+-            }
++    public EntityTickList() {
++        this(entity -> CellTickList.SINGLE_CELL);
++    }
+ 
+-            Int2ObjectMap<Entity> tmp = this.active;
+-            this.active = this.passive;
+-            this.passive = tmp;
+-        }
++    public EntityTickList(Function<Entity, OwnershipCell> cellOf) {
++        this.entities = new CellTickList<>(Entity::getId, cellOf);
+     }
+ 
+     public void add(final Entity entity) {
+-        this.ensureActiveIsNotIterated();
+-        this.active.put(entity.getId(), entity);
++        this.entities.add(entity);
+     }
+ 
+     public void remove(final Entity entity) {
+-        this.ensureActiveIsNotIterated();
+-        this.active.remove(entity.getId());
++        this.entities.remove(entity);
+     }
+ 
+     public boolean contains(final Entity entity) {
+-        return this.active.containsKey(entity.getId());
++        return this.entities.contains(entity);
++    }
++
++    public void move(final Entity entity) {
++        this.entities.move(entity);
++    }
++
++    public Map<OwnershipCell, Integer> cellSizes() {
++        return this.entities.cellSizes();
+     }
+ 
+     public void forEach(final Consumer<Entity> output) {
+-        if (this.iterated != null) {
+-            throw new UnsupportedOperationException("Only one concurrent iteration supported");
+-        }
+-
+-        this.iterated = this.active;
+-
+-        try {
+-            for (Entity entity : this.active.values()) {
+-                output.accept(entity);
+-            }
+-        } finally {
+-            this.iterated = null;
+-        }
++        this.entities.forEach(output);
+     }
+ }
