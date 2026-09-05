@@ -88,7 +88,7 @@ public final class RuntimePluginContext implements PluginContext {
     private final PluginResourceTracker resources;
     private final ClassLoader pluginClassLoader;
     private volatile YamlConfiguration config;
-    private volatile PluginStorage storage;
+    private volatile FandPluginStorage storage;
     private volatile LocalizationService localization;
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -405,25 +405,12 @@ public final class RuntimePluginContext implements PluginContext {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
+        var cleanup = new PluginCleanup("Failed to close context for plugin '" + descriptor.id() + "'");
         var existingStorage = storage;
         if (existingStorage != null) {
-            try {
-                existingStorage.flush();
-            } catch (RuntimeException ex) {
-                logger.warn("Failed to flush storage for plugin {}", descriptor.id(), ex);
-            }
-            if (existingStorage instanceof AutoCloseable closeable) {
-                try {
-                    closeable.close();
-                } catch (Exception ex) {
-                    logger.warn("Failed to close storage for plugin {}", descriptor.id(), ex);
-                }
-            }
+            cleanup.run(existingStorage::close);
         }
-        try {
-            resources.close();
-        } catch (RuntimeException ex) {
-            logger.warn("Failed to close plugin resources for plugin {}", descriptor.id(), ex);
-        }
+        cleanup.run(resources::close);
+        cleanup.throwIfFailed();
     }
 }

@@ -550,6 +550,42 @@ Adventure `Component`。如果只需要纯文本，使用 `message(...)`；需�
 服务器 tick 计数，不依赖墙钟速度。异步任务和主线程之间没有顺序保证；异步代码不要直接修改世界、
 实体、库存或其他主线程状态。
 
+### 所有者调度
+
+`Scheduler` 还提供三个面向目标的单次调度入口：
+
+- `at(location)`：固定位置及其所属的已加载世界实例。
+- `forEntity(entity)`：执行时解析该实体句柄的当前归属，不捕获提交时的位置。
+- `global()`：全局服务器状态；不要将它作为任意世界访问的入口。
+
+三个入口返回 `OwnedScheduler`。`run(Runnable)` 返回 `CompletableFuture<Void>`，
+`call(Supplier<T>)` 返回 `CompletableFuture<T>`。任务总是在后续 tick 执行，不在提交时内联调用。
+
+```java
+CompletableFuture<Location> position = context.scheduler()
+        .forEntity(player)
+        .call(player::location);
+
+CompletableFuture<Void> update = context.scheduler()
+        .at(location)
+        .run(() -> location.world()
+                .blockAt(location.blockX(), location.blockY(), location.blockZ())
+                .applyPhysics());
+```
+
+当前实现仍由同一个服务器 tick 线程推进全部世界。这些入口先提供目标绑定、有效性检查和取消语义，
+不代表已经启用区域并行。`runMain*` 保持现有行为；旧 `region()` 仍是后台任务分道，不拥有世界数据。
+所有者入口目前只提供单次执行，延迟与重复调度尚未加入该接口。
+
+位置入口不会预加载或持续加载区块。任务执行前会核对世界实例；卸载后即便以相同 key 重建世界，
+旧任务也不会转投新实例。实体移除或被同 UUID 的其他实例替换后，旧实体任务失败；玩家句柄正常重新绑定时，
+使用执行时的当前句柄。普通实体在跨维度传送中若被原版替换为新实例，旧句柄随之失效。
+
+目标失效以 `IllegalStateException` 完成 Future，提交给已关闭的调度器或已停用的插件以
+`RejectedExecutionException` 完成 Future。通过 `context.scheduler()` 提交的待执行任务在插件停用时取消，
+调度器关闭也会取消待执行结果。已开始的操作不能通过取消回滚，完成回调不保证线程或所有权。
+后续还要访问世界时，再提交到目标所有者；不要在 tick 线程上 `join()` 等待尚未执行的任务。
+
 ## 玩法 API
 
 `Server`、`World`、`Player`、`Entity`、`Inventory`、`ItemStack`、配方、计分板、GUI、包和性能 API

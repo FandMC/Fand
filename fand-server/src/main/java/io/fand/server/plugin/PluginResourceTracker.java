@@ -42,6 +42,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Supplier;
 
 final class PluginResourceTracker {
 
@@ -131,6 +135,38 @@ final class PluginResourceTracker {
             tasks.add(tracked);
         }
         return tracked;
+    }
+
+    <T> CompletableFuture<T> trackCall(Supplier<CompletableFuture<T>> submit) {
+        CompletableFuture<T> result;
+        TrackedTask tracked;
+        synchronized (lock) {
+            if (closed) {
+                return CompletableFuture.failedFuture(new RejectedExecutionException("Plugin is disabled"));
+            }
+            result = submit.get();
+            tracked = new TrackedTask(this, new Task() {
+                @Override
+                public boolean cancelled() {
+                    return result.isCancelled();
+                }
+
+                @Override
+                public void cancel() {
+                    result.cancel(false);
+                }
+            });
+            tasks.add(tracked);
+        }
+        result.whenComplete((value, failure) -> release(tracked));
+        return result;
+    }
+
+    <T> T callIfOpen(Supplier<T> action) {
+        if (closed) {
+            throw new CancellationException("Plugin is disabled");
+        }
+        return action.get();
     }
 
     TrackedRecipeRegistration track(RecipeRegistration delegate) {
@@ -882,205 +918,60 @@ final class PluginResourceTracker {
     }
 
     void close() {
-        List<TrackedSubscription> subscriptionsToClose;
-        List<TrackedCommandRegistration> commandRegistrationsToClose;
-        List<TrackedRecipeRegistration> recipeRegistrationsToClose;
-        List<TrackedLootTableRegistration> lootTableRegistrationsToClose;
-        List<TrackedPermissionAttachment> permissionAttachmentsToClose;
-        List<TrackedBossBarHandle> bossBarHandlesToClose;
-        List<TrackedBossBarRegistration> bossBarRegistrationsToClose;
-        List<TrackedTabListRegistration> tabListRegistrationsToClose;
-        List<TrackedTabListVisibility> tabListVisibilitiesToClose;
-        List<TrackedSimulatedPlayer> simulatedPlayersToClose;
-        List<TrackedScoreboardRegistration> scoreboardRegistrationsToClose;
-        List<TrackedPacketRegistration> packetRegistrationsToClose;
-        List<TrackedPlaceholderRegistration> placeholderRegistrationsToClose;
-        List<TrackedPluginMessageRegistration> pluginMessageRegistrationsToClose;
-        List<TrackedGameRuleRegistration> gameRuleRegistrationsToClose;
-        List<TrackedDataPackRegistration> dataPackRegistrationsToClose;
-        List<TrackedResourcePackRegistration> resourcePackRegistrationsToClose;
-        List<TrackedRegionRegistration> regionRegistrationsToClose;
-        List<TrackedRegionFlagRegistration> regionFlagRegistrationsToClose;
-        List<TrackedAdvancementRegistration> advancementRegistrationsToClose;
-        List<TrackedEnchantmentRegistration> enchantmentRegistrationsToClose;
-        List<TrackedStructureRegistration> structureRegistrationsToClose;
-        List<MapRendererBinding> mapRendererBindingsToClose;
-        List<TrackedCustomItemRegistration> customItemRegistrationsToClose;
-        List<TrackedCustomBlockRegistration> customBlockRegistrationsToClose;
-        List<TrackedCustomBlockItemBinding> customBlockItemBindingsToClose;
-        List<TrackedHologram> hologramsToClose;
-        List<TrackedGuiView> guiViewsToClose;
-        List<TrackedServiceRegistration<?>> serviceRegistrationsToClose;
-        List<TrackedNmsHookRegistration> nmsHookRegistrationsToClose;
-        List<TrackedLoginAuthenticationRegistration> loginAuthenticationRegistrationsToClose;
-        List<TrackedTask> tasksToClose;
+        var actions = new ArrayList<PluginCleanup.Action>();
         synchronized (lock) {
             if (closed) {
                 return;
             }
             closed = true;
-            subscriptionsToClose = new ArrayList<>(subscriptions);
-            commandRegistrationsToClose = new ArrayList<>(commandRegistrations);
-            recipeRegistrationsToClose = new ArrayList<>(recipeRegistrations);
-            lootTableRegistrationsToClose = new ArrayList<>(lootTableRegistrations);
-            permissionAttachmentsToClose = new ArrayList<>(permissionAttachments);
-            bossBarHandlesToClose = new ArrayList<>(bossBarHandles);
-            bossBarRegistrationsToClose = new ArrayList<>(bossBarRegistrations);
-            tabListRegistrationsToClose = new ArrayList<>(tabListRegistrations);
-            tabListVisibilitiesToClose = new ArrayList<>(tabListVisibilities);
-            simulatedPlayersToClose = new ArrayList<>(simulatedPlayers);
-            scoreboardRegistrationsToClose = new ArrayList<>(scoreboardRegistrations);
-            packetRegistrationsToClose = new ArrayList<>(packetRegistrations);
-            placeholderRegistrationsToClose = new ArrayList<>(placeholderRegistrations);
-            pluginMessageRegistrationsToClose = new ArrayList<>(pluginMessageRegistrations);
-            gameRuleRegistrationsToClose = new ArrayList<>(gameRuleRegistrations);
-            dataPackRegistrationsToClose = new ArrayList<>(dataPackRegistrations);
-            resourcePackRegistrationsToClose = new ArrayList<>(resourcePackRegistrations);
-            regionRegistrationsToClose = new ArrayList<>(regionRegistrations);
-            regionFlagRegistrationsToClose = new ArrayList<>(regionFlagRegistrations);
-            advancementRegistrationsToClose = new ArrayList<>(advancementRegistrations);
-            enchantmentRegistrationsToClose = new ArrayList<>(enchantmentRegistrations);
-            structureRegistrationsToClose = new ArrayList<>(structureRegistrations);
-            mapRendererBindingsToClose = new ArrayList<>(mapRendererBindings);
-            customItemRegistrationsToClose = new ArrayList<>(customItemRegistrations);
-            customBlockRegistrationsToClose = new ArrayList<>(customBlockRegistrations);
-            customBlockItemBindingsToClose = new ArrayList<>(customBlockItemBindings);
-            hologramsToClose = new ArrayList<>(holograms);
-            guiViewsToClose = new ArrayList<>(guiViews);
-            serviceRegistrationsToClose = new ArrayList<>(serviceRegistrations);
-            nmsHookRegistrationsToClose = new ArrayList<>(nmsHookRegistrations);
-            loginAuthenticationRegistrationsToClose = new ArrayList<>(loginAuthenticationRegistrations);
-            tasksToClose = new ArrayList<>(tasks);
-            subscriptions.clear();
-            commandRegistrations.clear();
-            recipeRegistrations.clear();
-            lootTableRegistrations.clear();
-            permissionAttachments.clear();
+            drain(subscriptions, TrackedSubscription::unregisterFromTracker, actions);
+            drain(commandRegistrations, TrackedCommandRegistration::unregisterFromTracker, actions);
+            drain(recipeRegistrations, TrackedRecipeRegistration::unregisterFromTracker, actions);
+            drain(lootTableRegistrations, TrackedLootTableRegistration::unregisterFromTracker, actions);
+            drain(permissionAttachments, TrackedPermissionAttachment::closeFromTracker, actions);
             permissionDescriptors.clear();
-            bossBarHandles.clear();
-            bossBarRegistrations.clear();
-            tabListRegistrations.clear();
-            tabListVisibilities.clear();
-            simulatedPlayers.clear();
-            scoreboardRegistrations.clear();
-            packetRegistrations.clear();
-            placeholderRegistrations.clear();
-            pluginMessageRegistrations.clear();
-            gameRuleRegistrations.clear();
-            dataPackRegistrations.clear();
-            resourcePackRegistrations.clear();
-            regionRegistrations.clear();
-            regionFlagRegistrations.clear();
-            advancementRegistrations.clear();
-            enchantmentRegistrations.clear();
-            structureRegistrations.clear();
-            mapRendererBindings.clear();
-            customItemRegistrations.clear();
-            customBlockRegistrations.clear();
-            customBlockItemBindings.clear();
-            holograms.clear();
-            guiViews.clear();
-            serviceRegistrations.clear();
-            nmsHookRegistrations.clear();
-            loginAuthenticationRegistrations.clear();
-            tasks.clear();
+            drain(bossBarHandles, TrackedBossBarHandle::closeFromTracker, actions);
+            drain(bossBarRegistrations, TrackedBossBarRegistration::closeFromTracker, actions);
+            drain(tabListRegistrations, TrackedTabListRegistration::removeFromTracker, actions);
+            drain(tabListVisibilities, TrackedTabListVisibility::restoreFromTracker, actions);
+            drain(simulatedPlayers, TrackedSimulatedPlayer::closeFromTracker, actions);
+            drain(scoreboardRegistrations, TrackedScoreboardRegistration::unregisterFromTracker, actions);
+            drain(packetRegistrations, TrackedPacketRegistration::unregisterFromTracker, actions);
+            drain(placeholderRegistrations, TrackedPlaceholderRegistration::unregisterFromTracker, actions);
+            drain(pluginMessageRegistrations, TrackedPluginMessageRegistration::closeFromTracker, actions);
+            drain(gameRuleRegistrations, TrackedGameRuleRegistration::unregisterFromTracker, actions);
+            drain(dataPackRegistrations, TrackedDataPackRegistration::closeFromTracker, actions);
+            drain(resourcePackRegistrations, TrackedResourcePackRegistration::closeFromTracker, actions);
+            drain(regionRegistrations, TrackedRegionRegistration::closeFromTracker, actions);
+            drain(regionFlagRegistrations, TrackedRegionFlagRegistration::closeFromTracker, actions);
+            drain(advancementRegistrations, TrackedAdvancementRegistration::closeFromTracker, actions);
+            drain(enchantmentRegistrations, TrackedEnchantmentRegistration::closeFromTracker, actions);
+            drain(structureRegistrations, TrackedStructureRegistration::unregisterFromTracker, actions);
+            drain(mapRendererBindings, MapRendererBinding::closeFromTracker, actions);
+            drain(customItemRegistrations, TrackedCustomItemRegistration::unregisterFromTracker, actions);
+            drain(customBlockRegistrations, TrackedCustomBlockRegistration::unregisterFromTracker, actions);
+            drain(customBlockItemBindings, TrackedCustomBlockItemBinding::unregisterFromTracker, actions);
+            drain(holograms, TrackedHologram::closeFromTracker, actions);
+            drain(guiViews, TrackedGuiView::closeFromTracker, actions);
+            drain(serviceRegistrations, TrackedServiceRegistration::unregisterFromTracker, actions);
+            drain(nmsHookRegistrations, TrackedNmsHookRegistration::unregisterFromTracker, actions);
+            drain(loginAuthenticationRegistrations, TrackedLoginAuthenticationRegistration::unregisterFromTracker, actions);
+            drain(tasks, TrackedTask::cancelFromTracker, actions);
         }
-        for (var subscription : subscriptionsToClose) {
-            subscription.unregisterFromTracker();
+        var cleanup = new PluginCleanup("Failed to close plugin resources");
+        actions.forEach(cleanup::run);
+        cleanup.throwIfFailed();
+    }
+
+    private static <T> void drain(
+            Collection<T> resources,
+            java.util.function.Consumer<T> release,
+            List<PluginCleanup.Action> actions
+    ) {
+        for (var resource : resources) {
+            actions.add(() -> release.accept(resource));
         }
-        for (var registration : commandRegistrationsToClose) {
-            registration.unregisterFromTracker();
-        }
-        for (var registration : recipeRegistrationsToClose) {
-            registration.unregisterFromTracker();
-        }
-        for (var registration : lootTableRegistrationsToClose) {
-            registration.unregisterFromTracker();
-        }
-        for (var attachment : permissionAttachmentsToClose) {
-            attachment.closeFromTracker();
-        }
-        for (var handle : bossBarHandlesToClose) {
-            handle.closeFromTracker();
-        }
-        for (var registration : bossBarRegistrationsToClose) {
-            registration.closeFromTracker();
-        }
-        for (var registration : tabListRegistrationsToClose) {
-            registration.removeFromTracker();
-        }
-        for (var visibility : tabListVisibilitiesToClose) {
-            visibility.restoreFromTracker();
-        }
-        for (var player : simulatedPlayersToClose) {
-            player.closeFromTracker();
-        }
-        for (var registration : scoreboardRegistrationsToClose) {
-            registration.unregisterFromTracker();
-        }
-        for (var registration : packetRegistrationsToClose) {
-            registration.unregisterFromTracker();
-        }
-        for (var registration : placeholderRegistrationsToClose) {
-            registration.unregisterFromTracker();
-        }
-        for (var registration : pluginMessageRegistrationsToClose) {
-            registration.closeFromTracker();
-        }
-        for (var registration : gameRuleRegistrationsToClose) {
-            registration.unregisterFromTracker();
-        }
-        for (var registration : dataPackRegistrationsToClose) {
-            registration.closeFromTracker();
-        }
-        for (var registration : resourcePackRegistrationsToClose) {
-            registration.closeFromTracker();
-        }
-        for (var registration : regionRegistrationsToClose) {
-            registration.closeFromTracker();
-        }
-        for (var registration : regionFlagRegistrationsToClose) {
-            registration.closeFromTracker();
-        }
-        for (var registration : advancementRegistrationsToClose) {
-            registration.closeFromTracker();
-        }
-        for (var registration : enchantmentRegistrationsToClose) {
-            registration.closeFromTracker();
-        }
-        for (var registration : structureRegistrationsToClose) {
-            registration.unregisterFromTracker();
-        }
-        for (var binding : mapRendererBindingsToClose) {
-            binding.closeFromTracker();
-        }
-        for (var registration : customItemRegistrationsToClose) {
-            registration.unregisterFromTracker();
-        }
-        for (var registration : customBlockRegistrationsToClose) {
-            registration.unregisterFromTracker();
-        }
-        for (var binding : customBlockItemBindingsToClose) {
-            binding.unregisterFromTracker();
-        }
-        for (var hologram : hologramsToClose) {
-            hologram.closeFromTracker();
-        }
-        for (var view : guiViewsToClose) {
-            view.closeFromTracker();
-        }
-        for (var registration : serviceRegistrationsToClose) {
-            registration.unregisterFromTracker();
-        }
-        for (var registration : nmsHookRegistrationsToClose) {
-            registration.unregisterFromTracker();
-        }
-        for (var registration : loginAuthenticationRegistrationsToClose) {
-            registration.unregisterFromTracker();
-        }
-        for (var task : tasksToClose) {
-            task.cancelFromTracker();
-        }
+        resources.clear();
     }
 
     static final class TrackedSubscription implements EventSubscription {

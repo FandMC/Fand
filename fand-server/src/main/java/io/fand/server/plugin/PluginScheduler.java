@@ -1,9 +1,15 @@
 package io.fand.server.plugin;
 
+import io.fand.api.entity.Entity;
+import io.fand.api.scheduler.OwnedScheduler;
 import io.fand.api.scheduler.RegionScheduler;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scheduler.Task;
+import io.fand.api.world.Location;
 import java.time.Duration;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import net.kyori.adventure.key.Key;
 
 public final class PluginScheduler implements Scheduler {
@@ -14,6 +20,21 @@ public final class PluginScheduler implements Scheduler {
     public PluginScheduler(Scheduler delegate, PluginResourceTracker tracker) {
         this.delegate = delegate;
         this.tracker = tracker;
+    }
+
+    @Override
+    public OwnedScheduler at(Location location) {
+        return new TrackedOwnedScheduler(delegate.at(location));
+    }
+
+    @Override
+    public OwnedScheduler forEntity(Entity entity) {
+        return new TrackedOwnedScheduler(delegate.forEntity(entity));
+    }
+
+    @Override
+    public OwnedScheduler global() {
+        return new TrackedOwnedScheduler(delegate.global());
     }
 
     @Override
@@ -54,6 +75,21 @@ public final class PluginScheduler implements Scheduler {
     @Override
     public Task runAsyncAfter(Runnable task, Duration delay) {
         return tracker.track(delegate.runAsyncAfter(task, delay));
+    }
+
+    private final class TrackedOwnedScheduler implements OwnedScheduler {
+
+        private final OwnedScheduler delegate;
+
+        private TrackedOwnedScheduler(OwnedScheduler delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public <T> CompletableFuture<T> call(Supplier<T> action) {
+            Objects.requireNonNull(action, "action");
+            return tracker.trackCall(() -> delegate.call(() -> tracker.callIfOpen(action)));
+        }
     }
 
     private final class TrackedRegionScheduler implements RegionScheduler {

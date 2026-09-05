@@ -1,14 +1,20 @@
 package io.fand.server.scheduler;
 
+import io.fand.api.entity.Entity;
+import io.fand.api.scheduler.OwnedScheduler;
 import io.fand.api.scheduler.RegionScheduler;
 import io.fand.api.scheduler.Scheduler;
 import io.fand.api.scheduler.Task;
+import io.fand.api.world.Location;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.PriorityQueue;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -18,7 +24,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 import net.kyori.adventure.key.Key;
+import net.minecraft.server.MinecraftServer;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,6 +49,8 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
     private final PriorityQueue<MainTask> tickMainTasks = new PriorityQueue<>(TICK_MAIN_TASK_ORDER);
     // Reused across ticks; tick() only runs on the server thread.
     private final ArrayList<MainTask> readyMainTasks = new ArrayList<>();
+    private final Set<CompletableFuture<?>> ownedCalls = new HashSet<>();
+    private final ServerTickAccess tickAccess;
     private final ScheduledExecutorService asyncExecutor;
     private final RegionScheduler regionScheduler = new SchedulerRegionScheduler();
     private final LongSupplier nanoTime;
@@ -58,7 +69,16 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
     }
 
     public TaskScheduler(int configuredAsyncThreads, int configuredRegionThreads) {
-        this(System::nanoTime, createAsyncExecutor(configuredAsyncThreads), RegionWorkerSet.create(configuredRegionThreads));
+        this(configuredAsyncThreads, configuredRegionThreads, () -> null);
+    }
+
+    public TaskScheduler(
+            int configuredAsyncThreads,
+            int configuredRegionThreads,
+            Supplier<@Nullable MinecraftServer> server
+    ) {
+        this(System::nanoTime, createAsyncExecutor(configuredAsyncThreads),
+                RegionWorkerSet.create(configuredRegionThreads), server);
     }
 
     TaskScheduler(LongSupplier nanoTime, ScheduledExecutorService asyncExecutor) {
@@ -66,9 +86,36 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
     }
 
     TaskScheduler(LongSupplier nanoTime, ScheduledExecutorService asyncExecutor, RegionWorkerSet regionWorkers) {
+        this(nanoTime, asyncExecutor, regionWorkers, () -> null);
+    }
+
+    TaskScheduler(
+            LongSupplier nanoTime,
+            ScheduledExecutorService asyncExecutor,
+            RegionWorkerSet regionWorkers,
+            Supplier<@Nullable MinecraftServer> server
+    ) {
         this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
         this.asyncExecutor = Objects.requireNonNull(asyncExecutor, "asyncExecutor");
         this.regionWorkers = Objects.requireNonNull(regionWorkers, "regionWorkers");
+        this.tickAccess = new ServerTickAccess(server);
+    }
+
+    @Override
+    public OwnedScheduler at(Location location) {
+        Objects.requireNonNull(location, "location");
+        return new MainOwnedScheduler(() -> tickAccess.at(location));
+    }
+
+    @Override
+    public OwnedScheduler forEntity(Entity entity) {
+        Objects.requireNonNull(entity, "entity");
+        return new MainOwnedScheduler(() -> tickAccess.forEntity(entity));
+    }
+
+    @Override
+    public OwnedScheduler global() {
+        return new MainOwnedScheduler(tickAccess::global);
     }
 
     @Override
@@ -139,6 +186,9 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
 
         var executed = 0;
         for (var task : ready) {
+            if (closed.get()) {
+                task.cancel();
+            }
             if (task.cancelled()) {
                 task.discardCancellationCount();
                 continue;
@@ -162,10 +212,11 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
 
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) {
-            return;
-        }
+        List<CompletableFuture<?>> pendingCalls;
         synchronized (mainLock) {
+            if (!closed.compareAndSet(false, true)) {
+                return;
+            }
             for (var task : timedMainTasks) {
                 task.cancelled.set(true);
             }
@@ -175,9 +226,50 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
             timedMainTasks.clear();
             tickMainTasks.clear();
             cancelledMainTasks.set(0L);
+            pendingCalls = List.copyOf(ownedCalls);
+            ownedCalls.clear();
+        }
+        // Completion callbacks can submit more work; never invoke them under mainLock.
+        for (var call : pendingCalls) {
+            call.cancel(false);
         }
         asyncExecutor.shutdownNow();
         regionWorkers.shutdownNow();
+    }
+
+    private <T> CompletableFuture<T> submitOwned(Runnable checkAccess, Supplier<T> action) {
+        Objects.requireNonNull(action, "action");
+        var result = new CompletableFuture<T>();
+        Task task;
+        synchronized (mainLock) {
+            if (closed.get()) {
+                return CompletableFuture.failedFuture(new RejectedExecutionException("scheduler is closed"));
+            }
+            task = runMain(() -> {
+                if (result.isDone()) {
+                    return;
+                }
+                try {
+                    checkAccess.run();
+                    result.complete(action.get());
+                } catch (RuntimeException failure) {
+                    result.completeExceptionally(failure);
+                } catch (Error failure) {
+                    result.completeExceptionally(failure);
+                    throw failure;
+                }
+            });
+            ownedCalls.add(result);
+        }
+        result.whenComplete((value, failure) -> {
+            if (result.isCancelled()) {
+                task.cancel();
+            }
+            synchronized (mainLock) {
+                ownedCalls.remove(result);
+            }
+        });
+        return result;
     }
 
     private Task scheduleMain(Runnable runnable, Duration delay, long periodNanos) {
@@ -379,6 +471,20 @@ public final class TaskScheduler implements Scheduler, AutoCloseable {
             thread.setDaemon(true);
             return thread;
         };
+    }
+
+    private final class MainOwnedScheduler implements OwnedScheduler {
+
+        private final Runnable checkAccess;
+
+        private MainOwnedScheduler(Runnable checkAccess) {
+            this.checkAccess = checkAccess;
+        }
+
+        @Override
+        public <T> CompletableFuture<T> call(Supplier<T> action) {
+            return submitOwned(checkAccess, action);
+        }
     }
 
     private final class SchedulerRegionScheduler implements RegionScheduler {

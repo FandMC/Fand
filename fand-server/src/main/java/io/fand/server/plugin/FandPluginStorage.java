@@ -97,16 +97,21 @@ public final class FandPluginStorage implements PluginStorage, AutoCloseable {
 
     @Override
     public void flush() {
+        var cleanup = new PluginCleanup("Failed to flush plugin storage");
         for (var store : stores.values()) {
-            store.flush();
+            cleanup.run(store::flush);
         }
+        cleanup.throwIfFailed();
     }
 
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
-            flush();
-            flusher.shutdownNow();
+            try {
+                flush();
+            } finally {
+                flusher.shutdownNow();
+            }
         }
     }
 

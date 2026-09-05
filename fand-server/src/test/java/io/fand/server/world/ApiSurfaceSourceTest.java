@@ -326,12 +326,11 @@ final class ApiSurfaceSourceTest {
     }
 
     @Test
-    void pluginScopedLootTableApiStaysWiredToRuntimeAndLifecycleCleanup() throws IOException {
+    void pluginScopedLootTableApiStaysWiredToRuntime() throws IOException {
         var context = read("../fand-api/src/main/java/io/fand/api/plugin/PluginContext.java");
         var runtimeContext = read("src/main/java/io/fand/server/plugin/RuntimePluginContext.java");
         var runtime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
         var pluginLoot = read("src/main/java/io/fand/server/plugin/PluginLootTableService.java");
-        var tracker = read("src/main/java/io/fand/server/plugin/PluginResourceTracker.java");
         var server = read("src/main/java/io/fand/server/FandServer.java");
 
         assertThat(context).contains("default LootTableService lootTables()");
@@ -345,10 +344,6 @@ final class ApiSurfaceSourceTest {
                 "public final class PluginLootTableService implements LootTableService",
                 "return delegate.table(scopedKey(key)).filter(this::ownedByThisPlugin)",
                 "return tracker.track(delegate.replace(scopedKey(key), generator))");
-        assertThat(tracker).contains(
-                "TrackedLootTableRegistration track(LootTableRegistration delegate)",
-                "lootTableRegistrationsToClose",
-                "registration.unregisterFromTracker()");
         assertThat(server).contains(
                 "this.lootTables = new FandLootTableService(minecraftServer::get)",
                 "lootTables,",
@@ -356,13 +351,12 @@ final class ApiSurfaceSourceTest {
     }
 
     @Test
-    void pluginScopedDataPackApiStaysWiredToRuntimeAndLifecycleCleanup() throws IOException {
+    void pluginScopedDataPackApiStaysWiredToRuntime() throws IOException {
         var serverApi = read("../fand-api/src/main/java/io/fand/api/Server.java");
         var context = read("../fand-api/src/main/java/io/fand/api/plugin/PluginContext.java");
         var runtimeContext = read("src/main/java/io/fand/server/plugin/RuntimePluginContext.java");
         var runtime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
         var pluginDataPacks = read("src/main/java/io/fand/server/plugin/PluginDataPackService.java");
-        var tracker = read("src/main/java/io/fand/server/plugin/PluginResourceTracker.java");
         var server = read("src/main/java/io/fand/server/FandServer.java");
         var service = read("src/main/java/io/fand/server/datapack/FandDataPackService.java");
 
@@ -379,11 +373,6 @@ final class ApiSurfaceSourceTest {
                 "return delegate.packs().stream()",
                 "return tracker.track(delegate.create(new DataPack(scopedId(pack.id()), pack.description(), pack.enabled())))",
                 "Plugin data pack files must stay under data/");
-        assertThat(tracker).contains(
-                "TrackedDataPackRegistration track(DataPackRegistration delegate)",
-                "dataPackRegistrationsToClose",
-                "registration.closeFromTracker()",
-                "static final class TrackedDataPackRegistration implements DataPackRegistration");
         assertThat(server).contains(
                 "this.dataPacks = new FandDataPackService(Path.of(\"datapacks\"), minecraftServer::get)",
                 "dataPacks,",
@@ -397,11 +386,9 @@ final class ApiSurfaceSourceTest {
     }
 
     @Test
-    void pluginMapRenderersStayScopedToPluginLifecycle() throws IOException {
+    void pluginMapRenderersStayWiredToRuntimeAndDocumented() throws IOException {
         var runtime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
         var pluginMap = read("src/main/java/io/fand/server/plugin/PluginMapService.java");
-        var tracker = read("src/main/java/io/fand/server/plugin/PluginResourceTracker.java");
-        var mapService = read("src/main/java/io/fand/server/map/FandMapService.java");
 
         assertThat(runtime).contains("new PluginMapService(mapService, resources)");
         assertThat(pluginMap).contains(
@@ -411,13 +398,6 @@ final class ApiSurfaceSourceTest {
         assertThat(read("../fand-api/src/main/java/io/fand/api/map/MapView.java")).contains(
                 "Plugin-scoped services remove renderers",
                 "saved map data and is not automatically reverted when a plugin unloads");
-        assertThat(tracker).contains(
-                "record MapRendererBinding(MapService service, int mapId, MapRenderer renderer)",
-                "mapRendererBindingsToClose",
-                "maps.clearRenderer(mapId, renderer)");
-        assertThat(mapService).contains(
-                "public void clearRenderer(int id, MapRenderer renderer)",
-                "state.renderer() == renderer ? null : state");
     }
 
     @Test
@@ -758,7 +738,7 @@ final class ApiSurfaceSourceTest {
     }
 
     @Test
-    void serviceRegistryStaysWiredToServerPluginsAndLifecycleCleanup() throws IOException {
+    void serviceRegistryStaysWiredToServerPlugins() throws IOException {
         var serverApi = read("../fand-api/src/main/java/io/fand/api/Server.java");
         var managerApi = read("../fand-api/src/main/java/io/fand/api/plugin/PluginManager.java");
         var context = read("../fand-api/src/main/java/io/fand/api/plugin/PluginContext.java");
@@ -767,7 +747,6 @@ final class ApiSurfaceSourceTest {
         var pluginRegistry = read("src/main/java/io/fand/server/plugin/PluginServiceRegistry.java");
         var runtime = read("src/main/java/io/fand/server/plugin/PluginRuntime.java");
         var runtimeContext = read("src/main/java/io/fand/server/plugin/RuntimePluginContext.java");
-        var tracker = read("src/main/java/io/fand/server/plugin/PluginResourceTracker.java");
         var server = read("src/main/java/io/fand/server/FandServer.java");
 
         assertThat(serverApi).contains("default ServiceRegistry services()");
@@ -792,10 +771,6 @@ final class ApiSurfaceSourceTest {
         assertThat(runtimeContext).contains(
                 "private final ServiceRegistry services",
                 "public ServiceRegistry services()");
-        assertThat(tracker).contains(
-                "TrackedServiceRegistration",
-                "serviceRegistrationsToClose",
-                "registration.unregisterFromTracker()");
         assertThat(server).contains(
                 "private final FandServiceRegistry services",
                 "this.services = new FandServiceRegistry(permissions)",

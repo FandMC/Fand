@@ -65,4 +65,17 @@ class FandPluginStorageTest {
         assertThatThrownBy(() -> global.setString("late", "value"))
                 .isInstanceOf(RejectedExecutionException.class);
     }
+
+    @Test
+    void failedFlushStillShutsDownDebouncedFlusher() throws java.io.IOException {
+        java.nio.file.Files.writeString(tempDir.resolve("storage"), "blocks storage directory creation");
+        var storage = new FandPluginStorage(tempDir);
+        var global = storage.global();
+        global.setString("dirty", "value");
+
+        assertThatThrownBy(storage::close).isInstanceOf(PluginLoadException.class);
+
+        assertThatThrownBy(() -> global.setString("late", "value"))
+                .isInstanceOf(RejectedExecutionException.class);
+    }
 }
