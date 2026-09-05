@@ -316,6 +316,11 @@ public final class ChunkOwnership<H> {
             return ready.copy();
         }
 
+        /** Observes retirement without requesting it. */
+        public CompletableFuture<Void> whenRetired() {
+            return retired.copy();
+        }
+
         /** Requests retirement; repeated calls observe the same lifecycle transition. */
         public CompletableFuture<Void> retire() {
             ownership.retire(this);

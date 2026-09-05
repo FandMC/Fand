@@ -1,0 +1,186 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 5 Sep 2026 21:58:47 +0800
+Subject: [PATCH] Bind chunk holder lifetimes before asynchronous publication
+
+
+diff --git a/net/minecraft/server/level/ChunkMap.java b/net/minecraft/server/level/ChunkMap.java
+index 59818137a62ec239f4568165e9f1ae5464fea5ca..5ac7f5a78dec18acd967a45a5805e2d7a224e19b 100644
+--- a/net/minecraft/server/level/ChunkMap.java
++++ b/net/minecraft/server/level/ChunkMap.java
+@@ -60,7 +60,6 @@ import net.minecraft.core.RegistryAccess;
+ import net.minecraft.core.SectionPos;
+ import net.minecraft.core.registries.Registries;
+ import net.minecraft.nbt.CompoundTag;
+-import net.minecraft.nbt.NbtException;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.game.ClientGamePacketListener;
+ import net.minecraft.network.protocol.game.ClientboundChunksBiomesPacket;
+@@ -141,6 +140,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     private final ServerLevel level;
+     private final ThreadedLevelLightEngine lightEngine;
+     private final BlockableEventLoop<Runnable> mainThreadExecutor;
++    private final io.fand.server.tick.SerialChunkOwnership<GenerationChunkHolder> fandChunkOwnership;
+     private final RandomState randomState;
+     private volatile ChunkGeneratorStructureState chunkGeneratorState;
+     private final TicketStorage ticketStorage;
+@@ -207,6 +207,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+ 
+         this.chunkGeneratorState = generator.createState(registryAccess.lookupOrThrow(Registries.STRUCTURE_SET), this.randomState, levelSeed);
+         this.mainThreadExecutor = mainThreadExecutor;
++        this.fandChunkOwnership = new io.fand.server.tick.SerialChunkOwnership<>(mainThreadExecutor, 4, 1);
+         int worldgenParallelism = io.fand.server.hooks.FandHooks.chunkWorldgenParallelism();
+         this.worldgenStepScheduler = new FandChunkStepScheduler(
+             io.fand.server.hooks.FandHooks.chunkWorldgenExecutor(),
+@@ -448,6 +449,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+                 chunk.setTicketLevel(level);
+             } else {
+                 chunk = new ChunkHolder(ChunkPos.unpack(node), level, this.level, this.lightEngine, this::onLevelChange, this);
++                chunk.fand$bindOwnership(this.fandChunkOwnership.attach(chunk.getPos().x(), chunk.getPos().z(), chunk));
+             }
+ 
+             this.updatingChunkMap.put(node, chunk);
+@@ -465,6 +467,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     @Override
+     public void close() throws IOException {
+         try {
++            this.fandChunkOwnership.close();
+             this.worldgenTaskDispatcher.close();
+             this.lightTaskDispatcher.close();
+             this.worldgenStepScheduler.close();
+@@ -590,19 +593,22 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+                 this.scheduleUnload(pos, chunkHolder);
+             } else {
+                 ChunkAccess chunk = chunkHolder.getLatestChunk();
+-                if (this.pendingUnloads.remove(pos, chunkHolder) && chunk != null) {
+-                    if (chunk instanceof LevelChunk levelChunk) {
+-                        levelChunk.setLoaded(false);
+-                    }
++                if (this.pendingUnloads.remove(pos, chunkHolder)) {
++                    if (chunk != null) {
++                        if (chunk instanceof LevelChunk levelChunk) {
++                            levelChunk.setLoaded(false);
++                        }
+ 
+-                    this.save(chunk);
+-                    if (chunk instanceof LevelChunk levelChunk) {
+-                        this.level.unload(levelChunk);
+-                    }
++                        this.save(chunk);
++                        if (chunk instanceof LevelChunk levelChunk) {
++                            this.level.unload(levelChunk);
++                        }
+ 
+-                    this.lightEngine.updateChunkStatus(chunk.getPos());
+-                    this.lightEngine.tryScheduleUpdate();
+-                    this.nextChunkSaveTime.remove(chunk.getPos().pack());
++                        this.lightEngine.updateChunkStatus(chunk.getPos());
++                        this.lightEngine.tryScheduleUpdate();
++                        this.nextChunkSaveTime.remove(chunk.getPos().pack());
++                    }
++                    this.fandChunkOwnership.detach(chunkHolder.fand$ownership());
+                 }
+             }
+         }, this.unloadQueue::add).whenComplete((ignored, throwable) -> {
+@@ -622,7 +628,13 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+         return true;
+     }
+ 
+-    private CompletableFuture<ChunkAccess> scheduleChunkLoad(final ChunkPos pos) {
++    public io.fand.server.tick.SerialChunkOwnership.Snapshot fand$chunkOwnershipSnapshot() {
++        return this.fandChunkOwnership.snapshot();
++    }
++
++    private CompletableFuture<ChunkAccess> scheduleChunkLoad(final GenerationChunkHolder holder) {
++        ChunkPos pos = holder.getPos();
++        var lifetime = holder.fand$ownership();
+         CompletableFuture<Optional<SerializableChunkData>> chunkDataFuture = this.readChunk(pos).thenApplyAsync(chunkData -> chunkData.map(tag -> {
+             SerializableChunkData parsedData = SerializableChunkData.parse(this.level, this.level.palettedContainerFactory(), tag);
+             if (parsedData == null) {
+@@ -632,10 +644,14 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+             return parsedData;
+         }), io.fand.server.hooks.FandHooks.chunkBackgroundExecutor());
+         CompletableFuture<?> poiFuture = this.poiManager.prefetch(pos);
+-        return chunkDataFuture.<Object, Optional<SerializableChunkData>>thenCombine(
++        var prepared = chunkDataFuture.<Object, Optional<SerializableChunkData>>thenCombine(
+                 (CompletionStage<? extends Object>)poiFuture, (chunkData, ignored) -> chunkData
+-            )
+-            .thenApplyAsync(chunkData -> {
++            );
++        return lifetime.publish(prepared, (chunkData, failure) -> {
++            if (failure != null) {
++                return this.handleChunkLoadFailure(failure, pos);
++            }
++            try {
+                 Profiler.get().incrementCounter("chunkLoad");
+                 if (chunkData.isPresent()) {
+                     ChunkAccess chunk = chunkData.get().read(this.level, this.poiManager, this.storageInfo(), pos);
+@@ -644,19 +660,20 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+                 } else {
+                     return this.createEmptyChunk(pos);
+                 }
+-            }, this.mainThreadExecutor)
+-            .exceptionallyAsync(throwable -> this.handleChunkLoadFailure(throwable, pos), this.mainThreadExecutor);
++            } catch (RuntimeException | Error thrown) {
++                return this.handleChunkLoadFailure(thrown, pos);
++            }
++        });
+     }
+ 
+     private ChunkAccess handleChunkLoadFailure(final Throwable throwable, final ChunkPos pos) {
++        if (io.fand.server.tick.RetiredChunkException.isRetirement(throwable)) {
++            throw new io.fand.server.tick.RetiredChunkException();
++        }
+         Throwable unwrapped = throwable instanceof CompletionException e ? e.getCause() : throwable;
+         Throwable cause = unwrapped instanceof ReportedException e ? e.getCause() : unwrapped;
+         boolean alwaysThrow = cause instanceof Error;
+-        boolean ioException = cause instanceof IOException || cause instanceof NbtException;
+         if (!alwaysThrow) {
+-            if (!ioException) {
+-            }
+-
+             this.level.getServer().reportChunkLoadFailure(cause, this.storageInfo(), pos);
+             return this.createEmptyChunk(pos);
+         } else {
+@@ -703,7 +720,7 @@ public class ChunkMap extends SimpleRegionStorage implements ChunkHolder.PlayerP
+     ) {
+         ChunkPos pos = chunkHolder.getPos();
+         if (step.targetStatus() == ChunkStatus.EMPTY) {
+-            return this.scheduleChunkLoad(pos);
++            return this.scheduleChunkLoad(chunkHolder);
+         }
+ 
+         try {
+diff --git a/net/minecraft/server/level/GenerationChunkHolder.java b/net/minecraft/server/level/GenerationChunkHolder.java
+index 7e990bc7afba19de7590db943efe5346f50b710a..86cdc1c6f98881e3d9a70017efe04bcae1e58a17 100644
+--- a/net/minecraft/server/level/GenerationChunkHolder.java
++++ b/net/minecraft/server/level/GenerationChunkHolder.java
+@@ -36,6 +36,18 @@ public abstract class GenerationChunkHolder {
+     private @Nullable ChunkStatus requestedGenerationStatus;
+     private final AtomicInteger generationRefCount = new AtomicInteger();
+     private volatile CompletableFuture<Void> generationSaveSyncFuture = CompletableFuture.completedFuture(null);
++    private volatile io.fand.server.tick.SerialChunkOwnership.@Nullable Lifetime<GenerationChunkHolder> fandOwnership;
++
++    void fand$bindOwnership(io.fand.server.tick.SerialChunkOwnership.Lifetime<GenerationChunkHolder> lifetime) {
++        if (this.fandOwnership != null) {
++            throw new IllegalStateException("Chunk holder already has an ownership lifetime");
++        }
++        this.fandOwnership = Objects.requireNonNull(lifetime);
++    }
++
++    io.fand.server.tick.SerialChunkOwnership.Lifetime<GenerationChunkHolder> fand$ownership() {
++        return Objects.requireNonNull(this.fandOwnership, "Chunk holder has no ownership lifetime");
++    }
+ 
+     public GenerationChunkHolder(final ChunkPos pos) {
+         this.pos = pos;
+@@ -342,6 +354,9 @@ public abstract class GenerationChunkHolder {
+ 
+     private void failStatusWithCrash(final ChunkStatus status, final Throwable throwable) {
+         this.failFuture(status);
++        if (io.fand.server.tick.RetiredChunkException.isRetirement(throwable)) {
++            return;
++        }
+         CrashReport report = CrashReport.forThrowable(throwable, "Exception chunk generation/loading");
+         BlockableEventLoop.relayDelayCrash(report);
+     }

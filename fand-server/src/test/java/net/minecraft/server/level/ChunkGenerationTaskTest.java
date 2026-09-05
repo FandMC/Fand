@@ -164,14 +164,49 @@ final class ChunkGenerationTaskTest {
         assertThat(chunkMap.scheduledTasks()).isEqualTo(2);
     }
 
+    @Test
+    void persistedFullChunkStillRunsHigherLoadingStepsAfterSmallerTaskCompletes() {
+        ChunkPos center = new ChunkPos(0, 0);
+        var chunkMap = new GraphTestChunkMap(new ChunkPos(99, 99), ChunkStatus.FULL);
+        TestChunkHolder holder = chunkMap.holderOrCreate(center);
+
+        var starts = holder.scheduleChunkGenerationTask(ChunkStatus.STRUCTURE_STARTS, chunkMap);
+        var full = holder.scheduleChunkGenerationTask(ChunkStatus.FULL, chunkMap);
+        chunkMap.runGenerationTasks();
+
+        assertThat(starts).isDone();
+        assertThat(full).isDone();
+        assertThat(holder.startedStatuses()).contains(ChunkStatus.INITIALIZE_LIGHT, ChunkStatus.LIGHT, ChunkStatus.FULL);
+        assertThat(chunkMap.scheduledTasks()).isEqualTo(2);
+    }
+
+    @Test
+    void targetUpgradeDuringGraphConstructionCannotRelabelTheOlderFuture() {
+        ChunkPos center = new ChunkPos(0, 0);
+        var chunkMap = new GraphTestChunkMap(new ChunkPos(99, 99), ChunkStatus.FULL);
+        var task = ChunkGenerationTask.create(chunkMap, ChunkStatus.STRUCTURE_REFERENCES, center);
+        chunkMap.onEmpty = () -> assertThat(task.tryUpgradeTarget(ChunkStatus.BIOMES)).isTrue();
+
+        assertThat(task.runUntilWait()).isNull();
+
+        assertThat(chunkMap.holder(center).startedStatuses()).contains(ChunkStatus.BIOMES);
+    }
+
     private static final class GraphTestChunkMap implements GeneratingChunkMap {
         private final Map<Long, TestChunkHolder> holders = new ConcurrentHashMap<>();
         private final ChunkPos blockedEmptyPos;
+        private final @Nullable ChunkStatus persistedOnDiskStatus;
         private final CompletableFuture<ChunkResult<ChunkAccess>> blockedEmpty = new CompletableFuture<>();
         private final List<ChunkGenerationTask> tasks = new ArrayList<>();
+        private Runnable onEmpty = () -> {};
 
         private GraphTestChunkMap(final ChunkPos blockedEmptyPos) {
+            this(blockedEmptyPos, null);
+        }
+
+        private GraphTestChunkMap(final ChunkPos blockedEmptyPos, final @Nullable ChunkStatus persistedOnDiskStatus) {
             this.blockedEmptyPos = blockedEmptyPos;
+            this.persistedOnDiskStatus = persistedOnDiskStatus;
         }
 
         @Override
@@ -198,7 +233,7 @@ final class ChunkGenerationTaskTest {
                     throw new IllegalStateException(chunkResult.getError());
                 }
 
-                holder.persistedStatus = step.targetStatus();
+                holder.persistedStatus = chunkResult.orElse(null).getPersistedStatus();
                 return chunkResult.orElse(null);
             });
         }
@@ -240,11 +275,15 @@ final class ChunkGenerationTaskTest {
         }
 
         private CompletableFuture<ChunkResult<ChunkAccess>> runStep(final TestChunkHolder holder, final ChunkStep step) {
+            if (step.targetStatus() == ChunkStatus.EMPTY) {
+                this.onEmpty.run();
+            }
             if (step.targetStatus() == ChunkStatus.EMPTY && holder.getPos().equals(this.blockedEmptyPos)) {
                 return this.blockedEmpty;
             }
 
-            return CompletableFuture.completedFuture(ChunkResult.of(chunk(holder.getPos(), step.targetStatus())));
+            ChunkStatus persistedStatus = this.persistedOnDiskStatus == null ? step.targetStatus() : this.persistedOnDiskStatus;
+            return CompletableFuture.completedFuture(ChunkResult.of(chunk(holder.getPos(), persistedStatus)));
         }
 
         private void completeBlockedEmpty() {

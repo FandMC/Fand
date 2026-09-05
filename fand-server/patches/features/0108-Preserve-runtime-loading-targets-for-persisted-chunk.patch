@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 5 Sep 2026 22:13:02 +0800
+Subject: [PATCH] Preserve runtime loading targets for persisted chunks
+
+
+diff --git a/net/minecraft/server/level/ChunkGenerationTask.java b/net/minecraft/server/level/ChunkGenerationTask.java
+index cf8979ff2c2a752e4cff7fb58d332d61566aad4b..78baaa42372968b9e518eeac420d0717d80688e2 100644
+--- a/net/minecraft/server/level/ChunkGenerationTask.java
++++ b/net/minecraft/server/level/ChunkGenerationTask.java
+@@ -76,8 +76,9 @@ public class ChunkGenerationTask {
+                 return null;
+             }
+ 
+-            future = this.ensureStatus(this.center, this.currentTargetStatus);
+-            this.targetFutureStatus = this.currentTargetStatus;
++            ChunkStatus requestedStatus = this.currentTargetStatus;
++            future = this.ensureStatus(this.center, requestedStatus);
++            this.targetFutureStatus = requestedStatus;
+             this.targetFuture = future;
+         }
+ 
+@@ -95,7 +96,9 @@ public class ChunkGenerationTask {
+             return this.runUntilWait();
+         }
+ 
+-        this.releaseClaim(result.isSuccess(), generated == null ? target : generated.getPersistedStatus(), false);
++        // A saved FULL chunk still needs this runtime's higher loading steps.
++        // Only the status actually executed can satisfy a queued target upgrade.
++        this.releaseClaim(result.isSuccess(), futureStatus == null ? target : futureStatus, false);
+         return null;
+     }
+ 
