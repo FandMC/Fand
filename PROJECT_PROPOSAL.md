@@ -1,5 +1,7 @@
 # Fand Server 项目企划书
 
+动态分区与线程模型改造详见：[动态分区与多线程化企划案](docs/REGIONIZED_MULTITHREADING_PROPOSAL.md)（2026-09-05，架构提案）。
+
 ## 项目概述
 
 **项目名称**: Fand Server  
