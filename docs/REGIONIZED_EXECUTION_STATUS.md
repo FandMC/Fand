@@ -8,7 +8,8 @@
 
 已实现**现有串行执行模型上的目标调度入口**，以及**可独立执行的分区拓扑、holder 生命周期适配、区域执行器与局部 tick 队列**。
 第四批将 holder 生命周期和区块异步安装身份校验接入真实 NMS 路径；第五批将实体与方块实体 tick 成员按 cell 存放，并接入移动及卸载生命周期。
-`MinecraftServer` 仍在同一个线程上依次推进所有世界；实体和方块实体容器已经分 cell，区域执行器尚未接管模拟。局部时钟已在内部执行模型中实现，尚未接到原版计划刻。
+第六批继续接入方块/流体计划刻和 block events，并处理执行批次、保存预留及同步邻居更新链。
+`MinecraftServer` 仍在同一个线程上依次推进所有世界；上述状态容器已经分 cell，区域执行器尚未接管模拟。计划刻仍沿用原世界游戏时间，尚未切换到模型中的区域局部时钟。
 P0/P1 整体尚未完成，不能把模型测试中的并行执行当作 Minecraft 世界已经并行。
 
 新增公开入口：
@@ -61,10 +62,10 @@ MinecraftServer.processPacketsAndTick()
 | 位置与状态 | 当前归属 | 区域化前必须解决的事项 |
 | --- | --- | --- |
 | `ServerLevel.entityTickList`、玩家列表 | 世界线程；tick 成员已分 cell | 玩家列表、乘客共同执行归属、并行移交和去重 |
-| `ServerLevel.blockTicks` / `fluidTicks` | 世界线程 | 按区域分配队列，拆分/合并转换局部截止时间 |
-| `ServerLevel.blockEvents` / `blockEventsToReschedule` | 世界线程 | 保持顺序与同 tick 副作用，不以异步消息替代 |
+| `ServerLevel.blockTicks` / `fluidTicks` | 世界线程；区块容器与截止时间索引已分 cell | 拆分/合并时转换局部截止时间，领取批次绑定区域许可 |
+| `ServerLevel.blockEvents` | 世界线程；事件已分 cell，延后列表属于当前执行批次 | 保持同 tick 副作用，关联跨 cell 同步更新范围 |
 | `Level.blockEntityTickers` 内部 active / pending | 世界线程；两者已分 cell | 与区块及邻居更新共同移入区域执行域 |
-| `Level.neighborUpdater` | 世界线程 | 链式更新范围和所有权缓冲，避免修改一半后才发现越界 |
+| `Level.neighborUpdater` | 世界线程；栈与限额属于一次同步更新链 | updater 随执行所有者分配，跨边界更新前取得完整权限 |
 | `Level.random` 使用 `ThreadUnsafeRandom` | 世界线程 | 随机源局部化与序列兼容决定，禁止多个区域共享推进 |
 | `Level.thread` | 创建世界时的线程 | 从固定线程身份迁移到执行所有权 |
 | `ServerChunkCache` 距离管理、票据、`spawningChunks`、刷怪统计 | 世界线程 | 加载状态发布、临时列表分区和世界总额协调 |
@@ -275,6 +276,50 @@ cell 使用 `ChunkMap` 的同一坐标换算规则，不保存会随拆分/合�
 实体 AI、载具与乘客递归、冻结判断及执行顺序仍沿原版 tick 路径运行；成员 cell 不等于已经解决乘客跨边界共同执行。
 计划刻、邻居更新、随机源、POI 和实体存储发布仍待拆分，因此本批没有开启 NMS 区域并行。
 
+## 第六批：计划刻、block events 与邻居更新链
+
+### 方块与流体计划刻
+
+`LevelTicks` 使用 `CellTickContainerIndex` 管理区块容器，每个 cell 保存自己的区块索引及截止时间集合。
+每个容器最多有一个截止时间条目，每个非空调度 cell 最多有一个汇总条目；更新时直接移除旧条目再插入新条目。
+移除了全世界多份 next/queued Map、过期条目、堆膨胀阈值及整堆重建路径。
+方块计划刻使用截止时间索引；流体的原有配置仍可切换索引和扫描方式，切换不再复制或重建调度状态。
+
+一次 `tick()` 的待执行列表、已执行记录和查询缓存属于 `TickBatch`，结束或失败后释放。
+跨 cell 收集继续使用原版 `INTRA_TICK_DRAIN_ORDER`，保留优先级、sub-tick 顺序和全世界的处理上限；
+执行过程中新增的计划刻仍等到下一次收集。`copyArea` 保留复制已执行、本批待执行及未来计划刻的原有语义。
+
+同时修复以下生命周期问题：
+
+- 替换区块容器时先解绑旧回调、退休旧批次成员；旧对象后续新增不能污染新容器的截止时间。
+  `LevelChunk` 注销时同时传入自身容器身份，旧区块的迟到注销不能移除同坐标的新容器。
+- `clearArea` 同时清理容器、本批成员和 `willTickThisTick` 查询缓存，不再查询到已经取消的计划刻。
+- 收集时在 `LevelChunkTicks` 中预留计划刻，直到执行开始才释放；`pack()` 包含尚未执行的预留，
+  覆盖原版“先保存，再注销区块”的卸载顺序。预留不改变 `hasScheduledTick` 的原有含义。
+- 回调失败时，尚未执行的预留归还原容器，当前回调仍按失败传播，不自动重试其可能已经产生的副作用。
+  区块退休也归还未执行条目；同位置、同类型已经新注册的计划刻优先，保存与归还都不会制造重复条目。
+
+存档格式和相对延迟编码保持原样。这里没有把世界时间直接替换成不同步的区域时间，也没有允许工作线程直接执行原版方块回调。
+
+### Block events
+
+`BlockEventQueue` 将去重集合放到各 cell，只保留每个 cell 的最早序号用于串行归并。
+跨 cell 按原提交顺序执行；回调中新加入的事件仍在本轮处理，不改成下一 tick 的异步消息。
+不能 tick 的位置延后到下一轮，区域清除和区块最终卸载同时清理队列与当前延后列表，避免清除后重新加入或永久残留。
+异常继续传播，尚未执行和已延后的其他事件保留；`BlockEventData` 固定坐标快照，防止复用 `MutableBlockPos` 改坏位置和去重键。
+
+### 同步邻居更新链
+
+`CollectingNeighborUpdater` 的栈、当前层新增和更新限额归入一次 `UpdateChain`；所有嵌套调用，包括跨 cell 的调用，共享该同步链。
+链结束或异常时统一归还并清空缓冲，下一条链复用容量，避免每次方块更新重新分配栈数组。
+保留深度优先顺序、多方向更新的暂停/恢复顺序和原来的链长限制；无限模式不再累计无用计数，有限模式到上限后计数不继续增长。
+同时修复简单邻居更新在排队时没有固定可变坐标的问题。
+
+当前一个世界仍使用同一个 updater。后续需要把 updater 交给执行所有者，并在同步链修改方块前解决访问范围；
+本批没有用逐 cell 排队来改变红石传播顺序。
+
+`fand$simulationCells()` 已增加每个 cell 的方块计划刻、流体计划刻和 block event 数量，主要公开 Fand API 无需迁移。
+
 ## 第一批验证结果
 
 已有调度器与线程桥测试作为改造前基线；新增回归覆盖后台提交、提交顺序、下一 tick、异常传递、
@@ -372,9 +417,40 @@ NMS 变更已先提交内层 Git，再由 paperweight 生成 `0107`、`0108` 两
 
 内层提交 `65445b8b` 通过 paperweight feature 任务生成 `0109` 补丁，两者的稳定 patch-id 一致；没有手工编辑补丁。
 
+## 第六批验证结果
+
+新增 30 项行为回归：计划刻 15 项、block events 9 项、邻居更新链 6 项。
+计划刻覆盖索引与扫描两种模式、跨 cell 优先级及世界处理上限、回调期间新增/清除/替换、异常归还、
+预留计划刻保存、复制及 1000 步确定性随机操作；邻居更新覆盖跨 cell 深度优先顺序、方向顺序、限额及 5001 层更新链。
+
+统一验证结果为 API 198 项、服务端 785 项、已有集成检查 3 项，全部通过，零失败、零跳过；启动包构建成功。
+随后补齐 `LevelChunk` 按容器身份注销的接入，127 项计划刻、事件、邻居更新、方块实体及区域模型定向回归全部通过，最终启动包重新构建成功。
+
+```powershell
+./gradlew.bat :fand-api:test :fand-server:test :fand-server:integrationTest :fand-server:fandclipJar --console=plain
+./gradlew.bat :fand-server:test --tests "net.minecraft.world.ticks.*" --tests "net.minecraft.world.level.BlockEventQueueTest" --tests "net.minecraft.world.level.redstone.CollectingNeighborUpdaterTest" --tests "net.minecraft.world.level.block.entity.BlockEntityTickListTest" --tests "io.fand.server.tick.*" :fand-server:fandclipJar --console=plain
+```
+
+继续使用独立平坦存档、Java 25 和仅本机监听的隔离服，两片相隔较远的区域运行真实 NMS 回调：
+
+| 场景 | 观察结果 |
+| --- | --- |
+| 冻结与计划刻到期 | 两地 delay=2 的中继器在冻结及推进 3 tick 后仍关闭，第 4 tick 同时点亮并触发活塞；此时水传播仍未到期 |
+| 活塞跨 cell | 再推进 4 tick，两地活塞头和推动的石头均出现在相邻 cell；移除电源后，两地活塞正常收回 |
+| 流体跨 cell | 有边界的水槽中，水按延迟流入相邻 cell，未因容器分 cell 提前执行 |
+| 跨区域复制 | `/clone` 复制仍有待执行计划刻的中继器和活塞；复制后前 3 tick 保持关闭，随后按原延迟点亮并推动活塞 |
+| 保存、最终卸载与进程重启 | 探针登记延迟 40000 tick 的原生方块计划刻；保存并最终卸载后停服，使用最终启动包重启并加载原坐标，`SCHEDULED_RELOAD_OK` 确认计划刻恢复，方块及红石状态检查也通过 |
+| 再次最终卸载 | 重启后再次移除强制加载，三个维度的模拟队列均为空，holder / cell / region 数均归零 |
+
+两次测试服均通过 `stop` 正常保存退出，进程退出码为 0。
+过程记录保存在本地 `build/region-scheduled-smoke.log` 和 `build/region-scheduled-restart.log`。
+这些检查覆盖串行玩法、存档与队列生命周期；尚未验证在线玩家负载，也不构成 NMS 区域并行或多核吞吐结论。
+
+内层提交 `246ba88b` 通过 paperweight feature 任务生成 `0110` 补丁，两者的稳定 patch-id 一致；没有手工编辑补丁。
+
 ## 下一批实施顺序
 
-1. 实体与方块实体 tick 成员已分 cell；继续拆分计划刻、block events、邻居更新和区域模拟临时状态，保持跨区副作用的顺序约束。
+1. 继续拆分随机刻、刷怪和区域模拟临时状态，把同步邻居更新链的执行范围与所有权许可接起来；不按单个方块随意拆开红石传播。
 2. 扩展串行运行中的所有权审计，覆盖 POI 和实体存储的异步发布；不能把独立模型误当成实时世界授权。
 3. 将目标调度路由接到已验证的运行时归属，把局部时钟与延迟迁入原版计划刻，再补实体移交和跟随定时任务。
 4. 测量大区域拓扑调整和任务队列开销，再实现有限预算的布局维护与负载策略。

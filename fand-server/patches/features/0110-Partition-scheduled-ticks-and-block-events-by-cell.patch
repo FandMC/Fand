@@ -1,0 +1,1267 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Sat, 5 Sep 2026 23:19:02 +0800
+Subject: [PATCH] Partition scheduled ticks and block events by cell
+
+
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index f9c7651f0b1871db11abf6e5c54a06bf0c7c8bbc..71e3d98e4adc3b9988480a84ceec0188e1309a35 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -10,7 +10,6 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+ import it.unimi.dsi.fastutil.longs.LongSet;
+ import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
+ import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+-import it.unimi.dsi.fastutil.objects.ObjectLinkedOpenHashSet;
+ import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
+ import it.unimi.dsi.fastutil.objects.Object2IntMap.Entry;
+ import java.io.IOException;
+@@ -207,17 +206,19 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     private final SleepStatus sleepStatus;
+     private int emptyTime;
+     private final PortalForcer portalForcer;
+-    private final LevelTicks<Block> blockTicks = new LevelTicks<>(this::isPositionTickingWithEntitiesLoaded);
++    private final LevelTicks<Block> blockTicks = new LevelTicks<>(
++        this::isPositionTickingWithEntitiesLoaded, () -> true, this::fand$simulationCellAtChunk
++    );
+     private final LevelTicks<Fluid> fluidTicks = new LevelTicks<>(
+         this::isPositionTickingWithEntitiesLoaded,
+-        io.fand.server.hooks.FandHooks::fluidTickContainerQueueEnabled
++        io.fand.server.hooks.FandHooks::fluidTickContainerQueueEnabled,
++        this::fand$simulationCellAtChunk
+     );
+     private final PathTypeCache pathTypesByPosCache = new PathTypeCache();
+     private final Set<Mob> navigatingMobs = new ObjectOpenHashSet<>();
+     private volatile boolean isUpdatingNavigations;
+     protected final Raids raids;
+-    private final ObjectLinkedOpenHashSet<BlockEventData> blockEvents = new ObjectLinkedOpenHashSet<>();
+-    private final List<BlockEventData> blockEventsToReschedule = new ArrayList<>(64);
++    private final net.minecraft.world.level.BlockEventQueue blockEvents = new net.minecraft.world.level.BlockEventQueue(this::fand$simulationCellAt);
+     private boolean handlingTick;
+     private final List<CustomSpawner> customSpawners;
+     private @Nullable EnderDragonFight dragonFight;
+@@ -917,6 +918,10 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+         return this.chunkSource.chunkMap.fand$cellAtChunk(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()));
+     }
+ 
++    private io.fand.server.tick.OwnershipCell fand$simulationCellAtChunk(final long chunkPos) {
++        return this.chunkSource.chunkMap.fand$cellAtChunk(ChunkPos.getX(chunkPos), ChunkPos.getZ(chunkPos));
++    }
++
+     public Map<io.fand.server.tick.OwnershipCell, FandCellSimulation> fand$simulationCells() {
+         if (!this.server.isSameThread()) {
+             throw new IllegalStateException("Simulation snapshots belong to the world control thread");
+@@ -924,18 +929,26 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+         Map<io.fand.server.tick.OwnershipCell, Integer> entities = this.entityTickList.cellSizes();
+         Map<io.fand.server.tick.OwnershipCell, Integer> blockEntities = this.blockEntityTickers.cellSizes();
+         Map<io.fand.server.tick.OwnershipCell, Integer> pendingBlockEntities = this.blockEntityTickers.pendingCellSizes();
++        Map<io.fand.server.tick.OwnershipCell, Integer> blockTicks = this.blockTicks.cellTickCounts();
++        Map<io.fand.server.tick.OwnershipCell, Integer> fluidTicks = this.fluidTicks.cellTickCounts();
++        Map<io.fand.server.tick.OwnershipCell, Integer> blockEvents = this.blockEvents.cellCounts();
+         java.util.Set<io.fand.server.tick.OwnershipCell> cells = new java.util.TreeSet<>(entities.keySet());
+         cells.addAll(blockEntities.keySet());
+         cells.addAll(pendingBlockEntities.keySet());
++        cells.addAll(blockTicks.keySet());
++        cells.addAll(fluidTicks.keySet());
++        cells.addAll(blockEvents.keySet());
+         Map<io.fand.server.tick.OwnershipCell, FandCellSimulation> result = new java.util.TreeMap<>();
+         for (var cell : cells) {
+             result.put(cell, new FandCellSimulation(entities.getOrDefault(cell, 0), blockEntities.getOrDefault(cell, 0),
+-                pendingBlockEntities.getOrDefault(cell, 0), this.chunkSource.chunkMap.fand$regionIdAt(cell)));
++                pendingBlockEntities.getOrDefault(cell, 0), blockTicks.getOrDefault(cell, 0), fluidTicks.getOrDefault(cell, 0),
++                blockEvents.getOrDefault(cell, 0), this.chunkSource.chunkMap.fand$regionIdAt(cell)));
+         }
+         return java.util.Collections.unmodifiableMap(result);
+     }
+ 
+-    public record FandCellSimulation(int entities, int blockEntities, int pendingBlockEntities, java.util.OptionalLong regionId) {}
++    public record FandCellSimulation(int entities, int blockEntities, int pendingBlockEntities, int blockTicks, int fluidTicks,
++                                     int blockEvents, java.util.OptionalLong regionId) {}
+ 
+     public void tickNonPassenger(final Entity entity) {
+         entity.setOldPosAndRot();
+@@ -1132,6 +1145,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     }
+ 
+     public void unload(final LevelChunk levelChunk) {
++        this.blockEvents.removeChunk(levelChunk.getPos());
+         levelChunk.clearAllBlockEntities();
+         levelChunk.unregisterTickContainerFromLevel(this);
+         this.debugSynchronizers.dropChunk(levelChunk.getPos());
+@@ -1390,30 +1404,21 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     }
+ 
+     private void runBlockEvents() {
+-        this.blockEventsToReschedule.clear();
+-
+-        while (!this.blockEvents.isEmpty()) {
+-            BlockEventData eventData = this.blockEvents.removeFirst();
+-            if (this.shouldTickBlocksAt(eventData.pos())) {
+-                if (this.doBlockEvent(eventData)) {
+-                    this.server
+-                        .getPlayerList()
+-                        .broadcast(
+-                            null,
+-                            eventData.pos().getX(),
+-                            eventData.pos().getY(),
+-                            eventData.pos().getZ(),
+-                            64.0,
+-                            this.dimension(),
+-                            new ClientboundBlockEventPacket(eventData.pos(), eventData.block(), eventData.paramA(), eventData.paramB())
+-                        );
+-                }
+-            } else {
+-                this.blockEventsToReschedule.add(eventData);
++        this.blockEvents.run(this::shouldTickBlocksAt, eventData -> {
++            if (this.doBlockEvent(eventData)) {
++                this.server
++                    .getPlayerList()
++                    .broadcast(
++                        null,
++                        eventData.pos().getX(),
++                        eventData.pos().getY(),
++                        eventData.pos().getZ(),
++                        64.0,
++                        this.dimension(),
++                        new ClientboundBlockEventPacket(eventData.pos(), eventData.block(), eventData.paramA(), eventData.paramB())
++                    );
+             }
+-        }
+-
+-        this.blockEvents.addAll(this.blockEventsToReschedule);
++        });
+     }
+ 
+     private boolean doBlockEvent(final BlockEventData eventData) {
+diff --git a/net/minecraft/world/level/BlockEventData.java b/net/minecraft/world/level/BlockEventData.java
+index 298a629a3cf6ca20feb454375825dcdd3b57b5cc..9f9915c0b384ca84ce65862b63bd444fb44157d5 100644
+--- a/net/minecraft/world/level/BlockEventData.java
++++ b/net/minecraft/world/level/BlockEventData.java
+@@ -4,4 +4,7 @@ import net.minecraft.core.BlockPos;
+ import net.minecraft.world.level.block.Block;
+ 
+ public record BlockEventData(BlockPos pos, Block block, int paramA, int paramB) {
++    public BlockEventData {
++        pos = pos.immutable();
++    }
+ }
+diff --git a/net/minecraft/world/level/BlockEventQueue.java b/net/minecraft/world/level/BlockEventQueue.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..15435b37383ae7de77327dc9ba05d176c31d970c
+--- /dev/null
++++ b/net/minecraft/world/level/BlockEventQueue.java
+@@ -0,0 +1,125 @@
++package net.minecraft.world.level;
++
++import io.fand.server.tick.OwnershipCell;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.TreeMap;
++import java.util.function.Consumer;
++import java.util.function.Function;
++import java.util.function.Predicate;
++import net.minecraft.core.BlockPos;
++import org.jspecify.annotations.Nullable;
++
++/** Pending events belong to cells; their heads preserve the serial world's insertion order. */
++public final class BlockEventQueue {
++    private final Function<BlockPos, OwnershipCell> cellAt;
++    private final Map<OwnershipCell, LinkedHashMap<BlockEventData, Long>> cells = new HashMap<>();
++    private final TreeMap<Long, OwnershipCell> heads = new TreeMap<>();
++    private @Nullable List<BlockEventData> deferred;
++    private long nextOrder;
++
++    public BlockEventQueue(Function<BlockPos, OwnershipCell> cellAt) {
++        this.cellAt = cellAt;
++    }
++
++    public void add(BlockEventData event) {
++        OwnershipCell pos = this.cellAt.apply(event.pos());
++        var cell = this.cells.get(pos);
++        if (cell != null && cell.containsKey(event)) {
++            return;
++        }
++        long order = this.nextOrder;
++        this.nextOrder = Math.incrementExact(order);
++        if (cell == null) {
++            cell = new LinkedHashMap<>();
++            this.cells.put(pos, cell);
++        }
++        cell.put(event, order);
++        if (cell.size() == 1) {
++            this.heads.put(order, pos);
++        }
++    }
++
++    private @Nullable BlockEventData poll() {
++        var head = this.heads.pollFirstEntry();
++        if (head == null) {
++            return null;
++        }
++        var cell = this.cells.get(head.getValue());
++        BlockEventData event = cell.pollFirstEntry().getKey();
++        if (cell.isEmpty()) {
++            this.cells.remove(head.getValue());
++        } else {
++            this.heads.put(cell.firstEntry().getValue(), head.getValue());
++        }
++        return event;
++    }
++
++    public void run(Predicate<BlockPos> shouldTick, Consumer<BlockEventData> output) {
++        if (this.deferred != null) {
++            throw new IllegalStateException("Block events cannot be reentered");
++        }
++        List<BlockEventData> deferred = new ArrayList<>();
++        this.deferred = deferred;
++        try {
++            BlockEventData event;
++            while ((event = this.poll()) != null) {
++                if (shouldTick.test(event.pos())) {
++                    output.accept(event);
++                } else {
++                    deferred.add(event);
++                }
++            }
++        } finally {
++            this.deferred = null;
++            deferred.forEach(this::add);
++        }
++    }
++
++    public void removeIf(Predicate<BlockEventData> predicate) {
++        for (var iterator = this.cells.entrySet().iterator(); iterator.hasNext();) {
++            var entry = iterator.next();
++            var cell = entry.getValue();
++            this.heads.remove(cell.firstEntry().getValue());
++            cell.keySet().removeIf(predicate);
++            if (cell.isEmpty()) {
++                iterator.remove();
++            } else {
++                this.heads.put(cell.firstEntry().getValue(), entry.getKey());
++            }
++        }
++        if (this.deferred != null) {
++            this.deferred.removeIf(predicate);
++        }
++    }
++
++    public void removeChunk(ChunkPos pos) {
++        OwnershipCell cellPos = this.cellAt.apply(pos.getWorldPosition());
++        var cell = this.cells.get(cellPos);
++        Predicate<BlockEventData> inChunk = event -> ChunkPos.pack(event.pos()) == pos.pack();
++        if (cell != null) {
++            this.heads.remove(cell.firstEntry().getValue());
++            cell.keySet().removeIf(inChunk);
++            if (cell.isEmpty()) {
++                this.cells.remove(cellPos);
++            } else {
++                this.heads.put(cell.firstEntry().getValue(), cellPos);
++            }
++        }
++        if (this.deferred != null) {
++            this.deferred.removeIf(inChunk);
++        }
++    }
++
++    public Map<OwnershipCell, Integer> cellCounts() {
++        Map<OwnershipCell, Integer> counts = new TreeMap<>();
++        this.cells.forEach((pos, cell) -> counts.put(pos, cell.size()));
++        if (this.deferred != null) {
++            this.deferred.forEach(event -> counts.merge(this.cellAt.apply(event.pos()), 1, Integer::sum));
++        }
++        return java.util.Collections.unmodifiableMap(counts);
++    }
++}
+diff --git a/net/minecraft/world/level/chunk/LevelChunk.java b/net/minecraft/world/level/chunk/LevelChunk.java
+index f5116706f91e984e814fdbda85db0784a8eabb02..82d1a820d30965740350cbfb5e250074b3129aac 100644
+--- a/net/minecraft/world/level/chunk/LevelChunk.java
++++ b/net/minecraft/world/level/chunk/LevelChunk.java
+@@ -666,8 +666,8 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+     }
+ 
+     public void unregisterTickContainerFromLevel(final ServerLevel level) {
+-        level.getBlockTicks().removeContainer(this.chunkPos);
+-        level.getFluidTicks().removeContainer(this.chunkPos);
++        level.getBlockTicks().removeContainer(this.chunkPos, this.blockTicks);
++        level.getFluidTicks().removeContainer(this.chunkPos, this.fluidTicks);
+     }
+ 
+     @Override
+diff --git a/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java b/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
+index 5defe0cd4398c9b228ed9526ff26fd298421a89e..fcce65ea1713ed2894d69b45167599f6eea01d2a 100644
+--- a/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
++++ b/net/minecraft/world/level/redstone/CollectingNeighborUpdater.java
+@@ -18,9 +18,8 @@ public class CollectingNeighborUpdater implements NeighborUpdater {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private final Level level;
+     private final int maxChainedNeighborUpdates;
+-    private final ArrayDeque<CollectingNeighborUpdater.NeighborUpdates> stack = new ArrayDeque<>();
+-    private final List<CollectingNeighborUpdater.NeighborUpdates> addedThisLayer = new ArrayList<>();
+-    private int count = 0;
++    private @Nullable UpdateChain currentChain;
++    private @Nullable UpdateChain reusableChain;
+     private @Nullable Consumer<BlockPos> debugListener;
+ 
+     public CollectingNeighborUpdater(final Level level, final int maxChainedNeighborUpdates) {
+@@ -48,7 +47,7 @@ public class CollectingNeighborUpdater implements NeighborUpdater {
+ 
+     @Override
+     public void neighborChanged(final BlockPos pos, final Block block, final @Nullable Orientation orientation) {
+-        this.addAndRun(pos, new CollectingNeighborUpdater.SimpleNeighborUpdate(pos, block, orientation));
++        this.addAndRun(pos, new CollectingNeighborUpdater.SimpleNeighborUpdate(pos.immutable(), block, orientation));
+     }
+ 
+     @Override
+@@ -66,48 +65,83 @@ public class CollectingNeighborUpdater implements NeighborUpdater {
+     }
+ 
+     private void addAndRun(final BlockPos pos, final CollectingNeighborUpdater.NeighborUpdates update) {
+-        boolean runningAlready = this.count > 0;
+-        boolean tooManyUpdates = this.maxChainedNeighborUpdates >= 0 && this.count >= this.maxChainedNeighborUpdates;
+-        this.count++;
+-        if (!tooManyUpdates) {
+-            if (runningAlready) {
+-                this.addedThisLayer.add(update);
+-            } else {
+-                this.stack.push(update);
+-            }
+-        } else if (this.count - 1 == this.maxChainedNeighborUpdates) {
+-            LOGGER.error("Too many chained neighbor updates. Skipping the rest. First skipped position: {}", pos.toShortString());
++        UpdateChain chain = this.currentChain;
++        if (chain != null) {
++            chain.add(pos, update, true);
++            return;
+         }
+-
+-        if (!runningAlready) {
+-            this.runUpdates();
++        chain = this.reusableChain;
++        this.reusableChain = null;
++        if (chain == null) {
++            chain = new UpdateChain(this.maxChainedNeighborUpdates);
++        }
++        this.currentChain = chain;
++        try {
++            chain.add(pos, update, false);
++            this.runUpdates(chain);
++        } finally {
++            chain.reset();
++            this.currentChain = null;
++            this.reusableChain = chain;
+         }
+     }
+ 
+-    private void runUpdates() {
+-        try {
+-            while (!this.stack.isEmpty() || !this.addedThisLayer.isEmpty()) {
+-                for (int i = this.addedThisLayer.size() - 1; i >= 0; i--) {
+-                    this.stack.push(this.addedThisLayer.get(i));
+-                }
++    private void runUpdates(UpdateChain chain) {
++        while (!chain.stack.isEmpty() || !chain.addedThisLayer.isEmpty()) {
++            for (int i = chain.addedThisLayer.size() - 1; i >= 0; i--) {
++                chain.stack.push(chain.addedThisLayer.get(i));
++            }
+ 
+-                this.addedThisLayer.clear();
+-                CollectingNeighborUpdater.NeighborUpdates nextUpdates = this.stack.peek();
+-                if (this.debugListener != null) {
+-                    nextUpdates.forEachUpdatedPos(this.debugListener);
+-                }
++            chain.addedThisLayer.clear();
++            CollectingNeighborUpdater.NeighborUpdates nextUpdates = chain.stack.peek();
++            if (this.debugListener != null) {
++                nextUpdates.forEachUpdatedPos(this.debugListener);
++            }
+ 
+-                while (this.addedThisLayer.isEmpty()) {
+-                    if (!nextUpdates.runNext(this.level)) {
+-                        this.stack.pop();
+-                        break;
+-                    }
++            while (chain.addedThisLayer.isEmpty()) {
++                if (!nextUpdates.runNext(this.level)) {
++                    chain.stack.pop();
++                    break;
+                 }
+             }
+-        } finally {
++        }
++    }
++
++    /** One synchronous causal chain, including updates that cross cell boundaries. */
++    private static final class UpdateChain {
++        private final ArrayDeque<NeighborUpdates> stack = new ArrayDeque<>();
++        private final List<NeighborUpdates> addedThisLayer = new ArrayList<>();
++        private final int limit;
++        private int accepted;
++        private boolean limitReported;
++
++        private UpdateChain(int limit) {
++            this.limit = limit;
++        }
++
++        private void reset() {
+             this.stack.clear();
+             this.addedThisLayer.clear();
+-            this.count = 0;
++            this.accepted = 0;
++            this.limitReported = false;
++        }
++
++        private void add(BlockPos pos, NeighborUpdates update, boolean nested) {
++            if (this.limit >= 0) {
++                if (this.accepted == this.limit) {
++                    if (!this.limitReported) {
++                        this.limitReported = true;
++                        LOGGER.error("Too many chained neighbor updates. Skipping the rest. First skipped position: {}", pos.toShortString());
++                    }
++                    return;
++                }
++                this.accepted++;
++            }
++            if (nested) {
++                this.addedThisLayer.add(update);
++            } else {
++                this.stack.push(update);
++            }
+         }
+     }
+ 
+diff --git a/net/minecraft/world/ticks/CellTickContainerIndex.java b/net/minecraft/world/ticks/CellTickContainerIndex.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..3848c0e7466020778472245d0329ad0711237fa0
+--- /dev/null
++++ b/net/minecraft/world/ticks/CellTickContainerIndex.java
+@@ -0,0 +1,175 @@
++package net.minecraft.world.ticks;
++
++import io.fand.server.tick.OwnershipCell;
++import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
++import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
++import java.util.ArrayList;
++import java.util.Comparator;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.NavigableSet;
++import java.util.TreeMap;
++import java.util.TreeSet;
++import java.util.function.LongFunction;
++import org.jspecify.annotations.Nullable;
++
++/** Cell-owned containers, with one live deadline entry per container and per cell. */
++final class CellTickContainerIndex<T> {
++    private final LongFunction<OwnershipCell> cellAtChunk;
++    private final Map<OwnershipCell, Cell<T>> cells = new HashMap<>();
++    private final NavigableSet<Cell<T>> scheduledCells = new TreeSet<>(Comparator
++        .<Cell<T>>comparingLong(cell -> cell.scheduled.first().nextTick)
++        .thenComparing(cell -> cell.pos));
++
++    CellTickContainerIndex(LongFunction<OwnershipCell> cellAtChunk) {
++        this.cellAtChunk = cellAtChunk;
++    }
++
++    Registration<T> add(long chunkPos, LevelChunkTicks<T> container) {
++        OwnershipCell pos = this.cellAtChunk.apply(chunkPos);
++        Cell<T> cell = this.cells.computeIfAbsent(pos, Cell::new);
++        Registration<T> registration = new Registration<>(chunkPos, container, cell);
++        cell.containers.put(chunkPos, registration);
++        container.setOnTickAdded((source, tick) -> this.refresh(registration));
++        this.refresh(registration);
++        return registration;
++    }
++
++    @Nullable Registration<T> get(long chunkPos) {
++        Cell<T> cell = this.cells.get(this.cellAtChunk.apply(chunkPos));
++        return cell == null ? null : cell.containers.get(chunkPos);
++    }
++
++    boolean isCurrent(Registration<T> registration) {
++        return this.cells.get(registration.cell.pos) == registration.cell
++            && registration.cell.containers.get(registration.chunkPos) == registration;
++    }
++
++    @Nullable Registration<T> remove(long chunkPos) {
++        Registration<T> registration = this.get(chunkPos);
++        if (registration == null) {
++            return null;
++        }
++        this.unschedule(registration);
++        registration.container.setOnTickAdded(null);
++        Cell<T> cell = registration.cell;
++        cell.containers.remove(chunkPos);
++        if (cell.containers.isEmpty()) {
++            this.cells.remove(cell.pos);
++        }
++        return registration;
++    }
++
++    void refresh(Registration<T> registration) {
++        if (!this.isCurrent(registration)) {
++            return;
++        }
++        this.unschedule(registration);
++        ScheduledTick<T> next = registration.container.peek();
++        if (next != null) {
++            Cell<T> cell = registration.cell;
++            if (!cell.scheduled.isEmpty()) {
++                this.scheduledCells.remove(cell);
++            }
++            registration.nextTick = next.triggerTick();
++            registration.queued = true;
++            cell.scheduled.add(registration);
++            this.scheduledCells.add(cell);
++        }
++    }
++
++    private void unschedule(Registration<T> registration) {
++        if (registration.queued) {
++            Cell<T> cell = registration.cell;
++            this.scheduledCells.remove(cell);
++            cell.scheduled.remove(registration);
++            registration.queued = false;
++            if (!cell.scheduled.isEmpty()) {
++                this.scheduledCells.add(cell);
++            }
++        }
++    }
++
++    List<Registration<T>> due(long currentTick, boolean useDeadlineIndex) {
++        List<Registration<T>> due = new ArrayList<>();
++        if (useDeadlineIndex) {
++            for (Cell<T> cell : this.scheduledCells) {
++                if (cell.scheduled.first().nextTick > currentTick) {
++                    break;
++                }
++                for (Registration<T> registration : cell.scheduled) {
++                    if (registration.nextTick > currentTick) {
++                        break;
++                    }
++                    due.add(registration);
++                }
++            }
++        } else {
++            for (Cell<T> cell : this.cells.values()) {
++                for (Registration<T> registration : cell.containers.values()) {
++                    ScheduledTick<T> next = registration.container.peek();
++                    if (next != null && next.triggerTick() <= currentTick) {
++                        due.add(registration);
++                    }
++                }
++            }
++        }
++        // No live index iterator may survive callbacks or container retirement.
++        return due;
++    }
++
++    int count() {
++        int count = 0;
++        for (Cell<T> cell : this.cells.values()) {
++            for (Registration<T> registration : cell.containers.values()) {
++                count += registration.container.count();
++            }
++        }
++        return count;
++    }
++
++    Map<OwnershipCell, Integer> tickCounts() {
++        Map<OwnershipCell, Integer> counts = new TreeMap<>();
++        for (Cell<T> cell : this.cells.values()) {
++            int count = 0;
++            for (Registration<T> registration : cell.containers.values()) {
++                count += registration.container.count();
++            }
++            if (count != 0) {
++                counts.put(cell.pos, count);
++            }
++        }
++        return counts;
++    }
++
++    static final class Registration<T> {
++        final long chunkPos;
++        final LevelChunkTicks<T> container;
++        final Cell<T> cell;
++        private boolean queued;
++        private long nextTick;
++
++        private Registration(long chunkPos, LevelChunkTicks<T> container, Cell<T> cell) {
++            this.chunkPos = chunkPos;
++            this.container = container;
++            this.cell = cell;
++        }
++
++        OwnershipCell cell() {
++            return this.cell.pos;
++        }
++    }
++
++    private static final class Cell<T> {
++        private final OwnershipCell pos;
++        private final Long2ObjectMap<Registration<T>> containers = new Long2ObjectOpenHashMap<>();
++        private final NavigableSet<Registration<T>> scheduled = new TreeSet<>(Comparator
++            .<Registration<T>>comparingLong(registration -> registration.nextTick)
++            .thenComparingLong(registration -> registration.chunkPos));
++
++        private Cell(OwnershipCell pos) {
++            this.pos = pos;
++        }
++    }
++}
+diff --git a/net/minecraft/world/ticks/LevelChunkTicks.java b/net/minecraft/world/ticks/LevelChunkTicks.java
+index 08eabe36ccef9dc8f34312fb084c1cf281e58ffa..abcc471b62f39365dce58a8374d165d7ff3729cc 100644
+--- a/net/minecraft/world/ticks/LevelChunkTicks.java
++++ b/net/minecraft/world/ticks/LevelChunkTicks.java
+@@ -9,7 +9,10 @@ import it.unimi.dsi.fastutil.objects.Reference2IntOpenHashMap;
+ import java.util.ArrayList;
+ import java.util.Arrays;
+ import java.util.Comparator;
++import java.util.Collections;
++import java.util.IdentityHashMap;
+ import java.util.List;
++import java.util.Set;
+ import java.util.function.BiConsumer;
+ import java.util.function.Predicate;
+ import java.util.stream.Stream;
+@@ -24,6 +27,7 @@ public class LevelChunkTicks<T> implements TickContainerAccess<T>, SerializableT
+     private static volatile Reference2IntOpenHashMap<Object> typeToIndex = makeTypeIndexMap();
+     private final Long2ReferenceAVLTreeMap<TickBucket<T>> ticksByTimeAndPriority = new Long2ReferenceAVLTreeMap<>();
+     private final IntSet ticksPerPosition = new IntOpenHashSet();
++    private final Set<ScheduledTick<T>> reservedTicks = Collections.newSetFromMap(new IdentityHashMap<>());
+     private @Nullable List<SavedTick<T>> pendingTicks;
+     private @Nullable BiConsumer<LevelChunkTicks<T>, ScheduledTick<T>> onTickAdded;
+     private @Nullable ScheduledTick<T> nextTick;
+@@ -53,6 +57,25 @@ public class LevelChunkTicks<T> implements TickContainerAccess<T>, SerializableT
+         return this.nextTick;
+     }
+ 
++    /** Taken for this pass, but still included in a save until execution starts. */
++    @Nullable ScheduledTick<T> reserveForTick() {
++        ScheduledTick<T> tick = this.poll();
++        if (tick != null) {
++            this.reservedTicks.add(tick);
++        }
++        return tick;
++    }
++
++    void finishTick(ScheduledTick<T> tick) {
++        this.reservedTicks.remove(tick);
++    }
++
++    void restoreTick(ScheduledTick<T> tick) {
++        if (this.reservedTicks.remove(tick)) {
++            this.schedule(tick);
++        }
++    }
++
+     public @Nullable ScheduledTick<T> poll() {
+         ScheduledTick<T> result = this.nextTick;
+         if (result == null) {
+@@ -138,7 +161,10 @@ public class LevelChunkTicks<T> implements TickContainerAccess<T>, SerializableT
+             ticks.addAll(this.pendingTicks);
+         }
+ 
+-        List<ScheduledTick<T>> sortedTicks = this.getAll().sorted(SUB_TICK_ORDERING).toList();
++        // A newly scheduled tick at the same position/type wins, as it does on restore.
++        Stream<ScheduledTick<T>> reserved = this.reservedTicks.stream()
++            .filter(tick -> !this.hasScheduledTick(tick.pos(), tick.type()));
++        List<ScheduledTick<T>> sortedTicks = Stream.concat(this.getAll(), reserved).sorted(SUB_TICK_ORDERING).toList();
+         for (ScheduledTick<T> tick : sortedTicks) {
+             ticks.add(tick.toSavedTick(currentTick));
+         }
+diff --git a/net/minecraft/world/ticks/LevelTicks.java b/net/minecraft/world/ticks/LevelTicks.java
+index 1200a6562b904f6468d581516983741f86217307..6814e79bc300a6d49f38799ed1506bada92a74b1 100644
+--- a/net/minecraft/world/ticks/LevelTicks.java
++++ b/net/minecraft/world/ticks/LevelTicks.java
+@@ -1,406 +1,276 @@
+ package net.minecraft.world.ticks;
+ 
+-import it.unimi.dsi.fastutil.longs.Long2LongMap;
+-import it.unimi.dsi.fastutil.longs.Long2LongMaps;
+-import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+-import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+-import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+-import it.unimi.dsi.fastutil.longs.Long2LongMap.Entry;
+-import it.unimi.dsi.fastutil.objects.ObjectIterator;
++import io.fand.server.tick.OwnershipCell;
+ import it.unimi.dsi.fastutil.objects.ObjectOpenCustomHashSet;
+ import java.util.ArrayDeque;
+ import java.util.ArrayList;
+-import java.util.Comparator;
+ import java.util.List;
+-import java.util.LongSummaryStatistics;
++import java.util.Map;
+ import java.util.PriorityQueue;
+ import java.util.Queue;
+ import java.util.Set;
+ import java.util.function.BiConsumer;
++import java.util.function.BooleanSupplier;
++import java.util.function.LongFunction;
+ import java.util.function.LongPredicate;
+ import java.util.function.Predicate;
+-import java.util.function.BooleanSupplier;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.SectionPos;
+ import net.minecraft.core.Vec3i;
+ import net.minecraft.util.Util;
+ import net.minecraft.util.profiling.Profiler;
+ import net.minecraft.util.profiling.ProfilerFiller;
++import net.minecraft.world.level.CellTickList;
+ import net.minecraft.world.level.ChunkPos;
+ import net.minecraft.world.level.levelgen.structure.BoundingBox;
++import net.minecraft.world.ticks.CellTickContainerIndex.Registration;
++import org.jspecify.annotations.Nullable;
+ 
+ public class LevelTicks<T> implements LevelTickAccess<T> {
+-    private static final int QUEUED_SCHEDULE_REBUILD_FACTOR = 4;
+-    private static final int QUEUED_SCHEDULE_REBUILD_EXTRA = 1024;
+-    private static final Comparator<LevelChunkTicks<?>> CONTAINER_DRAIN_ORDER = (o1, o2) -> ScheduledTick.INTRA_TICK_DRAIN_ORDER.compare(o1.peek(), o2.peek());
+     private final LongPredicate tickCheck;
+     private final BooleanSupplier containerQueueEnabled;
+-    private final Long2ObjectMap<LevelChunkTicks<T>> allContainers = new Long2ObjectOpenHashMap<>();
+-    private final Long2LongMap nextTickForContainer = Util.make(new Long2LongOpenHashMap(), m -> m.defaultReturnValue(Long.MAX_VALUE));
+-    private final Long2LongMap queuedTickForContainer = Util.make(new Long2LongOpenHashMap(), m -> m.defaultReturnValue(Long.MAX_VALUE));
+-    private final Queue<ContainerSchedule> containersByNextTick = new PriorityQueue<>(ContainerSchedule.ORDER);
+-    private final Queue<LevelChunkTicks<T>> containersToTick = new PriorityQueue<>(CONTAINER_DRAIN_ORDER);
+-    private final Queue<ScheduledTick<T>> toRunThisTick = new ArrayDeque<>();
+-    private final List<ScheduledTick<T>> alreadyRunThisTick = new ArrayList<>();
+-    private final Set<ScheduledTick<?>> toRunThisTickSet = new ObjectOpenCustomHashSet<>(ScheduledTick.UNIQUE_TICK_HASH);
+-    private boolean containerQueueActive;
+-    private int staleQueuedSchedules;
+-    private final BiConsumer<LevelChunkTicks<T>, ScheduledTick<T>> chunkScheduleUpdater = (container, newTick) -> {
+-        if (newTick.equals(container.peek())) {
+-            this.updateContainerScheduling(newTick);
+-        }
+-    };
++    private final CellTickContainerIndex<T> containers;
++    private @Nullable TickBatch<T> currentBatch;
+ 
+     public LevelTicks(final LongPredicate tickCheck) {
+         this(tickCheck, () -> false);
+     }
+ 
+     public LevelTicks(final LongPredicate tickCheck, final BooleanSupplier containerQueueEnabled) {
++        this(tickCheck, containerQueueEnabled, chunk -> CellTickList.SINGLE_CELL);
++    }
++
++    public LevelTicks(LongPredicate tickCheck, BooleanSupplier containerQueueEnabled, LongFunction<OwnershipCell> cellAtChunk) {
+         this.tickCheck = tickCheck;
+         this.containerQueueEnabled = containerQueueEnabled;
++        this.containers = new CellTickContainerIndex<>(cellAtChunk);
+     }
+ 
+     public void addContainer(final ChunkPos pos, final LevelChunkTicks<T> container) {
+-        long posKey = pos.pack();
+-        this.allContainers.put(posKey, container);
+-        ScheduledTick<T> nextTick = container.peek();
+-        if (nextTick != null) {
+-            this.updateContainerScheduling(nextTick);
++        Registration<T> previous = this.containers.get(pos.pack());
++        if (previous != null && previous.container == container) {
++            return;
+         }
+-
+-        container.setOnTickAdded(this.chunkScheduleUpdater);
++        this.removeContainer(pos);
++        this.containers.add(pos.pack(), container);
+     }
+ 
+     public void removeContainer(final ChunkPos pos) {
+-        long chunkKey = pos.pack();
+-        LevelChunkTicks<T> removedContainer = this.allContainers.remove(chunkKey);
+-        this.nextTickForContainer.remove(chunkKey);
+-        this.queuedTickForContainer.remove(chunkKey);
+-        if (removedContainer != null) {
+-            removedContainer.setOnTickAdded(null);
++        Registration<T> removed = this.containers.remove(pos.pack());
++        if (removed != null && this.currentBatch != null) {
++            // Return unexecuted ticks before the old chunk is saved or replaced.
++            this.currentBatch.retire(removed);
++        }
++    }
++
++    public void removeContainer(final ChunkPos pos, final LevelChunkTicks<T> expected) {
++        Registration<T> registration = this.containers.get(pos.pack());
++        if (registration != null && registration.container == expected) {
++            this.removeContainer(pos);
+         }
+     }
+ 
+     @Override
+     public void schedule(final ScheduledTick<T> tick) {
+-        long chunkKey = ChunkPos.pack(tick.pos());
+-        LevelChunkTicks<T> tickContainer = this.allContainers.get(chunkKey);
+-        if (tickContainer == null) {
++        Registration<T> registration = this.containers.get(ChunkPos.pack(tick.pos()));
++        if (registration == null) {
+             Util.logAndPauseIfInIde("Trying to schedule tick in not loaded position " + tick.pos());
+         } else {
+-            tickContainer.schedule(tick);
++            registration.container.schedule(tick);
+         }
+     }
+ 
+     public void tick(final long currentTick, final int maxTicksToProcess, final BiConsumer<BlockPos, T> output) {
++        if (this.currentBatch != null) {
++            throw new IllegalStateException("Scheduled ticking cannot be reentered");
++        }
++        TickBatch<T> batch = new TickBatch<>();
++        this.currentBatch = batch;
+         ProfilerFiller profiler = Profiler.get();
+         profiler.push("collect");
+-        this.collectTicks(currentTick, maxTicksToProcess, profiler);
+-        profiler.popPush("run");
+-        profiler.incrementCounter("ticksToRun", this.toRunThisTick.size());
+-        this.runCollectedTicks(output);
+-        profiler.popPush("cleanup");
+-        this.cleanupAfterTick();
+-        profiler.pop();
+-    }
+-
+-    private void collectTicks(final long currentTick, final int maxTicksToProcess, final ProfilerFiller profiler) {
+-        this.sortContainersToTick(currentTick);
+-        profiler.incrementCounter("containersToTick", this.containersToTick.size());
+-        this.drainContainers(currentTick, maxTicksToProcess);
+-        this.rescheduleLeftoverContainers();
+-    }
+-
+-    private void sortContainersToTick(final long currentTick) {
+-        if (this.containerQueueEnabled.getAsBoolean()) {
+-            this.syncContainerQueueMode();
+-            this.sortContainersToTickQueued(currentTick);
+-            return;
+-        }
+-        this.syncContainerQueueMode();
+-        ObjectIterator<Entry> it = Long2LongMaps.fastIterator(this.nextTickForContainer);
+-
+-        while (it.hasNext()) {
+-            Entry entry = it.next();
+-            long chunkPos = entry.getLongKey();
+-            long nextTick = entry.getLongValue();
+-            if (nextTick <= currentTick) {
+-                LevelChunkTicks<T> candidateContainer = this.allContainers.get(chunkPos);
+-                if (candidateContainer == null) {
+-                    it.remove();
+-                } else {
+-                    ScheduledTick<T> scheduledTick = candidateContainer.peek();
+-                    if (scheduledTick == null) {
+-                        it.remove();
+-                    } else if (scheduledTick.triggerTick() > currentTick) {
+-                        entry.setValue(scheduledTick.triggerTick());
+-                    } else if (this.tickCheck.test(chunkPos)) {
+-                        it.remove();
+-                        this.containersToTick.add(candidateContainer);
+-                    }
+-                }
++        try {
++            this.collectTicks(currentTick, maxTicksToProcess, batch, profiler);
++            profiler.popPush("run");
++            profiler.incrementCounter("ticksToRun", batch.pending.size());
++            BoundTick<T> entry;
++            while ((entry = batch.poll()) != null) {
++                entry.registration.container.finishTick(entry.tick);
++                batch.executed.add(entry);
++                output.accept(entry.tick.pos(), entry.tick.type());
+             }
+-        }
+-    }
+-
+-    private void syncContainerQueueMode() {
+-        boolean enabled = this.containerQueueEnabled.getAsBoolean();
+-        if (enabled == this.containerQueueActive) {
+-            return;
+-        }
+-        this.containerQueueActive = enabled;
+-        this.containersByNextTick.clear();
+-        this.queuedTickForContainer.clear();
+-        this.staleQueuedSchedules = 0;
+-        if (enabled) {
+-            ObjectIterator<Entry> it = Long2LongMaps.fastIterator(this.nextTickForContainer);
+-            while (it.hasNext()) {
+-                Entry entry = it.next();
+-                this.queueContainerSchedule(entry.getLongKey(), entry.getLongValue());
++        } finally {
++            try {
++                // A failed callback must not strand ticks already taken out of chunks.
++                batch.restorePending();
++            } finally {
++                this.currentBatch = null;
++                profiler.pop();
+             }
+         }
+     }
+ 
+-    private void sortContainersToTickQueued(final long currentTick) {
+-        this.rebuildContainerQueueIfNeeded();
+-        ContainerSchedule entry;
+-        while ((entry = this.containersByNextTick.peek()) != null && entry.queueTick <= currentTick) {
+-            this.containersByNextTick.poll();
+-            if (this.queuedTickForContainer.get(entry.chunkPos) == entry.triggerTick) {
+-                this.queuedTickForContainer.remove(entry.chunkPos);
+-            }
+-            long scheduledTick = this.nextTickForContainer.get(entry.chunkPos);
+-            if (scheduledTick != entry.triggerTick) {
+-                this.staleQueuedSchedules++;
+-                continue;
+-            }
+-            LevelChunkTicks<T> candidateContainer = this.allContainers.get(entry.chunkPos);
+-            if (candidateContainer == null) {
+-                this.nextTickForContainer.remove(entry.chunkPos);
+-                continue;
++    private void collectTicks(long currentTick, int maxTicksToProcess, TickBatch<T> batch, ProfilerFiller profiler) {
++        List<Registration<T>> due = this.containers.due(currentTick, this.containerQueueEnabled.getAsBoolean());
++        Queue<Registration<T>> ready = new PriorityQueue<>((left, right) ->
++            ScheduledTick.INTRA_TICK_DRAIN_ORDER.compare(left.container.peek(), right.container.peek()));
++        try {
++            for (Registration<T> registration : due) {
++                ScheduledTick<T> next = registration.container.peek();
++                if (this.containers.isCurrent(registration) && next != null && next.triggerTick() <= currentTick
++                    && this.tickCheck.test(registration.chunkPos)) {
++                    ready.add(registration);
++                }
+             }
+-            ScheduledTick<T> scheduledTickEntry = candidateContainer.peek();
+-            if (scheduledTickEntry == null) {
+-                this.nextTickForContainer.remove(entry.chunkPos);
+-                this.queuedTickForContainer.remove(entry.chunkPos);
+-            } else if (scheduledTickEntry.triggerTick() > currentTick) {
+-                this.updateContainerScheduling(scheduledTickEntry);
+-            } else if (this.tickCheck.test(entry.chunkPos)) {
+-                this.nextTickForContainer.remove(entry.chunkPos);
+-                this.queuedTickForContainer.remove(entry.chunkPos);
+-                this.containersToTick.add(candidateContainer);
+-            } else {
+-                this.queueContainerSchedule(entry.chunkPos, scheduledTickEntry.triggerTick(), currentTick + 1L);
++            profiler.incrementCounter("containersToTick", ready.size());
++            Registration<T> registration;
++            while (batch.pending.size() < maxTicksToProcess && (registration = ready.poll()) != null) {
++                LevelChunkTicks<T> container = registration.container;
++                batch.add(registration, container.reserveForTick());
++                Registration<T> competitor = ready.peek();
++                ScheduledTick<T> competitorTick = competitor == null ? null : competitor.container.peek();
++                ScheduledTick<T> next;
++                while (batch.pending.size() < maxTicksToProcess && (next = container.peek()) != null
++                    && next.triggerTick() <= currentTick
++                    && (competitorTick == null || ScheduledTick.INTRA_TICK_DRAIN_ORDER.compare(next, competitorTick) <= 0)) {
++                    batch.add(registration, container.reserveForTick());
++                }
++                next = container.peek();
++                if (next != null && next.triggerTick() <= currentTick && batch.pending.size() < maxTicksToProcess) {
++                    ready.add(registration);
++                }
+             }
++        } finally {
++            due.forEach(this.containers::refresh);
+         }
+-        this.rebuildContainerQueueIfNeeded();
+     }
+ 
+-    private void drainContainers(final long currentTick, final int maxTicksToProcess) {
+-        LevelChunkTicks<T> topContainer;
+-        while (this.canScheduleMoreTicks(maxTicksToProcess) && (topContainer = this.containersToTick.poll()) != null) {
+-            ScheduledTick<T> tick = topContainer.poll();
+-            this.scheduleForThisTick(tick);
+-            this.drainFromCurrentContainer(this.containersToTick, topContainer, currentTick, maxTicksToProcess);
+-            ScheduledTick<T> nextTick = topContainer.peek();
+-            if (nextTick != null) {
+-                if (nextTick.triggerTick() <= currentTick && this.canScheduleMoreTicks(maxTicksToProcess)) {
+-                    this.containersToTick.add(topContainer);
+-                } else {
+-                    this.updateContainerScheduling(nextTick);
+-                }
+-            }
+-        }
++    @Override
++    public boolean hasScheduledTick(final BlockPos pos, final T type) {
++        Registration<T> registration = this.containers.get(ChunkPos.pack(pos));
++        return registration != null && registration.container.hasScheduledTick(pos, type);
+     }
+ 
+-    private void rescheduleLeftoverContainers() {
+-        for (LevelChunkTicks<T> container : this.containersToTick) {
+-            this.updateContainerScheduling(container.peek());
++    @Override
++    public boolean willTickThisTick(final BlockPos pos, final T type) {
++        return this.currentBatch != null && this.currentBatch.willRun(ScheduledTick.probe(type, pos));
++    }
++
++    private void forContainersInArea(final BoundingBox area, final BiConsumer<Long, Registration<T>> output) {
++        int minX = SectionPos.posToSectionCoord(area.minX());
++        int minZ = SectionPos.posToSectionCoord(area.minZ());
++        int maxX = SectionPos.posToSectionCoord(area.maxX());
++        int maxZ = SectionPos.posToSectionCoord(area.maxZ());
++        for (int x = minX; x <= maxX; x++) {
++            for (int z = minZ; z <= maxZ; z++) {
++                long chunkPos = ChunkPos.pack(x, z);
++                Registration<T> registration = this.containers.get(chunkPos);
++                if (registration != null) {
++                    output.accept(chunkPos, registration);
++                }
++            }
+         }
+     }
+ 
+-    private void updateContainerScheduling(final ScheduledTick<T> nextTick) {
+-        long chunkPos = ChunkPos.pack(nextTick.pos());
+-        this.nextTickForContainer.put(chunkPos, nextTick.triggerTick());
+-        if (this.containerQueueEnabled.getAsBoolean()) {
+-            this.queueContainerSchedule(chunkPos, nextTick.triggerTick());
++    public void clearArea(final BoundingBox area) {
++        Predicate<ScheduledTick<T>> inside = tick -> area.isInside(tick.pos());
++        this.forContainersInArea(area, (pos, registration) -> {
++            registration.container.removeIf(inside);
++            this.containers.refresh(registration);
++        });
++        if (this.currentBatch != null) {
++            this.currentBatch.removeIf(inside);
+         }
+     }
+ 
+-    private void queueContainerSchedule(final long chunkPos, final long triggerTick) {
+-        this.queueContainerSchedule(chunkPos, triggerTick, triggerTick);
++    public void copyArea(final BoundingBox area, final Vec3i offset) {
++        this.copyAreaFrom(this, area, offset);
+     }
+ 
+-    private void queueContainerSchedule(final long chunkPos, final long triggerTick, final long queueTick) {
+-        if (this.queuedTickForContainer.get(chunkPos) == triggerTick) {
+-            return;
++    public void copyAreaFrom(final LevelTicks<T> source, final BoundingBox area, final Vec3i offset) {
++        List<ScheduledTick<T>> ticks = new ArrayList<>();
++        Predicate<ScheduledTick<T>> inside = tick -> area.isInside(tick.pos());
++        if (source.currentBatch != null) {
++            source.currentBatch.executed.stream().map(entry -> entry.tick).filter(inside).forEach(ticks::add);
++            source.currentBatch.pending.stream().map(entry -> entry.tick).filter(inside).forEach(ticks::add);
++        }
++        source.forContainersInArea(area, (pos, registration) -> registration.container.getAll().filter(inside).forEach(ticks::add));
++        var orders = ticks.stream().mapToLong(ScheduledTick::subTickOrder).summaryStatistics();
++        for (ScheduledTick<T> tick : ticks) {
++            this.schedule(new ScheduledTick<>(tick.type(), tick.pos().offset(offset), tick.triggerTick(), tick.priority(),
++                tick.subTickOrder() - orders.getMin() + orders.getMax() + 1L));
+         }
+-        this.queuedTickForContainer.put(chunkPos, triggerTick);
+-        this.containersByNextTick.add(new ContainerSchedule(chunkPos, triggerTick, queueTick));
+     }
+ 
+-    private void rebuildContainerQueueIfNeeded() {
+-        int liveSchedules = this.nextTickForContainer.size();
+-        long rebuildAt = (long) liveSchedules * QUEUED_SCHEDULE_REBUILD_FACTOR + QUEUED_SCHEDULE_REBUILD_EXTRA;
+-        if (this.containersByNextTick.size() <= rebuildAt && this.staleQueuedSchedules <= liveSchedules + QUEUED_SCHEDULE_REBUILD_EXTRA) {
+-            return;
+-        }
+-        this.rebuildContainerQueue();
++    @Override
++    public int count() {
++        return this.containers.count();
+     }
+ 
+-    private void rebuildContainerQueue() {
+-        this.containersByNextTick.clear();
+-        this.queuedTickForContainer.clear();
+-        this.staleQueuedSchedules = 0;
+-        ObjectIterator<Entry> it = Long2LongMaps.fastIterator(this.nextTickForContainer);
+-        while (it.hasNext()) {
+-            Entry entry = it.next();
+-            long chunkPos = entry.getLongKey();
+-            long triggerTick = entry.getLongValue();
+-            this.queuedTickForContainer.put(chunkPos, triggerTick);
+-            this.containersByNextTick.add(new ContainerSchedule(chunkPos, triggerTick, triggerTick));
++    public Map<OwnershipCell, Integer> cellTickCounts() {
++        Map<OwnershipCell, Integer> counts = this.containers.tickCounts();
++        if (this.currentBatch != null) {
++            this.currentBatch.pending.forEach(entry -> counts.merge(entry.registration.cell(), 1, Integer::sum));
+         }
++        return java.util.Collections.unmodifiableMap(counts);
+     }
+ 
+-    private void drainFromCurrentContainer(
+-        final Queue<LevelChunkTicks<T>> containersToTick, final LevelChunkTicks<T> currentContainer, final long currentTick, final int maxTicksToProcess
+-    ) {
+-        if (this.canScheduleMoreTicks(maxTicksToProcess)) {
+-            LevelChunkTicks<T> nextBestContainer = containersToTick.peek();
+-            ScheduledTick<T> nextFromNextContainer = nextBestContainer != null ? nextBestContainer.peek() : null;
++    private record BoundTick<T>(Registration<T> registration, ScheduledTick<T> tick) {}
+ 
+-            while (this.canScheduleMoreTicks(maxTicksToProcess)) {
+-                ScheduledTick<T> nextFromCurrentContainer = currentContainer.peek();
+-                if (nextFromCurrentContainer == null
+-                    || nextFromCurrentContainer.triggerTick() > currentTick
+-                    || nextFromNextContainer != null && ScheduledTick.INTRA_TICK_DRAIN_ORDER.compare(nextFromCurrentContainer, nextFromNextContainer) > 0) {
+-                    break;
+-                }
++    /** Execution history and reservations belong to one pass, never to the world indefinitely. */
++    private static final class TickBatch<T> {
++        private final Queue<BoundTick<T>> pending = new ArrayDeque<>();
++        private final List<BoundTick<T>> executed = new ArrayList<>();
++        private @Nullable Set<ScheduledTick<?>> pendingSet;
+ 
+-                currentContainer.poll();
+-                this.scheduleForThisTick(nextFromCurrentContainer);
+-            }
++        private void add(Registration<T> registration, ScheduledTick<T> tick) {
++            this.pending.add(new BoundTick<>(registration, tick));
+         }
+-    }
+-
+-    private void scheduleForThisTick(final ScheduledTick<T> tick) {
+-        this.toRunThisTick.add(tick);
+-    }
+-
+-    private boolean canScheduleMoreTicks(final int maxTicksToProcess) {
+-        return this.toRunThisTick.size() < maxTicksToProcess;
+-    }
+ 
+-    private void runCollectedTicks(final BiConsumer<BlockPos, T> output) {
+-        while (!this.toRunThisTick.isEmpty()) {
+-            ScheduledTick<T> entry = this.toRunThisTick.poll();
+-            if (!this.toRunThisTickSet.isEmpty()) {
+-                this.toRunThisTickSet.remove(entry);
++        private @Nullable BoundTick<T> poll() {
++            BoundTick<T> entry = this.pending.poll();
++            if (entry != null && this.pendingSet != null) {
++                this.pendingSet.remove(entry.tick);
+             }
+-
+-            this.alreadyRunThisTick.add(entry);
+-            output.accept(entry.pos(), entry.type());
++            return entry;
+         }
+-    }
+-
+-    private void cleanupAfterTick() {
+-        this.toRunThisTick.clear();
+-        this.containersToTick.clear();
+-        this.alreadyRunThisTick.clear();
+-        this.toRunThisTickSet.clear();
+-    }
+-
+-    private record ContainerSchedule(long chunkPos, long triggerTick, long queueTick) {
+-
+-        private static final Comparator<ContainerSchedule> ORDER = Comparator
+-            .comparingLong((ContainerSchedule entry) -> entry.queueTick)
+-            .thenComparingLong(entry -> entry.triggerTick)
+-            .thenComparingLong(entry -> entry.chunkPos);
+-    }
+-
+-    @Override
+-    public boolean hasScheduledTick(final BlockPos pos, final T block) {
+-        LevelChunkTicks<T> tickContainer = this.allContainers.get(ChunkPos.pack(pos));
+-        return tickContainer != null && tickContainer.hasScheduledTick(pos, block);
+-    }
+-
+-    @Override
+-    public boolean willTickThisTick(final BlockPos pos, final T type) {
+-        this.calculateTickSetIfNeeded();
+-        return this.toRunThisTickSet.contains(ScheduledTick.probe(type, pos));
+-    }
+ 
+-    private void calculateTickSetIfNeeded() {
+-        if (this.toRunThisTickSet.isEmpty() && !this.toRunThisTick.isEmpty()) {
+-            this.toRunThisTickSet.addAll(this.toRunThisTick);
++        private boolean willRun(ScheduledTick<T> probe) {
++            if (this.pendingSet == null) {
++                this.pendingSet = new ObjectOpenCustomHashSet<>(ScheduledTick.UNIQUE_TICK_HASH);
++                this.pending.forEach(entry -> this.pendingSet.add(entry.tick));
++            }
++            return this.pendingSet.contains(probe);
+         }
+-    }
+-
+-    private void forContainersInArea(final BoundingBox bb, final LevelTicks.PosAndContainerConsumer<T> ouput) {
+-        int xMin = SectionPos.posToSectionCoord(bb.minX());
+-        int zMin = SectionPos.posToSectionCoord(bb.minZ());
+-        int xMax = SectionPos.posToSectionCoord(bb.maxX());
+-        int zMax = SectionPos.posToSectionCoord(bb.maxZ());
+ 
+-        for (int x = xMin; x <= xMax; x++) {
+-            for (int z = zMin; z <= zMax; z++) {
+-                long containerPos = ChunkPos.pack(x, z);
+-                LevelChunkTicks<T> container = this.allContainers.get(containerPos);
+-                if (container != null) {
+-                    ouput.accept(containerPos, container);
++        private void removeIf(Predicate<ScheduledTick<T>> predicate) {
++            this.pending.removeIf(entry -> {
++                if (!predicate.test(entry.tick)) {
++                    return false;
+                 }
+-            }
++                entry.registration.container.finishTick(entry.tick);
++                return true;
++            });
++            this.executed.removeIf(entry -> predicate.test(entry.tick));
++            this.pendingSet = null;
+         }
+-    }
+ 
+-    public void clearArea(final BoundingBox area) {
+-        Predicate<ScheduledTick<T>> tickInsideBB = t -> area.isInside(t.pos());
+-        this.forContainersInArea(area, (pos, container) -> {
+-            ScheduledTick<T> previousTop = container.peek();
+-            container.removeIf(tickInsideBB);
+-            ScheduledTick<T> newTop = container.peek();
+-            if (newTop != previousTop) {
+-                if (newTop != null) {
+-                    this.updateContainerScheduling(newTop);
+-                } else {
+-                    this.nextTickForContainer.remove(pos);
+-                    this.queuedTickForContainer.remove(pos);
++        private void retire(Registration<T> registration) {
++            this.pending.removeIf(entry -> {
++                if (entry.registration != registration) {
++                    return false;
+                 }
+-            }
+-        });
+-        this.alreadyRunThisTick.removeIf(tickInsideBB);
+-        this.toRunThisTick.removeIf(tickInsideBB);
+-    }
+-
+-    public void copyArea(final BoundingBox area, final Vec3i offset) {
+-        this.copyAreaFrom(this, area, offset);
+-    }
+-
+-    public void copyAreaFrom(final LevelTicks<T> source, final BoundingBox area, final Vec3i offset) {
+-        List<ScheduledTick<T>> ticksToAdd = new ArrayList<>();
+-        Predicate<ScheduledTick<T>> tickInsideBB = t -> area.isInside(t.pos());
+-        source.alreadyRunThisTick.stream().filter(tickInsideBB).forEach(ticksToAdd::add);
+-        source.toRunThisTick.stream().filter(tickInsideBB).forEach(ticksToAdd::add);
+-        source.forContainersInArea(area, (pos, container) -> container.getAll().filter(tickInsideBB).forEach(ticksToAdd::add));
+-        LongSummaryStatistics info = ticksToAdd.stream().mapToLong(ScheduledTick::subTickOrder).summaryStatistics();
+-        long minSubTick = info.getMin();
+-        long maxSubTick = info.getMax();
+-        ticksToAdd.forEach(
+-            tick -> this.schedule(
+-                new ScheduledTick<>(
+-                    tick.type(), tick.pos().offset(offset), tick.triggerTick(), tick.priority(), tick.subTickOrder() - minSubTick + maxSubTick + 1L
+-                )
+-            )
+-        );
+-    }
+-
+-    @Override
+-    public int count() {
+-        return this.allContainers.values().stream().mapToInt(TickAccess::count).sum();
+-    }
++                registration.container.restoreTick(entry.tick);
++                return true;
++            });
++            this.executed.removeIf(entry -> entry.registration == registration);
++            this.pendingSet = null;
++        }
+ 
+-    @FunctionalInterface
+-    private interface PosAndContainerConsumer<T> {
+-        void accept(long pos, LevelChunkTicks<T> container);
++        private void restorePending() {
++            BoundTick<T> entry;
++            while ((entry = this.pending.poll()) != null) {
++                entry.registration.container.restoreTick(entry.tick);
++            }
++        }
+     }
+ }
