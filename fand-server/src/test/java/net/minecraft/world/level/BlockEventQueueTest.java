@@ -3,15 +3,21 @@ package net.minecraft.world.level;
 import io.fand.server.tick.OwnershipCell;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class BlockEventQueueTest {
@@ -170,6 +176,127 @@ class BlockEventQueueTest {
 
         assertThat(snapshot).containsExactlyEntriesOf(Map.of(new OwnershipCell(-1, 0), 1));
         assertThatThrownBy(snapshot::clear).isInstanceOf(UnsupportedOperationException.class);
+        assertThat(queue.cellCounts()).isEmpty();
+    }
+
+    @Test
+    void concurrentProducersCanClearTheirAreasWithoutLosingOtherPendingEvents() throws Exception {
+        var queue = queue();
+        var untouched = event(-128, 1);
+        queue.add(untouched);
+        int producers = 4;
+        int eventsPerProducer = 48;
+        var start = new CyclicBarrier(producers);
+        try (var workers = Executors.newFixedThreadPool(producers)) {
+            var results = new ArrayList<Future<?>>();
+            for (int producer = 0; producer < producers; producer++) {
+                int baseX = producer * 128;
+                results.add(workers.submit(() -> {
+                    start.await(5, TimeUnit.SECONDS);
+                    var clearedArea = new BoundingBox(baseX, 64, 0, baseX + 15, 64, 15);
+                    for (int index = 0; index < eventsPerProducer; index++) {
+                        queue.add(event(baseX, index));
+                        var retained = event(baseX + 16, index);
+                        queue.add(retained);
+                        queue.add(retained);
+                        queue.removeArea(clearedArea);
+                    }
+                    return null;
+                }));
+            }
+            for (var result : results) {
+                result.get(10, TimeUnit.SECONDS);
+            }
+        }
+        var fired = new ArrayList<BlockEventData>();
+        queue.run(pos -> true, fired::add);
+        var expected = new ArrayList<BlockEventData>();
+        expected.add(untouched);
+        for (int producer = 0; producer < producers; producer++) {
+            int retainedX = producer * 128 + 16;
+            var producerEvents = new ArrayList<BlockEventData>();
+            for (int index = 0; index < eventsPerProducer; index++) {
+                producerEvents.add(event(retainedX, index));
+            }
+            expected.addAll(producerEvents);
+            assertThat(fired.stream().filter(event -> event.pos().getX() == retainedX).toList())
+                .containsExactlyElementsOf(producerEvents);
+        }
+
+        assertThat(fired).containsExactlyInAnyOrderElementsOf(expected);
+        assertThat(fired.getFirst()).isEqualTo(untouched);
+        assertThat(queue.cellCounts()).isEmpty();
+    }
+
+    @Test
+    void tickEligibilityCallbackDoesNotHoldTheQueueLock() {
+        var queue = queue();
+        var first = event(64, 1);
+        var added = event(128, 2);
+        queue.add(first);
+        var fired = new ArrayList<BlockEventData>();
+
+        try (var worker = Executors.newSingleThreadExecutor()) {
+            queue.run(pos -> {
+                if (pos.equals(first.pos())) {
+                    assertThatCode(() -> worker.submit(() -> queue.add(added)).get(5, TimeUnit.SECONDS))
+                        .doesNotThrowAnyException();
+                }
+                return true;
+            }, fired::add);
+        }
+
+        assertThat(fired).containsExactly(first, added);
+        assertThat(queue.cellCounts()).isEmpty();
+    }
+
+    @Test
+    void eventCallbackDoesNotHoldTheQueueLock() {
+        var queue = queue();
+        var first = event(64, 1);
+        var added = event(128, 2);
+        queue.add(first);
+        var fired = new ArrayList<BlockEventData>();
+
+        try (var worker = Executors.newSingleThreadExecutor()) {
+            queue.run(pos -> true, current -> {
+                fired.add(current);
+                if (current.equals(first)) {
+                    assertThatCode(() -> worker.submit(() -> queue.add(added)).get(5, TimeUnit.SECONDS))
+                        .doesNotThrowAnyException();
+                }
+            });
+        }
+
+        assertThat(fired).containsExactly(first, added);
+        assertThat(queue.cellCounts()).isEmpty();
+    }
+
+    @Test
+    void failedRemovalKeepsRemainingEventsReachableAndInOrder() {
+        var queue = queue();
+        var removed = event(64, 1);
+        var distant = event(128, 2);
+        var failing = event(65, 3);
+        var last = event(66, 4);
+        queue.add(removed);
+        queue.add(distant);
+        queue.add(failing);
+        queue.add(last);
+        var failure = new IllegalStateException("removal failed");
+
+        assertThatThrownBy(() -> queue.removeIf(event -> {
+            if (event.equals(failing)) {
+                throw failure;
+            }
+            return event.equals(removed);
+        })).isSameAs(failure);
+        var addedAfterFailure = event(67, 5);
+        queue.add(addedAfterFailure);
+        var fired = new ArrayList<BlockEventData>();
+        queue.run(pos -> true, fired::add);
+
+        assertThat(fired).containsExactly(distant, failing, last, addedAfterFailure);
         assertThat(queue.cellCounts()).isEmpty();
     }
 

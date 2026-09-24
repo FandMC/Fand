@@ -1,0 +1,230 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 24 Sep 2026 19:03:02 +0800
+Subject: [PATCH] Guard regional block events and publish primed TNT after
+ native phases
+
+
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index 50c15b6c0c1246eb4726bf59b3c102ec4642aa56..07ea702e2cb279533e657bef7de875e6a61973da 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -221,7 +221,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     private final Set<Mob> navigatingMobs = new ObjectOpenHashSet<>();
+     private volatile boolean isUpdatingNavigations;
+     protected final Raids raids;
+-    private final net.minecraft.world.level.BlockEventQueue blockEvents = new net.minecraft.world.level.BlockEventQueue(this::fand$simulationCellAt);
++    private final net.minecraft.world.level.BlockEventQueue blockEvents = new net.minecraft.world.level.BlockEventQueue(this, this::fand$simulationCellAt);
+     private boolean handlingTick;
+     private final List<CustomSpawner> customSpawners;
+     private @Nullable EnderDragonFight dragonFight;
+@@ -1853,7 +1853,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+ 
+     @VisibleForTesting
+     public void clearBlockEvents(final BoundingBox bb) {
+-        this.blockEvents.removeIf(e -> bb.isInside(e.pos()));
++        this.blockEvents.removeArea(bb);
+     }
+ 
+     public Iterable<Entity> getAllEntities() {
+diff --git a/net/minecraft/world/level/BlockEventQueue.java b/net/minecraft/world/level/BlockEventQueue.java
+index a344aed233071e310783fe4be532efa8033644ad..05819ee1f12d2b75cb5b174e90bea1d3a5ab4519 100644
+--- a/net/minecraft/world/level/BlockEventQueue.java
++++ b/net/minecraft/world/level/BlockEventQueue.java
+@@ -11,10 +11,14 @@ import java.util.function.Consumer;
+ import java.util.function.Function;
+ import java.util.function.Predicate;
+ import net.minecraft.core.BlockPos;
++import net.minecraft.server.level.RegionTickScope;
++import net.minecraft.server.level.ServerLevel;
++import net.minecraft.world.level.levelgen.structure.BoundingBox;
+ import org.jspecify.annotations.Nullable;
+ 
+ /** Pending events belong to cells; their heads preserve the serial world's insertion order. */
+ public final class BlockEventQueue {
++    private final @Nullable ServerLevel level;
+     private final Function<BlockPos, OwnershipCell> cellAt;
+     private final Map<OwnershipCell, LinkedHashMap<BlockEventData, Long>> cells = new HashMap<>();
+     private final TreeMap<Long, OwnershipCell> heads = new TreeMap<>();
+@@ -22,10 +26,16 @@ public final class BlockEventQueue {
+     private long nextOrder;
+ 
+     public BlockEventQueue(Function<BlockPos, OwnershipCell> cellAt) {
++        this(null, cellAt);
++    }
++
++    public BlockEventQueue(@Nullable ServerLevel level, Function<BlockPos, OwnershipCell> cellAt) {
++        this.level = level;
+         this.cellAt = cellAt;
+     }
+ 
+     public synchronized void add(BlockEventData event) {
++        this.requirePosition(event.pos());
+         OwnershipCell pos = this.cellAt.apply(event.pos());
+         var cell = this.cells.get(pos);
+         if (cell != null && cell.containsKey(event)) {
+@@ -43,7 +53,7 @@ public final class BlockEventQueue {
+         }
+     }
+ 
+-    private @Nullable BlockEventData poll() {
++    private synchronized @Nullable BlockEventData poll() {
+         var head = this.heads.pollFirstEntry();
+         if (head == null) {
+             return null;
+@@ -59,36 +69,66 @@ public final class BlockEventQueue {
+     }
+ 
+     public void run(Predicate<BlockPos> shouldTick, Consumer<BlockEventData> output) {
+-        if (this.deferred != null) {
+-            throw new IllegalStateException("Block events cannot be reentered");
+-        }
++        this.requireControlPhase();
+         List<BlockEventData> deferred = new ArrayList<>();
+-        this.deferred = deferred;
++        synchronized (this) {
++            if (this.deferred != null) {
++                throw new IllegalStateException("Block events cannot be reentered");
++            }
++            this.deferred = deferred;
++        }
+         try {
+             BlockEventData event;
+             while ((event = this.poll()) != null) {
++                // Native callbacks may enqueue more events; never hold the queue lock here.
+                 if (shouldTick.test(event.pos())) {
+                     output.accept(event);
+                 } else {
+-                    deferred.add(event);
++                    synchronized (this) {
++                        deferred.add(event);
++                    }
+                 }
+             }
+         } finally {
+-            this.deferred = null;
+-            deferred.forEach(this::add);
++            synchronized (this) {
++                this.deferred = null;
++                deferred.forEach(this::add);
++            }
+         }
+     }
+ 
+-    public void removeIf(Predicate<BlockEventData> predicate) {
++    public synchronized void removeIf(Predicate<BlockEventData> predicate) {
++        this.requireControlPhase();
++        this.removeMatching(predicate);
++    }
++
++    public synchronized void removeArea(BoundingBox area) {
++        // Validate the entire range before removing anything, including empty intermediate chunks.
++        var scope = RegionTickScope.current();
++        if (scope != null) {
++            for (int x = area.minX() >> 4; x <= area.maxX() >> 4; x++) {
++                for (int z = area.minZ() >> 4; z <= area.maxZ() >> 4; z++) {
++                    this.requirePosition(new BlockPos(x << 4, area.minY(), z << 4));
++                }
++            }
++        }
++        this.removeMatching(event -> area.isInside(event.pos()));
++    }
++
++    private void removeMatching(Predicate<BlockEventData> predicate) {
+         for (var iterator = this.cells.entrySet().iterator(); iterator.hasNext();) {
+             var entry = iterator.next();
+             var cell = entry.getValue();
+             this.heads.remove(cell.firstEntry().getValue());
+-            cell.keySet().removeIf(predicate);
+-            if (cell.isEmpty()) {
+-                iterator.remove();
+-            } else {
+-                this.heads.put(cell.firstEntry().getValue(), entry.getKey());
++            try {
++                cell.keySet().removeIf(predicate);
++            } finally {
++                // A throwing predicate must not strand the remaining events without a head.
++                if (cell.isEmpty()) {
++                    iterator.remove();
++                } else {
++                    this.heads.put(cell.firstEntry().getValue(), entry.getKey());
++                }
+             }
+         }
+         if (this.deferred != null) {
+@@ -96,7 +136,8 @@ public final class BlockEventQueue {
+         }
+     }
+ 
+-    public void removeChunk(ChunkPos pos) {
++    public synchronized void removeChunk(ChunkPos pos) {
++        this.requireControlPhase();
+         OwnershipCell cellPos = this.cellAt.apply(pos.getWorldPosition());
+         var cell = this.cells.get(cellPos);
+         Predicate<BlockEventData> inChunk = event -> ChunkPos.pack(event.pos()) == pos.pack();
+@@ -114,7 +155,8 @@ public final class BlockEventQueue {
+         }
+     }
+ 
+-    public Map<OwnershipCell, Integer> cellCounts() {
++    public synchronized Map<OwnershipCell, Integer> cellCounts() {
++        this.requireControlPhase();
+         Map<OwnershipCell, Integer> counts = new TreeMap<>();
+         this.cells.forEach((pos, cell) -> counts.put(pos, cell.size()));
+         if (this.deferred != null) {
+@@ -122,4 +164,20 @@ public final class BlockEventQueue {
+         }
+         return java.util.Collections.unmodifiableMap(counts);
+     }
++
++    private void requirePosition(BlockPos pos) {
++        var scope = RegionTickScope.current();
++        if (scope != null) {
++            if (this.level == null) {
++                throw new IllegalStateException("Block events are not bound to a world");
++            }
++            scope.requirePosition(this.level, pos);
++        }
++    }
++
++    private void requireControlPhase() {
++        if (RegionTickScope.current() != null) {
++            throw new IllegalStateException("Block event dispatch, lifecycle and world-wide operations belong to the control phase");
++        }
++    }
+ }
+diff --git a/net/minecraft/world/level/block/TntBlock.java b/net/minecraft/world/level/block/TntBlock.java
+index 10a9e14e5029b0e777edf45500879809aea0d155..1f5efa00660b54138a8558617afa9f94bde60d6b 100644
+--- a/net/minecraft/world/level/block/TntBlock.java
++++ b/net/minecraft/world/level/block/TntBlock.java
+@@ -86,16 +86,26 @@ public class TntBlock extends Block {
+ 
+     private static boolean prime(final Level level, final BlockPos pos, final @Nullable LivingEntity source) {
+         if (level instanceof ServerLevel serverLevel && serverLevel.getGameRules().get(GameRules.TNT_EXPLODES)) {
+-            PrimedTnt tnt = new PrimedTnt(level, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, source);
+-            level.addFreshEntity(tnt);
+-            level.playSound(null, tnt.getX(), tnt.getY(), tnt.getZ(), SoundEvents.TNT_PRIMED, SoundSource.BLOCKS, 1.0F, 1.0F);
+-            level.gameEvent(source, GameEvent.PRIME_FUSE, pos);
++            BlockPos stablePos = pos.immutable();
++            // Accept priming now; publish entity creation and its effects after every region joins.
++            if (!net.minecraft.server.level.RegionTickScope.deferAt(
++                level, stablePos, () -> spawnPrimedTnt(serverLevel, stablePos, source)
++            )) {
++                spawnPrimedTnt(serverLevel, stablePos, source);
++            }
+             return true;
+         } else {
+             return false;
+         }
+     }
+ 
++    private static void spawnPrimedTnt(final ServerLevel level, final BlockPos pos, final @Nullable LivingEntity source) {
++        PrimedTnt tnt = new PrimedTnt(level, pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, source);
++        level.addFreshEntity(tnt);
++        level.playSound(null, tnt.getX(), tnt.getY(), tnt.getZ(), SoundEvents.TNT_PRIMED, SoundSource.BLOCKS, 1.0F, 1.0F);
++        level.gameEvent(source, GameEvent.PRIME_FUSE, pos);
++    }
++
+     @Override
+     protected InteractionResult useItemOn(
+         final ItemStack itemStack,
