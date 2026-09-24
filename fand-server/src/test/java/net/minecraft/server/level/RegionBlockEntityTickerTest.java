@@ -6,6 +6,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verify;
 
 import io.fand.server.component.PersistentComponentData;
 import io.fand.server.tick.OwnershipCell;
@@ -201,6 +205,121 @@ class RegionBlockEntityTickerTest {
             fixture.runner.tick(List.of(left, right), TickingBlockEntity::tick);
             assertThat(leftComponents.snapshot().values().get(key).getAsInt()).isEqualTo(1);
             assertThat(rightComponents.snapshot().values().get(key).getAsInt()).isEqualTo(3);
+        }
+    }
+
+    @Test
+    void dropsConsumeOwnedStacksImmediatelyButRegisterAfterAllRegionsFinish() {
+        try (Fixture fixture = new Fixture(2)) {
+            Thread control = Thread.currentThread();
+            CountDownLatch entered = new CountDownLatch(2);
+            AtomicInteger finished = new AtomicInteger();
+            List<net.minecraft.world.entity.item.ItemEntity> dropped = new ArrayList<>();
+            doAnswer(call -> {
+                assertThat(Thread.currentThread()).isSameAs(control);
+                assertThat(RegionTickScope.current()).isNull();
+                assertThat(finished).hasValue(2);
+                dropped.add(call.getArgument(0));
+                return true;
+            }).when(fixture.level).addFreshEntity(any());
+            fixture.runner.tick(List.of(ticker(LEFT, () -> {
+                awaitBoth(entered);
+                var stack = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.DIAMOND, 64);
+                net.minecraft.world.Containers.dropItemStack(fixture.level, LEFT.getX(), LEFT.getY(), LEFT.getZ(), stack);
+                assertThat(stack.isEmpty()).isTrue();
+                assertThat(dropped).isEmpty();
+                stack.setCount(9); // Publication must not retain the mutable inventory stack.
+                finished.incrementAndGet();
+            }), ticker(RIGHT, () -> {
+                awaitBoth(entered);
+                var stack = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.GOLD_INGOT, 7);
+                net.minecraft.world.Containers.dropItemStack(fixture.level, RIGHT.getX(), RIGHT.getY(), RIGHT.getZ(), stack);
+                assertThat(stack.isEmpty()).isTrue();
+                finished.incrementAndGet();
+            })), TickingBlockEntity::tick);
+            assertThat(dropped.stream().filter(entity -> entity.getItem().is(net.minecraft.world.item.Items.DIAMOND))
+                .mapToInt(entity -> entity.getItem().getCount()).sum()).isEqualTo(64);
+            assertThat(dropped.stream().filter(entity -> entity.getItem().is(net.minecraft.world.item.Items.GOLD_INGOT))
+                .mapToInt(entity -> entity.getItem().getCount()).sum()).isEqualTo(7);
+        }
+    }
+
+    @Test
+    void rejectedCrossRegionDropDoesNotConsumeTheSourceStack() {
+        try (Fixture fixture = new Fixture(2)) {
+            fixture.runner.tick(List.of(ticker(LEFT, () -> {
+                var stack = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.DIAMOND, 4);
+                assertThatThrownBy(() -> net.minecraft.world.Containers.dropItemStack(
+                    fixture.level, RIGHT.getX(), RIGHT.getY(), RIGHT.getZ(), stack)).isInstanceOf(IllegalStateException.class);
+                assertThat(stack.getCount()).isEqualTo(4);
+            }), ticker(RIGHT, () -> {})), TickingBlockEntity::tick);
+        }
+    }
+
+    @Test
+    void levelEventsPublishOnControlAndCaptureMutablePositions() {
+        try (Fixture fixture = new Fixture(2)) {
+            var players = mock(net.minecraft.server.players.PlayerList.class);
+            Thread control = Thread.currentThread();
+            when(fixture.level.getServer().getPlayerList()).thenAnswer(call -> {
+                assertThat(Thread.currentThread()).isSameAs(control);
+                return players;
+            });
+            setField(ServerLevel.class, fixture.level, "server", fixture.level.getServer());
+            doCallRealMethod().when(fixture.level).levelEvent(any(), anyInt(), any(), anyInt());
+            fixture.runner.tick(List.of(ticker(LEFT, () -> {
+                var pos = LEFT.mutable();
+                fixture.level.levelEvent(null, 1035, pos, 7);
+                pos.set(RIGHT);
+                verifyNoInteractions(players);
+                assertThatThrownBy(() -> fixture.level.levelEvent(null, 1035, RIGHT, 0))
+                    .isInstanceOf(IllegalStateException.class);
+            }), ticker(RIGHT, () -> {})), TickingBlockEntity::tick);
+            var packet = org.mockito.ArgumentCaptor.forClass(net.minecraft.network.protocol.Packet.class);
+            verify(players).broadcast(org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.eq(8.0),
+                org.mockito.ArgumentMatchers.eq(64.0), org.mockito.ArgumentMatchers.eq(8.0), org.mockito.ArgumentMatchers.eq(64.0),
+                org.mockito.ArgumentMatchers.isNull(), packet.capture());
+            var event = (net.minecraft.network.protocol.game.ClientboundLevelEventPacket)packet.getValue();
+            assertThat(event.getPos()).isEqualTo(LEFT);
+        }
+    }
+
+    @Test
+    void gameEventsDispatchOnControlInRegionOrderAfterPublication() {
+        try (Fixture fixture = new Fixture(2)) {
+            var dispatcher = mock(net.minecraft.world.level.gameevent.GameEventDispatcher.class);
+            setField(ServerLevel.class, fixture.level, "gameEventDispatcher", dispatcher);
+            doCallRealMethod().when(fixture.level).gameEvent(
+                any(net.minecraft.core.Holder.class), any(net.minecraft.world.phys.Vec3.class), any(net.minecraft.world.level.gameevent.GameEvent.Context.class));
+            List<String> order = new ArrayList<>();
+            Thread control = Thread.currentThread();
+            doAnswer(call -> {
+                assertThat(Thread.currentThread()).isSameAs(control);
+                order.add("event");
+                return null;
+            }).when(dispatcher).post(any(), any(), any());
+            fixture.runner.tick(List.of(ticker(LEFT, () -> {
+                RegionTickScope.deferAt(fixture.level, LEFT, () -> order.add("drop"));
+                fixture.level.gameEvent(net.minecraft.world.level.gameevent.GameEvent.BLOCK_CHANGE,
+                    net.minecraft.world.phys.Vec3.atCenterOf(LEFT),
+                    net.minecraft.world.level.gameevent.GameEvent.Context.of(net.minecraft.world.level.block.Blocks.CAMPFIRE.defaultBlockState()));
+                verifyNoInteractions(dispatcher);
+                assertThatThrownBy(() -> fixture.level.gameEvent(net.minecraft.world.level.gameevent.GameEvent.BLOCK_CHANGE,
+                    net.minecraft.world.phys.Vec3.atCenterOf(RIGHT),
+                    net.minecraft.world.level.gameevent.GameEvent.Context.of(net.minecraft.world.level.block.Blocks.CAMPFIRE.defaultBlockState())))
+                    .isInstanceOf(IllegalStateException.class);
+            }), ticker(RIGHT, () -> {})), TickingBlockEntity::tick);
+            assertThat(order).containsExactly("drop", "event");
+        }
+    }
+
+    private static void setField(Class<?> owner, Object target, String name, Object value) {
+        try {
+            var field = owner.getDeclaredField(name);
+            field.setAccessible(true);
+            field.set(target, value);
+        } catch (ReflectiveOperationException failure) {
+            throw new AssertionError(failure);
         }
     }
 

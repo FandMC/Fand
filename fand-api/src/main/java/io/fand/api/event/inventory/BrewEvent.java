@@ -10,7 +10,8 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Fired on the server thread before a brewing stand commits brewed results.
+ * Fired on the brewing stand's simulation owner before it commits brewed results.
+ * Independent regions may invoke listeners concurrently.
  */
 public final class BrewEvent implements Event, Cancellable {
 

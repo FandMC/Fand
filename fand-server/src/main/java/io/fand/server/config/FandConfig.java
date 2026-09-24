@@ -324,7 +324,7 @@ public final class FandConfig {
         @ConfigComment({
                 "Workers for independent regions in the native block-entity phase.",
                 "0 selects 2-8 workers automatically; 1 keeps the serial path.",
-                "Audited furnace and hopper ticks may run concurrently. Other native",
+                "Audited furnace, hopper, brewing stand and campfire ticks may run concurrently. Other native",
                 "tickers retain control-thread execution. Region callbacks must use",
                 "owned block access or asynchronous scheduling for global operations."
         })

@@ -1,0 +1,87 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 24 Sep 2026 17:03:33 +0800
+Subject: [PATCH] Run brewing and campfire ticks in owned regions
+
+
+diff --git a/net/minecraft/server/level/RegionTickScope.java b/net/minecraft/server/level/RegionTickScope.java
+index 61f66e51860759b9cced61c31403970c73d671ab..92dd96707db54c38849021610dd2568d95d5f128 100644
+--- a/net/minecraft/server/level/RegionTickScope.java
++++ b/net/minecraft/server/level/RegionTickScope.java
+@@ -52,6 +52,17 @@ public final class RegionTickScope implements AutoCloseable {
+         return true;
+     }
+ 
++    /** Queues a location-bound publication without granting access to another region. */
++    public static boolean deferAt(Level level, BlockPos pos, Runnable publication) {
++        RegionTickScope scope = CURRENT.get();
++        if (scope == null) {
++            return false;
++        }
++        scope.requirePosition(level, pos);
++        scope.publications.add(publication);
++        return true;
++    }
++
+     public void requireLevel(Level level) {
+         if (this.level != level || CURRENT.get() != this || RegionContext.current().orElse(null) != this.context) {
+             throw new IllegalStateException("World is outside the current native region phase");
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index c7e086fcf86424da85babca5404788c04b1afd6a..3ed526b1e5a8ee18a8e1bc7dc6d546bef4c3c6f5 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -1257,6 +1257,10 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+ 
+     @Override
+     public void levelEvent(final @Nullable Entity source, final int type, final BlockPos pos, final int data) {
++        BlockPos stablePos = pos.immutable();
++        if (RegionTickScope.deferAt(this, stablePos, () -> this.levelEvent(source, type, stablePos, data))) {
++            return;
++        }
+         this.server
+             .getPlayerList()
+             .broadcast(
+@@ -1276,6 +1280,9 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+ 
+     @Override
+     public void gameEvent(final Holder<GameEvent> gameEvent, final Vec3 position, final GameEvent.Context context) {
++        if (RegionTickScope.deferAt(this, BlockPos.containing(position), () -> this.gameEvent(gameEvent, position, context))) {
++            return;
++        }
+         this.gameEventDispatcher.post(gameEvent, position, context);
+     }
+ 
+diff --git a/net/minecraft/world/Containers.java b/net/minecraft/world/Containers.java
+index e9e2ef680cfc72cd47fa13d72c03619d2f1ca5fc..e0596e6ea2abaa9842b774bf455c840cc8000545 100644
+--- a/net/minecraft/world/Containers.java
++++ b/net/minecraft/world/Containers.java
+@@ -30,6 +30,14 @@ public class Containers {
+     }
+ 
+     public static void dropItemStack(final Level level, final double x, final double y, final double z, final ItemStack itemStack) {
++        var scope = net.minecraft.server.level.RegionTickScope.current();
++        if (scope != null) {
++            scope.requirePosition(level, BlockPos.containing(x, y, z));
++            // Consume the owned inventory now; create and register entities only after all regions join.
++            ItemStack dropped = itemStack.copyAndClear();
++            net.minecraft.server.level.RegionTickScope.defer(level, () -> dropItemStack(level, x, y, z, dropped));
++            return;
++        }
+         double size = EntityTypes.ITEM.getWidth();
+         double centerRange = 1.0 - size;
+         double halfSize = size / 2.0;
+diff --git a/net/minecraft/world/level/chunk/LevelChunk.java b/net/minecraft/world/level/chunk/LevelChunk.java
+index fd02237d48dbcbf5fe93d155a9bbf6043283e3f9..359826ae4fa601fcafcd15c467e181c5dbb6bc7c 100644
+--- a/net/minecraft/world/level/chunk/LevelChunk.java
++++ b/net/minecraft/world/level/chunk/LevelChunk.java
+@@ -836,6 +836,10 @@ public class LevelChunk extends ChunkAccess implements DebugValueSource {
+                     && block == net.minecraft.world.level.block.BlastFurnaceBlock.class
+                 || type == net.minecraft.world.level.block.entity.SmokerBlockEntity.class
+                     && block == net.minecraft.world.level.block.SmokerBlock.class
++                || type == net.minecraft.world.level.block.entity.BrewingStandBlockEntity.class
++                    && block == net.minecraft.world.level.block.BrewingStandBlock.class
++                || type == net.minecraft.world.level.block.entity.CampfireBlockEntity.class
++                    && block == net.minecraft.world.level.block.CampfireBlock.class
+                 || type == net.minecraft.world.level.block.entity.HopperBlockEntity.class
+                     && block == net.minecraft.world.level.block.HopperBlock.class
+                     && ((net.minecraft.world.level.block.entity.HopperBlockEntity)this.blockEntity).fand$canTickInRegion();

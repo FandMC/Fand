@@ -8,7 +8,8 @@ import io.fand.api.item.ItemStack;
 import java.util.Objects;
 
 /**
- * Fired on the server thread before a brewing stand consumes fuel.
+ * Fired on the brewing stand's simulation owner before it consumes fuel.
+ * Independent regions may invoke listeners concurrently.
  *
  * <p>Cancelling prevents the fuel item from being consumed and leaves the
  * stand's fuel counter unchanged. {@link #fuelPower()} is clamped to
