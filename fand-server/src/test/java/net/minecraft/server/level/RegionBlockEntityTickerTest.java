@@ -343,7 +343,7 @@ class RegionBlockEntityTickerTest {
         @Override public String getType() { return "test:region"; }
     }
 
-    private static final class Fixture implements AutoCloseable {
+    static final class Fixture implements AutoCloseable {
         final TickRegionTopology topology = new TickRegionTopology(4, 1);
         final ServerLevel level = mock(ServerLevel.class);
         final ThreadUnsafeRandom controlRandom = new ThreadUnsafeRandom(42);

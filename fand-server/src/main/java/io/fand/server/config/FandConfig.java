@@ -322,10 +322,11 @@ public final class FandConfig {
 
     public static final class RegionSimulation {
         @ConfigComment({
-                "Workers for independent regions in the native block-entity phase.",
+                "Workers for independent regions in audited native simulation phases.",
                 "0 selects 2-8 workers automatically; 1 keeps the serial path.",
                 "Audited furnace, hopper, brewing stand and campfire ticks may run concurrently. Other native",
-                "tickers retain control-thread execution. Region callbacks must use",
+                "tickers retain control-thread execution. Scheduled redstone lamp ticks",
+                "also use these workers. Region callbacks must use",
                 "owned block access or asynchronous scheduling for global operations."
         })
         @ConfigRange(min = 0, max = 64)

@@ -1,0 +1,674 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: MC20018 <winme2001@outlook.com>
+Date: Thu, 24 Sep 2026 17:39:10 +0800
+Subject: [PATCH] Dispatch owned scheduled block tick batches in parallel
+
+
+diff --git a/net/minecraft/server/level/RegionBlockEntityTicker.java b/net/minecraft/server/level/RegionBlockEntityTicker.java
+index c7936a296fcc4bb3f938320b8dab1d35e9ea834d..4cb454e9027c4387af8ce45117b2472e3874898e 100644
+--- a/net/minecraft/server/level/RegionBlockEntityTicker.java
++++ b/net/minecraft/server/level/RegionBlockEntityTicker.java
+@@ -1,174 +1,14 @@
+ package net.minecraft.server.level;
+ 
+-import io.fand.server.tick.RegionTickExecutor;
+-import io.fand.server.tick.TickRegion;
+-import java.util.ArrayList;
+-import java.util.LinkedHashMap;
+-import java.util.List;
+-import java.util.Map;
+-import java.util.concurrent.CompletableFuture;
+-import java.util.concurrent.CompletionException;
+-import java.util.concurrent.atomic.AtomicInteger;
+-import java.util.function.Consumer;
+ import net.minecraft.world.level.block.entity.TickingBlockEntity;
+ 
+-/** Executes independent native block-entity groups, joining before world publication resumes. */
+-public final class RegionBlockEntityTicker {
+-    private final ServerLevel level;
+-    private final java.util.function.Supplier<io.fand.server.tick.RegionSimulationWorkers> workers;
+-    private Snapshot snapshot = new Snapshot(0, 0, 0, 0, List.of());
+-    private long completedPhases;
+-    private long completedTickers;
+-    private int peakConcurrency;
+-
++/** Block-entity adaptation of the shared native region phase dispatcher. */
++public final class RegionBlockEntityTicker extends RegionTickDispatcher<TickingBlockEntity> {
+     public RegionBlockEntityTicker(ServerLevel level) {
+         this(level, () -> io.fand.server.Main.runtime().regionSimulationWorkers());
+     }
+ 
+     RegionBlockEntityTicker(ServerLevel level, java.util.function.Supplier<io.fand.server.tick.RegionSimulationWorkers> workers) {
+-        this.level = level;
+-        this.workers = workers;
+-    }
+-
+-    public Snapshot snapshot() {
+-        if (!this.level.getServer().isSameThread()) {
+-            throw new IllegalStateException("Region phase diagnostics belong to the control thread");
+-        }
+-        return this.snapshot;
+-    }
+-
+-    public void tick(List<TickingBlockEntity> tickers, Consumer<TickingBlockEntity> tick) {
+-        var workers = this.workers.get();
+-        if (workers.parallelism() == 1) {
+-            tickers.forEach(tick);
+-            return;
+-        }
+-        Map<TickRegion, List<TickingBlockEntity>> groups = this.group(tickers);
+-        List<TickingBlockEntity> candidates = new ArrayList<>();
+-        for (var entry : groups.entrySet()) {
+-            if (entry.getKey() != null && entry.getValue().stream().allMatch(TickingBlockEntity::fand$canTickInRegion)) {
+-                candidates.addAll(entry.getValue());
+-            } else {
+-                entry.getValue().forEach(tick);
+-            }
+-        }
+-        // Control callbacks can load chunks and merge or split layouts. Resolve again afterwards.
+-        groups = this.group(candidates);
+-        if (groups.size() < 2 || groups.containsKey(null)
+-            || candidates.stream().anyMatch(ticker -> !ticker.fand$canTickInRegion())) {
+-            candidates.forEach(tick);
+-            return;
+-        }
+-        Map<TickRegion, Job> jobs = new LinkedHashMap<>();
+-        groups.forEach((region, members) -> jobs.put(region, new Job(region.id(), members, this.level.getRandom().nextLong())));
+-        var blockComponents = this.level.getDataStorage().get(io.fand.server.component.PersistentComponentData.blockType());
+-        AtomicInteger running = new AtomicInteger();
+-        AtomicInteger peak = new AtomicInteger();
+-        RegionTickExecutor dispatcher = RegionTickExecutor.forPhases(workers.executor(), context -> {
+-            Job job = jobs.get(context.region());
+-            try (RegionTickScope scope = new RegionTickScope(this.level, context, job.publications, job.seed, blockComponents)) {
+-                job.thread = Thread.currentThread().getName();
+-                job.start = System.nanoTime();
+-                peak.accumulateAndGet(running.incrementAndGet(), Math::max);
+-                try {
+-                    for (TickingBlockEntity ticker : job.tickers) {
+-                        if (!ticker.isRemoved()) {
+-                            scope.requirePosition(this.level, ticker.getPos());
+-                        }
+-                        tick.accept(ticker);
+-                        job.ticked++;
+-                    }
+-                } finally {
+-                    job.end = System.nanoTime();
+-                    running.decrementAndGet();
+-                }
+-            }
+-        });
+-        List<CompletableFuture<RegionTickExecutor.Result>> results = new ArrayList<>();
+-        Throwable failure = null;
+-        try {
+-            for (TickRegion region : jobs.keySet()) {
+-                results.add(dispatcher.tick(region));
+-            }
+-        } catch (RuntimeException | Error thrown) {
+-            failure = thrown;
+-        }
+-        try {
+-            // Do not pump the server event loop here: it publishes and unloads live world data.
+-            CompletableFuture.allOf(results.toArray(CompletableFuture[]::new)).join();
+-            if (results.stream().anyMatch(result -> result.join() != RegionTickExecutor.Result.EXECUTED)) {
+-                throw new IllegalStateException("Region layout changed during a native simulation phase");
+-            }
+-        } catch (CompletionException thrown) {
+-            if (failure == null) {
+-                failure = thrown.getCause();
+-            } else if (failure != thrown.getCause()) {
+-                failure.addSuppressed(thrown.getCause());
+-            }
+-        } catch (RuntimeException | Error thrown) {
+-            if (failure == null) {
+-                failure = thrown;
+-            } else if (failure != thrown) {
+-                failure.addSuppressed(thrown);
+-            }
+-        } finally {
+-            dispatcher.shutdown().join();
+-            for (Job job : jobs.values()) {
+-                for (Runnable publication : job.publications) {
+-                    try {
+-                        publication.run();
+-                    } catch (RuntimeException | Error thrown) {
+-                        if (failure == null) {
+-                            failure = thrown;
+-                        } else if (failure != thrown) {
+-                            failure.addSuppressed(thrown);
+-                        }
+-                    }
+-                }
+-            }
+-        }
+-        if (failure instanceof Error error) {
+-            throw error;
+-        }
+-        if (failure != null) {
+-            throw new CompletionException("Native region block-entity phase failed", failure);
+-        }
+-        this.completedPhases++;
+-        this.completedTickers += jobs.values().stream().mapToInt(job -> job.ticked).sum();
+-        this.peakConcurrency = Math.max(this.peakConcurrency, peak.get());
+-        this.snapshot = new Snapshot(this.completedPhases, this.completedTickers, this.peakConcurrency, jobs.size(),
+-            jobs.values().stream().limit(32).map(job -> new Execution(job.regionId, job.thread, job.ticked, job.start, job.end)).toList());
+-    }
+-
+-    private Map<TickRegion, List<TickingBlockEntity>> group(List<TickingBlockEntity> tickers) {
+-        Map<TickRegion, List<TickingBlockEntity>> groups = new LinkedHashMap<>();
+-        for (TickingBlockEntity ticker : tickers) {
+-            var pos = ticker.getPos();
+-            var chunkMap = this.level.getChunkSource().chunkMap;
+-            var region = chunkMap.fand$regionAt(chunkMap.fand$cellAtChunk(pos.getX() >> 4, pos.getZ() >> 4));
+-            groups.computeIfAbsent(region, ignored -> new ArrayList<>()).add(ticker);
+-        }
+-        return groups;
+-    }
+-
+-    public record Snapshot(long completedPhases, long completedTickers, int peakConcurrentRegions,
+-                           int lastRegionCount, List<Execution> lastExecutions) {}
+-    public record Execution(long regionId, String thread, int tickers, long startNanos, long endNanos) {}
+-
+-    private static final class Job {
+-        private final long regionId;
+-        private final List<TickingBlockEntity> tickers;
+-        private final long seed;
+-        private final List<Runnable> publications = new ArrayList<>();
+-        private String thread = "";
+-        private long start;
+-        private long end;
+-        private int ticked;
+-
+-        private Job(long regionId, List<TickingBlockEntity> tickers, long seed) {
+-            this.regionId = regionId;
+-            this.tickers = tickers;
+-            this.seed = seed;
+-        }
++        super(level, workers, TickingBlockEntity::getPos, TickingBlockEntity::fand$canTickInRegion, TickingBlockEntity::isRemoved);
+     }
+ }
+diff --git a/net/minecraft/server/level/RegionScheduledBlockTicker.java b/net/minecraft/server/level/RegionScheduledBlockTicker.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..235b6e951969293607cf10d12f81ddad5e1670d0
+--- /dev/null
++++ b/net/minecraft/server/level/RegionScheduledBlockTicker.java
+@@ -0,0 +1,21 @@
++package net.minecraft.server.level;
++
++import net.minecraft.world.level.block.Block;
++import net.minecraft.world.level.block.RedstoneLampBlock;
++import net.minecraft.world.ticks.ScheduledTick;
++
++/** Scheduled callbacks are opted in only after auditing their synchronous side effects. */
++public final class RegionScheduledBlockTicker extends RegionTickDispatcher<ScheduledTick<Block>> {
++    public RegionScheduledBlockTicker(ServerLevel level) {
++        this(level, () -> io.fand.server.Main.runtime().regionSimulationWorkers());
++    }
++
++    RegionScheduledBlockTicker(ServerLevel level, java.util.function.Supplier<io.fand.server.tick.RegionSimulationWorkers> workers) {
++        super(level, workers, ScheduledTick::pos, tick -> supported(tick.type()), tick -> false);
++    }
++
++    static boolean supported(Block block) {
++        // Diodes and observers can synchronously activate arbitrary neighbors, including entity spawning.
++        return block.getClass() == RedstoneLampBlock.class;
++    }
++}
+diff --git a/net/minecraft/server/level/RegionTickDispatcher.java b/net/minecraft/server/level/RegionTickDispatcher.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..7be093213384b5c81c32bb83e2c840cfd1be6f83
+--- /dev/null
++++ b/net/minecraft/server/level/RegionTickDispatcher.java
+@@ -0,0 +1,181 @@
++package net.minecraft.server.level;
++
++import io.fand.server.tick.RegionTickExecutor;
++import io.fand.server.tick.TickRegion;
++import java.util.ArrayList;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.CompletionException;
++import java.util.concurrent.atomic.AtomicInteger;
++import java.util.function.Consumer;
++import net.minecraft.core.BlockPos;
++import java.util.function.Function;
++import java.util.function.Predicate;
++
++/** Executes independent native phase groups, joining before world publication resumes. */
++public class RegionTickDispatcher<T> {
++    private final ServerLevel level;
++    private final java.util.function.Supplier<io.fand.server.tick.RegionSimulationWorkers> workers;
++    private Snapshot snapshot = new Snapshot(0, 0, 0, 0, List.of());
++    private long completedPhases;
++    private long completedTickers;
++    private int peakConcurrency;
++
++    private final Function<T, BlockPos> position;
++    private final Predicate<T> supported;
++    private final Predicate<T> removed;
++
++    protected RegionTickDispatcher(ServerLevel level,
++            java.util.function.Supplier<io.fand.server.tick.RegionSimulationWorkers> workers,
++            Function<T, BlockPos> position, Predicate<T> supported, Predicate<T> removed) {
++        this.level = level;
++        this.workers = workers;
++        this.position = position;
++        this.supported = supported;
++        this.removed = removed;
++    }
++
++    public Snapshot snapshot() {
++        if (!this.level.getServer().isSameThread()) {
++            throw new IllegalStateException("Region phase diagnostics belong to the control thread");
++        }
++        return this.snapshot;
++    }
++
++    public void tick(List<T> tickers, Consumer<T> tick) {
++        var workers = this.workers.get();
++        if (workers.parallelism() == 1) {
++            tickers.forEach(tick);
++            return;
++        }
++        Map<TickRegion, List<T>> groups = this.group(tickers);
++        List<T> candidates = new ArrayList<>();
++        for (var entry : groups.entrySet()) {
++            if (entry.getKey() != null && entry.getValue().stream().allMatch(this.supported)) {
++                candidates.addAll(entry.getValue());
++            } else {
++                entry.getValue().forEach(tick);
++            }
++        }
++        // Control callbacks can load chunks and merge or split layouts. Resolve again afterwards.
++        groups = this.group(candidates);
++        if (groups.size() < 2 || groups.containsKey(null)
++            || candidates.stream().anyMatch(ticker -> !this.supported.test(ticker))) {
++            candidates.forEach(tick);
++            return;
++        }
++        Map<TickRegion, Job<T>> jobs = new LinkedHashMap<>();
++        groups.forEach((region, members) -> jobs.put(region, new Job<>(region.id(), members, this.level.getRandom().nextLong())));
++        var blockComponents = this.level.getDataStorage().get(io.fand.server.component.PersistentComponentData.blockType());
++        AtomicInteger running = new AtomicInteger();
++        AtomicInteger peak = new AtomicInteger();
++        RegionTickExecutor dispatcher = RegionTickExecutor.forPhases(workers.executor(), context -> {
++            Job<T> job = jobs.get(context.region());
++            try (RegionTickScope scope = new RegionTickScope(this.level, context, job.publications, job.seed, blockComponents)) {
++                job.thread = Thread.currentThread().getName();
++                job.start = System.nanoTime();
++                peak.accumulateAndGet(running.incrementAndGet(), Math::max);
++                try {
++                    for (T ticker : job.tickers) {
++                        if (!this.removed.test(ticker)) {
++                            scope.requirePosition(this.level, this.position.apply(ticker));
++                        }
++                        tick.accept(ticker);
++                        job.ticked++;
++                    }
++                } finally {
++                    job.end = System.nanoTime();
++                    running.decrementAndGet();
++                }
++            }
++        });
++        List<CompletableFuture<RegionTickExecutor.Result>> results = new ArrayList<>();
++        Throwable failure = null;
++        try {
++            for (TickRegion region : jobs.keySet()) {
++                results.add(dispatcher.tick(region));
++            }
++        } catch (RuntimeException | Error thrown) {
++            failure = thrown;
++        }
++        try {
++            // Do not pump the server event loop here: it publishes and unloads live world data.
++            CompletableFuture.allOf(results.toArray(CompletableFuture[]::new)).join();
++            if (results.stream().anyMatch(result -> result.join() != RegionTickExecutor.Result.EXECUTED)) {
++                throw new IllegalStateException("Region layout changed during a native simulation phase");
++            }
++        } catch (CompletionException thrown) {
++            if (failure == null) {
++                failure = thrown.getCause();
++            } else if (failure != thrown.getCause()) {
++                failure.addSuppressed(thrown.getCause());
++            }
++        } catch (RuntimeException | Error thrown) {
++            if (failure == null) {
++                failure = thrown;
++            } else if (failure != thrown) {
++                failure.addSuppressed(thrown);
++            }
++        } finally {
++            dispatcher.shutdown().join();
++            for (Job<T> job : jobs.values()) {
++                for (Runnable publication : job.publications) {
++                    try {
++                        publication.run();
++                    } catch (RuntimeException | Error thrown) {
++                        if (failure == null) {
++                            failure = thrown;
++                        } else if (failure != thrown) {
++                            failure.addSuppressed(thrown);
++                        }
++                    }
++                }
++            }
++        }
++        if (failure instanceof Error error) {
++            throw error;
++        }
++        if (failure != null) {
++            throw new CompletionException("Native region phase failed", failure);
++        }
++        this.completedPhases++;
++        this.completedTickers += jobs.values().stream().mapToInt(job -> job.ticked).sum();
++        this.peakConcurrency = Math.max(this.peakConcurrency, peak.get());
++        this.snapshot = new Snapshot(this.completedPhases, this.completedTickers, this.peakConcurrency, jobs.size(),
++            jobs.values().stream().limit(32).map(job -> new Execution(job.regionId, job.thread, job.ticked, job.start, job.end)).toList());
++    }
++
++    private Map<TickRegion, List<T>> group(List<T> tickers) {
++        Map<TickRegion, List<T>> groups = new LinkedHashMap<>();
++        for (T ticker : tickers) {
++            var pos = this.position.apply(ticker);
++            var chunkMap = this.level.getChunkSource().chunkMap;
++            var region = chunkMap.fand$regionAt(chunkMap.fand$cellAtChunk(pos.getX() >> 4, pos.getZ() >> 4));
++            groups.computeIfAbsent(region, ignored -> new ArrayList<>()).add(ticker);
++        }
++        return groups;
++    }
++
++    public record Snapshot(long completedPhases, long completedTickers, int peakConcurrentRegions,
++                           int lastRegionCount, List<Execution> lastExecutions) {}
++    public record Execution(long regionId, String thread, int tickers, long startNanos, long endNanos) {}
++
++    private static final class Job<T> {
++        private final long regionId;
++        private final List<T> tickers;
++        private final long seed;
++        private final List<Runnable> publications = new ArrayList<>();
++        private String thread = "";
++        private long start;
++        private long end;
++        private int ticked;
++
++        private Job(long regionId, List<T> tickers, long seed) {
++            this.regionId = regionId;
++            this.tickers = tickers;
++            this.seed = seed;
++        }
++    }
++}
+diff --git a/net/minecraft/server/level/ServerLevel.java b/net/minecraft/server/level/ServerLevel.java
+index 3ed526b1e5a8ee18a8e1bc7dc6d546bef4c3c6f5..6f80d60dada885e2f62e227cb79f168ab064f42b 100644
+--- a/net/minecraft/server/level/ServerLevel.java
++++ b/net/minecraft/server/level/ServerLevel.java
+@@ -199,6 +199,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     private final ServerLevelData serverLevelData;
+     private final EntityTickList entityTickList = new EntityTickList(entity -> this.fand$simulationCellAt(entity.blockPosition()));
+     private final RegionBlockEntityTicker fandRegionBlockEntities = new RegionBlockEntityTicker(this);
++    private final RegionScheduledBlockTicker fandRegionScheduledBlocks = new RegionScheduledBlockTicker(this);
+     private final ServerWaypointManager waypointManager;
+     private EnvironmentAttributeSystem environmentAttributes;
+     private final PersistentEntitySectionManager<Entity> entityManager;
+@@ -445,7 +446,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+         if (!this.isDebug() && runs) {
+             long tick = this.getGameTime();
+             profiler.push("blockTicks");
+-            this.blockTicks.tick(tick, 65536, this::tickBlock);
++            this.blockTicks.tick(tick, 65536, this::tickBlock, this.fandRegionScheduledBlocks::tick);
+             profiler.popPush("fluidTicks");
+             this.fluidTicks.tick(tick, 65536, this::tickFluid);
+             profiler.pop();
+@@ -910,7 +911,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+     private void tickBlock(final BlockPos pos, final Block type) {
+         BlockState state = this.getBlockState(pos);
+         if (state.is(type)) {
+-            state.tick(this, pos, this.random);
++            state.tick(this, pos, this.getRandom());
+         }
+     }
+ 
+@@ -955,6 +956,10 @@ public class ServerLevel extends Level implements WorldGenLevel, ServerEntityGet
+         return this.fandRegionBlockEntities.snapshot();
+     }
+ 
++    public RegionTickDispatcher.Snapshot fand$scheduledRegionExecutionSnapshot() {
++        return this.fandRegionScheduledBlocks.snapshot();
++    }
++
+     @Override
+     public void tickBlockEntities() {
+         if (!this.tickRateManager().runsNormally()) {
+diff --git a/net/minecraft/world/ticks/LevelTicks.java b/net/minecraft/world/ticks/LevelTicks.java
+index 551e20b19c18325d695e48bc2d22c3091fbf626a..cf5e4f80a164887ff57ae457d2189a2892c40a5b 100644
+--- a/net/minecraft/world/ticks/LevelTicks.java
++++ b/net/minecraft/world/ticks/LevelTicks.java
+@@ -2,7 +2,6 @@ package net.minecraft.world.ticks;
+ 
+ import io.fand.server.tick.OwnershipCell;
+ import it.unimi.dsi.fastutil.objects.ObjectOpenCustomHashSet;
+-import java.util.ArrayDeque;
+ import java.util.ArrayList;
+ import java.util.List;
+ import java.util.Map;
+@@ -14,6 +13,7 @@ import java.util.function.BooleanSupplier;
+ import java.util.function.LongFunction;
+ import java.util.function.LongPredicate;
+ import java.util.function.Predicate;
++import java.util.function.Consumer;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.SectionPos;
+ import net.minecraft.core.Vec3i;
+@@ -47,6 +47,7 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+     }
+ 
+     public void addContainer(final ChunkPos pos, final LevelChunkTicks<T> container) {
++        this.requireControlPhase();
+         Registration<T> previous = this.containers.get(pos.pack());
+         if (previous != null && previous.container == container) {
+             return;
+@@ -56,6 +57,7 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+     }
+ 
+     public void removeContainer(final ChunkPos pos) {
++        this.requireControlPhase();
+         Registration<T> removed = this.containers.remove(pos.pack());
+         if (removed != null && this.currentBatch != null) {
+             // Return unexecuted ticks before the old chunk is saved or replaced.
+@@ -64,6 +66,7 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+     }
+ 
+     public void removeContainer(final ChunkPos pos, final LevelChunkTicks<T> expected) {
++        this.requireControlPhase();
+         Registration<T> registration = this.containers.get(pos.pack());
+         if (registration != null && registration.container == expected) {
+             this.removeContainer(pos);
+@@ -85,6 +88,13 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+     }
+ 
+     public void tick(final long currentTick, final int maxTicksToProcess, final BiConsumer<BlockPos, T> output) {
++        this.tick(currentTick, maxTicksToProcess, output, (ticks, execute) -> ticks.forEach(execute));
++    }
++
++    /** The dispatcher must join all callbacks before returning, including when a callback fails. */
++    public void tick(final long currentTick, final int maxTicksToProcess, final BiConsumer<BlockPos, T> output,
++                     BiConsumer<List<ScheduledTick<T>>, Consumer<ScheduledTick<T>>> dispatch) {
++        this.requireControlPhase();
+         if (this.currentBatch != null) {
+             throw new IllegalStateException("Scheduled ticking cannot be reentered");
+         }
+@@ -96,12 +106,15 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+             this.collectTicks(currentTick, maxTicksToProcess, batch, profiler);
+             profiler.popPush("run");
+             profiler.incrementCounter("ticksToRun", batch.pending.size());
+-            BoundTick<T> entry;
+-            while ((entry = batch.poll()) != null) {
+-                entry.registration.container.finishTick(entry.tick);
+-                batch.executed.add(entry);
+-                output.accept(entry.tick.pos(), entry.tick.type());
+-            }
++            dispatch.accept(batch.snapshot(), tick -> {
++                var region = net.minecraft.server.level.RegionTickScope.current();
++                if (region != null) {
++                    region.requireTickAccess(this, tick.pos());
++                }
++                if (batch.take(tick)) {
++                    output.accept(tick.pos(), tick.type());
++                }
++            });
+         } finally {
+             try {
+                 // A failed callback must not strand ticks already taken out of chunks.
+@@ -160,6 +173,10 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+ 
+     @Override
+     public boolean willTickThisTick(final BlockPos pos, final T type) {
++        var region = net.minecraft.server.level.RegionTickScope.current();
++        if (region != null) {
++            region.requireTickAccess(this, pos);
++        }
+         return this.currentBatch != null && this.currentBatch.willRun(ScheduledTick.probe(type, pos));
+     }
+ 
+@@ -180,6 +197,7 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+     }
+ 
+     public void clearArea(final BoundingBox area) {
++        this.requireArea(area);
+         Predicate<ScheduledTick<T>> inside = tick -> area.isInside(tick.pos());
+         this.forContainersInArea(area, (pos, registration) -> {
+             registration.container.removeIf(inside);
+@@ -195,11 +213,12 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+     }
+ 
+     public void copyAreaFrom(final LevelTicks<T> source, final BoundingBox area, final Vec3i offset) {
++        source.requireArea(area);
++        this.requireArea(area.moved(offset.getX(), offset.getY(), offset.getZ()));
+         List<ScheduledTick<T>> ticks = new ArrayList<>();
+         Predicate<ScheduledTick<T>> inside = tick -> area.isInside(tick.pos());
+         if (source.currentBatch != null) {
+-            source.currentBatch.executed.stream().map(entry -> entry.tick).filter(inside).forEach(ticks::add);
+-            source.currentBatch.pending.stream().map(entry -> entry.tick).filter(inside).forEach(ticks::add);
++            source.currentBatch.copy(inside, ticks);
+         }
+         source.forContainersInArea(area, (pos, registration) -> registration.container.getAll().filter(inside).forEach(ticks::add));
+         var orders = ticks.stream().mapToLong(ScheduledTick::subTickOrder).summaryStatistics();
+@@ -211,47 +230,76 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+ 
+     @Override
+     public int count() {
++        this.requireControlPhase();
+         return this.containers.count();
+     }
+ 
+     public Map<OwnershipCell, Integer> cellTickCounts() {
++        this.requireControlPhase();
+         Map<OwnershipCell, Integer> counts = this.containers.tickCounts();
+         if (this.currentBatch != null) {
+-            this.currentBatch.pending.forEach(entry -> counts.merge(entry.registration.cell(), 1, Integer::sum));
++            this.currentBatch.pending.values().forEach(entry -> counts.merge(entry.registration.cell(), 1, Integer::sum));
+         }
+         return java.util.Collections.unmodifiableMap(counts);
+     }
+ 
+     private record BoundTick<T>(Registration<T> registration, ScheduledTick<T> tick) {}
+ 
++    private void requireArea(BoundingBox area) {
++        var region = net.minecraft.server.level.RegionTickScope.current();
++        if (region != null) {
++            region.requireTickAccess(this, new BlockPos(area.minX(), area.minY(), area.minZ()));
++            for (int x = area.minX() >> 4; x <= area.maxX() >> 4; x++) {
++                for (int z = area.minZ() >> 4; z <= area.maxZ() >> 4; z++) {
++                    region.requireTickAccess(this, new BlockPos(x << 4, area.minY(), z << 4));
++                }
++            }
++        }
++    }
++
++    private void requireControlPhase() {
++        if (net.minecraft.server.level.RegionTickScope.current() != null) {
++            throw new IllegalStateException("Scheduled tick lifecycle and world-wide diagnostics belong to the control phase");
++        }
++    }
++
+     /** Execution history and reservations belong to one pass, never to the world indefinitely. */
+     private static final class TickBatch<T> {
+-        private final Queue<BoundTick<T>> pending = new ArrayDeque<>();
++        private final Map<ScheduledTick<T>, BoundTick<T>> pending = new it.unimi.dsi.fastutil.objects.Reference2ObjectLinkedOpenHashMap<>();
+         private final List<BoundTick<T>> executed = new ArrayList<>();
+         private @Nullable Set<ScheduledTick<?>> pendingSet;
+ 
+         private void add(Registration<T> registration, ScheduledTick<T> tick) {
+-            this.pending.add(new BoundTick<>(registration, tick));
++            this.pending.put(tick, new BoundTick<>(registration, tick));
++        }
++
++        private List<ScheduledTick<T>> snapshot() {
++            return List.copyOf(this.pending.keySet());
+         }
+ 
+-        private @Nullable BoundTick<T> poll() {
+-            BoundTick<T> entry = this.pending.poll();
+-            if (entry != null && this.pendingSet != null) {
++        private synchronized boolean take(ScheduledTick<T> tick) {
++            BoundTick<T> entry = this.pending.remove(tick);
++            if (entry == null) {
++                return false;
++            }
++            if (this.pendingSet != null) {
+                 this.pendingSet.remove(entry.tick);
+             }
+-            return entry;
++            entry.registration.container.finishTick(entry.tick);
++            this.executed.add(entry);
++            return true;
+         }
+ 
+-        private boolean willRun(ScheduledTick<T> probe) {
++        private synchronized boolean willRun(ScheduledTick<T> probe) {
+             if (this.pendingSet == null) {
+                 this.pendingSet = new ObjectOpenCustomHashSet<>(ScheduledTick.UNIQUE_TICK_HASH);
+-                this.pending.forEach(entry -> this.pendingSet.add(entry.tick));
++                this.pending.values().forEach(entry -> this.pendingSet.add(entry.tick));
+             }
+             return this.pendingSet.contains(probe);
+         }
+ 
+-        private void removeIf(Predicate<ScheduledTick<T>> predicate) {
+-            this.pending.removeIf(entry -> {
++        private synchronized void removeIf(Predicate<ScheduledTick<T>> predicate) {
++            this.pending.values().removeIf(entry -> {
+                 if (!predicate.test(entry.tick)) {
+                     return false;
+                 }
+@@ -262,8 +310,8 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+             this.pendingSet = null;
+         }
+ 
+-        private void retire(Registration<T> registration) {
+-            this.pending.removeIf(entry -> {
++        private synchronized void retire(Registration<T> registration) {
++            this.pending.values().removeIf(entry -> {
+                 if (entry.registration != registration) {
+                     return false;
+                 }
+@@ -275,10 +323,15 @@ public class LevelTicks<T> implements LevelTickAccess<T> {
+         }
+ 
+         private void restorePending() {
+-            BoundTick<T> entry;
+-            while ((entry = this.pending.poll()) != null) {
++            for (BoundTick<T> entry : this.pending.values()) {
+                 entry.registration.container.restoreTick(entry.tick);
+             }
++            this.pending.clear();
++        }
++
++        private synchronized void copy(Predicate<ScheduledTick<T>> inside, List<ScheduledTick<T>> target) {
++            this.executed.stream().map(entry -> entry.tick).filter(inside).forEach(target::add);
++            this.pending.values().stream().map(entry -> entry.tick).filter(inside).forEach(target::add);
+         }
+     }
+ }
