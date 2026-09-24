@@ -158,6 +158,22 @@ class RegionScheduledBlockTickerTest {
     }
 
     @Test
+    void interleavedMixedRegionsKeepTheOriginalPriorityOrderWhenFallingBack() {
+        try (Fixture fixture = new Fixture()) {
+            fixture.schedule(LEFT, 0);
+            fixture.schedule(RIGHT, 1);
+            fixture.ticks.schedule(new ScheduledTick<>(Blocks.REPEATER, LEFT.east(), 1, 2));
+            fixture.schedule(RIGHT.east(), 3);
+            List<BlockPos> called = new ArrayList<>();
+            fixture.ticks.tick(1, 4, (pos, block) -> {
+                assertThat(RegionTickScope.current()).isNull();
+                called.add(pos);
+            }, fixture.runner::tick);
+            assertThat(called).containsExactly(LEFT, RIGHT, LEFT.east(), RIGHT.east());
+        }
+    }
+
+    @Test
     void aDispatchTokenCanOnlyClaimItsReservationOnce() {
         try (Fixture fixture = new Fixture()) {
             fixture.schedule(LEFT, 0);

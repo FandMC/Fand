@@ -43,6 +43,9 @@ class RegionBlockEntityTickerTest {
     static void bootstrap() {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
+        var registries = net.minecraft.data.registries.VanillaRegistries.createLookup();
+        net.minecraft.core.registries.BuiltInRegistries.DATA_COMPONENT_INITIALIZERS.build(registries)
+            .forEach(pending -> pending.apply());
     }
 
     @Test
@@ -132,6 +135,56 @@ class RegionBlockEntityTickerTest {
             fixture.runner.tick(List.of(ticker(LEFT, check), ticker(RIGHT, check), control), TickingBlockEntity::tick);
             assertThat(calls).hasValue(2);
             assertThat(fixture.runner.snapshot().completedPhases()).isZero();
+        }
+    }
+
+    @Test
+    void controlCallbacksAndMergedCandidatesKeepTheirOwnOriginalOrder() {
+        try (Fixture fixture = new Fixture(2)) {
+            BlockPos third = new BlockPos(648, 64, 8);
+            BlockPos fourth = new BlockPos(904, 64, 8);
+            fixture.topology.tryActivate(new OwnershipCell(10, 0));
+            fixture.topology.tryActivate(new OwnershipCell(14, 0));
+            List<Integer> calls = new ArrayList<>();
+            fixture.runner.tick(List.of(
+                ticker(LEFT, () -> calls.add(4)),
+                new Ticker(third, false, () -> calls.add(1)),
+                ticker(RIGHT, () -> calls.add(5)),
+                new Ticker(fourth, false, () -> calls.add(2)),
+                ticker(LEFT, () -> calls.add(6)),
+                new Ticker(third, false, () -> {
+                    calls.add(3);
+                    fixture.topology.tryActivate(new OwnershipCell(2, 0));
+                })), TickingBlockEntity::tick);
+            assertThat(calls).containsExactly(1, 2, 3, 4, 5, 6);
+            assertThat(fixture.runner.snapshot().completedPhases()).isZero();
+        }
+    }
+
+    @Test
+    void nativeTorchBurnoutHistoryIsOwnedAndIndependentAcrossRegionScopes() {
+        try (Fixture fixture = new Fixture(2)) {
+            setField(ServerLevel.class, fixture.level, "fandTorchHistory",
+                new net.minecraft.world.level.block.RedstoneTorchHistory());
+            doCallRealMethod().when(fixture.level).fand$isRedstoneTorchBurnedOut(any(), org.mockito.ArgumentMatchers.anyBoolean());
+            when(fixture.level.hasSignal(any(), any())).thenReturn(true);
+            var lit = net.minecraft.world.level.block.Blocks.REDSTONE_TORCH.defaultBlockState();
+            when(fixture.level.getBlockState(any())).thenReturn(lit);
+            var entered = new CountDownLatch(2);
+            fixture.runner.tick(List.of(ticker(LEFT, () -> {
+                awaitBoth(entered);
+                for (int i = 0; i < 8; i++) lit.tick(fixture.level, LEFT, RegionTickScope.current().random(fixture.level));
+                assertThat(fixture.level.fand$isRedstoneTorchBurnedOut(LEFT, false)).isTrue();
+                assertThatThrownBy(() -> fixture.level.fand$isRedstoneTorchBurnedOut(RIGHT, true))
+                    .isInstanceOf(IllegalStateException.class);
+            }), ticker(RIGHT, () -> {
+                awaitBoth(entered);
+                for (int i = 0; i < 7; i++) lit.tick(fixture.level, RIGHT, RegionTickScope.current().random(fixture.level));
+                assertThat(fixture.level.fand$isRedstoneTorchBurnedOut(RIGHT, false)).isFalse();
+            })), TickingBlockEntity::tick);
+            verify(fixture.level).levelEvent(net.minecraft.world.level.block.LevelEvent.REDSTONE_TORCH_BURNOUT, LEFT, 0);
+            verify(fixture.level).scheduleTick(LEFT, lit.getBlock(), 160);
+            assertThat(fixture.level.fand$isRedstoneTorchBurnedOut(RIGHT, false)).isFalse();
         }
     }
 

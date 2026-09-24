@@ -628,6 +628,48 @@ NMS 变更已先提交内层 Git，再由 paperweight 生成 `0107`、`0108` 两
 测试记录保存在本地 `build/region-scheduled-parallel-tests-final.log`、`build/region-scheduled-parallel-smoke.log` 和 `build/region-scheduled-parallel-restart.log`。
 内层提交 `f079fcad` 经 paperweight 生成 `0113` feature 补丁，两者稳定 patch-id 一致，未手工编辑补丁。
 
+## 第十批：红石临时状态隔离与串行回退顺序
+
+移除 `RedstoneTorchBlock` 的静态弱引用世界表及全世界切换记录列表。
+每个 `ServerLevel` 持有自己的 `RedstoneTorchHistory`，记录以不可变方块坐标为键；区域合并或拆分不更换键，也不丢失烧毁历史。
+每个位置只保留最近 8 次切换，查询和登记只更新该位置的窗口，避免每次火把切换都扫描整个世界。
+短暂的 map 原子更新不包含任何方块、邻居或插件回调，不对原生模拟加世界锁。
+世界推进时清理过期记录，即使再也没有火把回调，也能释放历史；冻结时不人为推进历史。
+保持原版 `time - when > 60` 过期边界、8 次切换阈值及 160 tick 重试延迟。
+原生入口在区域作用域中先校验世界与位置，越界失败不会修改历史。
+
+同时修复通用派发器的回退顺序：不足两个可并行区域时直接沿用原始任务清单，
+不会把交错的 A1、B1、A2 改成 A1、A2、B1。
+需要并行时，控制组之间保持输入相对顺序，待派发候选也保留输入顺序；控制回调导致区域合并后，候选回退仍保持此顺序。
+真正并行时不同区域间不承诺全局回调先后，同一区域仍按本轮选定顺序执行。
+
+火把历史隔离只是红石邻居链迁移的一部分。本批没有开放红石火把、中继器、比较器或侦测器的并行计划刻，
+也没有把实体出生、TNT 点燃和容器战利品生成视为已完成区域化。
+
+### 第十批验证结果
+
+新增 9 项回归：6 项历史窗口测试覆盖边界、超额切换、位置/世界隔离、可变坐标、闲置清理、
+20,000 次确定性操作对照原版算法和并发登记；另 3 项覆盖混合计划刻顺序、控制回调合并区域后的顺序、
+真实火把 tick 对区域历史的读写及跨区拒绝。后者隔离了邻居和方块写入接口，不能替代完整红石链的实服并行验证。
+
+针对性运行最初发现两项已有掉落测试缺少物品组件初始化，依赖其他测试先运行；
+在测试类中显式初始化原版注册表组件后，27 项针对性检查独立通过。
+最终全量 API 198 项、服务端 816 项、集成检查 3 项通过，共 1017 项，零失败、零错误、零跳过。
+
+```powershell
+./gradlew.bat :fand-api:test :fand-server:test :fand-server:integrationTest --offline --console=plain
+```
+
+隔离服直接加载当前编译类，没有生成新启动 JAR。冻结世界后，通过反复替换火把下方支撑块的电源状态，
+单步触发真实计划刻；前 7 次关断后均恢复，第 8 次关断后保持烧毁状态，另一区域的火把仍亮，
+输出 `TORCH_BURNOUT_ISOLATION_OK`。最后一次关断后第 159 tick 仍熄灭，输出 `TORCH_RETRY_159_OFF_OK`；
+第 160 tick 恢复，输出 `TORCH_RETRY_160_RECOVERED_OK`。
+解除强制加载后，三个维度的模拟成员及 holder / cell / region 归零，进程正常保存退出，退出码 0。
+
+本地记录为 `build/region-torch-history-tests-final.log`、`build/region-torch-history-regression.log`、
+`build/region-torch-history-smoke.log`；首次针对性检查失败记录保留在 `build/region-torch-history-tests.log`。
+内层提交为 `37639f4c`，补丁通过 paperweight 自动生成，未手工修改。
+
 ## 下一批实施顺序
 
 1. 继续拆分随机刻、刷怪和区域模拟临时状态；扩展红石计划刻前先处理同步邻居链中的实体创建、点燃及其他世界管理副作用，不按单个方块随意拆开红石传播。
